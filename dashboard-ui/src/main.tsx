@@ -25,7 +25,7 @@ const FULLSCREEN_ZOOM_MAX = 3;
 const FULLSCREEN_ZOOM_STEP = 0.25;
 
 type RecordValue = Record<string, any>;
-type Tab = "overview" | "scan" | "delivery" | "patch" | "observatory" | "repositories" | "prompts" | "settings";
+type Tab = "overview" | "activity" | "scan" | "delivery" | "patch" | "observatory" | "repositories" | "prompts" | "settings";
 type NoticeTone = "success" | "error" | "info";
 type Notice = { message: string; tone: NoticeTone };
 type Notify = (message: string, tone?: NoticeTone) => void;
@@ -120,6 +120,7 @@ interface AgentsSettingsPayload {
 }
 
 interface DashboardData extends RecordValue {
+  activity?: { available?: boolean; detail?: string; count?: number; items?: RecordValue[] };
   interactive?: {
     enabled?: boolean;
     project?: string;
@@ -135,6 +136,7 @@ interface DashboardData extends RecordValue {
 
 const tabItems: Array<{ id: Tab; label: string; icon: typeof ScanSearch }> = [
   { id: "overview", label: "OVERVIEW", icon: LayoutDashboard },
+  { id: "activity", label: "ACTIVITY", icon: Activity },
   { id: "scan", label: "AUTO SCAN", icon: ScanSearch },
   { id: "delivery", label: "AUTO DELIVERY", icon: Truck },
   { id: "patch", label: "AUTO PATCH", icon: Code2 },
@@ -146,6 +148,7 @@ const tabItems: Array<{ id: Tab; label: string; icon: typeof ScanSearch }> = [
 
 const tabContext: Record<Tab, { title: string; description: string }> = {
   overview: { title: "MANAGER OVERVIEW", description: "Agent ownership, workflow health, and the next human decision." },
+  activity: { title: "AGENT ACTIVITY", description: "Conversation records, outcomes, and the evidence behind each Agent turn." },
   scan: { title: "AUTO SCAN", description: "Review history and manage tracked findings." },
   delivery: { title: "AUTO DELIVERY", description: "Story execution, verification, and pull request delivery." },
   patch: { title: "AUTO PATCH", description: "Jira Task and Bug capture, focused fixes, and safe handoff." },
@@ -154,6 +157,49 @@ const tabContext: Record<Tab, { title: string; description: string }> = {
   prompts: { title: "WORKFLOW", description: "The prompts, scripts, control points, and recovery paths behind each local automation." },
   settings: { title: "SETTINGS", description: "Workspace configuration, scheduling, and local integrations." }
 };
+
+const workflowProfiles = [
+  {
+    workflow: "auto_scan",
+    tab: "scan" as Tab,
+    feature: "Auto Scan",
+    agent: "Dylan",
+    mission: "Find recurring engineering risk and turn it into review-ready evidence.",
+    input: "Repositories, scan window, risk signals",
+    output: "Findings, severity, links, and next questions",
+  },
+  {
+    workflow: "auto_delivery",
+    tab: "delivery" as Tab,
+    feature: "Auto Delivery",
+    agent: "Mark",
+    mission: "Move an approved Story through implementation, verification, and delivery.",
+    input: "Ready Story, approved plan, delivery policy",
+    output: "Commits, checks, PR/merge result, or a clear blocker",
+  },
+  {
+    workflow: "auto_patch",
+    tab: "patch" as Tab,
+    feature: "Auto Patch",
+    agent: "Irving",
+    mission: "Pick up Jira Task/Bug work, apply a focused fix, and hand it off safely.",
+    input: "Eligible Jira card, repository guardrails",
+    output: "Patch evidence, verification, and PR/direct-push result",
+  },
+];
+
+const managerProfile = {
+  workflow: "manager",
+  feature: "Manager",
+  agent: "Milchick",
+  mission: "Clarify intent, create the right work item, and coordinate the three capability owners.",
+  input: "Business request, missing decisions, loop state",
+  output: "A question, a work card, or a routed execution request",
+};
+
+function workflowProfile(workflow: string) {
+  return workflowProfiles.find((profile) => profile.workflow === workflow) || (workflow === "manager" ? managerProfile : null);
+}
 
 const cursorModelOptions = [
   { label: "Auto", value: "auto" },
@@ -828,6 +874,7 @@ function App() {
         {error && <div className="status-note"><Activity size={15} />{error}</div>}
         {!data && loading ? <div className="loading-state"><LoaderCircle size={22} className="spin" /> Loading local workspace state…</div> : null}
         {data && activeTab === "overview" && <OverviewView data={data} project={project} onNavigate={changeTab} />}
+        {data && activeTab === "activity" && <ActivityView data={data} project={project} onNavigate={changeTab} />}
         {data && activeTab === "scan" && <ScanView data={data} project={project} notify={notify} reload={load} />}
         {data && activeTab === "delivery" && <DeliveryView data={data} project={project} notify={notify} reload={load} />}
         {data && activeTab === "patch" && <PatchView data={data} project={project} notify={notify} reload={load} />}
@@ -897,11 +944,10 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
   const settings = data.interactive?.agents || {};
   const agents = settings.agents || [];
   const pending = settings.pending_questions || [];
-  const workflows = [
-    { id: "scan" as Tab, name: "Auto Scan", owner: "Dylan", status: data.runs?.[0]?.status || "not started", detail: "Findings, risk triage, and review-ready evidence." },
-    { id: "delivery" as Tab, name: "Auto Delivery", owner: "Mark", status: data.delivery?.current?.delivery_status || "not started", detail: "Approved stories, verification, and pull request delivery." },
-    { id: "patch" as Tab, name: "Auto Patch", owner: "Irving", status: data.patch?.current?.patch_status || "not started", detail: "Jira Task/Bug capture, focused fixes, and safe handoff." },
-  ];
+  const workflows = workflowProfiles.map((profile) => ({
+    ...profile,
+    status: profile.workflow === "auto_scan" ? data.runs?.[0]?.status || "not started" : profile.workflow === "auto_delivery" ? data.delivery?.current?.delivery_status || "not started" : data.patch?.current?.patch_status || "not started",
+  }));
   const agentState = (agent: AgentSettings) => {
     if (!agent.app_id || !agent.app_secret_configured) return "setup";
     if (!agent.conversation_enabled) return "paused";
@@ -922,21 +968,23 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
       <div className="agent-roster">
         {agents.length ? agents.map((agent) => {
           const state = agentState(agent);
-          const workflow = agent.workflow === "auto_scan" ? "scan" : agent.workflow === "auto_delivery" ? "delivery" : agent.workflow === "auto_patch" ? "patch" : "";
+          const profile = workflowProfile(agent.workflow) || managerProfile;
+          const workflow = workflowProfiles.find((item) => item.workflow === agent.workflow)?.tab;
           return <article className="agent-card" key={agent.id}>
-            <div className="agent-card-heading"><div><span className="overview-kicker">{agent.id}</span><h4>{agent.display_name}</h4><p>{agent.title}</p></div><Badge value={stateLabel(state)} /></div>
-            <div className="agent-card-facts"><div><span>Role</span><strong>{agent.role}</strong></div><div><span>Workflow</span><strong>{agent.workflow}</strong></div><div><span>Runner</span><strong>{text(agent.security?.sandbox, "enabled")}</strong></div></div>
-            <div className="agent-card-footer"><span>{state === "ready" ? "Conversation and actions available" : state === "paused" ? "Conversation is paused in Settings" : "Credentials are required"}</span>{workflow ? <button className="text-button" onClick={() => onNavigate(workflow as Tab)}>Open workflow <ChevronRight size={13} /></button> : <span className="overview-manager-label">Manager</span>}</div>
+            <div className="agent-card-heading"><div><span className="overview-kicker">{profile.feature}</span><h4>{agent.display_name}</h4><p>{profile.mission}</p></div><Badge value={stateLabel(state)} /></div>
+            <div className="agent-card-facts"><div><span>Owns</span><strong title={profile.feature}>{profile.feature}</strong></div><div><span>Receives</span><strong title={profile.input}>{profile.input}</strong></div><div><span>Returns</span><strong title={profile.output}>{profile.output}</strong></div></div>
+            <div className="agent-card-footer"><span>{state === "ready" ? "Conversation and actions available" : state === "paused" ? "Conversation is paused in Settings" : "Credentials are required"}</span>{workflow ? <button className="text-button" onClick={() => onNavigate("activity")}>View activity <ChevronRight size={13} /></button> : <span className="overview-manager-label">Manager</span>}</div>
           </article>;
         }) : <Empty label="No Agent roles available yet." />}
       </div>
     </Panel>
     <Panel title="Workflow control" action={<span className="muted">Three human-owned capabilities</span>}>
       <div className="workflow-roster">
-        {workflows.map((workflow) => <article className="workflow-card" key={workflow.id}>
-          <div className="workflow-card-heading"><div><span className="overview-kicker">{workflow.owner}</span><h4>{workflow.name}</h4></div><Badge value={workflow.status} /></div>
-          <p>{workflow.detail}</p>
-          <button className="button secondary" onClick={() => onNavigate(workflow.id)}>Inspect {workflow.name} <ChevronRight size={13} /></button>
+        {workflows.map((workflow) => <article className="workflow-card" key={workflow.workflow}>
+          <div className="workflow-card-heading"><div><span className="overview-kicker">{workflow.agent}</span><h4>{workflow.feature}</h4></div><Badge value={workflow.status} /></div>
+          <p>{workflow.mission}</p>
+          <div className="workflow-card-io"><span><b>Input</b>{workflow.input}</span><span><b>Output</b>{workflow.output}</span></div>
+          <button className="button secondary" onClick={() => onNavigate(workflow.tab)}>Inspect {workflow.feature} <ChevronRight size={13} /></button>
         </article>)}
       </div>
     </Panel>
@@ -944,6 +992,63 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
       {pending.length ? <div className="pending-question-list">{pending.map((question, index) => <article className="pending-question" key={question.question_id || `${question.agent_id}-${index}`}><div className="pending-question-heading"><div><span className="overview-kicker">{text(question.agent_id, "Agent")}</span><strong>{text(question.action, "Clarification")}</strong></div><time>{when(question.created_at)}</time></div><p>{text(question.question, "The Agent needs one more decision before continuing.")}</p></article>)}</div> : <div className="overview-empty"><CircleHelp size={17} />No unanswered Agent questions.</div>}
     </Panel>
   </div>;
+}
+
+function ActivityView({ data, project, onNavigate }: { data: DashboardData; project: string; onNavigate: (tab: Tab) => void }) {
+  const records = data.activity?.items || [];
+  const [agentFilter, setAgentFilter] = useState("all");
+  const visible = records.filter((record) => agentFilter === "all" || String(record.agent_id || "") === agentFilter);
+  const roles = Array.from(new Set(records.map((record) => String(record.agent_id || "")).filter(Boolean)));
+  const completed = records.filter((record) => /completed|success|delegated/i.test(String(record.status || ""))).length;
+  const attention = records.filter((record) => /failed|blocked|denied/i.test(String(record.status || ""))).length;
+  const profileFor = (record: RecordValue) => workflowProfile(String(record.workflow || "")) || _AGENT_ACTIVITY_UI_PROFILES[String(record.agent_id || "")] || managerProfile;
+  return <div className="activity-page">
+    <PageIntro title="Agent activity" description={`${project || "Current project"} · one readable record for every conversation, handoff, and result.`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />Manage capture</button>} />
+    <div className="activity-role-guide">
+      {[...workflowProfiles, managerProfile].map((profile) => <article key={profile.workflow}>
+        <span className="activity-role-dot" aria-hidden="true" />
+        <div><strong>{profile.agent} · {profile.feature}</strong><p>{profile.mission}</p></div>
+      </article>)}
+    </div>
+    <div className="metrics activity-metrics">
+      <Metric label="Recorded turns" value={records.length} />
+      <Metric label="Completed" value={completed} />
+      <Metric label="Needs attention" value={attention} />
+      <Metric label="Roles seen" value={roles.length} />
+    </div>
+    <Panel title="Conversation records" action={<div className="activity-toolbar"><span className="muted">{visible.length} shown</span><label><span>Role</span><select aria-label="Filter activity by role" value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}><option value="all">All roles</option>{roles.map((agent) => <option value={agent} key={agent}>{String(records.find((record) => String(record.agent_id || "") === agent)?.display_name || agent)}</option>)}</select></label></div>}>
+      {!data.activity?.available && <div className="activity-note"><Activity size={15} />{text(data.activity?.detail, "No Agent conversation store is available yet. New Feishu conversations will appear here after the gateway starts.")}</div>}
+      {visible.length ? <div className="activity-record-list">{visible.map((record) => {
+        const profile = profileFor(record);
+        const workflow = workflowProfiles.find((item) => item.workflow === record.workflow);
+        const requestText = String(record.request_text || "").trim();
+        const responseText = String(record.response_text || "").trim();
+        const sourceLabel = record.source === "conversation" ? "Request + result" : record.source === "outcome" ? "Result captured · request predates transcript capture" : "Trace only";
+        const timeline = Array.isArray(record.timeline) ? record.timeline : [];
+        return <article className="activity-record" key={String(record.trace_id || `${record.agent_id}-${record.started_at}`)}>
+          <header className="activity-record-header"><div className="activity-record-identity"><span className={`activity-avatar activity-avatar-${String(record.agent_id || "agent")}`} aria-hidden="true">{String(record.display_name || profile.agent || "A").slice(0, 1)}</span><div><span className="overview-kicker">{profile.feature}</span><h4>{text(record.display_name, profile.agent)}</h4><p>{text(record.action, sourceLabel)}</p></div></div><div className="activity-record-status"><Badge value={text(record.status, "unknown")} /><time>{when(record.started_at)}</time></div></header>
+          <div className="activity-thread">
+            <div className="activity-message user"><span>You</span><p>{requestText || "This older trace has an outcome, but its incoming message was not captured by that runtime version."}</p></div>
+            <div className="activity-message agent"><span>{text(record.display_name, profile.agent)}</span><p>{responseText || "No final response text was retained; open the source trace in the Agent logs if deeper evidence is needed."}</p></div>
+          </div>
+          <footer className="activity-record-footer"><span>{sourceLabel}</span><span>Trace <code>{text(record.trace_id)}</code></span><span>{record.latency_ms ? `${record.latency_ms} ms` : `${record.event_count || 0} events`}</span>{workflow && <button className="text-button" onClick={() => onNavigate(workflow.tab)}>Open {workflow.feature} <ChevronRight size={13} /></button>}</footer>
+          {timeline.length > 0 && <details className="activity-trail"><summary>Execution trail</summary><div>{timeline.map((event: RecordValue, index: number) => <p key={`${event.event}-${index}`}><time>{when(event.at)}</time><strong>{text(event.event)}</strong>{event.detail && <span>{text(event.detail)}</span>}</p>)}</div></details>}
+        </article>;
+      })}</div> : <div className="activity-empty"><MessageCirclePlaceholder /><strong>No conversation records match this filter.</strong><span>{data.activity?.available ? "Ask one of the Agents in Feishu, then refresh this page." : "The local activity store will be created by the first Agent turn."}</span></div>}
+    </Panel>
+    <p className="activity-retention-note">Only bounded local request/result text is shown here. Trace IDs and raw execution evidence remain available in the local Agent store.</p>
+  </div>;
+}
+
+const _AGENT_ACTIVITY_UI_PROFILES: Record<string, typeof managerProfile> = {
+  dylan: { ...workflowProfiles[0] },
+  mark: { ...workflowProfiles[1] },
+  irving: { ...workflowProfiles[2] },
+  milchick: managerProfile,
+};
+
+function MessageCirclePlaceholder() {
+  return <span className="activity-empty-icon" aria-hidden="true"><Activity size={18} /></span>;
 }
 
 function ScanView({ data, project, notify, reload }: { data: DashboardData; project: string; notify: Notify; reload: () => Promise<void> }) {
@@ -2031,13 +2136,28 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     } catch (err) { notify(err instanceof Error ? err.message : "Unable to save Settings", "error"); }
     finally { setSaving(false); }
   };
+  const enabledScheduleCount = [scanEnabled, deliveryEnabled, patchEnabled].filter(Boolean).length;
+  const enabledAgentCount = agentDrafts.filter((agent) => agent.conversation_enabled).length;
   return <div className="settings-stack">
-    <Panel title="Automation Schedules">
+    <PageIntro title="Workspace settings" description={`${project || "Current project"} · one place for automation, Agent access, delivery policy, and integrations.`} action={<span className="settings-scope">Local configuration</span>} />
+    <div className="settings-summary">
+      <div><span>Schedules</span><strong>{enabledScheduleCount}/3</strong><small>running</small></div>
+      <div><span>Agent conversations</span><strong>{enabledAgentCount}/{agentDrafts.length || 4}</strong><small>enabled</small></div>
+      <div><span>Publish policy</span><strong>{deliveryPublishMode === "direct" ? "Direct" : deliveryPublishMode === "merge" ? "Merge" : "PR"}</strong><small>Auto Delivery</small></div>
+      <div><span>Integrations</span><strong>{configured.length}</strong><small>configured keys</small></div>
+    </div>
+    <nav className="settings-nav" aria-label="Settings sections"><a href="#settings-automation">Automation</a><a href="#settings-agents">Agent team</a><a href="#settings-project">Project output</a><a href="#settings-runtime">Runtime &amp; integrations</a></nav>
+    <section className="settings-cluster" id="settings-automation">
+      <div className="settings-cluster-heading"><div><span>01 · CONTROL PLANE</span><h2>Automation</h2><p>Schedules and execution policies that decide when work can move.</p></div><a href="#settings-agents">Next: Agent team <ChevronRight size={13} /></a></div>
+      <Panel title="Automation Schedules">
       <div className="settings-section"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Auto Scan</h4></div></div><p>{text(schedules.scan?.description, "No recurring scan is configured.")}</p></div><div className="settings-control wide"><div className="form-grid compact scan-settings-fields" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: 0, width: "100%" }}><Field label="Lookback, days"><input type="number" min="1" max="365" value={scanWindow} onChange={(event) => { setScanWindow(event.target.value); markDirty(); }} /></Field><Field label="Five-field cron"><input value={scanCron} onChange={(event) => { setScanCron(event.target.value); markDirty(); }} /></Field></div></div><div className="settings-toggle"><ScheduleToggle enabled={scanEnabled} onChange={(enabled) => { setScanEnabled(enabled); markDirty(); }} /></div></div>
       <div className="settings-section divider"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Auto Delivery</h4></div></div><p>{deliveryEnabled ? `Polling every ${deliveryInterval} minute(s).` : "Delivery polling is paused."}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label="Interval, minutes"><input type="number" min="1" value={deliveryInterval} onChange={(event) => { setDeliveryInterval(event.target.value); markDirty(); }} /></Field><Field label="Eligible JIRA statuses" help="Select every Jira status that may start Auto Delivery. The Story must also be Business Ready, Technical Approved, and not already running."><StatusMultiSelect options={statusOptions} value={eligibleStatuses} onChange={setEligibleStatuses} markDirty={markDirty} /></Field><Field label="Move to when started"><select value={inDevStatus} onChange={(event) => { setInDevStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when completed"><select value={devDoneStatus} onChange={(event) => { setDevDoneStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when failed"><select value={blockedStatus} onChange={(event) => { setBlockedStatus(event.target.value); markDirty(); }}>{Array.from(new Set([...statusOptions, "Block"])).map((value) => <option value={value} key={value}>{value}</option>)}</select></Field></div><p className="schedule-note">Select To Do, Backlog, In Progress, or any other eligible Jira status. On failure, Lumen moves the Jira card to the selected Block status and adds a Needs attention comment.</p></div><div className="settings-toggle"><ScheduleToggle enabled={deliveryEnabled} onChange={(enabled) => { setDeliveryEnabled(enabled); markDirty(); }} /></div></div>
       <div className="settings-section divider"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Auto Patch</h4></div></div><p>{patchEnabled ? `Polling every ${patchInterval} minute(s) for Task and Bug cards.` : "Auto Patch polling is paused."}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label="Interval, minutes"><input type="number" min="1" value={patchInterval} onChange={(event) => { setPatchInterval(event.target.value); markDirty(); }} /></Field><Field label="Eligible JIRA statuses"><StatusMultiSelect options={statusOptions} value={patchStatuses} onChange={setPatchStatuses} markDirty={markDirty} /></Field><Field label="Move to when started"><select value={patchStartStatus} onChange={(event) => { setPatchStartStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when completed"><select value={patchDoneStatus} onChange={(event) => { setPatchDoneStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when blocked"><select value={patchBlockedStatus} onChange={(event) => { setPatchBlockedStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field></div><p className="schedule-note">Only Task and Bug cards are captured. Blocked cards retry after a new external Jira comment.</p></div><div className="settings-toggle"><ScheduleToggle enabled={patchEnabled} onChange={(enabled) => { setPatchEnabled(enabled); markDirty(); }} /></div></div>
-    </Panel>
-    <Panel title="Agent Roles" action={<span className="muted">Global Feishu agents</span>}>
+      </Panel>
+    </section>
+    <section className="settings-cluster" id="settings-agents">
+      <div className="settings-cluster-heading"><div><span>02 · HUMAN-FACING AGENTS</span><h2>Agent team</h2><p>Who speaks to people, what each role owns, and which conversations may mutate state.</p></div><a href="#settings-project">Next: Project output <ChevronRight size={13} /></a></div>
+      <Panel title="Agent Roles" action={<span className="muted">Global Feishu agents</span>}>
       <div className="settings-section"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Agent Gateway</h4></div></div><p>Enable Feishu conversational agents. Config lives in {text(agentsPayload.config_path, "~/.lumen/agents/config.json")}. Restart `lumen agents start` after saving. Mutations fail closed until mutation users are configured.</p></div><div className="settings-toggle"><ScheduleToggle enabled={agentsEnabled} onChange={(enabled) => { setAgentsEnabled(enabled); markDirty(); }} /></div></div>
       <div className="settings-section divider access-control-section">
         <div className="settings-copy">
@@ -2164,8 +2284,11 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
         </div>
       ))}
       {agentDrafts.length === 0 && <div className="settings-section divider"><Empty label="No agent roles available yet." /></div>}
-    </Panel>
-    <Panel title="Test Cases" action={<span className="muted">Mark · {project || "project"}</span>}>
+      </Panel>
+    </section>
+    <section className="settings-cluster" id="settings-project">
+      <div className="settings-cluster-heading"><div><span>03 · BUSINESS OUTPUT</span><h2>Project output</h2><p>Defaults used when Mark and Milchick turn a request into a testable Story.</p></div><a href="#settings-runtime">Next: Runtime &amp; integrations <ChevronRight size={13} /></a></div>
+      <Panel title="Test Cases" action={<span className="muted">Mark · {project || "project"}</span>}>
       <div className="settings-section">
         <div className="settings-copy">
           <div className="settings-heading"><div className="settings-title-stack"><h4>Generation language</h4></div></div>
@@ -2215,11 +2338,15 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
           <p className="schedule-note">After changing language or sheet, ask Milchick/Mark to re-generate the story so new rows use the selected sheet.</p>
         </div>
       </div>
-    </Panel>
-    <Panel title="Execution Models"><div className="settings-section"><div className="settings-copy"><h4>Cursor model</h4><p>Choose a preset or enter a custom Cursor model ID. Custom values must be supported by Cursor; Lumen does not validate model availability.</p></div><div className="settings-control wide"><div className="form-grid compact"><ModelField label="Auto Scan model" value={scanModel} onChange={setScanModel} markDirty={markDirty} /><ModelField label="Auto Delivery model" value={deliveryModel} onChange={setDeliveryModel} markDirty={markDirty} /><ModelField label="Auto Patch model" value={patchModel} onChange={setPatchModel} markDirty={markDirty} /></div></div></div></Panel>
+      </Panel>
+    </section>
+    <section className="settings-cluster" id="settings-runtime">
+      <div className="settings-cluster-heading"><div><span>04 · OPERATING DETAILS</span><h2>Runtime &amp; integrations</h2><p>Model selection, publish behavior, notifications, and local secret values.</p></div><a href="#settings-automation">Back to Automation <ChevronLeft size={13} /></a></div>
+      <Panel title="Execution Models"><div className="settings-section"><div className="settings-copy"><h4>Cursor model</h4><p>Choose a preset or enter a custom Cursor model ID. Custom values must be supported by Cursor; Lumen does not validate model availability.</p></div><div className="settings-control wide"><div className="form-grid compact"><ModelField label="Auto Scan model" value={scanModel} onChange={setScanModel} markDirty={markDirty} /><ModelField label="Auto Delivery model" value={deliveryModel} onChange={setDeliveryModel} markDirty={markDirty} /><ModelField label="Auto Patch model" value={patchModel} onChange={setPatchModel} markDirty={markDirty} /></div></div></div></Panel>
     <Panel title="Publish Policy"><div className="settings-section"><div className="settings-copy"><h4>Automation outcome</h4><p>Direct push uses the repository credentials already configured for Git; PR and Merge use GitHub CLI. Auto Scan keeps a PR review gate and does not support direct push.</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label="Auto Scan"><select value={scanPublishMode} onChange={(event) => { setScanPublishMode(event.target.value); markDirty(); }}><option value="pr">Open pull request</option><option value="merge">Merge after pull request</option></select></Field><Field label="Auto Delivery"><select value={deliveryPublishMode} onChange={(event) => { setDeliveryPublishMode(event.target.value); markDirty(); }}><option value="pr">Open pull request</option><option value="merge">Merge after pull request</option><option value="direct">Push directly to main branch</option></select></Field><Field label="Auto Patch"><select value={patchPublishMode} onChange={(event) => { setPatchPublishMode(event.target.value); markDirty(); }}><option value="pr">Open pull request</option><option value="direct">Push directly to main branch</option></select></Field></div></div></div></Panel>
     <Panel title="Notifications"><div className="settings-section"><div className="settings-copy"><h4>Feishu notifications</h4><p>Control whether Scan and Delivery post cards to the configured Feishu webhook. The webhook URL still lives under Variable Keys.</p></div><div className="settings-toggle"><ScheduleToggle enabled={feishuEnabled} onChange={(enabled) => { setFeishuEnabled(enabled); markDirty(); }} /></div></div></Panel>
     <Panel title="Variable Keys" action={<span className="muted">Stored only in this workspace</span>}><div className="settings-section"><div className="settings-copy"><h4>Available keys</h4><p>Reveal a value to inspect it, or enter a replacement directly. Values are saved without display quotes.</p></div><div className="settings-control wide"><div className="secret-list">{configured.length ? configured.map((name: string) => { const value = changedSecrets[name] ?? secrets[name] ?? ""; return <div className="secret-row" key={name}><code>{name}</code><input type={secrets[name] || changedSecrets[name] !== undefined ? "text" : "password"} value={value} placeholder="Reveal or enter a replacement value" aria-label={`Value for ${name}`} onChange={(event) => { const next = event.target.value; setChangedSecrets((current) => ({ ...current, [name]: next })); markDirty(); }} /><div><IconButton label="Reveal value" onClick={() => void reveal(name)}>{secrets[name] ? <EyeOff size={15} /> : <Eye size={15} />}</IconButton><IconButton label="Copy value" onClick={() => void copy(name)}><Copy size={15} /></IconButton></div></div>; }) : <Empty label="No local integration keys configured." />}</div></div></div></Panel>
+      </section>
     <footer className="settings-save-bar"><span className={dirty ? "settings-save-status unsaved" : "settings-save-status"}>{saving ? "Saving settings…" : dirty ? "You have unsaved changes" : "All changes saved"}</span><button className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving} onClick={() => void saveAll()}>{saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{saving ? "Saving…" : "Save changes"}</button></footer>
   </div>;
 }

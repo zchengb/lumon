@@ -12,7 +12,8 @@ SCRIPTS = ROOT / "lib" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from agent_trace import Redactor, cleanup_retention, run_agent, trace_config
-from dashboard_server import DashboardServer, delivery_trace_payload
+from dashboard_server import DashboardServer, agent_activity_payload, delivery_trace_payload
+from risk.migrations import connect_global
 
 
 def write_json(path: Path, payload: dict) -> None:
@@ -196,6 +197,50 @@ emit({'type':'result','request_id':'r-1','duration_ms':12,'duration_api_ms':8,'r
             saved = DashboardServer.update_observability(None, workspace, {"capture_mode": "full", "retention_days": 21})
             self.assertEqual("full", saved["capture_mode"])
             self.assertTrue(json.loads((workspace / "config" / "delivery.json").read_text())["preserved"])
+
+    def test_dashboard_activity_read_model_keeps_request_result_and_role(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            database_root = Path(temp)
+            previous_agents_home = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = str(database_root)
+            try:
+                connection = connect_global(database_root / "agents.sqlite3")
+                connection.execute(
+                    """
+                    INSERT INTO conversation_trace(
+                        trace_id, message_id, project_slug, state, started_at, latency_ms
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    ("tr_test_activity", "msg-1", "mbpass", "completed", "2026-01-01T00:00:00Z", 1200),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO conversation_event(trace_id, event, payload_json, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    ("tr_test_activity", "conversation.request", json.dumps({"agent_id": "mark", "role": "delivery", "workflow": "auto_delivery", "text": "Please check this Story."}), "2026-01-01T00:00:00Z"),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO conversation_event(trace_id, event, payload_json, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    ("tr_test_activity", "conversation.completed", json.dumps({"agent_id": "mark", "role": "delivery", "workflow": "auto_delivery", "status": "completed", "action": "delivery.status", "text": "The Story is ready."}), "2026-01-01T00:00:01Z"),
+                )
+                connection.commit()
+                connection.close()
+                payload = agent_activity_payload("mbpass")
+                self.assertTrue(payload["available"])
+                item = payload["items"][0]
+                self.assertEqual("mark", item["agent_id"])
+                self.assertEqual("auto_delivery", item["workflow"])
+                self.assertEqual("Please check this Story.", item["request_text"])
+                self.assertEqual("The Story is ready.", item["response_text"])
+            finally:
+                if previous_agents_home is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous_agents_home
 
     def test_archive_copies_trace_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

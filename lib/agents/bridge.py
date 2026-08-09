@@ -33,6 +33,10 @@ def _conversation_enabled(config: dict[str, Any], common: dict[str, Any], agent_
     return ConversationFlags.from_common(common, config, agent_id=agent_id).enabled
 
 
+def _audit_text(value: Any, maximum: int = 4000) -> str:
+    return str(value or "").strip()[:maximum]
+
+
 def _persist_agent_run(run: dict[str, Any], *, meta: dict[str, str], slug: str, action: str, agent_id: str) -> None:
     try:
         from risk.store import GlobalAgentStore
@@ -125,6 +129,7 @@ def _run_autonomous_worker(
         result: dict[str, Any] = {}
         try:
             obs.emit(trace, "message.received")
+            obs.emit(trace, "conversation.request", text=_audit_text(text))
             obs.upsert_trace(trace, state="queued")
             if flags.reaction.add_immediately:
                 reaction.start()
@@ -154,6 +159,13 @@ def _run_autonomous_worker(
                     trace=trace,
                 )
             if result.get("status") == "delegate":
+                obs.emit(
+                    trace,
+                    "conversation.completed",
+                    status="delegated",
+                    action=result.get("action"),
+                    text=_audit_text(result.get("text")),
+                )
                 success = True
                 return result
             reply_text = str(result.get("text") or "暂无数据。")
@@ -187,12 +199,28 @@ def _run_autonomous_worker(
                     pass
             obs.emit(trace, "reply.succeeded")
             obs.upsert_trace(trace, reply_status="succeeded", state="completed")
+            receipts = result.get("action_receipts") if isinstance(result.get("action_receipts"), list) else []
+            obs.emit(
+                trace,
+                "conversation.completed",
+                status="completed",
+                action=result.get("action"),
+                text=_audit_text(reply_text),
+                response_mode=result.get("final_response_mode") or result.get("response_mode"),
+                clarification=bool(result.get("pending_clarification")),
+                action_receipts=[
+                    {"action": item.get("action"), "status": item.get("status")}
+                    for item in receipts
+                    if isinstance(item, dict)
+                ],
+            )
             obs.emit(trace, "job.completed", latency_ms=result.get("latency_ms"))
             success = True
             return result
         except Exception as exc:
             try:
                 obs.emit(trace, "job.failed", error=str(exc)[:300], level="ERROR")
+                obs.emit(trace, "conversation.completed", status="failed", error=str(exc)[:300])
                 obs.upsert_trace(trace, state="failed", error_code="worker_error")
             except Exception:
                 pass

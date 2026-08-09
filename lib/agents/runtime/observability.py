@@ -83,12 +83,18 @@ class Observability:
         except Exception:
             pass
         try:
+            event_payload = {
+                "agent_id": ctx.agent_id or self.agent_id,
+                "role": ctx.role,
+                "workflow": ctx.workflow,
+                **payload,
+            }
             self.store.conn.execute(
                 """
                 INSERT INTO conversation_event(trace_id, event, payload_json, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (ctx.trace_id, event, json.dumps(payload, ensure_ascii=False, default=str), now),
+                (ctx.trace_id, event, json.dumps(event_payload, ensure_ascii=False, default=str), now),
             )
             self.store.conn.commit()
         except Exception:

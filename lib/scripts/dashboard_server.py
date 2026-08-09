@@ -12,6 +12,7 @@ import re
 import shutil
 import signal
 import shlex
+import sqlite3
 import subprocess
 import sys
 import time
@@ -1213,6 +1214,132 @@ def capped_ndjson(path: Path, maximum: int = 500) -> list[dict[str, Any]]:
     return events
 
 
+_AGENT_ACTIVITY_PROFILES = {
+    "dylan": {"display_name": "Dylan", "role": "scan", "workflow": "auto_scan"},
+    "mark": {"display_name": "Mark", "role": "delivery", "workflow": "auto_delivery"},
+    "irving": {"display_name": "Irving", "role": "patch", "workflow": "auto_patch"},
+    "milchick": {"display_name": "Milchick", "role": "orchestrator", "workflow": "manager"},
+}
+_ACTIVITY_TIMELINE_EVENTS = {
+    "conversation.request",
+    "conversation.completed",
+    "agent.jira.shortcut",
+    "agent.run.started",
+    "agent.result.completed",
+    "security.action_requests.executed",
+    "reply.succeeded",
+    "reply.failed",
+    "job.failed",
+}
+
+
+def _activity_log_index(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    traces: dict[str, dict[str, Any]] = {}
+    outbound: dict[str, dict[str, Any]] = {}
+    for agent_id, profile in _AGENT_ACTIVITY_PROFILES.items():
+        for record in capped_ndjson(root / f"{agent_id}.jsonl", 5000):
+            trace_id = str(record.get("trace_id") or "").strip()
+            if trace_id:
+                traces.setdefault(trace_id, {**profile, "agent_id": agent_id})
+                traces[trace_id].update({key: record[key] for key in ("role", "workflow", "project_slug") if record.get(key)})
+        for record in capped_ndjson(root / f"{agent_id}_outbound.jsonl", 5000):
+            reply_to = str(record.get("reply_to") or "").strip()
+            if reply_to:
+                outbound[reply_to] = record
+    return traces, outbound
+
+
+def agent_activity_payload(project: str, limit: int = 60) -> dict[str, Any]:
+    """Return a small, local-only conversation read model for the dashboard."""
+    try:
+        from risk.store import global_db_path
+
+        database = global_db_path()
+    except Exception as exc:
+        return {"available": False, "items": [], "detail": str(exc)}
+    if not database.is_file():
+        return {"available": False, "items": [], "detail": "No Agent conversation store has been created yet."}
+
+    try:
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        connection.row_factory = sqlite3.Row
+        traces = connection.execute(
+            """
+            SELECT * FROM conversation_trace
+            WHERE (? = '' OR project_slug = ? OR COALESCE(project_slug, '') = '')
+            ORDER BY started_at DESC
+            LIMIT ?
+            """,
+            (str(project or ""), str(project or ""), max(1, min(int(limit), 120))),
+        ).fetchall()
+        log_index, outbound_index = _activity_log_index(database.parent)
+        items: list[dict[str, Any]] = []
+        for trace in traces:
+            trace_id = str(trace["trace_id"] or "")
+            raw_events = connection.execute(
+                "SELECT event, payload_json, created_at FROM conversation_event WHERE trace_id = ? ORDER BY id ASC",
+                (trace_id,),
+            ).fetchall()
+            events: list[dict[str, Any]] = []
+            profile = dict(log_index.get(trace_id, {}))
+            request_text = ""
+            response_text = ""
+            action = ""
+            outcome = str(trace["state"] or "unknown")
+            for row in raw_events:
+                try:
+                    payload = json.loads(row["payload_json"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    payload = {}
+                if not isinstance(payload, dict):
+                    payload = {}
+                profile.update({key: payload[key] for key in ("agent_id", "role", "workflow", "project_slug") if payload.get(key)})
+                if row["event"] == "conversation.request":
+                    request_text = str(payload.get("text") or "")[:4000]
+                if row["event"] in {"conversation.completed", "conversation.result"}:
+                    response_text = str(payload.get("text") or payload.get("response_text") or "")[:4000]
+                    action = str(payload.get("action") or action)
+                    outcome = str(payload.get("status") or outcome)
+                elif row["event"] == "agent.jira.shortcut":
+                    outcome = str(payload.get("status") or outcome)
+                if row["event"] in _ACTIVITY_TIMELINE_EVENTS:
+                    detail = str(payload.get("detail") or payload.get("error") or payload.get("action") or "").strip()
+                    events.append({"event": row["event"], "at": row["created_at"], "detail": detail})
+
+            outbound = outbound_index.get(str(trace["message_id"] or ""), {})
+            if not response_text:
+                response_text = str(outbound.get("text") or "")[:4000]
+            agent_id = str(profile.get("agent_id") or "").strip().lower()
+            fallback = _AGENT_ACTIVITY_PROFILES.get(agent_id, {})
+            profile = {**fallback, **profile}
+            source = "conversation" if request_text and response_text else "outcome" if response_text else "trace"
+            items.append(
+                {
+                    "trace_id": trace_id,
+                    "message_id": str(trace["message_id"] or ""),
+                    "agent_id": agent_id,
+                    "display_name": str(profile.get("display_name") or agent_id.title() or "Agent"),
+                    "role": str(profile.get("role") or "agent"),
+                    "workflow": str(profile.get("workflow") or ""),
+                    "project_slug": str(trace["project_slug"] or project or ""),
+                    "status": outcome,
+                    "action": action,
+                    "request_text": request_text,
+                    "response_text": response_text,
+                    "source": source,
+                    "started_at": str(trace["started_at"] or ""),
+                    "completed_at": str(trace["completed_at"] or ""),
+                    "latency_ms": trace["latency_ms"],
+                    "event_count": len(raw_events),
+                    "timeline": events[-12:],
+                }
+            )
+        connection.close()
+        return {"available": True, "items": items, "count": len(items)}
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        return {"available": False, "items": [], "detail": f"Unable to read Agent activity: {exc}"}
+
+
 def delivery_trace_payload(workspace: Path, run_id: str) -> dict[str, Any]:
     root = trace_directory(workspace, run_id)
     trace = read_delivery_json(root / "trace.json", {})
@@ -1286,6 +1413,7 @@ class DashboardServer(ThreadingHTTPServer):
         }
         data["delivery"] = delivery_payload(workspace)
         data["patch"] = patch_payload(workspace)
+        data["activity"] = agent_activity_payload(project)
         return data
 
     def delivery_log(self, workspace: Path, run_id: str) -> dict[str, Any]:
@@ -1798,7 +1926,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return self.respond_json(HTTPStatus.OK, observatory_story_content(workspace, query.get("story", [""])[0]))
             except (OSError, ValueError, FileNotFoundError) as exc:
                 return self.respond_error(HTTPStatus.BAD_REQUEST, str(exc))
-        if parsed.path in {"/", "/dashboard.html", "/overview", "/scan", "/delivery", "/patch", "/repositories", "/prompts", "/settings", "/observatory"}:
+        if parsed.path in {"/", "/dashboard.html", "/overview", "/activity", "/scan", "/delivery", "/patch", "/repositories", "/prompts", "/settings", "/observatory"}:
             return self.serve_file(self.server.workspace / "dashboard.html", "text/html; charset=utf-8")
         if parsed.path == "/dashboard-data.js":
             return self.serve_file(self.server.workspace / "dashboard-data.js", "application/javascript; charset=utf-8")
