@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -153,6 +154,7 @@ class SessionStore:
             "workspace_path",
             "soul_version",
             "protocol_version",
+            "pending_json",
         }
         sets = []
         values: list[Any] = []
@@ -181,3 +183,35 @@ class SessionStore:
 
     def save_checkpoint(self, session_id: str, checkpoint: dict[str, Any]) -> None:
         self.update(session_id, checkpoint_json=json.dumps(checkpoint, ensure_ascii=False))
+
+    def get_pending(self, session: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not session:
+            return None
+        raw = session.get("pending_json")
+        if not raw:
+            return None
+        try:
+            pending = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(pending, dict):
+            return None
+        expires_at = str(pending.get("expires_at") or "").strip()
+        if expires_at:
+            try:
+                expiry = expires_at.replace("Z", "+00:00")
+                parsed_expiry = datetime.fromisoformat(expiry)
+                if parsed_expiry.tzinfo is None:
+                    parsed_expiry = parsed_expiry.replace(tzinfo=timezone.utc)
+                if parsed_expiry <= datetime.now(timezone.utc):
+                    self.clear_pending(str(session.get("session_id") or ""))
+                    return None
+            except (TypeError, ValueError):
+                pass
+        return pending
+
+    def save_pending(self, session_id: str, pending: dict[str, Any]) -> None:
+        self.update(session_id, pending_json=json.dumps(pending, ensure_ascii=False))
+
+    def clear_pending(self, session_id: str) -> None:
+        self.update(session_id, pending_json=None)

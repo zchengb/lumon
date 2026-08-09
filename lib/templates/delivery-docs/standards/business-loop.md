@@ -39,7 +39,7 @@ Use this flow when the user starts with a broad topic instead of a concrete stor
 1. Create or update `topics/<slug>.md` using `templates/topic.md`.
 2. Read the topic, existing stories, and relevant repository context under `repos/`.
 3. Build a short understanding of current system behavior before proposing story splits.
-4. Ask the full set of high-impact clarification questions in one checklist turn, with options and a custom answer path for each.
+4. Use the Lumen Grill protocol: inspect evidence first, ask the highest-impact unknowns, explain what each answer changes, offer options with a recommended default when reasonable, and allow custom answers. Ask one question at a time when answers depend on each other; batch independent questions only when the user asks for a plan/checklist.
 5. Record confirmed answers under `Progressive Clarifications`.
 6. Gradually identify candidate stories with clear goals and boundaries.
 7. Do not create story folders until the user confirms the split.
@@ -51,8 +51,8 @@ A Topic is not implementation-ready. It is a discovery container. Lumen must not
 
 1. Start from draft story input, a confirmed candidate story from Topic Discovery, or a Story just imported from Jira.
 2. Agent reads `story.md`, `metadata.json`, related topic notes if any, and relevant repository context.
-3. Agent identifies every remaining high-impact unclear point.
-4. Agent asks those clarifications together in one checklist turn, with options for each question.
+3. Agent identifies every remaining high-impact unclear point and removes questions already answered by evidence.
+4. Agent grills only on decisions that can change scope, user-visible behavior, actors, permissions, failure behavior, timing, or acceptance criteria. Ask sequentially when dependent; otherwise use a small checklist batch.
 5. User answers the checklist in one reply, choosing options or entering custom answers.
 6. Agent records the clarified Q&A under `Clarifications`.
 7. Agent updates Acceptance Criteria and Business Rules when needed.
@@ -70,7 +70,7 @@ JIRA Story content created from `story.md` should use the same primary language 
 
 ## Progressive Q&A
 
-A Business Loop question must be concise and answerable. Prefer interactive Q&A if supported by the environment. Otherwise use a text checklist and ask all remaining high-impact questions together.
+A Business Loop question must be concise and answerable. Prefer interactive Q&A if supported by the environment. Every Grill question states its impact, gives 2–4 options with one recommended default when reasonable, and permits a custom answer. Stop when no remaining unknown can change the Story decision; do not turn low-impact preferences into blockers.
 
 Question format:
 

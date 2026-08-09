@@ -5,8 +5,8 @@ from typing import Any
 
 from agents.mark.soul_loader import load_soul
 
-PROTOCOL_VERSION = "1"
-SOUL_VERSION = "2"
+PROTOCOL_VERSION = "2"
+SOUL_VERSION = "3"
 
 
 def _default_commands(project_slug: str) -> list[str]:
@@ -18,6 +18,10 @@ def _default_commands(project_slug: str) -> list[str]:
             "--source-message-id <message-id> --trace-id <trace-id> --json"
         ),
         f"lumen delivery result --run-id <run-id> --project {project_slug} --json",
+        (
+            f"lumen agents action --agent mark --action delivery.quick_change --project {project_slug} "
+            "--json (bounded source change; ACTION_REQUEST only)"
+        ),
         (
             "lumen delivery cancel --run-id <run-id> --actor <user-id> "
             "--source-message-id <message-id> --trace-id <trace-id> --json"
@@ -52,16 +56,22 @@ def build_bootstrap_prompt(
         "- Investigation / status: read evidence, report stage/blocker/next owner.\n"
         "- Readiness: check Story, plan approval, repos, conflicts.\n"
         "- Planning explanation: explain approved technical-plan.md; do not invent scope.\n"
+        "- Requirement or technical-design ambiguity: use the Lumen Grill protocol. Investigate first, identify the highest-impact unknown, explain what it changes, offer concrete options with a recommended default when evidence supports one, and record the answer or an owner-approved assumption. Ask sequentially when questions depend on each other; stop when no remaining unknown can change scope, behavior, verification, or delivery risk.\n"
         "- Explicit start: readiness then delivery run once; return Run ID; do not wait for completion.\n"
         "- Follow-up: read delivery progress/result files; do not guess.\n"
+        "- Lightweight change: for a small explicit change such as a version bump, inspect the workspace, "
+        "infer the single repository and canonical file when safe, then emit delivery.quick_change. "
+        "Do not require a Story or technical plan for this bounded path. Ask one focused question only "
+        "when the repository, target file, requested change, or target version remains ambiguous.\n"
         "- Test cases: on explicit user intent only, emit test_case.generate ACTION_REQUEST "
         "for Story/Bug keys.\n\n"
         "Operating policy:\n"
         "- Ordinary readiness questions must not start delivery.\n"
         "- Explicit start must not ask for confirmation twice.\n"
+        "- Do not turn a bounded quick change into a Story or a Grill session; ask only for missing execution fields and proceed once the request is clear.\n"
         "- Prefer Jira keys in user-facing replies.\n"
         "- Workspace-isolated: do not enumerate host apps, hardware, home folders, or hostname.\n"
-        "- Prefer <ACTION_REQUEST> for delivery.start / delivery.cancel / test_case.generate. "
+        "- Prefer <ACTION_REQUEST> for delivery.start / delivery.cancel / delivery.quick_change / test_case.generate. "
         "Host fills actor/chat identity — never invent --actor or explicit_authorization.\n"
         "- Wrap the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         "- Stay in Mark's calm delivery-lead voice from the Soul notes.\n\n"
@@ -76,6 +86,7 @@ def build_bootstrap_prompt(
         "<ACTION_REQUEST>{\"action\":\"test_case.generate\",\"arguments\":{\"issue_key\":\"MBPAS-1601\"},"
         "\"resource\":{\"issue_key\":\"MBPAS-1601\"}}</ACTION_REQUEST>\n"
         "or delivery.start / delivery.cancel as before.\n"
+        "For a bounded quick change use: <ACTION_REQUEST>{\"action\":\"delivery.quick_change\",\"arguments\":{\"repository\":\"repo\",\"target_files\":[\"package.json\"],\"request\":\"upgrade the version number\",\"change_type\":\"version_bump\",\"target_version\":\"1.2.3\"}}</ACTION_REQUEST>\n"
         "Put only the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
     )
 
@@ -90,8 +101,10 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "[LUMEN MESSAGE]\n\n"
         f"Project: {project_slug or '(same as session)'}\n"
         "Remain Mark. Investigate delivery evidence before answering.\n"
-        "Do not start delivery unless the user explicitly authorized a run.\n"
-        "Do not modify business source. Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
+        "Do not start Story delivery unless the user explicitly authorized a run. A bounded quick change is "
+        "already authorized by the user's explicit request once its required details are known.\n"
+        "Do not modify business source in the conversational workspace; quick changes run in an isolated host worker. "
+        "Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         f"User message:\n{user_message}\n"
         f"{extra}\n"
         "Respond after any necessary Workspace investigation.\n"

@@ -14,6 +14,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+LIB_DIR = Path(__file__).resolve().parent.parent
+if str(LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(LIB_DIR))
+
 from capture_patch_context import capture
 from compose_patch_prompt import compose
 from patch_jira import add_comment, blocked_comment, skipped_comment, transition_issue
@@ -485,12 +489,24 @@ def skip(workspace: Path, progress: dict[str, Any], result: dict[str, Any]) -> i
 
 def run_agent(workspace: Path, prompt: str, log_file: Path) -> int:
     model = patch_model(workspace)
-    sandbox = os.environ.get("CURSOR_AGENT_SANDBOX", "disabled")
+    sandbox = os.environ.get("CURSOR_AGENT_SANDBOX", "enabled").strip().lower()
+    if sandbox != "enabled":
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text("Auto Patch requires CURSOR_AGENT_SANDBOX=enabled; unsafe Cursor execution is disabled.\n", encoding="utf-8")
+        return 78
     output_format = os.environ.get("CURSOR_AGENT_OUTPUT_FORMAT", "stream-json")
-    args = ["agent", "--workspace", str(workspace), "--sandbox", sandbox, "--trust", "-p", "-f", "--output-format", output_format, "--model", model, prompt]
+    args = ["agent", "--workspace", str(workspace), "--sandbox", sandbox, "--trust", "-p", "--output-format", output_format, "--model", model, prompt]
+    from agents.runner.runner_env import build_runner_env
+
+    env = build_runner_env(
+        agent_id="irving",
+        project=os.environ.get("LUMEN_PROJECT", ""),
+        source=os.environ,
+    )
+    env["CURSOR_AGENT_SANDBOX"] = "enabled"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     with log_file.open("w", encoding="utf-8") as handle:
-        completed = subprocess.run(args, stdout=handle, stderr=subprocess.STDOUT, env=os.environ.copy(), check=False)
+        completed = subprocess.run(args, stdout=handle, stderr=subprocess.STDOUT, env=env, check=False)
     return completed.returncode
 
 

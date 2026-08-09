@@ -1798,7 +1798,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return self.respond_json(HTTPStatus.OK, observatory_story_content(workspace, query.get("story", [""])[0]))
             except (OSError, ValueError, FileNotFoundError) as exc:
                 return self.respond_error(HTTPStatus.BAD_REQUEST, str(exc))
-        if parsed.path in {"/", "/dashboard.html", "/scan", "/delivery", "/patch", "/repositories", "/prompts", "/settings", "/observatory"}:
+        if parsed.path in {"/", "/dashboard.html", "/overview", "/scan", "/delivery", "/patch", "/repositories", "/prompts", "/settings", "/observatory"}:
             return self.serve_file(self.server.workspace / "dashboard.html", "text/html; charset=utf-8")
         if parsed.path == "/dashboard-data.js":
             return self.serve_file(self.server.workspace / "dashboard-data.js", "application/javascript; charset=utf-8")

@@ -59,7 +59,7 @@ During Topic Discovery, the Agent should:
 1. Create or update `topics/<slug>.md` using `templates/topic.md`.
 2. Read existing topics, stories, and relevant repository context.
 3. Understand current system behavior before suggesting story splits.
-4. Ask one progressive clarification question at a time.
+4. Use the Lumen Grill protocol for consequential ambiguity: ask the highest-impact question, explain its consequence, offer options, and record the answer or an owner-approved assumption. Use one question at a time when answers depend on one another.
 5. Record confirmed answers in the topic file.
 6. Propose candidate stories only after enough context is understood.
 7. Create story folders only after the user confirms the split.
@@ -142,15 +142,16 @@ Before every Business or Technical Loop, invoke the import Skill when `metadata.
 
 ## Progressive Questioning Rule
 
-During the Business Loop and Technical Loop, ask clarification questions in one batched checklist whenever possible.
+During the Business Loop and Technical Loop, use the Lumen Grill protocol rather than a fixed questionnaire. Batch independent high-impact questions when the user asks for a plan or checklist; otherwise ask one question at a time when the next question depends on the previous answer. Never ask a question already resolved by workspace evidence.
 
 Rules:
 
-- Ask all remaining high-impact unresolved questions in one turn unless the user explicitly asks for progressive single-question mode.
+- Ask only unresolved questions that can change scope, actors, business rules, acceptance, failure behavior, architecture, verification, rollout, or rollback.
 - Order questions by impact: scope, actors, rules, acceptance, failure behavior, then lower-impact details.
 - Prefer interactive Q&A when the environment supports it.
 - Each question should include 2-4 concrete options.
-- Mark one option as `Recommended` when reasonable.
+- Mark one option as `Recommended` when repository evidence supports it, explain the consequence, and allow a custom answer.
+- Stop grilling when no remaining unknown can change the decision; summarize the result and ask the loop's explicit approval question.
 - Always allow the user to provide a custom answer.
 - Do not use blank placeholders as the primary interaction style.
 - After the user answers, update `topics/<slug>.md` under `Progressive Clarifications` during Topic Discovery, or `story.md` under `Clarifications` during Story Clarification, and update `technical-plan.md` for technical answers.
@@ -238,7 +239,7 @@ During the Technical Loop, the Agent should:
 1. Read `story.md`, `metadata.json`, `templates/technical-plan.md`, and the Lumen coding guideline shipped with the CLI.
 2. Inspect impacted repositories and identify real modules, endpoints, tables, jobs, Dockerfiles, build files, and tests.
 3. If the input is a broad topic, guide the user to split and select one concrete story before planning.
-4. Ask every remaining high-impact technical question in one checklist turn when ambiguity affects design, scope, runtime, verification, rollout, or rollback.
+4. Use the Lumen Grill protocol for unresolved technical questions affecting design, scope, runtime, verification, rollout, or rollback; ask sequentially when questions depend on one another and otherwise use a small checklist.
 5. Offer concrete options for each question and allow a custom answer.
 6. Record confirmed technical decisions in `technical-plan.md`; do not leave decisions only in chat.
 7. Derive a concise, business-facing `Delivery Checklist` from confirmed Acceptance Criteria and Business Rules; do not use technical implementation language.

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
+import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -93,6 +96,79 @@ def _load_result(workspace_root: Path, run_id: str = "") -> dict[str, Any]:
     return {}
 
 
+def _quick_result_candidates(workspace_root: Path, run_id: str = "") -> list[Path]:
+    roots = [Path(workspace_root).expanduser().resolve()]
+    if roots[0].parent != roots[0]:
+        roots.append(roots[0].parent)
+    paths: list[Path] = []
+    for root in roots:
+        for state_dir in (root / "lumen", root / ".lumen", root):
+            result_dir = state_dir / "results" / "quick-changes"
+            if run_id:
+                paths.append(result_dir / f"{run_id}.json")
+            elif result_dir.is_dir():
+                paths.extend(sorted(result_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True))
+    return paths
+
+
+def _load_quick_result(workspace_root: Path, run_id: str = "") -> dict[str, Any]:
+    for path in _quick_result_candidates(workspace_root, run_id):
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict) and (not run_id or str(payload.get("run_id") or "") == run_id):
+            return payload
+    return {}
+
+
+def _load_active_quick_result(workspace_root: Path) -> dict[str, Any]:
+    for path in _quick_result_candidates(workspace_root):
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict) and str(payload.get("status") or "").casefold() in {"running", "started"}:
+            return payload
+    return {}
+
+
+def _delivery_lock_candidates(workspace: Path) -> list[Path]:
+    root = Path(workspace).expanduser().resolve()
+    return [root / "locks" / "delivery-run", root / "lumen" / "locks" / "delivery-run", root / ".lumen" / "locks" / "delivery-run"]
+
+
+def _terminate_process_tree(pid: int) -> None:
+    try:
+        children = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True, check=False).stdout.split()
+    except OSError:
+        children = []
+    for child in children:
+        try:
+            _terminate_process_tree(int(child))
+        except ValueError:
+            continue
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        return
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+        time.sleep(0.05)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except (ProcessLookupError, OSError):
+        pass
+
+
 class DeliveryActionAdapter:
     def readiness(self, *, workspace: Path, story: str) -> dict[str, Any]:
         docs = _docs_dir(workspace)
@@ -179,19 +255,25 @@ class DeliveryActionAdapter:
         workspace_root = root.parent if root.name in {"lumen", ".lumen"} else root
         progress = _load_progress(workspace_root)
         result = _load_result(workspace_root, run_id=run_id)
+        quick_result = _load_quick_result(workspace_root, run_id=run_id)
+        if not quick_result and not run_id:
+            quick_result = _load_active_quick_result(workspace_root)
         return {
             "status": "ok",
-            "story_id": story or progress.get("jira_key") or progress.get("story_id") or "",
-            "run_id": run_id or progress.get("run_id") or result.get("run_id") or "",
-            "delivery_status": progress.get("delivery_status") or result.get("status") or "unknown",
+            "story_id": story or progress.get("jira_key") or progress.get("story_id") or quick_result.get("repository") or "",
+            "run_id": run_id or progress.get("run_id") or result.get("run_id") or quick_result.get("run_id") or "",
+            "delivery_status": progress.get("delivery_status") or result.get("status") or quick_result.get("status") or "unknown",
             "progress": progress,
             "result": result,
+            "quick_change": quick_result,
         }
 
     def result(self, *, workspace: Path, run_id: str = "") -> dict[str, Any]:
         root = Path(workspace).expanduser().resolve()
         workspace_root = root.parent if root.name in {"lumen", ".lumen"} else root
         payload = _load_result(workspace_root, run_id=run_id)
+        if not payload:
+            payload = _load_quick_result(workspace_root, run_id=run_id)
         if not payload:
             return {"status": "not_found", "code": "RESULT_NOT_FOUND", "run_id": run_id}
         return {"status": "ok", "run_id": run_id or payload.get("run_id"), "result": payload}
@@ -252,11 +334,135 @@ class DeliveryActionAdapter:
             "next_poll_after_seconds": 5,
         }
 
-    def cancel(self, *, workspace: Path, run_id: str, actor: str = "") -> dict[str, Any]:
+    def quick_change(
+        self,
+        *,
+        workspace: Path,
+        repository: str,
+        target_files: Any,
+        request: str,
+        target_version: str = "",
+        change_type: str = "small_change",
+        actor: str = "",
+        source_message_id: str = "",
+        trace_id: str = "",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        repository = str(repository or "").strip()
+        request = str(request or "").strip()
+        if not repository:
+            raise ValueError("repository required")
+        if not request:
+            raise ValueError("request required")
+        if isinstance(target_files, str):
+            files = [item.strip() for item in target_files.replace(",", "\n").splitlines() if item.strip()]
+        elif isinstance(target_files, (list, tuple)):
+            files = [str(item).strip() for item in target_files if str(item).strip()]
+        else:
+            files = []
+        if not files:
+            raise ValueError("target_files required")
+        if len(files) > 8:
+            raise ValueError("quick change allows at most 8 target files")
+        docs = _docs_dir(workspace)
+        run_id = f"quick-{uuid.uuid4().hex[:12]}"
+        script = Path(__file__).resolve().parents[2] / "scripts" / "quick_change_runner.py"
+        env = os.environ.copy()
+        env.update(
+            {
+                "LUMEN_QUICK_CHANGE_RUN_ID": run_id,
+                "LUMEN_QUICK_CHANGE_ACTOR": actor,
+                "LUMEN_QUICK_CHANGE_SOURCE_MESSAGE_ID": source_message_id,
+                "LUMEN_QUICK_CHANGE_TRACE_ID": trace_id,
+            }
+        )
+        cmd = [
+            sys.executable,
+            str(script),
+            str(docs),
+            "--run-id",
+            run_id,
+            "--repository",
+            repository,
+            "--request",
+            request,
+            "--change-type",
+            str(change_type or "small_change"),
+        ]
+        if target_version:
+            cmd.extend(["--target-version", str(target_version).strip()])
+        if dry_run:
+            cmd.append("--dry-run")
+        for item in files:
+            cmd.extend(["--target-file", item])
+
+        def _bg() -> None:
+            try:
+                subprocess.run(cmd, env=env, check=False, capture_output=True, text=True)
+            except Exception:
+                pass
+
+        threading.Thread(target=_bg, daemon=True).start()
         return {
-            "status": "unsupported",
-            "code": "CANCEL_NOT_IMPLEMENTED",
+            "status": "started",
             "run_id": run_id,
-            "message": "Cancel is not implemented in Mark M1.0; stop the delivery process manually if needed.",
+            "repository": repository,
+            "target_files": files,
+            "target_version": str(target_version or "").strip(),
+            "change_type": str(change_type or "small_change").strip(),
+            "workspace": str(docs),
+            "next_poll_after_seconds": 3,
+        }
+
+    def cancel(self, *, workspace: Path, run_id: str, actor: str = "") -> dict[str, Any]:
+        requested = str(run_id or "").strip()
+        workspace_root = Path(workspace).expanduser().resolve()
+        progress = _load_progress(workspace_root)
+        quick_active = _load_active_quick_result(workspace_root)
+        active_run = str(progress.get("run_id") or quick_active.get("run_id") or "").strip()
+        active_story = str(progress.get("jira_key") or progress.get("story_id") or "").strip()
+        if requested and active_story and requested == active_story:
+            requested = active_run
+        target_run = requested or active_run
+        for lock in _delivery_lock_candidates(workspace_root):
+            pid_path = lock / "pid"
+            if not pid_path.is_file():
+                continue
+            if requested and active_run and requested != active_run:
+                return {
+                    "status": "not_found",
+                    "code": "DELIVERY_RUN_MISMATCH",
+                    "run_id": requested,
+                    "active_run_id": active_run,
+                    "actor": actor,
+                }
+            try:
+                pid = int(pid_path.read_text(encoding="utf-8").strip())
+            except ValueError as exc:
+                raise RuntimeError("delivery process id is invalid") from exc
+            if pid <= 1:
+                raise RuntimeError("delivery process id is invalid")
+            _terminate_process_tree(pid)
+            quick_result = _load_quick_result(workspace_root, run_id=target_run)
+            if quick_result:
+                quick_result["status"] = "cancelled"
+                quick_result["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                for path in _quick_result_candidates(workspace_root, target_run):
+                    if path.is_file():
+                        path.write_text(json.dumps(quick_result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                        break
+            return {
+                "status": "cancelled",
+                "code": "DELIVERY_CANCELLED",
+                "run_id": target_run,
+                "pid": pid,
+                "actor": actor,
+                "message": "The delivery process was stopped safely.",
+            }
+        return {
+            "status": "not_found",
+            "code": "DELIVERY_NOT_ACTIVE",
+            "run_id": target_run,
             "actor": actor,
+            "message": "No active delivery process was found.",
         }

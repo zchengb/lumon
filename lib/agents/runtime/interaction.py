@@ -1,0 +1,192 @@
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+
+_ACTION_REQUIREMENTS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "delivery.start": (("story", "story_id", "issue_key"),),
+    "delivery.cancel": (("run_id", "story", "story_id"),),
+    "delivery.quick_change": (("repository", "repo", "repository_name"), ("target_files", "target_file", "file"), ("request", "task", "change")),
+    "test_case.generate": (("issue_key", "story", "story_id"),),
+    "risk.resolve": (("finding_id",),),
+    "risk.mark_remediated": (("finding_id",),),
+    "risk.reconcile": (("project",),),
+    "agent.job.create": (("target_agent",), ("capability",)),
+    "agent.job.cancel": (("job_id",),),
+    "agent.job.retry": (("job_id",),),
+    "jira.workitem.create": (("summary",),),
+    "jira.workitem.update": (("issue_key",),),
+}
+
+_FIELD_LABELS = {
+    "story": "Story / Jira key",
+    "run_id": "delivery run ID",
+    "issue_key": "Jira issue key",
+    "finding_id": "finding ID",
+    "project": "project",
+    "target_agent": "target Agent",
+    "capability": "capability",
+    "job_id": "job ID",
+    "summary": "Jira title",
+    "repository": "repository",
+    "target_files": "target file(s)",
+    "request": "requested change",
+    "target_version": "target version",
+}
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+
+def _json_safe(value: Any, *, limit: int = 2400) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item, limit=limit) for key, item in list(value.items())[:32]}
+    if isinstance(value, list):
+        return [_json_safe(item, limit=limit) for item in value[:32]]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        if isinstance(value, str):
+            return value[:limit]
+        return value
+    return str(value)[:limit]
+
+
+def _safe_text_list(value: Any, *, limit: int = 8, item_limit: int = 800) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip()[:item_limit] for item in value[:limit] if str(item).strip()]
+
+
+def _bounded_int(value: Any, *, default: int, minimum: int = 0, maximum: int = 32) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(parsed, maximum))
+
+
+def action_missing_fields(
+    action: str,
+    *,
+    resource: dict[str, Any] | None = None,
+    arguments: dict[str, Any] | None = None,
+) -> list[str]:
+    requirements = _ACTION_REQUIREMENTS.get(str(action or "").strip())
+    if not requirements:
+        return []
+    values = {**dict(resource or {}), **dict(arguments or {})}
+
+    def has_value(value: Any) -> bool:
+        if isinstance(value, (list, tuple, set, frozenset, dict)):
+            return bool(value)
+        return bool(str(value or "").strip())
+
+    missing: list[str] = []
+    for alternatives in requirements:
+        if not any(has_value(values.get(key)) for key in alternatives):
+            missing.append(alternatives[0])
+    if str(action or "").strip() == "delivery.quick_change":
+        change_type = str(values.get("change_type") or "").casefold()
+        request = str(values.get("request") or values.get("task") or values.get("change") or "").casefold()
+        if (
+            change_type in {"version", "version_bump", "upgrade_version"}
+            or re.search(r"\b(version|upgrade|bump)\b|版本|升级|更新版本", request)
+        ) and not has_value(values.get("target_version")):
+            missing.append("target_version")
+    return missing
+
+
+def clarification_question(action: str, missing: list[str]) -> str:
+    if str(action or "").strip() == "delivery.quick_change":
+        if "target_version" in missing:
+            return "Which version should I upgrade it to?"
+        if "target_files" in missing:
+            return "Which repository and file should I update?"
+        if "repository" in missing:
+            return "Which repository should I change?"
+        if "request" in missing:
+            return "What exactly should I change?"
+    labels = [_FIELD_LABELS.get(item, item.replace("_", " ")) for item in missing]
+    if len(labels) == 1:
+        return f"Before I continue with `{action}`, what {labels[0]} should I use?"
+    joined = ", ".join(labels[:-1]) + f" and {labels[-1]}"
+    return f"Before I continue with `{action}`, please provide {joined}."
+
+
+def normalize_clarification(
+    payload: dict[str, Any],
+    *,
+    agent_id: str,
+    source_message_id: str = "",
+) -> dict[str, Any] | None:
+    action = str(payload.get("action") or "").strip()
+    question = str(payload.get("question") or payload.get("prompt") or "").strip()
+    missing = [str(item).strip() for item in payload.get("missing", []) if str(item).strip()]
+    if not question:
+        if not action and not missing:
+            return None
+        question = clarification_question(action, missing)
+    now = _now()
+    raw_mode = str(payload.get("mode") or payload.get("interaction_mode") or "clarification").strip().lower()
+    mode = raw_mode if raw_mode in {"clarification", "grill"} else "clarification"
+    raw_loop = str(payload.get("loop") or "").strip().lower()
+    loop = raw_loop if raw_loop in {"business", "technical", "delivery", "quick_change", "general"} else "general"
+    question_number = _bounded_int(payload.get("question_number"), default=1, minimum=1)
+    question_budget = _bounded_int(payload.get("question_budget"), default=4, minimum=1)
+    question_budget = max(question_number, question_budget)
+    return {
+        "question_id": str(payload.get("question_id") or f"q_{uuid.uuid4().hex[:16]}"),
+        "agent_id": str(agent_id or "").strip().lower(),
+        "action": action,
+        "mode": mode,
+        "loop": loop,
+        "question": question[:1000],
+        "missing": missing[:8],
+        "choices": _json_safe(payload.get("choices") if isinstance(payload.get("choices"), list) else []),
+        "impact": str(payload.get("impact") or "").strip()[:1000],
+        "why": str(payload.get("why") or "").strip()[:1200],
+        "recommended": str(payload.get("recommended") or "").strip()[:800],
+        "assumptions": _safe_text_list(payload.get("assumptions"), limit=8),
+        "stop_condition": str(payload.get("stop_condition") or "").strip()[:1000],
+        "question_number": question_number,
+        "question_budget": question_budget,
+        "resource": _json_safe(payload.get("resource") if isinstance(payload.get("resource"), dict) else {}),
+        "arguments": _json_safe(payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}),
+        "authorization_intent": str(payload.get("authorization_intent") or "").strip(),
+        "source_message_id": source_message_id,
+        "created_at": str(payload.get("created_at") or now.isoformat().replace("+00:00", "Z")),
+        "expires_at": str(payload.get("expires_at") or (now + timedelta(days=1)).isoformat().replace("+00:00", "Z")),
+    }
+
+
+def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None = None) -> str:
+    lines = [
+        "[LUMEN INTERACTION CONTRACT]",
+        f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumen conversation.",
+        "If a request is ambiguous or a required target is missing, ask one focused question before acting.",
+        "For a structured clarification, emit exactly one JSON object inside:",
+        '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
+        "Put the same user-facing question inside FINAL_RESPONSE. For a bounded quick change, preserve the user's "
+        "explicit request while collecting missing details; for other mutations, ask for confirmation separately when needed.",
+        "Use the user's latest answer to fill the pending fields. Do not repeat a question that has already been answered.",
+        "[LUMEN GRILL PROTOCOL]",
+        "Use mode=grill for Business Loop, Technical Loop, or design requests when an unresolved decision could change scope, behavior, safety, architecture, verification, ownership, or rollback.",
+        "Inspect available evidence first. Ask for the highest-impact unknown, not every possible preference. Explain why the answer matters, offer 2–4 concrete options with one Recommended option when reasonable, and allow a custom answer.",
+        "Default to one question at a time for natural conversation. Batch independent questions only when the user asked for a plan/checklist or answering them together is materially faster; keep the batch within question_budget.",
+        "Record confirmed answers and owner-approved assumptions in the relevant Story or Technical Plan. Stop grilling when no remaining unknown can change the decision; summarize the result and ask for the explicit approval required by that loop.",
+        "Do not grill bounded quick changes such as a clearly scoped version bump. Inspect, ask only for missing execution fields, then proceed through the configured quick-change policy.",
+        "For a structured grill question, include mode=grill, loop, impact, why, recommended, assumptions, stop_condition, question_number, and question_budget in the clarification JSON.",
+    ]
+    if pending:
+        safe = json.dumps(_json_safe(pending), ensure_ascii=False, separators=(",", ":"))
+        lines.extend(
+            [
+                "There is an active clarification. Continue it when the user's message answers it:",
+                safe,
+            ]
+        )
+    return "\n".join(lines) + "\n"

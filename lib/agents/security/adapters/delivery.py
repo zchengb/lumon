@@ -32,6 +32,8 @@ def execute_delivery_action(request: ActionRequest) -> dict[str, Any]:
     project = str(request.project_slug or request.arguments.get("project") or "").strip()
     story = str(request.resource.get("story") or request.arguments.get("story") or "").strip()
     run_id = str(request.resource.get("run_id") or request.arguments.get("run_id") or "").strip()
+    args = dict(request.arguments or {})
+    resource = dict(request.resource or {})
     docs = _docs_root(project) if project else Path.cwd()
     action = request.action
 
@@ -71,6 +73,24 @@ def execute_delivery_action(request: ActionRequest) -> dict[str, Any]:
         )
 
     if action == "delivery.cancel":
-        return adapter.cancel(workspace=docs, run_id=run_id or story, actor=request.actor_user_id)
+        return adapter.cancel(workspace=docs, run_id=run_id, actor=request.actor_user_id)
+
+    if action == "delivery.quick_change":
+        repository = str(resource.get("repository") or args.get("repository") or args.get("repo") or "").strip()
+        target_files = resource.get("target_files") or args.get("target_files") or resource.get("target_file") or args.get("target_file") or []
+        requested_change = str(
+            resource.get("request") or args.get("request") or args.get("task") or args.get("change") or ""
+        ).strip()
+        return adapter.quick_change(
+            workspace=docs,
+            repository=repository,
+            target_files=target_files,
+            request=requested_change,
+            target_version=str(resource.get("target_version") or args.get("target_version") or "").strip(),
+            change_type=str(resource.get("change_type") or args.get("change_type") or "small_change").strip(),
+            actor=request.actor_user_id,
+            source_message_id=request.source_message_id,
+            trace_id=request.trace_id,
+        )
 
     raise CapabilityDenied(f"unsupported delivery action: {action}")

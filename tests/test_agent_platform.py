@@ -40,6 +40,7 @@ class AgentPlatformTests(unittest.TestCase):
         self.assertEqual(mark.capabilities.filesystem_mode, "workspace_read")
         self.assertIn("risk.resolve", dylan.capabilities.actions)
         self.assertIn("delivery.start", mark.capabilities.actions)
+        self.assertIn("delivery.quick_change", mark.capabilities.actions)
         self.assertIn("test_case.generate", mark.capabilities.actions)
         self.assertIn("agent.job.create", milchick.capabilities.actions)
 

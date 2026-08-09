@@ -74,8 +74,8 @@ Use interactive Q&A whenever the environment supports it.
 
 Rules:
 
-- Ask all remaining high-impact technical questions in one checklist turn unless the user asks for progressive single-question mode.
-- Ask the questions that most affect architecture, data model, API contract, runtime, or verification first.
+- Use the Lumen Grill protocol for remaining high-impact technical questions. Ask one question at a time when the next answer depends on the previous answer; otherwise use a small checklist batch when the user asks for a plan.
+- Ask the questions that most affect architecture, data model, API contract, runtime, or verification first, and skip anything repository evidence already resolves.
 - Provide 2-4 concrete options per question and mark one as `Recommended` when reasonable.
 - Always allow a custom answer.
 - Prefer choices over blanks. Do not ask the user to fill an empty template field when you can offer likely options from repo context.

@@ -440,6 +440,10 @@ _CONTEXT_V2_COLUMNS = {
     "created_at": "TEXT",
 }
 
+_AGENT_SESSION_COLUMNS = {
+    "pending_json": "TEXT",
+}
+
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -500,6 +504,7 @@ def migrate(conn: sqlite3.Connection) -> None:
 
 def migrate_global(conn: sqlite3.Connection) -> None:
     conn.executescript(GLOBAL_SCHEMA_SQL)
+    _add_missing_columns(conn, "agent_session", _AGENT_SESSION_COLUMNS)
     if "conversation_context" in {
         str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }:

@@ -238,6 +238,7 @@ def default_executors() -> dict[str, Executor]:
         "delivery.result",
         "delivery.start",
         "delivery.cancel",
+        "delivery.quick_change",
         "story.read",
         "technical_plan.read",
     ):

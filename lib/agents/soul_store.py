@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -235,6 +236,7 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
     config = load_agents_config()
     access = config.get("access") if isinstance(config.get("access"), dict) else {}
     recent = {"user_ids": [], "chat_ids": [], "users": [], "chats": [], "names": {}}
+    pending_questions: list[dict[str, Any]] = []
     try:
         from risk.store import GlobalAgentStore
         from feishu.identity import enrich_feishu_identities
@@ -281,6 +283,44 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
             store.close()
     except Exception:
         pass
+    try:
+        from risk.store import GlobalAgentStore
+
+        store = GlobalAgentStore()
+        try:
+            rows = store.conn.execute(
+                """
+                SELECT agent_id, project_slug, pending_json, last_active_at
+                FROM agent_session
+                WHERE pending_json IS NOT NULL AND pending_json != ''
+                ORDER BY last_active_at DESC
+                LIMIT 50
+                """
+            ).fetchall()
+            for row in rows:
+                try:
+                    pending = json.loads(row["pending_json"])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(pending, dict):
+                    continue
+                if project and str(row["project_slug"] or "").strip() not in {"", str(project).strip()}:
+                    continue
+                pending_questions.append(
+                    {
+                        "question_id": str(pending.get("question_id") or ""),
+                        "agent_id": str(pending.get("agent_id") or row["agent_id"] or ""),
+                        "action": str(pending.get("action") or ""),
+                        "question": str(pending.get("question") or ""),
+                        "missing": pending.get("missing") if isinstance(pending.get("missing"), list) else [],
+                        "created_at": str(pending.get("created_at") or row["last_active_at"] or ""),
+                        "expires_at": str(pending.get("expires_at") or ""),
+                    }
+                )
+        finally:
+            store.close()
+    except Exception:
+        pass
     return {
         "enabled": bool(config.get("enabled", False)),
         "home": str(agents_home()),
@@ -299,6 +339,7 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
             "legacy_warning": str(access.get("default_policy") or "legacy_allow") == "legacy_allow",
         },
         "recent_feishu": recent,
+        "pending_questions": pending_questions,
         "agents": [agent_settings_view(agent_id, config) for agent_id in AGENT_META],
         "test_case": test_case_settings_view(project, config),
     }

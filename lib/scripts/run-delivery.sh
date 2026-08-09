@@ -31,6 +31,7 @@ STARTED_FILE="${WORKSPACE_DIR}/results/delivery-started.json"
 PROGRESS_PY="${LUMEN_LIB_DIR}/delivery_progress.py"
 ARCHIVE_PY="${LUMEN_LIB_DIR}/archive_delivery_run.py"
 AGENT_TRACE_PY="${LUMEN_LIB_DIR}/agent_trace.py"
+SECURE_AGENT_PY="${LUMEN_LIB_DIR}/run-agent-secure.py"
 WEB_SESSION_PY="${LUMEN_LIB_DIR}/web_session.py"
 WEB_SESSION_ROOT=""
 WEB_SESSION_STATUS="completed"
@@ -217,7 +218,7 @@ PY
 MODEL="${CURSOR_AGENT_MODEL:-$(model_from_config)}"
 MODEL="${MODEL:-cursor-grok-4.5-medium}"
 export LUMEN_MODEL="${MODEL}"
-SANDBOX_MODE="${CURSOR_AGENT_SANDBOX:-disabled}"
+SANDBOX_MODE="${CURSOR_AGENT_SANDBOX:-enabled}"
 OUTPUT_FORMAT="${CURSOR_AGENT_OUTPUT_FORMAT:-stream-json}"
 STREAM_PARTIAL="${CURSOR_AGENT_STREAM_PARTIAL:-1}"
 AGENT_TIMEOUT_SECONDS="${CURSOR_AGENT_TIMEOUT_SECONDS:-$(execution_seconds agent_timeout_seconds 3600)}"
@@ -351,12 +352,13 @@ run_delivery_agent() {
   local stage="$2"
   local attempt="$3"
   local stage_label="$4"
+  [[ "${SANDBOX_MODE}" == "enabled" ]] || fail "Auto Delivery requires CURSOR_AGENT_SANDBOX=enabled. Unsafe Cursor execution is disabled."
+  local secure_agent=(python3 "${SECURE_AGENT_PY}" --agent-id mark --project "${STORY_REF}")
   local agent_args=(
     --workspace "${WORKSPACE_ROOT}"
     --sandbox "${SANDBOX_MODE}"
     --trust
     -p
-    -f
     --output-format "${OUTPUT_FORMAT}"
     --model "${MODEL}"
   )
@@ -372,20 +374,20 @@ run_delivery_agent() {
   if [[ -f "${AGENT_TRACE_PY}" ]]; then
     local lumen_version="" provider_version=""
     [[ -f "${LUMEN_LIB_DIR}/../../VERSION" ]] && lumen_version="$(tr -d '[:space:]' < "${LUMEN_LIB_DIR}/../../VERSION")"
-    provider_version="$(agent --version 2>/dev/null || true)"
+    provider_version="$("${secure_agent[@]}" -- agent --version 2>/dev/null || true)"
     python3 "${AGENT_TRACE_PY}" run \
       --workspace-root "${WORKSPACE_ROOT}" --docs-dir "${DOCS_DIR}" --story "${STORY_REF}" \
       --run-id "${RUN_ID}" --stage "${stage}" --attempt "${attempt}" \
       --provider cursor-cli --model "${MODEL}" --output-format "${OUTPUT_FORMAT}" --sandbox "${SANDBOX_MODE}" \
       --lumen-version "${lumen_version}" --provider-version "${provider_version}" --timeout "${AGENT_TIMEOUT_SECONDS}" --idle-timeout "${AGENT_IDLE_TIMEOUT_SECONDS}" \
-      -- agent "${agent_args[@]}" \
+      -- "${secure_agent[@]}" -- agent "${agent_args[@]}" \
       < <(printf '%s' "${prompt}") > >(tee -a "${LOG_FILE}") 2> >(tee -a "${LOG_FILE}" >&2)
     local agent_exit=$?
   elif [[ "${OUTPUT_FORMAT}" == "stream-json" ]] && command -v python3 >/dev/null 2>&1 && [[ -f "${LUMEN_LIB_DIR}/format_scan_log.py" ]]; then
-    agent "${agent_args[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}" | python3 "${LUMEN_LIB_DIR}/format_scan_log.py"
+    "${secure_agent[@]}" -- agent "${agent_args[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}" | python3 "${LUMEN_LIB_DIR}/format_scan_log.py"
     local agent_exit=${PIPESTATUS[0]}
   else
-    agent "${agent_args[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}"
+    "${secure_agent[@]}" -- agent "${agent_args[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}"
     local agent_exit=${PIPESTATUS[0]}
   fi
   set -e

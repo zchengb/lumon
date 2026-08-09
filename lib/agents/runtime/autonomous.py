@@ -11,10 +11,16 @@ from agents.project_resolver import known_project_slugs, load_chat_project_map, 
 from agents.runner import default_runner
 from agents.runtime.cursor_runtime import CursorAgentRuntime
 from agents.runtime.final_response import extract_final_response, prefer_action_summary
+from agents.runtime.interaction import (
+    action_missing_fields,
+    clarification_question,
+    interaction_contract_prompt,
+    normalize_clarification,
+)
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
-from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
+from agents.security.access_policy import authorize_agent_interaction, classify_authorization_intent, security_context_prompt
 from agents.security.flags import workspace_isolation_v2_enabled
 from agents.security.trusted import execute_trusted_actions, trusted_context_from_meta
 from feishu.messenger import FeishuMessenger
@@ -251,6 +257,7 @@ def handle_autonomous_conversation(
                         session = None
 
             is_new = session is None
+            pending: dict[str, Any] | None = None
             if is_new:
                 session = store.create(
                     agent_id=agent_id,
@@ -267,7 +274,7 @@ def handle_autonomous_conversation(
                     workspace_path=str(workspace),
                     user_message=anchored_text,
                 )
-                prompt = f"{prompt}\n\n{security_block}\n"
+                prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id)}"
                 provider_session_id = None
             else:
                 if str(Path(session["workspace_path"]).resolve()) != str(workspace):
@@ -287,10 +294,11 @@ def handle_autonomous_conversation(
                         workspace_path=str(workspace),
                         user_message=anchored_text,
                     )
-                    prompt = f"{prompt}\n\n{security_block}\n"
+                    prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id)}"
                     provider_session_id = None
                     is_new = True
                 else:
+                    pending = store.get_pending(session)
                     checkpoint = None
                     if session.get("checkpoint_json"):
                         try:
@@ -302,7 +310,7 @@ def handle_autonomous_conversation(
                         project_slug=slug,
                         checkpoint=checkpoint,
                     )
-                    prompt = f"{prompt}\n\n{security_block}\n"
+                    prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id, pending=pending)}"
                     provider_session_id = session.get("provider_session_id") or None
 
             cursor = runtime or CursorAgentRuntime(
@@ -366,7 +374,7 @@ def handle_autonomous_conversation(
                     workspace_path=str(workspace),
                     user_message=anchored_text,
                 )
-                prompt = f"{prompt}\n\n{security_block}\n"
+                prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id)}"
                 run_kwargs = {
                     "workspace": workspace,
                     "prompt": prompt,
@@ -434,8 +442,48 @@ def handle_autonomous_conversation(
 
             obs.upsert_trace(trace, state="completed", latency_ms=result.duration_ms, project_slug=slug)
             parsed = extract_final_response(result.text)
+            clarification = normalize_clarification(
+                parsed.clarification_request or {},
+                agent_id=agent_id,
+                source_message_id=message_id,
+            ) if parsed.clarification_request else None
+            if clarification and not clarification.get("authorization_intent"):
+                clarification["authorization_intent"] = classify_authorization_intent(text)
+            action_requests = list(parsed.action_requests)
+            if clarification is None and action_requests:
+                for request in action_requests:
+                    missing = action_missing_fields(
+                        str(request.get("action") or ""),
+                        resource=request.get("resource") if isinstance(request.get("resource"), dict) else {},
+                        arguments=request.get("arguments") if isinstance(request.get("arguments"), dict) else {},
+                    )
+                    if missing:
+                        clarification = normalize_clarification(
+                            {
+                                "action": str(request.get("action") or ""),
+                                "question": clarification_question(str(request.get("action") or ""), missing),
+                                "missing": missing,
+                                "resource": request.get("resource") or {},
+                                "arguments": request.get("arguments") or {},
+                                "authorization_intent": classify_authorization_intent(text),
+                            },
+                            agent_id=agent_id,
+                            source_message_id=message_id,
+                        )
+                        action_requests = []
+                        break
+            if clarification:
+                store.save_pending(session["session_id"], clarification)
+            elif action_requests:
+                store.clear_pending(session["session_id"])
             action_receipts: list[dict[str, Any]] = []
-            if parsed.action_requests:
+            if action_requests and not clarification:
+                quick_change_continuation = bool(
+                    pending
+                    and pending.get("action") == "delivery.quick_change"
+                    and pending.get("authorization_intent") in {"mutate_explicit", "confirm_previous"}
+                    and any(str(item.get("action") or "") == "delivery.quick_change" for item in action_requests)
+                )
                 context = trusted_context_from_meta(
                     agent_id=agent_id,
                     project_slug=slug,
@@ -443,8 +491,9 @@ def handle_autonomous_conversation(
                     trace_id=trace.trace_id,
                     user_text=text,
                     access_decision=access,
+                    explicit_authorization=True if quick_change_continuation else None,
                 )
-                receipts = execute_trusted_actions(context=context, requests=parsed.action_requests)
+                receipts = execute_trusted_actions(context=context, requests=action_requests)
                 action_receipts = [r.to_dict() for r in receipts]
                 obs.emit(
                     trace,
@@ -480,11 +529,12 @@ def handle_autonomous_conversation(
                 reply_text = prefer_action_summary(reply_text, action_receipts)
             return {
                 "status": "ok",
-                "action": "autonomous.reply",
+                "action": "autonomous.clarification" if clarification else "autonomous.reply",
                 "text": reply_text,
                 "final_response_mode": parsed.mode,
                 "final_response_valid": parsed.valid,
                 "action_receipts": action_receipts,
+                "pending_clarification": clarification,
                 "trace_id": trace.trace_id,
                 "session_id": session["session_id"],
                 "provider_session_id": result.provider_session_id,

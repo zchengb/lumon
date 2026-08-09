@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import TurndownService from "turndown";
 import {
-  Activity, Bold, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, CircleDot, CircleHelp, Code2, Copy,
+  Activity, Bold, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, CircleDot, CircleHelp, Code2, Copy, LayoutDashboard,
   Calendar, Eye, EyeOff, ExternalLink, FileCode2, FolderGit2, GitBranch, Heading2, Italic, Link2, List, ListFilter, LoaderCircle,
   Play, RotateCcw, Save, ScanSearch, Search, Settings2, Terminal, Trash2, User,
   Maximize2, Minimize2, ShieldCheck, Sparkles, Truck, Workflow, X, ZoomIn, ZoomOut
@@ -25,7 +25,7 @@ const FULLSCREEN_ZOOM_MAX = 3;
 const FULLSCREEN_ZOOM_STEP = 0.25;
 
 type RecordValue = Record<string, any>;
-type Tab = "scan" | "delivery" | "patch" | "observatory" | "repositories" | "prompts" | "settings";
+type Tab = "overview" | "scan" | "delivery" | "patch" | "observatory" | "repositories" | "prompts" | "settings";
 type NoticeTone = "success" | "error" | "info";
 type Notice = { message: string; tone: NoticeTone };
 type Notify = (message: string, tone?: NoticeTone) => void;
@@ -114,6 +114,7 @@ interface AgentsSettingsPayload {
     chats?: FeishuIdentityItem[];
     names?: Record<string, string>;
   };
+  pending_questions?: Array<{ question_id?: string; agent_id?: string; action?: string; question?: string; missing?: string[]; created_at?: string; expires_at?: string }>;
   agents?: AgentSettings[];
   test_case?: TestCaseSettings;
 }
@@ -133,6 +134,7 @@ interface DashboardData extends RecordValue {
 }
 
 const tabItems: Array<{ id: Tab; label: string; icon: typeof ScanSearch }> = [
+  { id: "overview", label: "OVERVIEW", icon: LayoutDashboard },
   { id: "scan", label: "AUTO SCAN", icon: ScanSearch },
   { id: "delivery", label: "AUTO DELIVERY", icon: Truck },
   { id: "patch", label: "AUTO PATCH", icon: Code2 },
@@ -143,6 +145,7 @@ const tabItems: Array<{ id: Tab; label: string; icon: typeof ScanSearch }> = [
 ];
 
 const tabContext: Record<Tab, { title: string; description: string }> = {
+  overview: { title: "MANAGER OVERVIEW", description: "Agent ownership, workflow health, and the next human decision." },
   scan: { title: "AUTO SCAN", description: "Review history and manage tracked findings." },
   delivery: { title: "AUTO DELIVERY", description: "Story execution, verification, and pull request delivery." },
   patch: { title: "AUTO PATCH", description: "Jira Task and Bug capture, focused fixes, and safe handoff." },
@@ -712,7 +715,7 @@ function App() {
   const initialProject = new URLSearchParams(window.location.search).get("project") || window.DASHBOARD_DATA?.interactive?.project || "";
   const [project, setProject] = useState(initialProject);
   const [data, setData] = useState<DashboardData | null>(null);
-  const pathTab = (tabItems.find((item) => `/${item.id}` === window.location.pathname)?.id || "scan") as Tab;
+  const pathTab = (tabItems.find((item) => `/${item.id}` === window.location.pathname)?.id || "overview") as Tab;
   const [activeTab, setActiveTab] = useState<Tab>(pathTab);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -824,6 +827,7 @@ function App() {
       <div className="page-content" key={activeTab}>
         {error && <div className="status-note"><Activity size={15} />{error}</div>}
         {!data && loading ? <div className="loading-state"><LoaderCircle size={22} className="spin" /> Loading local workspace state…</div> : null}
+        {data && activeTab === "overview" && <OverviewView data={data} project={project} onNavigate={changeTab} />}
         {data && activeTab === "scan" && <ScanView data={data} project={project} notify={notify} reload={load} />}
         {data && activeTab === "delivery" && <DeliveryView data={data} project={project} notify={notify} reload={load} />}
         {data && activeTab === "patch" && <PatchView data={data} project={project} notify={notify} reload={load} />}
@@ -887,6 +891,59 @@ function isDeliveryReadyStory(item: RecordValue) {
   const technical = String(item.technicalStatus || "").toLowerCase();
   const delivery = String(item.deliveryStatus || "not_started").toLowerCase();
   return business === "ready" && technical === "approved" && ["", "not_started", "blocked"].includes(delivery);
+}
+
+function OverviewView({ data, project, onNavigate }: { data: DashboardData; project: string; onNavigate: (tab: Tab) => void }) {
+  const settings = data.interactive?.agents || {};
+  const agents = settings.agents || [];
+  const pending = settings.pending_questions || [];
+  const workflows = [
+    { id: "scan" as Tab, name: "Auto Scan", owner: "Dylan", status: data.runs?.[0]?.status || "not started", detail: "Findings, risk triage, and review-ready evidence." },
+    { id: "delivery" as Tab, name: "Auto Delivery", owner: "Mark", status: data.delivery?.current?.delivery_status || "not started", detail: "Approved stories, verification, and pull request delivery." },
+    { id: "patch" as Tab, name: "Auto Patch", owner: "Irving", status: data.patch?.current?.patch_status || "not started", detail: "Jira Task/Bug capture, focused fixes, and safe handoff." },
+  ];
+  const agentState = (agent: AgentSettings) => {
+    if (!agent.app_id || !agent.app_secret_configured) return "setup";
+    if (!agent.conversation_enabled) return "paused";
+    return "ready";
+  };
+  const readyAgents = agents.filter((agent) => agentState(agent) === "ready").length;
+  const activeWorkflows = workflows.filter((workflow) => /running|progress|active/i.test(String(workflow.status))).length;
+  const stateLabel = (state: string) => state === "setup" ? "not configured" : state;
+  return <div className="manager-overview">
+    <PageIntro title="Manager overview" description={`${project || "Current project"} · one place to see Agent ownership, workflow health, and the next decision.`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />Open Settings</button>} />
+    <div className="metrics">
+      <Metric label="Agents ready" value={`${readyAgents}/${agents.length}`} />
+      <Metric label="Workflows active" value={activeWorkflows} />
+      <Metric label="Questions waiting" value={pending.length} />
+      <Metric label="Gateway" value={settings.enabled ? "Enabled" : "Paused"} />
+    </div>
+    <Panel title="Agent roster" action={<span className="muted">{agents.length} roles · shared runtime</span>}>
+      <div className="agent-roster">
+        {agents.length ? agents.map((agent) => {
+          const state = agentState(agent);
+          const workflow = agent.workflow === "auto_scan" ? "scan" : agent.workflow === "auto_delivery" ? "delivery" : agent.workflow === "auto_patch" ? "patch" : "";
+          return <article className="agent-card" key={agent.id}>
+            <div className="agent-card-heading"><div><span className="overview-kicker">{agent.id}</span><h4>{agent.display_name}</h4><p>{agent.title}</p></div><Badge value={stateLabel(state)} /></div>
+            <div className="agent-card-facts"><div><span>Role</span><strong>{agent.role}</strong></div><div><span>Workflow</span><strong>{agent.workflow}</strong></div><div><span>Runner</span><strong>{text(agent.security?.sandbox, "enabled")}</strong></div></div>
+            <div className="agent-card-footer"><span>{state === "ready" ? "Conversation and actions available" : state === "paused" ? "Conversation is paused in Settings" : "Credentials are required"}</span>{workflow ? <button className="text-button" onClick={() => onNavigate(workflow as Tab)}>Open workflow <ChevronRight size={13} /></button> : <span className="overview-manager-label">Manager</span>}</div>
+          </article>;
+        }) : <Empty label="No Agent roles available yet." />}
+      </div>
+    </Panel>
+    <Panel title="Workflow control" action={<span className="muted">Three human-owned capabilities</span>}>
+      <div className="workflow-roster">
+        {workflows.map((workflow) => <article className="workflow-card" key={workflow.id}>
+          <div className="workflow-card-heading"><div><span className="overview-kicker">{workflow.owner}</span><h4>{workflow.name}</h4></div><Badge value={workflow.status} /></div>
+          <p>{workflow.detail}</p>
+          <button className="button secondary" onClick={() => onNavigate(workflow.id)}>Inspect {workflow.name} <ChevronRight size={13} /></button>
+        </article>)}
+      </div>
+    </Panel>
+    <Panel title="Questions waiting for you" action={<span className="muted">{pending.length ? `${pending.length} unanswered` : "Conversation is clear"}</span>}>
+      {pending.length ? <div className="pending-question-list">{pending.map((question, index) => <article className="pending-question" key={question.question_id || `${question.agent_id}-${index}`}><div className="pending-question-heading"><div><span className="overview-kicker">{text(question.agent_id, "Agent")}</span><strong>{text(question.action, "Clarification")}</strong></div><time>{when(question.created_at)}</time></div><p>{text(question.question, "The Agent needs one more decision before continuing.")}</p></article>)}</div> : <div className="overview-empty"><CircleHelp size={17} />No unanswered Agent questions.</div>}
+    </Panel>
+  </div>;
 }
 
 function ScanView({ data, project, notify, reload }: { data: DashboardData; project: string; notify: Notify; reload: () => Promise<void> }) {
@@ -2099,8 +2156,8 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
               <Field label="Typing reaction"><select value={agent.reaction_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { reaction_enabled: event.target.value === "on" })}><option value="on">Enabled</option><option value="off">Off</option></select></Field>
               <Field label="Max concurrent jobs"><input type="number" min="1" max="32" value={agent.max_concurrent_jobs} onChange={(event) => updateAgent(agent.id, { max_concurrent_jobs: Number(event.target.value) || 3 })} /></Field>
               <Field label="SOUL version"><input value={agent.soul_version} onChange={(event) => updateAgent(agent.id, { soul_version: event.target.value })} /></Field>
-              <Field label="Role id"><input value={agent.role} onChange={(event) => updateAgent(agent.id, { role: event.target.value })} /></Field>
-              <Field label="Workflow"><input value={agent.workflow} onChange={(event) => updateAgent(agent.id, { workflow: event.target.value })} /></Field>
+              <Field label="Role id" help="Runtime identity is managed by the Agent registry."><input className="settings-readonly-field" value={agent.role} readOnly aria-readonly="true" /></Field>
+              <Field label="Workflow" help="Workflow ownership is managed by the Agent registry."><input className="settings-readonly-field" value={agent.workflow} readOnly aria-readonly="true" /></Field>
             </div>
             <label className="field agent-soul-field"><span>SOUL.md</span><textarea rows={index === 0 ? 16 : 14} value={agent.soul} spellCheck={false} onChange={(event) => updateAgent(agent.id, { soul: event.target.value })} /></label>
           </div>

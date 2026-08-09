@@ -66,10 +66,12 @@ class MarkM10Tests(unittest.TestCase):
         self.assertIn("Delivery Lead", prompt)
         self.assertIn("lumen delivery", prompt)
         self.assertIn("Never modify business source code", prompt)
+        self.assertIn("Lumen Grill protocol", prompt)
+        self.assertIn("Do not turn a bounded quick change into a Story", prompt)
         resume = build_resume_prompt(user_message="继续", project_slug="mbpass")
         self.assertIn("Remain Mark", resume)
         self.assertIn("Relationship — Dylan", prompt)
-        self.assertIn("Soul Version: **2**", prompt)
+        self.assertIn("Soul Version: **3**", prompt)
         self.assertTrue(prompt.startswith("[MARK SESSION BOOTSTRAP]"))
 
     def test_workspace_contract(self) -> None:
@@ -160,6 +162,92 @@ class MarkM10Tests(unittest.TestCase):
             self.assertEqual(started["trace_id"], "tr1")
             blocked = adapter.start(workspace=docs, story="missing-story")
             self.assertEqual(blocked["status"], "blocked")
+
+    def test_cancel_stops_active_delivery_process(self) -> None:
+        adapter = DeliveryActionAdapter()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch(
+            "agents.mark.delivery_adapter._terminate_process_tree"
+        ) as terminate:
+            docs = Path(tmp)
+            lock = docs / "locks" / "delivery-run"
+            lock.mkdir(parents=True)
+            (lock / "pid").write_text("1234\n", encoding="utf-8")
+            result = adapter.cancel(workspace=docs, run_id="", actor="ou_user")
+        self.assertEqual("cancelled", result["status"])
+        self.assertEqual(1234, result["pid"])
+        terminate.assert_called_once_with(1234)
+
+    def test_quick_change_clarification_keeps_explicit_intent(self) -> None:
+        from dataclasses import replace
+
+        ensure_definitions_loaded()
+        mark = get_definition("mark")
+        assert mark is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            (docs / "stories").mkdir()
+            previous = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text=(
+                            '<FINAL_RESPONSE>Which version should I use?</FINAL_RESPONSE>'
+                            '<ACTION_REQUEST>{"action":"delivery.quick_change","arguments":'
+                            '{"repository":"admin-portal","target_files":["package.json"],'
+                            '"request":"upgrade the version","change_type":"version_bump"}}</ACTION_REQUEST>'
+                        ),
+                        provider_session_id="sess-mark",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text=(
+                            '<FINAL_RESPONSE>Starting the bounded change.</FINAL_RESPONSE>'
+                            '<ACTION_REQUEST>{"action":"delivery.quick_change","arguments":'
+                            '{"repository":"admin-portal","target_files":["package.json"],'
+                            '"request":"upgrade the version","change_type":"version_bump",'
+                            '"target_version":"1.2.3"}}</ACTION_REQUEST>'
+                        ),
+                        provider_session_id="sess-mark",
+                        status="succeeded",
+                    ),
+                ]
+            )
+            definition = replace(
+                mark,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", docs.resolve()),
+                ensure_workspace_contract=lambda **kwargs: docs,
+            )
+            meta = {"chat_id": "oc1", "thread_id": "omt1", "user_id": "ou1", "message_id": "om1"}
+            try:
+                with mock.patch("agents.runtime.autonomous.resolve_project", return_value={"slug": "mbpass", "workspace": str(docs)}):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            first = handle_autonomous_conversation(
+                                definition=definition,
+                                text="Please upgrade the version",
+                                meta=meta,
+                                common=_v4_common(),
+                                runtime=runtime,
+                            )
+                            with mock.patch("agents.runtime.autonomous.execute_trusted_actions", return_value=[]) as execute:
+                                second = handle_autonomous_conversation(
+                                    definition=definition,
+                                    text="1.2.3",
+                                    meta={**meta, "message_id": "om2"},
+                                    common=_v4_common(),
+                                    runtime=runtime,
+                                )
+                self.assertEqual("autonomous.clarification", first.get("action"))
+                self.assertIsNotNone(first.get("pending_clarification"))
+                self.assertEqual("ok", second.get("status"))
+                execute.assert_called_once()
+                self.assertTrue(execute.call_args.kwargs["context"].explicit_authorization)
+            finally:
+                if previous is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous
 
     def test_mark_autonomous_reply_no_delivery_side_effect(self) -> None:
         from dataclasses import replace

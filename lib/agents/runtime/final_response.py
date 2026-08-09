@@ -22,6 +22,11 @@ _ACTION_ENVELOPE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_CLARIFICATION_ENVELOPE = re.compile(
+    r"<CLARIFICATION_REQUEST>\s*(.*?)\s*</CLARIFICATION_REQUEST>",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _FORGED_IDENTITY_KEYS = frozenset(
     {
         "actor_user_id",
@@ -45,6 +50,7 @@ class FinalResponseParse:
     fallback_used: bool
     error_code: str = ""
     action_requests: list[dict[str, Any]] = field(default_factory=list)
+    clarification_request: dict[str, Any] | None = None
 
 
 def sanitize_feishu_answer(text: str) -> str:
@@ -105,9 +111,21 @@ def extract_action_requests(raw: str) -> list[dict[str, Any]]:
     return requests
 
 
+def extract_clarification_request(raw: str) -> dict[str, Any] | None:
+    for match in _CLARIFICATION_ENVELOPE.finditer(str(raw or "")):
+        try:
+            payload = json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return _strip_forged_identity(payload)
+    return None
+
+
 def extract_final_response(raw: str) -> FinalResponseParse:
     text = str(raw or "").strip()
     actions = extract_action_requests(text)
+    clarification = extract_clarification_request(text)
     if not text:
         return FinalResponseParse(
             text="",
@@ -116,6 +134,7 @@ def extract_final_response(raw: str) -> FinalResponseParse:
             fallback_used=True,
             error_code="EMPTY_RESPONSE",
             action_requests=actions,
+            clarification_request=clarification,
         )
     match = _FINAL_ENVELOPE.search(text)
     if match:
@@ -127,9 +146,14 @@ def extract_final_response(raw: str) -> FinalResponseParse:
                 valid=True,
                 fallback_used=False,
                 action_requests=actions,
+                clarification_request=clarification,
             )
-    without_actions = _ACTION_ENVELOPE.sub("", text).strip()
-    cleaned = sanitize_feishu_answer(without_actions or text)
+    without_actions = _CLARIFICATION_ENVELOPE.sub("", _ACTION_ENVELOPE.sub("", text)).strip()
+    cleaned = sanitize_feishu_answer(without_actions)
+    if clarification and not cleaned:
+        cleaned = str(clarification.get("question") or "").strip()
+    if not cleaned:
+        cleaned = sanitize_feishu_answer(text)
     return FinalResponseParse(
         text=cleaned,
         mode="legacy_sanitizer",
@@ -137,6 +161,7 @@ def extract_final_response(raw: str) -> FinalResponseParse:
         fallback_used=True,
         error_code="" if cleaned else "SANITIZE_EMPTY",
         action_requests=actions,
+        clarification_request=clarification,
     )
 
 
