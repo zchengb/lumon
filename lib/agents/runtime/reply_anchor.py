@@ -135,6 +135,63 @@ def is_dylan_thread_context(*, parent_id: str = "", root_id: str = "", thread_id
         thread_id=thread_id,
     )
 
+
+def _collect_feishu_post_text(value: Any, chunks: list[str]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _collect_feishu_post_text(item, chunks)
+        return
+    if not isinstance(value, dict):
+        text = str(value or "").strip()
+        if text:
+            chunks.append(text)
+        return
+
+    tag = str(value.get("tag") or "").strip().lower()
+    if tag in {"text", "a", "at"}:
+        text = str(value.get("text") or value.get("content") or value.get("user_name") or "").strip()
+        if text:
+            chunks.append(text)
+        return
+    if tag in {"img", "image"} or value.get("image_key"):
+        chunks.append("[Image attachment]")
+        return
+    if tag in {"file", "media", "audio", "sticker"}:
+        chunks.append("[File attachment]")
+        return
+
+    for key in ("title", "text", "content", "zh_cn", "en_us", "ja_jp", "body", "elements"):
+        if key in value:
+            _collect_feishu_post_text(value[key], chunks)
+
+
+def extract_feishu_image_keys(msg_type: str, content: Any) -> list[str]:
+    raw = content
+    if isinstance(content, dict):
+        raw = json.dumps(content, ensure_ascii=False)
+    try:
+        parsed = json.loads(str(raw or ""))
+    except Exception:
+        return []
+    keys: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                collect(item)
+            return
+        if not isinstance(value, dict):
+            return
+        image_key = str(value.get("image_key") or "").strip()
+        if image_key:
+            keys.append(image_key)
+        for item in value.values():
+            collect(item)
+
+    collect(parsed)
+    return list(dict.fromkeys(keys))[:8]
+
+
 def extract_content_text(msg_type: str, content: Any) -> str:
     raw = content
     if isinstance(content, dict):
@@ -151,6 +208,9 @@ def extract_content_text(msg_type: str, content: Any) -> str:
     if msg_type == "text" or "text" in parsed:
         return str(parsed.get("text") or "").strip()
     chunks: list[str] = []
+    if msg_type in {"post", "rich_text"} or any(key in parsed for key in ("zh_cn", "en_us", "ja_jp")):
+        _collect_feishu_post_text(parsed, chunks)
+        return "\n".join(dict.fromkeys(chunk.strip() for chunk in chunks if chunk.strip())).strip() or "[Message attachment]"
     body = parsed.get("body") if isinstance(parsed.get("body"), dict) else {}
     elements = body.get("elements") if isinstance(body.get("elements"), list) else parsed.get("elements")
     if isinstance(elements, list):
@@ -166,7 +226,12 @@ def extract_content_text(msg_type: str, content: Any) -> str:
     title = header.get("title") if isinstance(header.get("title"), dict) else {}
     if title.get("content"):
         chunks.insert(0, str(title["content"]))
-    return "\n".join(c.strip() for c in chunks if str(c).strip()).strip() or text[:2000]
+    extracted = "\n".join(c.strip() for c in chunks if str(c).strip()).strip()
+    if extracted:
+        return extracted
+    if msg_type in {"image", "file", "media", "audio", "sticker"}:
+        return "[Image attachment]" if msg_type == "image" else "[File attachment]"
+    return text[:2000]
 
 
 def resolve_reply_anchor(

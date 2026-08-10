@@ -93,6 +93,33 @@ class AgentPlatformTests(unittest.TestCase):
             self.assertTrue(session_contract_current(mark, soul_version="2", protocol_version="1"))
             store.close()
 
+    def test_group_roots_are_isolated_and_thread_replies_share_root(self) -> None:
+        first_root = conversation_scope_id(
+            agent_id="milchick",
+            chat_id="oc1",
+            chat_type="group",
+            message_id="om_root_1",
+            project_slug="mbpass",
+        )
+        first_reply = conversation_scope_id(
+            agent_id="milchick",
+            chat_id="oc1",
+            chat_type="group",
+            thread_id="omt_topic_1",
+            root_id="om_root_1",
+            message_id="om_reply_1",
+            project_slug="mbpass",
+        )
+        second_root = conversation_scope_id(
+            agent_id="milchick",
+            chat_id="oc1",
+            chat_type="group",
+            message_id="om_root_2",
+            project_slug="mbpass",
+        )
+        self.assertEqual(first_root, first_reply)
+        self.assertNotEqual(first_root, second_root)
+
     def test_reply_anchors_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["LUMEN_AGENTS_HOME"] = tmp

@@ -15,13 +15,18 @@ def conversation_scope_id(
     agent_id: str,
     chat_id: str,
     thread_id: str = "",
+    root_id: str = "",
+    message_id: str = "",
+    chat_type: str = "",
     project_slug: str = "",
     user_id: str = "",
     scope: str = "thread_shared",
 ) -> str:
     agent = str(agent_id or "").strip().lower() or "agent"
     chat = str(chat_id or "").strip()
-    thread = str(thread_id or "").strip()
+    thread = str(root_id or thread_id or "").strip()
+    if not thread and str(chat_type or "").strip().lower() in {"group", "topic"}:
+        thread = str(message_id or "").strip()
     project = str(project_slug or "").strip()
     user = str(user_id or "").strip()
     if thread:

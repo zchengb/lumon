@@ -47,6 +47,7 @@ class CursorAgentRuntime:
         self.agent_id = agent_id
         self.project = project
         self.isolated_env: Optional[dict[str, str]] = None
+        self.additional_dirs: list[Path] = []
 
     def _agent_bin(self) -> str:
         for name in ("agent", "cursor-agent"):
@@ -97,6 +98,10 @@ class CursorAgentRuntime:
                 self.model,
             ]
         )
+        for directory in self.additional_dirs:
+            path = Path(directory).expanduser().resolve()
+            if path.is_dir():
+                args.extend(["--add-dir", str(path)])
         if self.trust:
             args.append("--trust")
         args.append(prompt)

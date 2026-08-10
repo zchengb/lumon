@@ -1,0 +1,8 @@
+/* Lumon typography: native SF/PingFang keeps the local Dashboard fast and calm. */
+:root {
+  --lumon-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Segoe UI", sans-serif;
+  font-family: var(--lumon-font-ui);
+  font-weight: 400;
+}

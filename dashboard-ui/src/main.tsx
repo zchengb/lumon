@@ -12,6 +12,7 @@ import {
   Maximize2, Minimize2, ShieldCheck, Sparkles, Truck, Workflow, X, ZoomIn, ZoomOut
 } from "lucide-react";
 import "./styles.css";
+import "./typography.css";
 
 const lumonVersion = __LUMON_VERSION__;
 

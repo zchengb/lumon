@@ -137,7 +137,7 @@ resolve_workspace() {
 require_registry_python() {
   require_python3
   if [[ ! -f "${PROJECTS_REGISTRY_PY}" ]]; then
-    err "Project registry script not found. Re-run install.sh to repair your Lumon CLI installation."
+    err "Project registry script not found. Re-run install.sh to repair your Lumon installation."
     exit 1
   fi
 }
@@ -748,7 +748,7 @@ cmd_upgrade() {
   local before_version
   before_version="$(lumen_version)"
 
-  printf '%sUpgrading Lumon CLI (current: %s, repo: %s)...%s\n' "${BOLD}" "${before_version}" "${repo}" "${RESET}"
+  printf '%sUpgrading Lumon (current: %s, repo: %s)...%s\n' "${BOLD}" "${before_version}" "${repo}" "${RESET}"
 
   local installer_url="https://raw.githubusercontent.com/${repo}/main/get.sh"
   if command -v curl >/dev/null 2>&1; then
@@ -756,16 +756,16 @@ cmd_upgrade() {
   elif command -v wget >/dev/null 2>&1; then
     wget -qO- "${installer_url}" | LUMEN_REPO="${repo}" LUMEN_HOME="${LUMEN_HOME}" bash
   else
-    err "Neither curl nor wget is available to fetch the Lumon CLI upgrade."
+    err "Neither curl nor wget is available to fetch the Lumon upgrade."
     exit 1
   fi
 
   local after_version
   after_version="$(lumen_version)"
   if [[ "${after_version}" == "${before_version}" ]]; then
-    ok "Lumon CLI is already up to date (${after_version})."
+    ok "Lumon is already up to date (${after_version})."
   else
-    ok "Lumon CLI upgraded: ${before_version} -> ${after_version}."
+    ok "Lumon upgraded: ${before_version} -> ${after_version}."
   fi
 
   if [[ "${sync_prompts}" == "1" ]]; then

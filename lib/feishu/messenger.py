@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 from typing import Any, Optional
 
 from agents.registry import APP_ID_ENV
@@ -22,6 +23,7 @@ TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/intern
 REPLY_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply"
 CREATE_URL = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
 UPDATE_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}"
+MESSAGE_RESOURCE_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/resources/{file_key}"
 REACTION_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reactions"
 REACTION_DELETE_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reactions/{reaction_id}"
 
@@ -122,6 +124,34 @@ class FeishuMessenger:
                 with urllib.request.urlopen(request, timeout=timeout) as response:
                     raw = response.read().decode("utf-8")
                     return json.loads(raw) if raw.strip() else {}
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"Feishu API HTTP {exc.code}: {detail}") from exc
+            except Exception as exc:
+                last_exc = exc
+                if attempt + 1 >= retries or not _is_transient(exc):
+                    raise
+                time.sleep(min(2 ** attempt, 8) + 0.25 * attempt)
+        assert last_exc is not None
+        raise last_exc
+
+    def _urlopen_bytes(
+        self,
+        request: urllib.request.Request,
+        *,
+        retries: int = 3,
+        timeout: float = 30,
+        max_bytes: int = 20 * 1024 * 1024,
+    ) -> tuple[bytes, str]:
+        last_exc: BaseException | None = None
+        for attempt in range(max(retries, 1)):
+            try:
+                with urllib.request.urlopen(request, timeout=timeout) as response:
+                    body = response.read(max_bytes + 1)
+                    if len(body) > max_bytes:
+                        raise RuntimeError(f"Feishu resource exceeds {max_bytes} bytes")
+                    content_type = str(response.headers.get("Content-Type") or "application/octet-stream")
+                    return body, content_type.split(";", 1)[0].strip().lower()
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"Feishu API HTTP {exc.code}: {detail}") from exc
@@ -235,6 +265,50 @@ class FeishuMessenger:
             token,
             None,
         )
+
+    def get_message_resource(
+        self,
+        message_id: str,
+        file_key: str,
+        *,
+        resource_type: str = "image",
+    ) -> tuple[bytes, str]:
+        mid = str(message_id or "").strip()
+        key = str(file_key or "").strip()
+        kind = str(resource_type or "image").strip().lower() or "image"
+        if not mid or not key:
+            raise ValueError("message_id and file_key are required")
+        if kind not in {"image", "file"}:
+            raise ValueError("resource_type must be image or file")
+        token = self.tenant_token()
+        url = (
+            MESSAGE_RESOURCE_URL.format(message_id=quote(mid, safe=""), file_key=quote(key, safe=""))
+            + f"?type={quote(kind, safe='')}"
+        )
+        request = urllib.request.Request(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            method="GET",
+        )
+        return self._urlopen_bytes(request)
+
+    def safe_get_message_resource(
+        self,
+        message_id: str,
+        file_key: str,
+        *,
+        resource_type: str = "image",
+    ) -> Optional[tuple[bytes, str]]:
+        try:
+            return self.get_message_resource(message_id, file_key, resource_type=resource_type)
+        except Exception as exc:
+            _LOG.warning(
+                "get_message_resource failed message_id=%s file_key=%s err=%s",
+                message_id,
+                file_key,
+                exc,
+            )
+            return None
 
     def get_user_profile(self, open_id: str) -> dict[str, str]:
         user_id = str(open_id or "").strip()

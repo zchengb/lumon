@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,8 +13,9 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from agents.parser import parse_dylan_text
+from agents.runtime.autonomous import _prepare_feishu_image_context
 from feishu.dedup import MessageDeduper
-from feishu.handlers import extract_text, should_handle
+from feishu.handlers import extract_message_meta, extract_text, should_handle
 from feishu.client_registry import FeishuClientConfig
 from agents.profiles import PROFILES
 
@@ -51,6 +53,53 @@ class AgentBridgeScanTests(unittest.TestCase):
             }
         }
         self.assertIn("扫描", extract_text(event))
+
+    def test_extract_text_from_feishu_post_content(self) -> None:
+        event = {
+            "event": {
+                "message": {
+                    "message_id": "om_image_1",
+                    "msg_type": "post",
+                    "content": '{"zh_cn":{"title":"Admin Portal","content":[[{"tag":"text","text":"Wording 輪播圖改成多圖"},{"tag":"img","image_key":"img_1"}]]}}',
+                }
+            }
+        }
+        text = extract_text(event)
+        self.assertIn("Wording 輪播圖改成多圖", text)
+        self.assertIn("[Image attachment]", text)
+        self.assertEqual('["img_1"]', extract_message_meta(event)["image_keys"])
+
+    def test_image_context_downloads_to_temporary_agent_directory(self) -> None:
+        class Messenger:
+            def safe_get_message_resource(self, message_id, file_key, *, resource_type):
+                self.request = (message_id, file_key, resource_type)
+                return b"fake-png", "image/png"
+
+        messenger = Messenger()
+        context, directory = _prepare_feishu_image_context(
+            meta={"message_id": "om_image_1", "image_keys": '["img_1"]'},
+            messenger=messenger,
+        )
+        try:
+            self.assertIn("Open and inspect", context)
+            self.assertEqual(("om_image_1", "img_1", "image"), messenger.request)
+            self.assertIsNotNone(directory)
+            assert directory is not None
+            self.assertEqual(b"fake-png", (directory / "image-1.png").read_bytes())
+        finally:
+            if directory is not None:
+                shutil.rmtree(directory, ignore_errors=True)
+
+    def test_extract_text_from_image_message_is_not_empty(self) -> None:
+        event = {
+            "event": {
+                "message": {
+                    "msg_type": "image",
+                    "content": '{"image_key":"img_1"}',
+                }
+            }
+        }
+        self.assertEqual("[Image attachment]", extract_text(event))
 
     def test_should_handle_requires_mention_in_group(self) -> None:
         client = FeishuClientConfig(

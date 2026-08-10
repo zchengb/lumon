@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-command Lumon CLI installer.
+# One-command Lumon installer.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/zchengb/lumon-cli/main/get.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/zchengb/lumon-cli/main/get.sh | bash -s -- ~/Projects/MyProject
+#   curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/main/get.sh | bash -s -- ~/Projects/MyProject
 #
 # The optional argument is a workspace directory; if given, Lumon also runs
 # 'lumon init' there after installing (same as install.sh <workspace-dir>).
 #
 # Env overrides:
-#   LUMON_REPO      GitHub "owner/repo" to install from (default: zchengb/lumon-cli)
+#   LUMON_REPO      GitHub "owner/repo" to install from (default: zchengb/lumon)
 #   LUMON_VERSION   Specific release tag to install (default: latest release)
-#   LUMON_HOME      Lumon CLI installation directory (default: ~/.lumon)
+#   LUMON_HOME      Lumon installation directory (default: ~/.lumon)
 #   LUMON_BIN_DIR   Where to place the 'lumon' executable (default: ~/.local/bin)
 
 REPO="${LUMON_REPO:-${LUMEN_REPO:-zchengb/lumon-cli}}"
@@ -97,7 +97,7 @@ install_from_branch() {
   printf '%s' "${pkg_dir}"
 }
 
-printf '%sInstalling Lumon CLI from %s...%s\n' "${BOLD}" "${REPO}" "${RESET}"
+printf '%sInstalling Lumon from %s...%s\n' "${BOLD}" "${REPO}" "${RESET}"
 
 ASSET_URL="$(resolve_release_asset_url || true)"
 

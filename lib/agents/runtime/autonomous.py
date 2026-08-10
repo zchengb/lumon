@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
@@ -20,6 +22,7 @@ from agents.runtime.interaction import (
     format_clarification_reply,
     interaction_contract_prompt,
     normalize_clarification,
+    should_supersede_pending,
     version_upgrade_choices,
 )
 from agents.runtime.loop_intent import classify_loop_intent, loop_confirmation_text, loop_gateway_prompt
@@ -76,6 +79,67 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
         "I couldn't finish this turn cleanly.\n"
         f"Trace ID: {trace_id}"
     )
+
+
+_IMAGE_SUFFIXES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp",
+}
+
+
+def _feishu_image_keys(meta: dict[str, str]) -> list[str]:
+    raw = meta.get("image_keys")
+    if isinstance(raw, list):
+        values = raw
+    else:
+        try:
+            values = json.loads(str(raw or "[]"))
+        except Exception:
+            values = []
+    if not isinstance(values, list):
+        return []
+    return list(dict.fromkeys(str(value or "").strip() for value in values if str(value or "").strip()))[:4]
+
+
+def _prepare_feishu_image_context(
+    *,
+    meta: dict[str, str],
+    messenger: FeishuMessenger,
+) -> tuple[str, Path | None]:
+    keys = _feishu_image_keys(meta)
+    message_id = str(meta.get("message_id") or "").strip()
+    if not keys or not message_id:
+        return "", None
+    temp_dir = Path(tempfile.mkdtemp(prefix="lumen-feishu-"))
+    paths: list[Path] = []
+    for index, image_key in enumerate(keys, start=1):
+        resource = messenger.safe_get_message_resource(message_id, image_key, resource_type="image")
+        if not resource:
+            continue
+        body, content_type = resource
+        if not body:
+            continue
+        suffix = _IMAGE_SUFFIXES.get(str(content_type or "").strip().lower(), ".img")
+        path = temp_dir / f"image-{index}{suffix}"
+        path.write_bytes(body)
+        paths.append(path)
+    if not paths:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return (
+            "[FEISHU IMAGE ATTACHMENT]\n"
+            "The user attached an image, but Lumen could not download it. "
+            "Do not claim to have inspected it; ask the user to resend it or check the bot's Feishu message-resource permission.",
+            None,
+        )
+    lines = [
+        "[FEISHU IMAGE ATTACHMENT]",
+        "The user attached the following image(s). Open and inspect them before answering; do not treat the attachment marker as the image content:",
+    ]
+    lines.extend(f"- {path}" for path in paths)
+    return "\n".join(lines), temp_dir
 
 
 def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dict[str, Any]:
@@ -211,6 +275,9 @@ def handle_autonomous_conversation(
         agent_id=agent_id,
         chat_id=chat_id,
         thread_id=thread_id,
+        root_id=str(meta.get("root_id") or meta.get("parent_id") or ""),
+        message_id=message_id,
+        chat_type=str(meta.get("chat_type") or ""),
         project_slug=slug,
         user_id=user_id,
         scope=flags.session_scope,
@@ -222,8 +289,8 @@ def handle_autonomous_conversation(
     parent_id = str(meta.get("parent_id") or "").strip()
     root_id = str(meta.get("root_id") or "").strip()
     anchored_text = text
+    messenger = FeishuMessenger(agent_id)
     if parent_id or root_id:
-        messenger = FeishuMessenger(agent_id)
         anchor = resolve_reply_anchor(
             messenger=messenger,
             parent_id=parent_id,
@@ -290,6 +357,9 @@ def handle_autonomous_conversation(
 
     lock = store.lock_for(scope)
     loop_permissions_enabled = False
+    attachment_dir: Path | None = None
+    cursor_for_cleanup: CursorAgentRuntime | None = None
+    original_additional_dirs: list[Path] | None = None
     with lock:
         try:
             obs.emit(trace, "agent.message.received")
@@ -362,6 +432,33 @@ def handle_autonomous_conversation(
                     soul_version=definition.soul_version,
                     protocol_version=definition.protocol_version,
                 )
+
+            if pending and should_supersede_pending(text, pending):
+                previous_action = str(pending.get("action") or "")
+                old_session_id = str(session.get("session_id") or "")
+                old_provider_session_id = str(session.get("provider_session_id") or "")
+                if old_provider_session_id:
+                    store.invalidate_provider(old_session_id)
+                store.close_session(old_session_id)
+                session = store.create(
+                    agent_id=agent_id,
+                    chat_id=chat_id,
+                    conversation_scope_id=scope,
+                    workspace_path=str(workspace),
+                    project_slug=slug,
+                    user_id=user_id,
+                    soul_version=definition.soul_version,
+                    protocol_version=definition.protocol_version,
+                )
+                checkpoint = None
+                pending = None
+                is_new = True
+                obs.emit(
+                    trace,
+                    "clarification.superseded",
+                    previous_action=previous_action,
+                    previous_session_id=old_session_id,
+                )
             active_loop = str((checkpoint or {}).get("active_loop") or "").strip().lower()
             loop_intent = (
                 classify_loop_intent(text, active_loop=active_loop, pending=pending)
@@ -386,6 +483,10 @@ def handle_autonomous_conversation(
                     )
                     if part
                 )
+
+            image_context, attachment_dir = _prepare_feishu_image_context(meta=meta, messenger=messenger)
+            if image_context:
+                anchored_text = f"{anchored_text}\n\n{image_context}"
 
             if loop_intent.decision == "confirm":
                 chinese = bool(re.search(r"[\u4e00-\u9fff]", text))
@@ -488,6 +589,10 @@ def handle_autonomous_conversation(
                 agent_id=agent_id,
                 project=slug,
             )
+            cursor_for_cleanup = cursor
+            if attachment_dir is not None and isinstance(cursor, CursorAgentRuntime):
+                original_additional_dirs = list(cursor.additional_dirs)
+                cursor.additional_dirs = [attachment_dir, *original_additional_dirs]
             runner = (
                 default_runner(runtime=cursor)
                 if workspace_isolation_v2_enabled() and runtime is None
@@ -727,6 +832,10 @@ def handle_autonomous_conversation(
                 "flags": {"conversation_v4": True, "mode": "autonomous_workspace"},
             }
         finally:
+            if cursor_for_cleanup is not None and original_additional_dirs is not None:
+                cursor_for_cleanup.additional_dirs = original_additional_dirs
+            if attachment_dir is not None:
+                shutil.rmtree(attachment_dir, ignore_errors=True)
             if loop_permissions_enabled:
                 try:
                     from agents.dylan.permission_policy import write_permission_profile

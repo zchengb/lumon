@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Cuts a new Lumon CLI release: bumps VERSION, commits, tags, and pushes.
+# Cuts a new Lumon release: bumps VERSION, commits, tags, and pushes.
 # The push triggers .github/workflows/release.yml, which builds the zip
 # package and publishes it as a GitHub Release asset.
 #

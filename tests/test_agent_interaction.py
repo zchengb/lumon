@@ -19,6 +19,7 @@ from agents.runtime.interaction import (
     format_clarification_reply,
     interaction_contract_prompt,
     normalize_clarification,
+    should_supersede_pending,
     version_upgrade_choices,
 )
 from agents.security.trusted import TrustedActionContext, bind_action_request
@@ -110,6 +111,15 @@ class AgentInteractionTests(unittest.TestCase):
         )
         self.assertIn("value=1.2.4", hint)
         self.assertIn("target_version", hint)
+
+    def test_explicit_topic_change_supersedes_pending_clarification(self) -> None:
+        pending = normalize_clarification(
+            {"action": "jira.sprint.untested.report", "question": "Which standard?", "missing": ["standard"]},
+            agent_id="milchick",
+        )
+        assert pending is not None
+        self.assertTrue(should_supersede_pending("先放棄這個問題，幫我改 wording", pending))
+        self.assertFalse(should_supersede_pending("1", {**pending, "choices": [{"value": "1", "label": "A"}]}))
 
     def test_explicit_trusted_context_defaults_to_mutation_intent(self) -> None:
         request = bind_action_request(

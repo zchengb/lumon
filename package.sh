@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds a distributable Lumon CLI zip package.
+# Builds a distributable Lumon zip package.
 # Usage: ./package.sh [output-dir]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

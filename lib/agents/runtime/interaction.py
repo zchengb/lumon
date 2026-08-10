@@ -45,6 +45,12 @@ _FIELD_LABELS = {
 }
 
 _SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
+_PENDING_SUPERSEDE_RE = re.compile(
+    r"(?:先?\s*(?:放弃|放棄|放下|跳过|跳過|忽略|搁置|擱置|暫不處理|暂不处理))"
+    r"|(?:换个|換個|换一个|換一個|新的问题|新的問題|新任务|新任務|另一个问题|另一個問題)"
+    r"|(?:abandon|skip|ignore|drop|set aside|new question|new task|different issue)",
+    re.IGNORECASE,
+)
 
 
 def _now() -> datetime:
@@ -242,6 +248,18 @@ def clarification_choice_hint(answer: str, pending: dict[str, Any] | None) -> st
         f"The user selected option {selected_index + 1}: {label} (value={value}). "
         f"{resolution}"
     )
+
+
+def should_supersede_pending(text: str, pending: dict[str, Any] | None) -> bool:
+    """Return true when the user explicitly abandons the pending clarification."""
+    if not isinstance(pending, dict):
+        return False
+    raw = str(text or "").strip()
+    if not raw or clarification_choice_hint(raw, pending):
+        return False
+    if raw.casefold() in {"[image attachment]", "[file attachment]", "[message attachment]"}:
+        return True
+    return bool(_PENDING_SUPERSEDE_RE.search(raw))
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int = 0, maximum: int = 32) -> int:

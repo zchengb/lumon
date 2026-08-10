@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Lumon CLI installer.
+# Lumon installer.
 # Usage:
 #   ./install.sh                 Install the CLI only (lumon init later, anywhere)
 #   ./install.sh <workspace-dir> Install the CLI AND initialize a scan workspace in one step
@@ -16,7 +16,7 @@ GREEN="$(printf '\033[32m')"
 YELLOW="$(printf '\033[33m')"
 RESET="$(printf '\033[0m')"
 
-echo "${BOLD}Installing Lumon CLI...${RESET}"
+echo "${BOLD}Installing Lumon...${RESET}"
 
 mkdir -p "${LUMEN_HOME}/lib"
 mkdir -p "${BIN_DIR}"
@@ -55,7 +55,7 @@ install -m 0755 "${SCRIPT_DIR}/bin/lumon" "${BIN_DIR}/lumon" 2>/dev/null \
   || { cp "${SCRIPT_DIR}/bin/lumon" "${BIN_DIR}/lumon" && chmod +x "${BIN_DIR}/lumon"; }
 
 echo "${GREEN}✓${RESET} Installed lumon to ${BIN_DIR}/lumon"
-echo "${GREEN}✓${RESET} Installed CLI library to ${LUMEN_HOME}"
+echo "${GREEN}✓${RESET} Installed Lumon library to ${LUMEN_HOME}"
 
 case ":${PATH}:" in
   *":${BIN_DIR}:"*) ;;

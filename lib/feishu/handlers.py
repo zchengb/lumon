@@ -6,6 +6,7 @@ from typing import Any
 from feishu.client_registry import FeishuClientConfig
 from agents.bridge import handle_agent_message
 from agents.runtime.loop_intent import classify_loop_intent
+from agents.runtime.reply_anchor import extract_content_text, extract_feishu_image_keys
 
 
 def extract_text(event: dict[str, Any]) -> str:
@@ -13,21 +14,7 @@ def extract_text(event: dict[str, Any]) -> str:
     message = body.get("message") if isinstance(body, dict) else {}
     if not isinstance(message, dict):
         return ""
-    content = message.get("content")
-    if isinstance(content, dict):
-        return str(content.get("text") or "").strip()
-    if isinstance(content, str):
-        raw = content.strip()
-        if not raw:
-            return ""
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return raw
-        if isinstance(parsed, dict):
-            return str(parsed.get("text") or "").strip()
-        return raw
-    return ""
+    return extract_content_text(str(message.get("msg_type") or "text"), message.get("content"))
 
 
 def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
@@ -40,6 +27,8 @@ def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
     if not isinstance(sender, dict):
         sender = {}
     sender_id = sender.get("sender_id") if isinstance(sender.get("sender_id"), dict) else {}
+    msg_type = str(message.get("msg_type") or "text")
+    content = message.get("content")
     # thread_id is Feishu topic id (omt_*). Never fall back to root_id (om_* message id).
     meta = {
         "message_id": str(message.get("message_id") or "").strip(),
@@ -54,6 +43,9 @@ def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
         "app_id": str(header.get("app_id") or "").strip(),
         "user_name": "",
     }
+    image_keys = extract_feishu_image_keys(msg_type, content)
+    if image_keys:
+        meta["image_keys"] = json.dumps(image_keys, ensure_ascii=False)
     mentions = message.get("mentions") if isinstance(message.get("mentions"), list) else []
     for item in mentions:
         if not isinstance(item, dict):

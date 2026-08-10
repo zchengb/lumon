@@ -1,4 +1,4 @@
-# Lumon CLI
+# Lumon
 
 Lumon is a local, AI-assisted engineering control plane. It provides two connected workflows:
 
@@ -28,8 +28,8 @@ The installer places the executable in `~/.local/bin/lumon` and the supporting l
 ### Local checkout
 
 ```bash
-git clone https://github.com/zchengb/lumon-cli.git
-cd lumon-cli
+git clone https://github.com/zchengb/lumon-cli.git lumon
+cd lumon
 ./install.sh
 ```
 
