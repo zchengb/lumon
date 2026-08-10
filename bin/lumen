@@ -3,10 +3,18 @@ set -euo pipefail
 
 LUMEN_CLI_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 LUMEN_CLI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [[ -z "${LUMEN_HOME:-}" && -f "${LUMEN_CLI_ROOT}/lib/scripts/workspace_config.py" ]]; then
+if [[ -z "${LUMEN_HOME:-}" && -n "${LUMON_HOME:-}" ]]; then
+  LUMEN_HOME="${LUMON_HOME}"
+elif [[ -z "${LUMEN_HOME:-}" && -f "${LUMEN_CLI_ROOT}/lib/scripts/workspace_config.py" ]]; then
   LUMEN_HOME="${LUMEN_CLI_ROOT}"
 else
-  LUMEN_HOME="${LUMEN_HOME:-$HOME/.lumen}"
+  if [[ -n "${LUMEN_HOME:-}" ]]; then
+    LUMEN_HOME="${LUMEN_HOME}"
+  elif [[ -d "$HOME/.lumon" || ! -d "$HOME/.lumen" ]]; then
+    LUMEN_HOME="$HOME/.lumon"
+  else
+    LUMEN_HOME="$HOME/.lumen"
+  fi
 fi
 if [[ -f "${LUMEN_HOME}/lib/scripts/ensure-path.sh" ]]; then
   # shellcheck source=/dev/null
@@ -129,7 +137,7 @@ resolve_workspace() {
 require_registry_python() {
   require_python3
   if [[ ! -f "${PROJECTS_REGISTRY_PY}" ]]; then
-    err "Project registry script not found. Re-run install.sh to repair your Lumen CLI installation."
+    err "Project registry script not found. Re-run install.sh to repair your Lumon CLI installation."
     exit 1
   fi
 }
@@ -450,7 +458,9 @@ EOF
 }
 
 cmd_version() {
-  printf 'lumen %s\n' "$(lumen_version)"
+  local brand="lumen"
+  [[ -n "${LUMON_BRAND:-}" ]] && brand="lumon"
+  printf '%s %s\n' "${brand}" "$(lumen_version)"
 }
 
 cmd_skills() {
@@ -734,11 +744,11 @@ cmd_upgrade() {
     esac
   done
 
-  local repo="${LUMEN_REPO:-zchengb/lumen-cli}"
+  local repo="${LUMON_REPO:-${LUMEN_REPO:-zchengb/lumon-cli}}"
   local before_version
   before_version="$(lumen_version)"
 
-  printf '%sUpgrading Lumen CLI (current: %s, repo: %s)...%s\n' "${BOLD}" "${before_version}" "${repo}" "${RESET}"
+  printf '%sUpgrading Lumon CLI (current: %s, repo: %s)...%s\n' "${BOLD}" "${before_version}" "${repo}" "${RESET}"
 
   local installer_url="https://raw.githubusercontent.com/${repo}/main/get.sh"
   if command -v curl >/dev/null 2>&1; then
@@ -746,16 +756,16 @@ cmd_upgrade() {
   elif command -v wget >/dev/null 2>&1; then
     wget -qO- "${installer_url}" | LUMEN_REPO="${repo}" LUMEN_HOME="${LUMEN_HOME}" bash
   else
-    err "Neither curl nor wget is available to fetch the Lumen CLI upgrade."
+    err "Neither curl nor wget is available to fetch the Lumon CLI upgrade."
     exit 1
   fi
 
   local after_version
   after_version="$(lumen_version)"
   if [[ "${after_version}" == "${before_version}" ]]; then
-    ok "Lumen CLI is already up to date (${after_version})."
+    ok "Lumon CLI is already up to date (${after_version})."
   else
-    ok "Lumen CLI upgraded: ${before_version} -> ${after_version}."
+    ok "Lumon CLI upgraded: ${before_version} -> ${after_version}."
   fi
 
   if [[ "${sync_prompts}" == "1" ]]; then
@@ -783,7 +793,7 @@ load_env_file_if_present() {
 }
 
 cmd_doctor() {
-  printf '%sLumen environment check%s\n\n' "${BOLD}" "${RESET}"
+  printf '%sLumon environment check%s\n\n' "${BOLD}" "${RESET}"
 
   if command -v agent >/dev/null 2>&1; then
     ok "Cursor CLI (agent) found: $(command -v agent)"
@@ -1864,7 +1874,7 @@ cmd_init() {
   cp "${LUMEN_TEMPLATES_DIR}/.gitignore" "${lumen_dir}/.gitignore"
   cp "${LUMEN_TEMPLATES_DIR}/dashboard.html" "${lumen_dir}/dashboard.html"
   mkdir -p "${lumen_dir}/assets"
-  cp "${LUMEN_TEMPLATES_DIR}/assets/lumen-mark.png" "${lumen_dir}/assets/lumen-mark.png"
+  cp "${LUMEN_TEMPLATES_DIR}/assets/lumon-mark.png" "${lumen_dir}/assets/lumon-mark.png"
 
   touch "${lumen_dir}/tmp/.gitkeep" "${lumen_dir}/worktrees/.gitkeep" "${lumen_dir}/reports/.gitkeep" \
     "${lumen_dir}/results/.gitkeep" "${lumen_dir}/logs/.gitkeep" "${lumen_dir}/state/.gitkeep"

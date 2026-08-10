@@ -1,3 +1,3 @@
 /// <reference types="vite/client" />
 
-declare const __LUMEN_VERSION__: string;
+declare const __LUMON_VERSION__: string;

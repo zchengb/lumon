@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { marked } from "marked";
 import mermaid from "mermaid";
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-const lumenVersion = __LUMEN_VERSION__;
+const lumonVersion = __LUMON_VERSION__;
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
 marked.setOptions({ gfm: true, breaks: false });
@@ -29,6 +29,1476 @@ type Tab = "overview" | "activity" | "scan" | "delivery" | "patch" | "observator
 type NoticeTone = "success" | "error" | "info";
 type Notice = { message: string; tone: NoticeTone };
 type Notify = (message: string, tone?: NoticeTone) => void;
+type Locale = "en" | "zh-Hans" | "zh-Hant";
+type Translate = (key: string, variables?: Record<string, unknown>) => string;
+
+const localeStorageKey = "lumon-dashboard-locale";
+const legacyLocaleStorageKey = "lumen-dashboard-locale";
+const localeOptions: Array<{ value: Locale; label: string }> = [
+  { value: "en", label: "English" },
+  { value: "zh-Hans", label: "简体中文" },
+  { value: "zh-Hant", label: "繁體中文" },
+];
+
+const translations: Record<Locale, Record<string, string>> = {
+  en: {
+    "language.label": "Language",
+    "language.en": "English",
+    "language.zhHans": "简体中文",
+    "language.zhHant": "繁體中文",
+    "nav.overview": "OVERVIEW",
+    "nav.activity": "ACTIVITY",
+    "nav.scan": "AUTO SCAN",
+    "nav.delivery": "AUTO DELIVERY",
+    "nav.patch": "AUTO PATCH",
+    "nav.observatory": "OBSERVATORY",
+    "nav.repositories": "REPOSITORY",
+    "nav.prompts": "WORKFLOW",
+    "nav.settings": "SETTINGS",
+    "context.overview.title": "MANAGER OVERVIEW",
+    "context.overview.description": "Agent ownership, workflow health, and the next human decision.",
+    "context.activity.title": "AGENT ACTIVITY",
+    "context.activity.description": "Conversation records, outcomes, and the evidence behind each Agent turn.",
+    "context.scan.title": "AUTO SCAN",
+    "context.scan.description": "Review history and manage tracked findings.",
+    "context.delivery.title": "AUTO DELIVERY",
+    "context.delivery.description": "Story execution, verification, and pull request delivery.",
+    "context.patch.title": "AUTO PATCH",
+    "context.patch.description": "Jira Task and Bug capture, focused fixes, and safe handoff.",
+    "context.observatory.title": "OBSERVATORY",
+    "context.observatory.description": "Browse and edit story briefs and technical plans.",
+    "context.repositories.title": "REPOSITORY",
+    "context.repositories.description": "Local repositories, automation permissions, and delivery verification policy.",
+    "context.prompts.title": "WORKFLOW",
+    "context.prompts.description": "The prompts, scripts, control points, and recovery paths behind each local automation.",
+    "context.settings.title": "SETTINGS",
+    "context.settings.description": "Workspace configuration, scheduling, and local integrations.",
+    "common.updated": "Updated {{value}}",
+    "common.syncing": "Syncing…",
+    "common.project": "Project",
+    "common.currentProject": "Current project",
+    "common.openSettings": "Open Settings",
+    "common.manageCapture": "Manage capture",
+    "common.loadingWorkspace": "Loading local workspace state…",
+    "common.expandNavigation": "Expand navigation",
+    "common.collapseNavigation": "Collapse navigation",
+    "common.version": "Version {{value}}",
+    "common.staticReport": "Static report mode: interactive actions are unavailable.",
+    "common.unableLoadState": "Unable to load Dashboard state",
+    "common.requestFailed": "Request failed",
+    "common.unsavedSettings": "You have unsaved Settings changes. Leave without saving?",
+    "common.unsavedObservatory": "You have unsaved Observatory changes. Leave without saving?",
+    "common.noData": "No data available.",
+    "common.cancel": "Cancel",
+    "common.close": "Close",
+    "common.later": "Later",
+    "common.save": "Save",
+    "common.saving": "Saving…",
+    "common.confirm": "Confirm",
+    "common.continue": "Continue",
+    "common.start": "Start",
+    "common.stop": "Stop",
+    "common.retry": "Retry",
+    "common.loading": "Loading…",
+    "common.enabled": "Enabled",
+    "common.paused": "Paused",
+    "common.active": "Active",
+    "common.off": "Off",
+    "common.all": "All",
+    "common.clear": "Clear",
+    "common.selected": "{{count}} selected",
+    "common.statusesSelected": "{{count}} statuses selected",
+    "common.previous": "Previous",
+    "common.next": "Next",
+    "common.pageOf": "Page {{page}} of {{count}}",
+    "common.showing": "{{count}} shown",
+    "common.records": "{{count}} records",
+    "common.runs": "{{count}} runs",
+    "common.recentEvents": "{{count}} recent events",
+    "common.yes": "Yes",
+    "common.no": "No",
+    "common.unknown": "Unknown",
+    "common.workspace": "Workspace",
+    "common.agent": "Agent",
+    "common.clarification": "Clarification",
+    "common.manager": "Manager",
+    "common.you": "You",
+    "common.trace": "Trace",
+    "common.viewActivity": "View activity",
+    "common.viewLog": "View log",
+    "common.viewTrace": "View trace",
+    "common.open": "Open",
+    "common.inspect": "Inspect",
+    "common.noAgentRoles": "No Agent roles available yet.",
+    "common.noAgentQuestions": "No unanswered Agent questions.",
+    "common.noConversationRecords": "No conversation records match this filter.",
+    "common.noFindings": "No findings match this status.",
+    "common.noStoriesFilter": "No stories match this filter.",
+    "common.noStories": "No stories found in the docs repository.",
+    "common.selectStory": "Select a story to inspect.",
+    "common.noAgentHistory": "No Agent conversation store is available yet. New Feishu conversations will appear here after the gateway starts.",
+    "common.askAgents": "Ask one of the Agents in Feishu, then refresh this page.",
+    "common.activityStoreFirstTurn": "The local activity store will be created by the first Agent turn.",
+    "common.noDeliveryHistory": "No delivery history yet.",
+    "common.noPatchHistory": "No Auto Patch history yet.",
+    "common.noDeliveryActivity": "No scheduled delivery activity recorded yet.",
+    "common.noPatchActivity": "No Auto Patch activity recorded yet.",
+    "common.noAgentRolesSettings": "No agent roles available yet.",
+    "common.noIntegrationKeys": "No local integration keys configured.",
+    "common.valueFor": "Value for {{name}}",
+    "common.revealValue": "Reveal value",
+    "common.copyValue": "Copy value",
+    "common.copyCode": "Copy code",
+    "common.showFullscreen": "Show fullscreen",
+    "common.closeFullscreen": "Close fullscreen",
+    "common.zoomOut": "Zoom out",
+    "common.resetView": "Reset view",
+    "common.zoomIn": "Zoom in",
+    "common.diagram": "Diagram",
+    "common.image": "Image",
+    "common.formattingTools": "Formatting tools",
+    "common.documentBody": "Document body",
+    "common.add": "Add",
+    "common.navigation": "Lumon navigation",
+    "common.dashboardSections": "Dashboard sections",
+    "common.explainSetting": "Explain this setting",
+    "common.originalMarkdown": "Original Markdown",
+    "common.preview": "Preview",
+    "common.live": "Live",
+    "common.attempt": "Attempt {{number}}: {{duration}}",
+    "common.overwriting": "Overwriting…",
+    "common.overwriteRemote": "Overwrite remote",
+    "common.remoteDecision": "Remote updates need your decision",
+    "common.remoteConflictCopy": "Lumon committed local workspace changes, but the remote branch changed before the push. Review the remote changes before choosing whether to overwrite them.",
+    "common.onlyTaskBugCards": "Only Task and Bug cards in the current active sprint are shown.",
+    "common.noPendingPatchCards": "No pending Auto Patch Jira cards were found in the current active sprint.",
+    "common.patchFlow": "Capture → repository → patch → publish",
+    "common.retryDeliveryCopy": "This removes the Story worktrees, resets its Delivery and JIRA status, then starts a new run. The failed run and logs stay in history.",
+    "common.repositoryGovernance": "Repository Governance",
+    "common.addRepository": "Add repository",
+    "common.repositoryIntro": "Connect repositories by Git URL. Lumon clones them into repos/, detects runtime and build tooling, then lets you approve the automation that may change or publish code.",
+    "common.attentionNote": "Needs attention means uncommitted changes, a branch behind remote, or a diverged branch/sync.",
+    "common.repositoryConfiguration": "Repository configuration",
+    "common.unnamedRepository": "Unnamed repository",
+    "common.generic": "Generic",
+    "common.noBuildTool": "No build tool detected",
+    "common.identityConnection": "Identity & connection",
+    "common.identityConnectionHelp": "Detected locally; the default branch is the only editable connection setting.",
+    "common.localPath": "Local path",
+    "common.remote": "Remote",
+    "common.gitStatus": "Git status",
+    "common.branchSync": "Branch sync",
+    "common.defaultBranch": "Default branch",
+    "common.runtimeBuild": "Runtime & build",
+    "common.runtimeBuildHelp": "Detected from repository files. These values are read-only until the repository changes.",
+    "common.language": "Language",
+    "common.java": "Java",
+    "common.node": "Node",
+    "common.buildTools": "Build tools",
+    "common.notDetected": "Not detected",
+    "common.automationPermissions": "Automation permissions",
+    "common.frontendDeliveryDisabled": "Frontend delivery remains disabled globally and cannot be enabled here.",
+    "common.autoScanFixes": "Auto Scan fixes",
+    "common.autoScanFixesHelp": "Allow high-confidence Scan fixes and their configured publish flow.",
+    "common.deliveryPermission": "Auto Delivery",
+    "common.deliveryPermissionHelp": "Allow approved technical delivery work for this repository.",
+    "common.patchPermission": "Auto Patch",
+    "common.patchPermissionHelp": "Allow Jira-driven fixes and publishing for this repository.",
+    "common.deliveryVerification": "Delivery verification",
+    "common.deliveryVerificationHelp": "Choose what Lumon should run for this repository after implementation.",
+    "common.policy": "Policy",
+    "common.runVerification": "Run verification",
+    "common.runVerificationHelp": "Use the automatic profile or your custom commands.",
+    "common.skipVerification": "Skip verification",
+    "common.skipVerificationHelp": "Do not run compile, static checks, or tests.",
+    "common.executionSource": "Execution source",
+    "common.automaticProfile": "Automatic profile",
+    "common.automaticProfileHelp": "Detect commands from repository files at runtime.",
+    "common.customCommands": "Custom commands",
+    "common.customCommandsHelp": "Run only the commands entered below.",
+    "common.checksToRun": "Checks to run",
+    "common.compileChecks": "Compile & static checks",
+    "common.compileChecksHelp": "Compile, syntax, typecheck, lint, or PMD checks.",
+    "common.tests": "Tests",
+    "common.testsHelp": "Unit, integration, and test-suite commands.",
+    "common.commands": "Commands",
+    "common.useSuggestedCommands": "Use {{count}} suggested command{{suffix}}",
+    "common.oneCommandPerLine": "One command per line.",
+    "common.cloneUrl": "Clone URL",
+    "common.cloneInspect": "Clone and inspect",
+    "common.addRepositoryDescription": "Lumon clones the Git URL, detects the branch and tooling, enables existing Scan and Delivery behavior, and authorizes Auto Patch by default.",
+    "common.settingsSections": "Settings sections",
+    "common.schedules": "Schedules",
+    "common.agentConversations": "Agent conversations",
+    "common.integrations": "Integrations",
+    "common.configuredKeys": "configured keys",
+    "settings.automation": "Automation",
+    "settings.automationDescription": "Schedules and execution policies that decide when work can move.",
+    "settings.agentTeam": "Agent team",
+    "settings.agentTeamDescription": "Who speaks to people, what each role owns, and which conversations may mutate state.",
+    "settings.projectOutput": "Project output",
+    "settings.projectOutputDescription": "Defaults used when Mark and Milchick turn a request into a testable Story.",
+    "settings.runtime": "Runtime & integrations",
+    "settings.runtimeDescription": "Model selection, publish behavior, notifications, and local secret values.",
+    "settings.nextAgentTeam": "Next: Agent team",
+    "settings.nextProjectOutput": "Next: Project output",
+    "settings.nextRuntime": "Next: Runtime & integrations",
+    "settings.backAutomation": "Back to Automation",
+    "settings.localConfiguration": "Local configuration",
+    "settings.controlPlane": "01 · CONTROL PLANE",
+    "settings.humanAgents": "02 · HUMAN-FACING AGENTS",
+    "settings.businessOutput": "03 · BUSINESS OUTPUT",
+    "settings.operatingDetails": "04 · OPERATING DETAILS",
+    "settings.globalFeishuAgents": "Global Feishu agents",
+    "settings.accessControl": "Access Control",
+    "settings.accessControlDescription": "Who may talk to agents, and who may mutate (resolve findings, update schedules, start delivery). Add Allowed chat IDs to let Dylan/Milchick reply in those groups when @mentioned.",
+    "settings.legacyWarning": "Legacy allow mode is unsafe for local agents. Prefer per-agent Access & Exposure with default_policy=deny.",
+    "settings.recentPeople": "Recent people",
+    "settings.recentChats": "Recent chats",
+    "settings.addMutationUser": "Click to add as mutation user",
+    "settings.allowChat": "Click to allow the chat",
+    "settings.noRecentPeople": "No recent Feishu people yet. Message Dylan or Mark once, then refresh Settings.",
+    "settings.generationLanguage": "Generation language",
+    "settings.generationDescription": "Controls the language Mark writes into the Feishu Spreadsheet for this project. Traditional Chinese is the default for mbpass.",
+    "settings.afterGeneration": "After changing language or sheet, ask Milchick/Mark to re-generate the story so new rows use the selected sheet.",
+    "settings.executionDescription": "Choose a preset or enter a custom Cursor model ID. Custom values must be supported by Cursor; Lumon does not validate model availability.",
+    "settings.automationOutcome": "Automation outcome",
+    "settings.notificationsDescription": "Control whether Scan and Delivery post cards to the configured Feishu webhook. The webhook URL still lives under Variable Keys.",
+    "settings.storedWorkspace": "Stored only in this workspace",
+    "settings.availableKeys": "Available keys",
+    "settings.availableKeysDescription": "Reveal a value to inspect it, or enter a replacement directly. Values are saved without display quotes.",
+    "settings.revealReplacement": "Reveal or enter a replacement value",
+    "settings.unsavedChanges": "You have unsaved changes",
+    "settings.allSaved": "All changes saved",
+    "settings.deliveryPaused": "Delivery polling is paused.",
+    "settings.patchPaused": "Auto Patch polling is paused.",
+    "settings.deliveryStatusHelp": "Select every Jira status that may start Auto Delivery. The Story must also be Business Ready, Technical Approved, and not already running.",
+    "settings.deliveryStatusNote": "Select To Do, Backlog, In Progress, or any other eligible Jira status. On failure, Lumon moves the Jira card to the selected Block status and adds a Needs attention comment.",
+    "settings.patchStatusNote": "Only Task and Bug cards are captured. Blocked cards retry after a new external Jira comment.",
+    "settings.scanDefaultDescription": "No recurring scan is configured.",
+    "settings.direct": "Direct",
+    "settings.merge": "Merge",
+    "settings.pullRequest": "PR",
+    "settings.openPullRequest": "Open pull request",
+    "settings.mergeAfterPullRequest": "Merge after pull request",
+    "settings.pushDirectly": "Push directly to main branch",
+    "settings.feishuNotifications": "Feishu notifications",
+    "settings.allowedChatIds": "Allowed chat IDs",
+    "settings.allowedUserIds": "Allowed user IDs",
+    "settings.mutationUserIds": "Mutation user IDs",
+    "settings.adminUserIds": "Admin user IDs",
+    "settings.allowedChatHelp": "Whitelist group chats. Dylan/Milchick stay DM-only unless a chat is listed here; @mention is still required in groups.",
+    "settings.allowedUserHelp": "Empty = all users may ask read-only questions.",
+    "settings.mutationUserHelp": "Required for resolve / schedule update / delivery start. Fail-closed when empty.",
+    "settings.adminUserHelp": "Admins can also mutate.",
+    "settings.appSecretRequired": "Required for Feishu client login.",
+    "settings.keepSecret": "Leave blank to keep current secret",
+    "settings.enterSecret": "Enter app secret",
+    "settings.runtimeIdentityHelp": "Runtime identity is managed by the Agent registry.",
+    "settings.workflowOwnershipHelp": "Workflow ownership is managed by the Agent registry.",
+    "settings.publishDescription": "Direct push uses the repository credentials already configured for Git; PR and Merge use GitHub CLI. Auto Scan keeps a PR review gate and does not support direct push.",
+    "editor.heading": "Heading",
+    "editor.editLink": "Edit link URL",
+    "editor.linkUrl": "Link URL",
+    "editor.bold": "Bold",
+    "editor.italic": "Italic",
+    "editor.link": "Link — Shift+click a link to place the caret, then edit",
+    "editor.list": "List",
+    "editor.code": "Code",
+    "prompt.original": "Original Markdown",
+    "prompt.preview": "Preview",
+    "customModel.enter": "Enter a custom Cursor model",
+    "customModel.id": "Cursor model ID",
+    "customModel.placeholder": "e.g. cursor-grok-4.5-medium",
+    "customModel.copy": "Lumon does not validate model availability. The value will be used on the next run.",
+    "customModel.edit": "Edit custom model",
+    "customModel.option": "Custom Cursor model ID…",
+    "customModel.help": "Use a model ID supported by Cursor.",
+    "status.completed": "Completed",
+    "status.passed": "Passed",
+    "status.failed": "Failed",
+    "status.skipped": "Skipped",
+    "status.open": "Open",
+    "status.inProgress": "In progress",
+    "status.running": "Running",
+    "status.active": "Active",
+    "status.notSet": "Not set",
+    "status.resolved": "Resolved",
+    "status.reopened": "Reopened",
+    "status.synced": "Synced",
+    "status.ignored": "Ignored",
+    "status.blocked": "Blocked",
+    "status.pending": "Pending",
+    "status.prOpen": "PR open",
+    "status.notStarted": "Not started",
+    "status.devDone": "Dev done",
+    "status.approved": "Approved",
+    "status.ready": "Ready",
+    "status.draft": "Draft",
+    "status.done": "Done",
+    "status.clarifying": "Clarifying",
+    "status.changed": "Changed",
+    "label.business": "Business",
+    "label.technical": "Technical",
+    "workflow.auto_scan.feature": "Auto Scan",
+    "workflow.auto_scan.mission": "Find recurring engineering risk and turn it into review-ready evidence.",
+    "workflow.auto_scan.input": "Repositories, scan window, risk signals",
+    "workflow.auto_scan.output": "Findings, severity, links, and next questions",
+    "workflow.auto_delivery.feature": "Auto Delivery",
+    "workflow.auto_delivery.mission": "Move an approved Story through implementation, verification, and delivery.",
+    "workflow.auto_delivery.input": "Ready Story, approved plan, delivery policy",
+    "workflow.auto_delivery.output": "Commits, checks, PR/merge result, or a clear blocker",
+    "workflow.auto_patch.feature": "Auto Patch",
+    "workflow.auto_patch.mission": "Pick up Jira Task/Bug work, apply a focused fix, and hand it off safely.",
+    "workflow.auto_patch.input": "Eligible Jira card, repository guardrails",
+    "workflow.auto_patch.output": "Patch evidence, verification, and PR/direct-push result",
+    "workflow.manager.feature": "Manager",
+    "workflow.manager.mission": "Clarify intent, create the right work item, and coordinate the three capability owners.",
+    "workflow.manager.input": "Business request, missing decisions, loop state",
+    "workflow.manager.output": "A question, a work card, or a routed execution request",
+    "label.autoScan": "Auto Scan",
+    "label.autoDelivery": "Auto Delivery",
+    "label.autoPatch": "Auto Patch",
+    "label.manager": "Manager",
+    "label.role": "Role",
+    "label.input": "Input",
+    "label.output": "Output",
+    "label.owns": "Owns",
+    "label.receives": "Receives",
+    "label.returns": "Returns",
+    "label.gateway": "Gateway",
+    "label.agentsReady": "Agents ready",
+    "label.workflowsActive": "Workflows active",
+    "label.questionsWaiting": "Questions waiting",
+    "label.recordedTurns": "Recorded turns",
+    "label.needsAttention": "Needs attention",
+    "label.rolesSeen": "Roles seen",
+    "label.businessReadyCapabilities": "Three human-owned capabilities",
+    "label.conversationClear": "Conversation is clear",
+    "label.unanswered": "{{count}} unanswered",
+    "label.sharedRuntime": "{{count}} roles · shared runtime",
+    "label.currentStory": "Current story",
+    "label.status": "Status",
+    "label.elapsed": "Elapsed",
+    "label.finished": "Finished",
+    "label.jiraCard": "Jira card",
+    "label.branch": "Branch",
+    "label.repositories": "Repositories",
+    "label.started": "Started",
+    "label.issues": "Issues",
+    "label.duration": "Duration",
+    "label.artifacts": "Artifacts",
+    "label.story": "Story",
+    "label.pullRequests": "Pull requests",
+    "label.checks": "Checks",
+    "label.operation": "Operation",
+    "label.finishedAt": "Finished",
+    "label.log": "Log",
+    "label.summary": "Summary",
+    "label.jira": "Jira",
+    "label.trace": "Trace",
+    "label.repository": "Repository",
+    "label.localCommit": "Local commit",
+    "label.roleId": "Role id",
+    "label.workflow": "Workflow",
+    "label.prompt": "prompt",
+    "label.conversation": "Conversation",
+    "label.typingReaction": "Typing reaction",
+    "label.lookbackDays": "Lookback, days",
+    "label.cron": "Five-field cron",
+    "label.intervalMinutes": "Interval, minutes",
+    "label.eligibleStatuses": "Eligible JIRA statuses",
+    "label.moveStarted": "Move to when started",
+    "label.moveCompleted": "Move to when completed",
+    "label.moveFailed": "Move to when failed",
+    "label.moveBlocked": "Move to when blocked",
+    "label.outputLanguage": "Output language",
+    "label.languageGeneration": "Generation language",
+    "label.spreadsheetTab": "Spreadsheet tab name",
+    "label.spreadsheetToken": "Spreadsheet token / URL",
+    "label.cursorModel": "Cursor model",
+    "label.softTimeout": "Soft timeout, seconds",
+    "label.hardTimeout": "Hard timeout, seconds",
+    "label.maxJobs": "Max concurrent jobs",
+    "label.soulVersion": "SOUL version",
+    "label.feishuAppId": "Feishu App ID",
+    "label.feishuAppSecret": "Feishu App Secret",
+    "label.completed": "Completed",
+    "label.openFindings": "Open findings",
+    "label.successfulScan": "Successful Scan · 7d",
+    "label.failed7d": "Failed · 7d",
+    "label.lookbackWindow": "Lookback window",
+    "label.conversationAndActions": "Conversation and actions available",
+    "label.conversationPaused": "Conversation is paused in Settings",
+    "label.credentialsRequired": "Credentials are required",
+    "label.requestResult": "Request + result",
+    "label.resultCaptured": "Result captured · request predates transcript capture",
+    "label.traceOnly": "Trace only",
+    "label.executionTrail": "Execution trail",
+    "label.olderTrace": "This older trace has an outcome, but its incoming message was not captured by that runtime version.",
+    "label.noFinalResponse": "No final response text was retained; open the source trace in the Agent logs if deeper evidence is needed.",
+    "label.activityRetention": "Only bounded local request/result text is shown here. Trace IDs and raw execution evidence remain available in the local Agent store.",
+    "label.high": "High",
+    "label.medium": "Medium",
+    "label.low": "Low",
+    "label.untitledFinding": "Untitled finding",
+    "label.unknownRepository": "Unknown repository",
+    "label.reasonOptional": "Reason (optional)",
+    "label.ignoreQuestion": "Mark this finding as ignored?",
+    "label.ignorePlaceholder": "Why is this safe to ignore?",
+    "label.noSnippet": "No code snippet was captured for this historical finding.",
+    "label.notRecorded": "Not recorded.",
+    "label.notStarted": "Awaiting delivery trigger",
+    "label.running": "Running",
+    "label.pending": "Pending",
+    "label.stopped": "Stopped",
+    "label.needsAttentionState": "Needs attention",
+    "label.startedAt": "Started {{value}}",
+    "label.finishedAtValue": "Finished {{value}}",
+    "label.requested": "Request",
+    "label.result": "Result",
+    "label.noLog": "No log content recorded.",
+    "label.noSchedulerLog": "No scheduler output recorded.",
+    "label.noSummary": "No summary recorded.",
+    "label.recentRawOutput": "Recent raw output",
+    "label.close": "Close",
+    "label.checksPassed": "{{count}} passed",
+    "label.checksFailed": "{{count}} failed",
+    "label.checksSkipped": "{{count}} skipped",
+    "label.verification": "Verification",
+    "label.checksTitle": "Checks",
+    "heading.managerOverview": "Manager overview",
+    "heading.agentActivity": "Agent activity",
+    "heading.conversationRecords": "Conversation records",
+    "heading.agentRoster": "Agent roster",
+    "heading.workflowControl": "Workflow control",
+    "heading.questionsWaiting": "Questions waiting for you",
+    "heading.scanHistory": "Scan History",
+    "heading.trackedFindings": "Tracked Findings",
+    "heading.currentProgress": "Current Progress",
+    "heading.deliveryHistory": "Delivery History",
+    "heading.schedulerActivity": "Scheduler Activity",
+    "heading.patchHistory": "Patch History",
+    "heading.stories": "Stories",
+    "heading.workspaceSettings": "Workspace settings",
+    "heading.agentRoles": "Agent Roles",
+    "heading.automationSchedules": "Automation Schedules",
+    "heading.executionModels": "Execution Models",
+    "heading.publishPolicy": "Publish Policy",
+    "heading.notifications": "Notifications",
+    "heading.variableKeys": "Variable Keys",
+    "heading.testCases": "Test Cases",
+    "heading.workflow": "{{feature}} Workflow",
+    "action.openSettings": "Open Settings",
+    "action.manageCapture": "Manage capture",
+    "action.viewActivity": "View activity",
+    "action.inspect": "Inspect {{feature}}",
+    "action.startScan": "Start scan",
+    "action.runCycle": "Run one cycle",
+    "action.viewRawLog": "View raw log",
+    "action.openLog": "Open failure log",
+    "action.markIgnored": "Mark ignored",
+    "action.viewDetail": "View detail",
+    "action.hideDetail": "Hide detail",
+    "action.pullRequest": "Pull request",
+    "action.startDelivery": "Start delivery",
+    "action.saveChanges": "Save changes",
+    "action.savePrompt": "Save prompt",
+    "action.searchStories": "Search stories",
+    "action.filterStories": "Filter stories",
+    "action.showingReadyStories": "Showing business-ready stories",
+    "action.filterReadyStories": "Filter business-ready stories",
+    "action.exitFullscreen": "Exit full screen",
+    "action.viewFullscreen": "View full screen",
+    "action.start": "Start",
+    "action.save": "Save",
+    "action.runScan": "Start a scan?",
+    "action.confirmScan": "Confirm scan start",
+    "action.scanBody": "This will launch an auto-scan for {{project}}.",
+    "action.scanConfirmBody": "Are you sure you want to start a scan for {{project}} now? A scan agent will run against the configured repositories.",
+  },
+  "zh-Hans": {
+    "language.label": "语言",
+    "language.en": "English",
+    "language.zhHans": "简体中文",
+    "language.zhHant": "繁體中文",
+    "nav.overview": "总览",
+    "nav.activity": "活动记录",
+    "nav.scan": "自动扫描",
+    "nav.delivery": "自动交付",
+    "nav.patch": "自动修复",
+    "nav.observatory": "观测台",
+    "nav.repositories": "代码仓库",
+    "nav.prompts": "工作流",
+    "nav.settings": "设置",
+    "context.overview.title": "管理者总览",
+    "context.overview.description": "查看 Agent 职责、工作流健康度和下一项需要人工决策的事项。",
+    "context.activity.title": "Agent 活动",
+    "context.activity.description": "查看对话记录、处理结果以及每次 Agent 执行背后的证据。",
+    "context.scan.title": "自动扫描",
+    "context.scan.description": "查看扫描历史并管理已跟踪的问题。",
+    "context.delivery.title": "自动交付",
+    "context.delivery.description": "查看 Story 执行、验证和 Pull Request 交付。",
+    "context.patch.title": "自动修复",
+    "context.patch.description": "查看 Jira Task/Bug 捕获、聚焦修复和安全交接。",
+    "context.observatory.title": "观测台",
+    "context.observatory.description": "浏览和编辑 Story 说明与技术方案。",
+    "context.repositories.title": "代码仓库",
+    "context.repositories.description": "管理本地仓库、自动化权限和交付验证策略。",
+    "context.prompts.title": "工作流",
+    "context.prompts.description": "查看各项本地自动化背后的提示词、脚本、控制点和恢复路径。",
+    "context.settings.title": "设置",
+    "context.settings.description": "配置工作区、调度和本地集成。",
+    "common.updated": "更新于 {{value}}",
+    "common.syncing": "同步中…",
+    "common.project": "项目",
+    "common.currentProject": "当前项目",
+    "common.openSettings": "打开设置",
+    "common.manageCapture": "管理记录",
+    "common.loadingWorkspace": "正在加载本地工作区状态…",
+    "common.expandNavigation": "展开导航",
+    "common.collapseNavigation": "收起导航",
+    "common.version": "版本 {{value}}",
+    "common.staticReport": "静态报告模式：交互操作不可用。",
+    "common.unableLoadState": "无法加载 Dashboard 状态",
+    "common.requestFailed": "请求失败",
+    "common.unsavedSettings": "设置中有未保存的更改，要不保存就离开吗？",
+    "common.unsavedObservatory": "观测台有未保存的更改，要不保存就离开吗？",
+    "common.noData": "暂无数据。",
+    "common.cancel": "取消",
+    "common.close": "关闭",
+    "common.later": "稍后",
+    "common.save": "保存",
+    "common.saving": "保存中…",
+    "common.confirm": "确认",
+    "common.continue": "继续",
+    "common.start": "开始",
+    "common.stop": "停止",
+    "common.retry": "重试",
+    "common.loading": "加载中…",
+    "common.enabled": "已启用",
+    "common.paused": "已暂停",
+    "common.active": "运行中",
+    "common.off": "关闭",
+    "common.all": "全部",
+    "common.clear": "清除",
+    "common.selected": "已选择 {{count}} 项",
+    "common.statusesSelected": "已选择 {{count}} 个状态",
+    "common.previous": "上一页",
+    "common.next": "下一页",
+    "common.pageOf": "第 {{page}} 页，共 {{count}} 页",
+    "common.showing": "显示 {{count}} 项",
+    "common.records": "{{count}} 条记录",
+    "common.runs": "{{count}} 次运行",
+    "common.recentEvents": "最近 {{count}} 个事件",
+    "common.yes": "是",
+    "common.no": "否",
+    "common.unknown": "未知",
+    "common.workspace": "工作区",
+    "common.agent": "Agent",
+    "common.clarification": "澄清",
+    "common.manager": "Manager",
+    "common.you": "你",
+    "common.trace": "Trace",
+    "common.viewActivity": "查看活动",
+    "common.viewLog": "查看日志",
+    "common.viewTrace": "查看 Trace",
+    "common.open": "打开",
+    "common.inspect": "查看",
+    "common.noAgentRoles": "暂无可用的 Agent 角色。",
+    "common.noAgentQuestions": "没有待回答的 Agent 问题。",
+    "common.noConversationRecords": "没有符合筛选条件的对话记录。",
+    "common.noFindings": "没有符合该状态的问题。",
+    "common.noStoriesFilter": "没有符合筛选条件的 Story。",
+    "common.noStories": "文档仓库中没有找到 Story。",
+    "common.selectStory": "选择一个 Story 查看。",
+    "common.noAgentHistory": "暂无 Agent 对话存储。网关启动后，新飞书对话会显示在这里。",
+    "common.askAgents": "在飞书中询问 Agent，然后刷新此页面。",
+    "common.activityStoreFirstTurn": "首次 Agent 对话后会创建本地活动记录。",
+    "common.noDeliveryHistory": "暂无交付历史。",
+    "common.noPatchHistory": "暂无自动修复历史。",
+    "common.noDeliveryActivity": "暂无已记录的定时交付活动。",
+    "common.noPatchActivity": "暂无已记录的自动修复活动。",
+    "common.noAgentRolesSettings": "暂无可用的 Agent 角色。",
+    "common.noIntegrationKeys": "未配置本地集成密钥。",
+    "common.valueFor": "{{name}} 的值",
+    "common.revealValue": "显示值",
+    "common.copyValue": "复制值",
+    "common.copyCode": "复制代码",
+    "common.showFullscreen": "全屏显示",
+    "common.closeFullscreen": "关闭全屏",
+    "common.zoomOut": "缩小",
+    "common.resetView": "重置视图",
+    "common.zoomIn": "放大",
+    "common.diagram": "图表",
+    "common.image": "图片",
+    "common.formattingTools": "格式工具",
+    "common.documentBody": "文档正文",
+    "common.add": "添加",
+    "common.navigation": "Lumon 导航",
+    "common.dashboardSections": "Dashboard 分区",
+    "common.explainSetting": "解释此设置",
+    "common.originalMarkdown": "原始 Markdown",
+    "common.preview": "预览",
+    "common.live": "实时",
+    "common.attempt": "第 {{number}} 次：{{duration}}",
+    "common.overwriting": "覆盖中…",
+    "common.overwriteRemote": "覆盖远程版本",
+    "common.remoteDecision": "远程更新需要你的决定",
+    "common.remoteConflictCopy": "Lumon 已提交本地工作区变更，但远程分支在推送前发生了变化。请先检查远程变更，再决定是否覆盖。",
+    "common.onlyTaskBugCards": "这里只显示当前活跃 Sprint 中的 Task 和 Bug 卡片。",
+    "common.noPendingPatchCards": "当前活跃 Sprint 中没有待处理的 Auto Patch Jira 卡片。",
+    "common.patchFlow": "捕获 → 仓库 → 修复 → 发布",
+    "common.retryDeliveryCopy": "这会移除 Story 工作树，重置其 Delivery 和 Jira 状态，然后启动新一轮运行。失败运行和日志仍会保留在历史记录中。",
+    "common.repositoryGovernance": "仓库治理",
+    "common.addRepository": "添加仓库",
+    "common.repositoryIntro": "通过 Git URL 连接仓库。Lumon 会将其克隆到 repos/，检测运行时和构建工具，然后让你批准可以修改或发布代码的自动化能力。",
+    "common.attentionNote": "“需要关注”表示存在未提交变更、分支落后远程，或分支/同步发生分叉。",
+    "common.repositoryConfiguration": "仓库配置",
+    "common.unnamedRepository": "未命名仓库",
+    "common.generic": "通用",
+    "common.noBuildTool": "未检测到构建工具",
+    "common.identityConnection": "身份与连接",
+    "common.identityConnectionHelp": "从本地检测得到；只有默认分支是可编辑的连接设置。",
+    "common.localPath": "本地路径",
+    "common.remote": "远程地址",
+    "common.gitStatus": "Git 状态",
+    "common.branchSync": "分支同步",
+    "common.defaultBranch": "默认分支",
+    "common.runtimeBuild": "运行时与构建",
+    "common.runtimeBuildHelp": "从仓库文件中检测得到。仓库发生变化前，这些值为只读。",
+    "common.language": "语言",
+    "common.java": "Java",
+    "common.node": "Node",
+    "common.buildTools": "构建工具",
+    "common.notDetected": "未检测到",
+    "common.automationPermissions": "自动化权限",
+    "common.frontendDeliveryDisabled": "前端交付在全局策略中保持关闭，无法在这里启用。",
+    "common.autoScanFixes": "Auto Scan 修复",
+    "common.autoScanFixesHelp": "允许高置信度的 Scan 修复及其配置的发布流程。",
+    "common.deliveryPermission": "Auto Delivery",
+    "common.deliveryPermissionHelp": "允许此仓库执行已批准的技术交付工作。",
+    "common.patchPermission": "Auto Patch",
+    "common.patchPermissionHelp": "允许针对 Jira 驱动的修复并发布。",
+    "common.deliveryVerification": "交付验证",
+    "common.deliveryVerificationHelp": "选择实现完成后 Lumon 应为此仓库运行哪些验证。",
+    "common.policy": "策略",
+    "common.runVerification": "运行验证",
+    "common.runVerificationHelp": "使用自动配置或你自定义的命令。",
+    "common.skipVerification": "跳过验证",
+    "common.skipVerificationHelp": "不运行编译、静态检查或测试。",
+    "common.executionSource": "执行来源",
+    "common.automaticProfile": "自动配置",
+    "common.automaticProfileHelp": "运行时从仓库文件中检测命令。",
+    "common.customCommands": "自定义命令",
+    "common.customCommandsHelp": "只运行下面输入的命令。",
+    "common.checksToRun": "要运行的检查",
+    "common.compileChecks": "编译与静态检查",
+    "common.compileChecksHelp": "编译、语法、类型检查、Lint 或 PMD 检查。",
+    "common.tests": "测试",
+    "common.testsHelp": "单元测试、集成测试和测试套件命令。",
+    "common.commands": "命令",
+    "common.useSuggestedCommands": "使用 {{count}} 条建议命令{{suffix}}",
+    "common.oneCommandPerLine": "每行一条命令。",
+    "common.cloneUrl": "克隆 URL",
+    "common.cloneInspect": "克隆并检查",
+    "common.addRepositoryDescription": "Lumon 会克隆 Git URL、检测分支和工具，启用现有的 Scan 与 Delivery 行为，并默认授权 Auto Patch。",
+    "common.settingsSections": "设置分区",
+    "common.schedules": "调度",
+    "common.agentConversations": "Agent 对话",
+    "common.integrations": "集成",
+    "common.configuredKeys": "个已配置密钥",
+    "settings.automation": "自动化",
+    "settings.automationDescription": "决定工作何时可以推进的调度和执行策略。",
+    "settings.agentTeam": "Agent 团队",
+    "settings.agentTeamDescription": "谁与人沟通、各角色负责什么，以及哪些对话可以修改状态。",
+    "settings.projectOutput": "项目产出",
+    "settings.projectOutputDescription": "Mark 和 Milchick 将请求转成可测试 Story 时使用的默认设置。",
+    "settings.runtime": "运行时与集成",
+    "settings.runtimeDescription": "模型选择、发布行为、通知和本地密钥值。",
+    "settings.nextAgentTeam": "下一步：Agent 团队",
+    "settings.nextProjectOutput": "下一步：项目产出",
+    "settings.nextRuntime": "下一步：运行时与集成",
+    "settings.backAutomation": "返回自动化",
+    "settings.localConfiguration": "本地配置",
+    "settings.controlPlane": "01 · 控制面",
+    "settings.humanAgents": "02 · 面向人的 Agent",
+    "settings.businessOutput": "03 · 业务产出",
+    "settings.operatingDetails": "04 · 运行细节",
+    "settings.globalFeishuAgents": "全局飞书 Agent",
+    "settings.accessControl": "访问控制",
+    "settings.accessControlDescription": "谁可以与 Agent 对话、谁可以修改状态（解决问题、更新调度、启动交付）。添加允许的群聊 ID 后，Dylan/Milchick 才能在被 @提及时回复这些群聊。",
+    "settings.legacyWarning": "旧版 allow 模式对本地 Agent 不安全。建议使用按 Agent 配置的 Access & Exposure，并将 default_policy 设为 deny。",
+    "settings.recentPeople": "最近联系人",
+    "settings.recentChats": "最近群聊",
+    "settings.addMutationUser": "点击添加为可变更用户",
+    "settings.allowChat": "点击允许此群聊",
+    "settings.noRecentPeople": "暂无最近的飞书联系人。先给 Dylan 或 Mark 发一条消息，再刷新设置。",
+    "settings.generationLanguage": "生成语言",
+    "settings.generationDescription": "控制 Mark 为此项目写入飞书电子表格的语言。mbpass 默认使用繁体中文。",
+    "settings.afterGeneration": "修改语言或表格后，请让 Milchick/Mark 重新生成 Story，使新行使用选定的表格。",
+    "settings.executionDescription": "选择预设模型，或输入自定义 Cursor 模型 ID。自定义值必须受 Cursor 支持；Lumon 不会验证模型是否可用。",
+    "settings.automationOutcome": "自动化结果",
+    "settings.notificationsDescription": "控制 Scan 和 Delivery 是否向已配置的飞书 Webhook 发布卡片。Webhook URL 仍位于变量密钥中。",
+    "settings.storedWorkspace": "仅存储在此工作区",
+    "settings.availableKeys": "可用密钥",
+    "settings.availableKeysDescription": "显示值以检查，或直接输入替换值。保存时不会包含显示引号。",
+    "settings.revealReplacement": "显示或输入替换值",
+    "settings.unsavedChanges": "有未保存的更改",
+    "settings.allSaved": "所有更改已保存",
+    "settings.deliveryPaused": "交付轮询已暂停。",
+    "settings.patchPaused": "Auto Patch 轮询已暂停。",
+    "settings.deliveryStatusHelp": "选择所有可以启动 Auto Delivery 的 Jira 状态。Story 还必须处于 Business Ready、Technical Approved 且未在运行。",
+    "settings.deliveryStatusNote": "选择 To Do、Backlog、In Progress 或其他符合条件的 Jira 状态。失败时，Lumon 会将 Jira 卡片流转到选定的 Block 状态，并添加需要关注的评论。",
+    "settings.patchStatusNote": "只捕获 Task 和 Bug 卡片。阻塞卡片会在收到新的外部 Jira 评论后重试。",
+    "settings.scanDefaultDescription": "尚未配置周期性扫描。",
+    "settings.direct": "直接推送",
+    "settings.merge": "合并",
+    "settings.pullRequest": "PR",
+    "settings.openPullRequest": "打开 Pull Request",
+    "settings.mergeAfterPullRequest": "在 Pull Request 后合并",
+    "settings.pushDirectly": "直接推送到 main 分支",
+    "settings.feishuNotifications": "飞书通知",
+    "settings.allowedChatIds": "允许的群聊 ID",
+    "settings.allowedUserIds": "允许的用户 ID",
+    "settings.mutationUserIds": "可变更用户 ID",
+    "settings.adminUserIds": "管理员用户 ID",
+    "settings.allowedChatHelp": "将群聊加入白名单。除非群聊已列出，否则 Dylan/Milchick 只能私聊；在群聊中仍必须 @提及。",
+    "settings.allowedUserHelp": "为空表示所有用户都可以询问只读问题。",
+    "settings.mutationUserHelp": "解决问题、更新调度和启动交付时必需。为空时默认拒绝。",
+    "settings.adminUserHelp": "管理员也可以执行变更操作。",
+    "settings.appSecretRequired": "飞书客户端登录必需。",
+    "settings.keepSecret": "留空以保留当前密钥",
+    "settings.enterSecret": "输入 App Secret",
+    "settings.runtimeIdentityHelp": "运行时身份由 Agent 注册表管理。",
+    "settings.workflowOwnershipHelp": "工作流归属由 Agent 注册表管理。",
+    "settings.publishDescription": "直接推送使用已配置的 Git 仓库凭证；PR 和合并使用 GitHub CLI。Auto Scan 保留 PR 审查门禁，不支持直接推送。",
+    "editor.heading": "标题",
+    "editor.editLink": "编辑链接 URL",
+    "editor.linkUrl": "链接 URL",
+    "editor.bold": "粗体",
+    "editor.italic": "斜体",
+    "editor.link": "链接 — Shift+点击链接可定位光标，然后编辑",
+    "editor.list": "列表",
+    "editor.code": "代码",
+    "prompt.original": "原始 Markdown",
+    "prompt.preview": "预览",
+    "customModel.enter": "输入自定义 Cursor 模型",
+    "customModel.id": "Cursor 模型 ID",
+    "customModel.placeholder": "例如：cursor-grok-4.5-medium",
+    "customModel.copy": "Lumon 不会验证模型是否可用，该值将在下一次运行时使用。",
+    "customModel.edit": "编辑自定义模型",
+    "customModel.option": "自定义 Cursor 模型 ID…",
+    "customModel.help": "使用 Cursor 支持的模型 ID。",
+    "status.completed": "已完成",
+    "status.passed": "通过",
+    "status.failed": "失败",
+    "status.skipped": "已跳过",
+    "status.open": "开放",
+    "status.inProgress": "进行中",
+    "status.running": "运行中",
+    "status.active": "活跃",
+    "status.notSet": "未设置",
+    "status.resolved": "已解决",
+    "status.reopened": "已重新打开",
+    "status.synced": "已同步",
+    "status.ignored": "已忽略",
+    "status.blocked": "已阻塞",
+    "status.pending": "待处理",
+    "status.prOpen": "PR 已打开",
+    "status.notStarted": "未开始",
+    "status.devDone": "开发完成",
+    "status.approved": "已批准",
+    "status.ready": "就绪",
+    "status.draft": "草稿",
+    "status.done": "完成",
+    "status.clarifying": "澄清中",
+    "status.changed": "已变更",
+    "label.business": "业务",
+    "label.technical": "技术",
+    "workflow.auto_scan.feature": "自动扫描",
+    "workflow.auto_scan.mission": "发现反复出现的工程风险，并整理成可供评审的证据。",
+    "workflow.auto_scan.input": "代码仓库、扫描窗口、风险信号",
+    "workflow.auto_scan.output": "问题、严重程度、链接和后续问题",
+    "workflow.auto_delivery.feature": "自动交付",
+    "workflow.auto_delivery.mission": "推动已批准的 Story 完成实现、验证和交付。",
+    "workflow.auto_delivery.input": "就绪 Story、已批准方案、交付策略",
+    "workflow.auto_delivery.output": "提交、检查、PR/合并结果，或明确的阻塞原因",
+    "workflow.auto_patch.feature": "自动修复",
+    "workflow.auto_patch.mission": "接手 Jira Task/Bug，完成聚焦修复并安全交接。",
+    "workflow.auto_patch.input": "符合条件的 Jira 卡片、仓库边界",
+    "workflow.auto_patch.output": "修复证据、验证结果和 PR/直接推送结果",
+    "workflow.manager.feature": "Manager",
+    "workflow.manager.mission": "澄清意图、创建合适的工作项，并协调三个能力负责人。",
+    "workflow.manager.input": "业务请求、待决策事项、Loop 状态",
+    "workflow.manager.output": "一个问题、一张工作卡，或一项路由后的执行请求",
+    "label.autoScan": "自动扫描",
+    "label.autoDelivery": "自动交付",
+    "label.autoPatch": "自动修复",
+    "label.manager": "Manager",
+    "label.role": "角色",
+    "label.input": "输入",
+    "label.output": "输出",
+    "label.owns": "负责",
+    "label.receives": "接收",
+    "label.returns": "产出",
+    "label.gateway": "网关",
+    "label.agentsReady": "就绪 Agent",
+    "label.workflowsActive": "运行中工作流",
+    "label.questionsWaiting": "待回答问题",
+    "label.recordedTurns": "已记录对话",
+    "label.needsAttention": "需要关注",
+    "label.rolesSeen": "涉及角色",
+    "label.businessReadyCapabilities": "三个真人负责的能力",
+    "label.conversationClear": "对话清晰",
+    "label.unanswered": "{{count}} 个未回答",
+    "label.sharedRuntime": "{{count}} 个角色 · 共享运行时",
+    "label.currentStory": "当前 Story",
+    "label.status": "状态",
+    "label.elapsed": "耗时",
+    "label.finished": "结束时间",
+    "label.jiraCard": "Jira 卡片",
+    "label.branch": "分支",
+    "label.repositories": "代码仓库",
+    "label.started": "开始时间",
+    "label.issues": "问题",
+    "label.duration": "时长",
+    "label.artifacts": "产物",
+    "label.story": "Story",
+    "label.pullRequests": "Pull Request",
+    "label.checks": "检查",
+    "label.operation": "操作",
+    "label.finishedAt": "结束时间",
+    "label.log": "日志",
+    "label.summary": "摘要",
+    "label.jira": "Jira",
+    "label.trace": "Trace",
+    "label.repository": "代码仓库",
+    "label.localCommit": "本地提交",
+    "label.roleId": "角色 ID",
+    "label.workflow": "工作流",
+    "label.prompt": "提示词",
+    "label.conversation": "对话",
+    "label.typingReaction": "输入反馈",
+    "label.lookbackDays": "回溯天数",
+    "label.cron": "五字段 Cron",
+    "label.intervalMinutes": "间隔（分钟）",
+    "label.eligibleStatuses": "符合条件的 Jira 状态",
+    "label.moveStarted": "开始时流转到",
+    "label.moveCompleted": "完成时流转到",
+    "label.moveFailed": "失败时流转到",
+    "label.moveBlocked": "阻塞时流转到",
+    "label.outputLanguage": "输出语言",
+    "label.languageGeneration": "生成语言",
+    "label.spreadsheetTab": "表格页签名称",
+    "label.spreadsheetToken": "表格 Token / URL",
+    "label.cursorModel": "Cursor 模型",
+    "label.softTimeout": "软超时（秒）",
+    "label.hardTimeout": "硬超时（秒）",
+    "label.maxJobs": "最大并发任务数",
+    "label.soulVersion": "SOUL 版本",
+    "label.feishuAppId": "飞书 App ID",
+    "label.feishuAppSecret": "飞书 App Secret",
+    "label.completed": "已完成",
+    "label.openFindings": "开放问题",
+    "label.successfulScan": "成功扫描 · 7 天",
+    "label.failed7d": "失败 · 7 天",
+    "label.lookbackWindow": "回溯窗口",
+    "label.conversationAndActions": "对话和操作均可用",
+    "label.conversationPaused": "对话已在设置中暂停",
+    "label.credentialsRequired": "需要配置凭证",
+    "label.requestResult": "请求 + 结果",
+    "label.resultCaptured": "已记录结果 · 请求来自未记录转录的旧版本",
+    "label.traceOnly": "仅 Trace",
+    "label.executionTrail": "执行轨迹",
+    "label.olderTrace": "这条旧 Trace 有结果，但当时的运行时没有记录收到的消息。",
+    "label.noFinalResponse": "没有保留最终响应文本；如需更多证据，请打开 Agent 日志中的源 Trace。",
+    "label.activityRetention": "这里只显示有边界的本地请求/结果文本。Trace ID 和原始执行证据仍保存在本地 Agent 存储中。",
+    "label.high": "高",
+    "label.medium": "中",
+    "label.low": "低",
+    "label.untitledFinding": "未命名问题",
+    "label.unknownRepository": "未知代码仓库",
+    "label.reasonOptional": "原因（可选）",
+    "label.ignoreQuestion": "要将此问题标记为忽略吗？",
+    "label.ignorePlaceholder": "为什么可以安全忽略？",
+    "label.noSnippet": "此历史问题没有记录代码片段。",
+    "label.notRecorded": "未记录。",
+    "label.notStarted": "等待交付触发",
+    "label.running": "运行中",
+    "label.pending": "待处理",
+    "label.stopped": "已停止",
+    "label.needsAttentionState": "需要关注",
+    "label.startedAt": "开始于 {{value}}",
+    "label.finishedAtValue": "结束于 {{value}}",
+    "label.requested": "请求",
+    "label.result": "结果",
+    "label.noLog": "没有记录日志内容。",
+    "label.noSchedulerLog": "没有记录调度输出。",
+    "label.noSummary": "没有记录摘要。",
+    "label.recentRawOutput": "最近的原始输出",
+    "label.close": "关闭",
+    "label.checksPassed": "{{count}} 个通过",
+    "label.checksFailed": "{{count}} 个失败",
+    "label.checksSkipped": "{{count}} 个跳过",
+    "label.verification": "验证",
+    "label.checksTitle": "检查",
+    "heading.managerOverview": "Manager 总览",
+    "heading.agentActivity": "Agent 活动",
+    "heading.conversationRecords": "对话记录",
+    "heading.agentRoster": "Agent 阵容",
+    "heading.workflowControl": "工作流控制",
+    "heading.questionsWaiting": "等待你的问题",
+    "heading.scanHistory": "扫描历史",
+    "heading.trackedFindings": "跟踪中的问题",
+    "heading.currentProgress": "当前进度",
+    "heading.deliveryHistory": "交付历史",
+    "heading.schedulerActivity": "调度活动",
+    "heading.patchHistory": "修复历史",
+    "heading.stories": "Stories",
+    "heading.workspaceSettings": "工作区设置",
+    "heading.agentRoles": "Agent 角色",
+    "heading.automationSchedules": "自动化调度",
+    "heading.executionModels": "执行模型",
+    "heading.publishPolicy": "发布策略",
+    "heading.notifications": "通知",
+    "heading.variableKeys": "变量密钥",
+    "heading.testCases": "测试用例",
+    "heading.workflow": "{{feature}} 工作流",
+    "action.openSettings": "打开设置",
+    "action.manageCapture": "管理记录",
+    "action.viewActivity": "查看活动",
+    "action.inspect": "查看 {{feature}}",
+    "action.startScan": "开始扫描",
+    "action.runCycle": "运行一轮",
+    "action.viewRawLog": "查看原始日志",
+    "action.openLog": "打开失败日志",
+    "action.markIgnored": "标记为忽略",
+    "action.viewDetail": "查看详情",
+    "action.hideDetail": "隐藏详情",
+    "action.pullRequest": "Pull Request",
+    "action.startDelivery": "开始交付",
+    "action.saveChanges": "保存更改",
+    "action.savePrompt": "保存提示词",
+    "action.searchStories": "搜索 Story",
+    "action.filterStories": "筛选 Story",
+    "action.showingReadyStories": "正在显示业务就绪的 Story",
+    "action.filterReadyStories": "筛选业务就绪的 Story",
+    "action.exitFullscreen": "退出全屏",
+    "action.viewFullscreen": "查看全屏",
+    "action.start": "开始",
+    "action.save": "保存",
+    "action.runScan": "开始扫描吗？",
+    "action.confirmScan": "确认开始扫描",
+    "action.scanBody": "这将为 {{project}} 启动自动扫描。",
+    "action.scanConfirmBody": "确定现在为 {{project}} 启动扫描吗？扫描 Agent 将针对已配置的代码仓库运行。",
+  },
+  "zh-Hant": {
+    "language.label": "語言",
+    "language.en": "English",
+    "language.zhHans": "簡體中文",
+    "language.zhHant": "繁體中文",
+    "nav.overview": "總覽",
+    "nav.activity": "活動記錄",
+    "nav.scan": "自動掃描",
+    "nav.delivery": "自動交付",
+    "nav.patch": "自動修復",
+    "nav.observatory": "觀測台",
+    "nav.repositories": "程式碼儲存庫",
+    "nav.prompts": "工作流",
+    "nav.settings": "設定",
+    "context.overview.title": "管理者總覽",
+    "context.overview.description": "查看 Agent 職責、工作流健康度和下一項需要人工決策的事項。",
+    "context.activity.title": "Agent 活動",
+    "context.activity.description": "查看對話記錄、處理結果以及每次 Agent 執行背後的證據。",
+    "context.scan.title": "自動掃描",
+    "context.scan.description": "查看掃描歷史並管理已追蹤的問題。",
+    "context.delivery.title": "自動交付",
+    "context.delivery.description": "查看 Story 執行、驗證和 Pull Request 交付。",
+    "context.patch.title": "自動修復",
+    "context.patch.description": "查看 Jira Task/Bug 擷取、聚焦修復和安全交接。",
+    "context.observatory.title": "觀測台",
+    "context.observatory.description": "瀏覽和編輯 Story 說明與技術方案。",
+    "context.repositories.title": "程式碼儲存庫",
+    "context.repositories.description": "管理本地儲存庫、自動化權限和交付驗證策略。",
+    "context.prompts.title": "工作流",
+    "context.prompts.description": "查看各項本地自動化背後的提示詞、腳本、控制點和恢復路徑。",
+    "context.settings.title": "設定",
+    "context.settings.description": "配置工作區、排程和本地整合。",
+    "common.updated": "更新於 {{value}}",
+    "common.syncing": "同步中…",
+    "common.project": "專案",
+    "common.currentProject": "目前專案",
+    "common.openSettings": "開啟設定",
+    "common.manageCapture": "管理記錄",
+    "common.loadingWorkspace": "正在載入本地工作區狀態…",
+    "common.expandNavigation": "展開導覽",
+    "common.collapseNavigation": "收起導覽",
+    "common.version": "版本 {{value}}",
+    "common.staticReport": "靜態報告模式：互動操作不可用。",
+    "common.unableLoadState": "無法載入 Dashboard 狀態",
+    "common.requestFailed": "請求失敗",
+    "common.unsavedSettings": "設定中有未儲存的變更，要不儲存就離開嗎？",
+    "common.unsavedObservatory": "觀測台有未儲存的變更，要不儲存就離開嗎？",
+    "common.noData": "暫無資料。",
+    "common.cancel": "取消",
+    "common.close": "關閉",
+    "common.later": "稍後",
+    "common.save": "儲存",
+    "common.saving": "儲存中…",
+    "common.confirm": "確認",
+    "common.continue": "繼續",
+    "common.start": "開始",
+    "common.stop": "停止",
+    "common.retry": "重試",
+    "common.loading": "載入中…",
+    "common.enabled": "已啟用",
+    "common.paused": "已暫停",
+    "common.active": "執行中",
+    "common.off": "關閉",
+    "common.all": "全部",
+    "common.clear": "清除",
+    "common.selected": "已選擇 {{count}} 項",
+    "common.statusesSelected": "已選擇 {{count}} 個狀態",
+    "common.previous": "上一頁",
+    "common.next": "下一頁",
+    "common.pageOf": "第 {{page}} 頁，共 {{count}} 頁",
+    "common.showing": "顯示 {{count}} 項",
+    "common.records": "{{count}} 筆記錄",
+    "common.runs": "{{count}} 次執行",
+    "common.recentEvents": "最近 {{count}} 個事件",
+    "common.yes": "是",
+    "common.no": "否",
+    "common.unknown": "未知",
+    "common.workspace": "工作區",
+    "common.agent": "Agent",
+    "common.clarification": "釐清",
+    "common.manager": "Manager",
+    "common.you": "你",
+    "common.trace": "Trace",
+    "common.viewActivity": "查看活動",
+    "common.viewLog": "查看日誌",
+    "common.viewTrace": "查看 Trace",
+    "common.open": "開啟",
+    "common.inspect": "查看",
+    "common.noAgentRoles": "暫無可用的 Agent 角色。",
+    "common.noAgentQuestions": "沒有待回答的 Agent 問題。",
+    "common.noConversationRecords": "沒有符合篩選條件的對話記錄。",
+    "common.noFindings": "沒有符合該狀態的問題。",
+    "common.noStoriesFilter": "沒有符合篩選條件的 Story。",
+    "common.noStories": "文件儲存庫中沒有找到 Story。",
+    "common.selectStory": "選擇一個 Story 查看。",
+    "common.noAgentHistory": "暫無 Agent 對話儲存。閘道啟動後，新飛書對話會顯示在這裡。",
+    "common.askAgents": "在飛書中詢問 Agent，然後重新整理此頁面。",
+    "common.activityStoreFirstTurn": "首次 Agent 對話後會建立本地活動記錄。",
+    "common.noDeliveryHistory": "暫無交付歷史。",
+    "common.noPatchHistory": "暫無自動修復歷史。",
+    "common.noDeliveryActivity": "暫無已記錄的定時交付活動。",
+    "common.noPatchActivity": "暫無已記錄的自動修復活動。",
+    "common.noAgentRolesSettings": "暫無可用的 Agent 角色。",
+    "common.noIntegrationKeys": "未設定本地整合金鑰。",
+    "common.valueFor": "{{name}} 的值",
+    "common.revealValue": "顯示值",
+    "common.copyValue": "複製值",
+    "common.copyCode": "複製程式碼",
+    "common.showFullscreen": "全螢幕顯示",
+    "common.closeFullscreen": "關閉全螢幕",
+    "common.zoomOut": "縮小",
+    "common.resetView": "重設視圖",
+    "common.zoomIn": "放大",
+    "common.diagram": "圖表",
+    "common.image": "圖片",
+    "common.formattingTools": "格式工具",
+    "common.documentBody": "文件正文",
+    "common.add": "新增",
+    "common.navigation": "Lumon 導航",
+    "common.dashboardSections": "Dashboard 區段",
+    "common.explainSetting": "解釋此設定",
+    "common.originalMarkdown": "原始 Markdown",
+    "common.preview": "預覽",
+    "common.live": "即時",
+    "common.attempt": "第 {{number}} 次：{{duration}}",
+    "common.overwriting": "覆寫中…",
+    "common.overwriteRemote": "覆寫遠端版本",
+    "common.remoteDecision": "遠端更新需要你的決定",
+    "common.remoteConflictCopy": "Lumon 已提交本地工作區變更，但遠端分支在推送前發生了變化。請先檢查遠端變更，再決定是否覆寫。",
+    "common.onlyTaskBugCards": "這裡只顯示目前活躍 Sprint 中的 Task 和 Bug 卡片。",
+    "common.noPendingPatchCards": "目前活躍 Sprint 中沒有待處理的 Auto Patch Jira 卡片。",
+    "common.patchFlow": "捕獲 → 儲存庫 → 修復 → 發布",
+    "common.retryDeliveryCopy": "這會移除 Story 工作樹，重置其 Delivery 和 Jira 狀態，然後啟動新一輪執行。失敗執行和日誌仍會保留在歷史紀錄中。",
+    "common.repositoryGovernance": "儲存庫治理",
+    "common.addRepository": "新增儲存庫",
+    "common.repositoryIntro": "透過 Git URL 連接儲存庫。Lumon 會將其複製到 repos/，偵測執行環境和建置工具，然後讓你批准可以修改或發布程式碼的自動化能力。",
+    "common.attentionNote": "「需要關注」表示存在未提交變更、分支落後遠端，或分支/同步發生分叉。",
+    "common.repositoryConfiguration": "儲存庫設定",
+    "common.unnamedRepository": "未命名儲存庫",
+    "common.generic": "通用",
+    "common.noBuildTool": "未偵測到建置工具",
+    "common.identityConnection": "身分與連線",
+    "common.identityConnectionHelp": "從本地偵測得到；只有預設分支是可編輯的連線設定。",
+    "common.localPath": "本地路徑",
+    "common.remote": "遠端位址",
+    "common.gitStatus": "Git 狀態",
+    "common.branchSync": "分支同步",
+    "common.defaultBranch": "預設分支",
+    "common.runtimeBuild": "執行環境與建置",
+    "common.runtimeBuildHelp": "從儲存庫檔案中偵測得到。儲存庫發生變化前，這些值為唯讀。",
+    "common.language": "語言",
+    "common.java": "Java",
+    "common.node": "Node",
+    "common.buildTools": "建置工具",
+    "common.notDetected": "未偵測到",
+    "common.automationPermissions": "自動化權限",
+    "common.frontendDeliveryDisabled": "前端交付在全域策略中保持關閉，無法在這裡啟用。",
+    "common.autoScanFixes": "Auto Scan 修復",
+    "common.autoScanFixesHelp": "允許高信心度的 Scan 修復及其設定的發布流程。",
+    "common.deliveryPermission": "Auto Delivery",
+    "common.deliveryPermissionHelp": "允許此儲存庫執行已批准的技術交付工作。",
+    "common.patchPermission": "Auto Patch",
+    "common.patchPermissionHelp": "允許針對 Jira 驅動的修復並發布。",
+    "common.deliveryVerification": "交付驗證",
+    "common.deliveryVerificationHelp": "選擇實作完成後 Lumon 應為此儲存庫執行哪些驗證。",
+    "common.policy": "策略",
+    "common.runVerification": "執行驗證",
+    "common.runVerificationHelp": "使用自動設定或你自訂的指令。",
+    "common.skipVerification": "跳過驗證",
+    "common.skipVerificationHelp": "不執行編譯、靜態檢查或測試。",
+    "common.executionSource": "執行來源",
+    "common.automaticProfile": "自動設定",
+    "common.automaticProfileHelp": "執行時從儲存庫檔案中偵測指令。",
+    "common.customCommands": "自訂指令",
+    "common.customCommandsHelp": "只執行下面輸入的指令。",
+    "common.checksToRun": "要執行的檢查",
+    "common.compileChecks": "編譯與靜態檢查",
+    "common.compileChecksHelp": "編譯、語法、型別檢查、Lint 或 PMD 檢查。",
+    "common.tests": "測試",
+    "common.testsHelp": "單元測試、整合測試和測試套件指令。",
+    "common.commands": "指令",
+    "common.useSuggestedCommands": "使用 {{count}} 條建議指令{{suffix}}",
+    "common.oneCommandPerLine": "每行一條指令。",
+    "common.cloneUrl": "複製 URL",
+    "common.cloneInspect": "複製並檢查",
+    "common.addRepositoryDescription": "Lumon 會複製 Git URL、偵測分支和工具，啟用現有的 Scan 與 Delivery 行為，並預設授權 Auto Patch。",
+    "common.settingsSections": "設定區段",
+    "common.schedules": "排程",
+    "common.agentConversations": "Agent 對話",
+    "common.integrations": "整合",
+    "common.configuredKeys": "個已設定金鑰",
+    "settings.automation": "自動化",
+    "settings.automationDescription": "決定工作何時可以推進的排程和執行策略。",
+    "settings.agentTeam": "Agent 團隊",
+    "settings.agentTeamDescription": "誰與人溝通、各角色負責什麼，以及哪些對話可以修改狀態。",
+    "settings.projectOutput": "專案產出",
+    "settings.projectOutputDescription": "Mark 和 Milchick 將請求轉成可測試 Story 時使用的預設設定。",
+    "settings.runtime": "執行環境與整合",
+    "settings.runtimeDescription": "模型選擇、發布行為、通知和本地金鑰值。",
+    "settings.nextAgentTeam": "下一步：Agent 團隊",
+    "settings.nextProjectOutput": "下一步：專案產出",
+    "settings.nextRuntime": "下一步：執行環境與整合",
+    "settings.backAutomation": "返回自動化",
+    "settings.localConfiguration": "本地設定",
+    "settings.controlPlane": "01 · 控制面",
+    "settings.humanAgents": "02 · 面向人的 Agent",
+    "settings.businessOutput": "03 · 業務產出",
+    "settings.operatingDetails": "04 · 執行細節",
+    "settings.globalFeishuAgents": "全域飛書 Agent",
+    "settings.accessControl": "存取控制",
+    "settings.accessControlDescription": "誰可以與 Agent 對話、誰可以修改狀態（解決問題、更新排程、啟動交付）。新增允許的群組聊天 ID 後，Dylan/Milchick 才能在被 @提及時回覆這些群組。",
+    "settings.legacyWarning": "舊版 allow 模式對本地 Agent 不安全。建議使用按 Agent 設定的 Access & Exposure，並將 default_policy 設為 deny。",
+    "settings.recentPeople": "最近聯絡人",
+    "settings.recentChats": "最近群組聊天",
+    "settings.addMutationUser": "點擊新增為可變更使用者",
+    "settings.allowChat": "點擊允許此聊天",
+    "settings.noRecentPeople": "目前沒有最近的飛書聯絡人。先向 Dylan 或 Mark 傳送一則訊息，再重新整理設定。",
+    "settings.generationLanguage": "生成語言",
+    "settings.generationDescription": "控制 Mark 為此專案寫入飛書試算表的語言。mbpass 預設使用繁體中文。",
+    "settings.afterGeneration": "修改語言或試算表後，請讓 Milchick/Mark 重新生成 Story，使新列使用選定的試算表。",
+    "settings.executionDescription": "選擇預設模型，或輸入自訂 Cursor 模型 ID。自訂值必須受 Cursor 支援；Lumon 不會驗證模型是否可用。",
+    "settings.automationOutcome": "自動化結果",
+    "settings.notificationsDescription": "控制 Scan 和 Delivery 是否向已設定的飛書 Webhook 發布卡片。Webhook URL 仍位於變數金鑰中。",
+    "settings.storedWorkspace": "僅儲存在此工作區",
+    "settings.availableKeys": "可用金鑰",
+    "settings.availableKeysDescription": "顯示值以檢查，或直接輸入替換值。儲存時不會包含顯示引號。",
+    "settings.revealReplacement": "顯示或輸入替換值",
+    "settings.unsavedChanges": "有未儲存的變更",
+    "settings.allSaved": "所有變更已儲存",
+    "settings.deliveryPaused": "交付輪詢已暫停。",
+    "settings.patchPaused": "Auto Patch 輪詢已暫停。",
+    "settings.deliveryStatusHelp": "選擇所有可以啟動 Auto Delivery 的 Jira 狀態。Story 還必須處於 Business Ready、Technical Approved 且未在執行。",
+    "settings.deliveryStatusNote": "選擇 To Do、Backlog、In Progress 或其他符合條件的 Jira 狀態。失敗時，Lumon 會將 Jira 卡片轉換到選定的 Block 狀態，並新增需要關注的評論。",
+    "settings.patchStatusNote": "只捕獲 Task 和 Bug 卡片。阻塞卡片會在收到新的外部 Jira 評論後重試。",
+    "settings.scanDefaultDescription": "尚未設定週期性掃描。",
+    "settings.direct": "直接推送",
+    "settings.merge": "合併",
+    "settings.pullRequest": "PR",
+    "settings.openPullRequest": "開啟 Pull Request",
+    "settings.mergeAfterPullRequest": "在 Pull Request 後合併",
+    "settings.pushDirectly": "直接推送到 main 分支",
+    "settings.feishuNotifications": "飛書通知",
+    "settings.allowedChatIds": "允許的群組聊天 ID",
+    "settings.allowedUserIds": "允許的使用者 ID",
+    "settings.mutationUserIds": "可變更使用者 ID",
+    "settings.adminUserIds": "管理員使用者 ID",
+    "settings.allowedChatHelp": "將群組聊天加入白名單。除非群組已列出，否則 Dylan/Milchick 只能私聊；在群組中仍必須 @提及。",
+    "settings.allowedUserHelp": "為空表示所有使用者都可以詢問唯讀問題。",
+    "settings.mutationUserHelp": "解決問題、更新排程和啟動交付時必需。為空時預設拒絕。",
+    "settings.adminUserHelp": "管理員也可以執行變更操作。",
+    "settings.appSecretRequired": "飛書客戶端登入必需。",
+    "settings.keepSecret": "留空以保留目前金鑰",
+    "settings.enterSecret": "輸入 App Secret",
+    "settings.runtimeIdentityHelp": "執行環境身分由 Agent 登錄表管理。",
+    "settings.workflowOwnershipHelp": "工作流歸屬由 Agent 登錄表管理。",
+    "settings.publishDescription": "直接推送使用已設定的 Git 儲存庫憑證；PR 和合併使用 GitHub CLI。Auto Scan 保留 PR 審查閘門，不支援直接推送。",
+    "editor.heading": "標題",
+    "editor.editLink": "編輯連結 URL",
+    "editor.linkUrl": "連結 URL",
+    "editor.bold": "粗體",
+    "editor.italic": "斜體",
+    "editor.link": "連結 — Shift+點擊連結可定位游標，然後編輯",
+    "editor.list": "清單",
+    "editor.code": "程式碼",
+    "prompt.original": "原始 Markdown",
+    "prompt.preview": "預覽",
+    "customModel.enter": "輸入自訂 Cursor 模型",
+    "customModel.id": "Cursor 模型 ID",
+    "customModel.placeholder": "例如：cursor-grok-4.5-medium",
+    "customModel.copy": "Lumon 不會驗證模型是否可用，該值將在下一次執行時使用。",
+    "customModel.edit": "編輯自訂模型",
+    "customModel.option": "自訂 Cursor 模型 ID…",
+    "customModel.help": "使用 Cursor 支援的模型 ID。",
+    "status.completed": "已完成",
+    "status.passed": "通過",
+    "status.failed": "失敗",
+    "status.skipped": "已略過",
+    "status.open": "開放",
+    "status.inProgress": "進行中",
+    "status.running": "執行中",
+    "status.active": "使用中",
+    "status.notSet": "未設定",
+    "status.resolved": "已解決",
+    "status.reopened": "已重新開啟",
+    "status.synced": "已同步",
+    "status.ignored": "已忽略",
+    "status.blocked": "已阻塞",
+    "status.pending": "待處理",
+    "status.prOpen": "PR 已開啟",
+    "status.notStarted": "未開始",
+    "status.devDone": "開發完成",
+    "status.approved": "已核准",
+    "status.ready": "就緒",
+    "status.draft": "草稿",
+    "status.done": "完成",
+    "status.clarifying": "釐清中",
+    "status.changed": "已變更",
+    "label.business": "業務",
+    "label.technical": "技術",
+    "workflow.auto_scan.feature": "自動掃描",
+    "workflow.auto_scan.mission": "發現反覆出現的工程風險，並整理成可供評審的證據。",
+    "workflow.auto_scan.input": "程式碼儲存庫、掃描視窗、風險訊號",
+    "workflow.auto_scan.output": "問題、嚴重程度、連結和後續問題",
+    "workflow.auto_delivery.feature": "自動交付",
+    "workflow.auto_delivery.mission": "推動已核准的 Story 完成實作、驗證和交付。",
+    "workflow.auto_delivery.input": "就緒 Story、已核准方案、交付策略",
+    "workflow.auto_delivery.output": "提交、檢查、PR/合併結果，或明確的阻塞原因",
+    "workflow.auto_patch.feature": "自動修復",
+    "workflow.auto_patch.mission": "接手 Jira Task/Bug，完成聚焦修復並安全交接。",
+    "workflow.auto_patch.input": "符合條件的 Jira 卡片、儲存庫邊界",
+    "workflow.auto_patch.output": "修復證據、驗證結果和 PR/直接推送結果",
+    "workflow.manager.feature": "Manager",
+    "workflow.manager.mission": "釐清意圖、建立合適的工作項目，並協調三個能力負責人。",
+    "workflow.manager.input": "業務請求、待決策事項、Loop 狀態",
+    "workflow.manager.output": "一個問題、一張工作卡，或一項路由後的執行請求",
+    "label.autoScan": "自動掃描",
+    "label.autoDelivery": "自動交付",
+    "label.autoPatch": "自動修復",
+    "label.manager": "Manager",
+    "label.role": "角色",
+    "label.input": "輸入",
+    "label.output": "輸出",
+    "label.owns": "負責",
+    "label.receives": "接收",
+    "label.returns": "產出",
+    "label.gateway": "閘道",
+    "label.agentsReady": "就緒 Agent",
+    "label.workflowsActive": "執行中工作流",
+    "label.questionsWaiting": "待回答問題",
+    "label.recordedTurns": "已記錄對話",
+    "label.needsAttention": "需要關注",
+    "label.rolesSeen": "涉及角色",
+    "label.businessReadyCapabilities": "三個真人負責的能力",
+    "label.conversationClear": "對話清晰",
+    "label.unanswered": "{{count}} 個未回答",
+    "label.sharedRuntime": "{{count}} 個角色 · 共用執行時",
+    "label.currentStory": "目前 Story",
+    "label.status": "狀態",
+    "label.elapsed": "耗時",
+    "label.finished": "結束時間",
+    "label.jiraCard": "Jira 卡片",
+    "label.branch": "分支",
+    "label.repositories": "程式碼儲存庫",
+    "label.started": "開始時間",
+    "label.issues": "問題",
+    "label.duration": "時長",
+    "label.artifacts": "產物",
+    "label.story": "Story",
+    "label.pullRequests": "Pull Request",
+    "label.checks": "檢查",
+    "label.operation": "操作",
+    "label.finishedAt": "結束時間",
+    "label.log": "日誌",
+    "label.summary": "摘要",
+    "label.jira": "Jira",
+    "label.trace": "Trace",
+    "label.repository": "程式碼儲存庫",
+    "label.localCommit": "本地提交",
+    "label.roleId": "角色 ID",
+    "label.workflow": "工作流",
+    "label.prompt": "提示詞",
+    "label.conversation": "對話",
+    "label.typingReaction": "輸入回饋",
+    "label.lookbackDays": "回溯天數",
+    "label.cron": "五欄位 Cron",
+    "label.intervalMinutes": "間隔（分鐘）",
+    "label.eligibleStatuses": "符合條件的 Jira 狀態",
+    "label.moveStarted": "開始時流轉到",
+    "label.moveCompleted": "完成時流轉到",
+    "label.moveFailed": "失敗時流轉到",
+    "label.moveBlocked": "阻塞時流轉到",
+    "label.outputLanguage": "輸出語言",
+    "label.languageGeneration": "生成語言",
+    "label.spreadsheetTab": "試算表分頁名稱",
+    "label.spreadsheetToken": "試算表 Token / URL",
+    "label.cursorModel": "Cursor 模型",
+    "label.softTimeout": "軟逾時（秒）",
+    "label.hardTimeout": "硬逾時（秒）",
+    "label.maxJobs": "最大並行工作數",
+    "label.soulVersion": "SOUL 版本",
+    "label.feishuAppId": "飛書 App ID",
+    "label.feishuAppSecret": "飛書 App Secret",
+    "label.completed": "已完成",
+    "label.openFindings": "開放問題",
+    "label.successfulScan": "成功掃描 · 7 天",
+    "label.failed7d": "失敗 · 7 天",
+    "label.lookbackWindow": "回溯視窗",
+    "label.conversationAndActions": "對話和操作均可用",
+    "label.conversationPaused": "對話已在設定中暫停",
+    "label.credentialsRequired": "需要設定憑證",
+    "label.requestResult": "請求 + 結果",
+    "label.resultCaptured": "已記錄結果 · 請求來自未記錄轉錄的舊版本",
+    "label.traceOnly": "僅 Trace",
+    "label.executionTrail": "執行軌跡",
+    "label.olderTrace": "這條舊 Trace 有結果，但當時的執行時沒有記錄收到的訊息。",
+    "label.noFinalResponse": "沒有保留最終回應文字；如需更多證據，請開啟 Agent 日誌中的源 Trace。",
+    "label.activityRetention": "這裡只顯示有邊界的本地請求/結果文字。Trace ID 和原始執行證據仍保存在本地 Agent 儲存中。",
+    "label.high": "高",
+    "label.medium": "中",
+    "label.low": "低",
+    "label.untitledFinding": "未命名問題",
+    "label.unknownRepository": "未知程式碼儲存庫",
+    "label.reasonOptional": "原因（可選）",
+    "label.ignoreQuestion": "要將此問題標記為忽略嗎？",
+    "label.ignorePlaceholder": "為什麼可以安全忽略？",
+    "label.noSnippet": "此歷史問題沒有記錄程式碼片段。",
+    "label.notRecorded": "未記錄。",
+    "label.notStarted": "等待交付觸發",
+    "label.running": "執行中",
+    "label.pending": "待處理",
+    "label.stopped": "已停止",
+    "label.needsAttentionState": "需要關注",
+    "label.startedAt": "開始於 {{value}}",
+    "label.finishedAtValue": "結束於 {{value}}",
+    "label.requested": "請求",
+    "label.result": "結果",
+    "label.noLog": "沒有記錄日誌內容。",
+    "label.noSchedulerLog": "沒有記錄排程輸出。",
+    "label.noSummary": "沒有記錄摘要。",
+    "label.recentRawOutput": "最近的原始輸出",
+    "label.close": "關閉",
+    "label.checksPassed": "{{count}} 個通過",
+    "label.checksFailed": "{{count}} 個失敗",
+    "label.checksSkipped": "{{count}} 個略過",
+    "label.verification": "驗證",
+    "label.checksTitle": "檢查",
+    "heading.managerOverview": "Manager 總覽",
+    "heading.agentActivity": "Agent 活動",
+    "heading.conversationRecords": "對話記錄",
+    "heading.agentRoster": "Agent 陣容",
+    "heading.workflowControl": "工作流控制",
+    "heading.questionsWaiting": "等待你的問題",
+    "heading.scanHistory": "掃描歷史",
+    "heading.trackedFindings": "追蹤中的問題",
+    "heading.currentProgress": "目前進度",
+    "heading.deliveryHistory": "交付歷史",
+    "heading.schedulerActivity": "排程活動",
+    "heading.patchHistory": "修復歷史",
+    "heading.stories": "Stories",
+    "heading.workspaceSettings": "工作區設定",
+    "heading.agentRoles": "Agent 角色",
+    "heading.automationSchedules": "自動化排程",
+    "heading.executionModels": "執行模型",
+    "heading.publishPolicy": "發布策略",
+    "heading.notifications": "通知",
+    "heading.variableKeys": "變數金鑰",
+    "heading.testCases": "測試案例",
+    "heading.workflow": "{{feature}} 工作流",
+    "action.openSettings": "開啟設定",
+    "action.manageCapture": "管理記錄",
+    "action.viewActivity": "查看活動",
+    "action.inspect": "查看 {{feature}}",
+    "action.startScan": "開始掃描",
+    "action.runCycle": "執行一輪",
+    "action.viewRawLog": "查看原始日誌",
+    "action.openLog": "開啟失敗日誌",
+    "action.markIgnored": "標記為忽略",
+    "action.viewDetail": "查看詳情",
+    "action.hideDetail": "隱藏詳情",
+    "action.pullRequest": "Pull Request",
+    "action.startDelivery": "開始交付",
+    "action.saveChanges": "儲存變更",
+    "action.savePrompt": "儲存提示詞",
+    "action.searchStories": "搜尋 Story",
+    "action.filterStories": "篩選 Story",
+    "action.showingReadyStories": "正在顯示業務就緒的 Story",
+    "action.filterReadyStories": "篩選業務就緒的 Story",
+    "action.exitFullscreen": "退出全螢幕",
+    "action.viewFullscreen": "查看全螢幕",
+    "action.start": "開始",
+    "action.save": "儲存",
+    "action.runScan": "開始掃描嗎？",
+    "action.confirmScan": "確認開始掃描",
+    "action.scanBody": "這將為 {{project}} 啟動自動掃描。",
+    "action.scanConfirmBody": "確定現在為 {{project}} 啟動掃描嗎？掃描 Agent 將針對已設定的程式碼儲存庫執行。",
+  },
+};
+
+let currentDashboardLocale: Locale = "en";
+const DashboardI18nContext = createContext<{ locale: Locale; setLocale: (locale: Locale) => void; t: Translate } | null>(null);
+
+function interpolate(value: string, variables: Record<string, unknown> = {}) {
+  return value.replace(/{{(\w+)}}/g, (_, key) => String(variables[key] ?? ""));
+}
+
+function translateKey(locale: Locale, key: string, variables?: Record<string, unknown>) {
+  return interpolate(translations[locale][key] ?? translations.en[key] ?? key, variables);
+}
+
+function useI18n() {
+  const context = useContext(DashboardI18nContext);
+  if (!context) throw new Error("DashboardI18nContext is missing");
+  return context;
+}
+
+function DashboardI18nProvider({ children }: { children: React.ReactNode }) {
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    const stored = window.localStorage.getItem(localeStorageKey) || window.localStorage.getItem(legacyLocaleStorageKey);
+    return localeOptions.some((option) => option.value === stored) ? stored as Locale : "en";
+  });
+  currentDashboardLocale = locale;
+  const setLocale = (next: Locale) => { currentDashboardLocale = next; setLocaleState(next); window.localStorage.setItem(localeStorageKey, next); };
+  const t = useCallback<Translate>((key, variables) => translateKey(locale, key, variables), [locale]);
+  useEffect(() => { document.documentElement.lang = locale === "zh-Hans" ? "zh-CN" : locale === "zh-Hant" ? "zh-TW" : "en"; }, [locale]);
+  return <DashboardI18nContext.Provider value={{ locale, setLocale, t }}>{children}</DashboardI18nContext.Provider>;
+}
 
 declare global {
   interface Window { DASHBOARD_DATA?: DashboardData }
@@ -134,28 +1604,28 @@ interface DashboardData extends RecordValue {
   patch?: { current?: RecordValue; runs?: RecordValue[]; scheduler_activity?: RecordValue[]; scheduler_log_available?: boolean; config?: RecordValue };
 }
 
-const tabItems: Array<{ id: Tab; label: string; icon: typeof ScanSearch }> = [
-  { id: "overview", label: "OVERVIEW", icon: LayoutDashboard },
-  { id: "activity", label: "ACTIVITY", icon: Activity },
-  { id: "scan", label: "AUTO SCAN", icon: ScanSearch },
-  { id: "delivery", label: "AUTO DELIVERY", icon: Truck },
-  { id: "patch", label: "AUTO PATCH", icon: Code2 },
-  { id: "observatory", label: "OBSERVATORY", icon: Eye },
-  { id: "repositories", label: "REPOSITORY", icon: FolderGit2 },
-  { id: "prompts", label: "WORKFLOW", icon: Workflow },
-  { id: "settings", label: "SETTINGS", icon: Settings2 }
+const tabItems: Array<{ id: Tab; labelKey: string; icon: typeof ScanSearch }> = [
+  { id: "overview", labelKey: "nav.overview", icon: LayoutDashboard },
+  { id: "activity", labelKey: "nav.activity", icon: Activity },
+  { id: "scan", labelKey: "nav.scan", icon: ScanSearch },
+  { id: "delivery", labelKey: "nav.delivery", icon: Truck },
+  { id: "patch", labelKey: "nav.patch", icon: Code2 },
+  { id: "observatory", labelKey: "nav.observatory", icon: Eye },
+  { id: "repositories", labelKey: "nav.repositories", icon: FolderGit2 },
+  { id: "prompts", labelKey: "nav.prompts", icon: Workflow },
+  { id: "settings", labelKey: "nav.settings", icon: Settings2 }
 ];
 
-const tabContext: Record<Tab, { title: string; description: string }> = {
-  overview: { title: "MANAGER OVERVIEW", description: "Agent ownership, workflow health, and the next human decision." },
-  activity: { title: "AGENT ACTIVITY", description: "Conversation records, outcomes, and the evidence behind each Agent turn." },
-  scan: { title: "AUTO SCAN", description: "Review history and manage tracked findings." },
-  delivery: { title: "AUTO DELIVERY", description: "Story execution, verification, and pull request delivery." },
-  patch: { title: "AUTO PATCH", description: "Jira Task and Bug capture, focused fixes, and safe handoff." },
-  observatory: { title: "OBSERVATORY", description: "Browse and edit story briefs and technical plans." },
-  repositories: { title: "REPOSITORY", description: "Local repositories, automation permissions, and delivery verification policy." },
-  prompts: { title: "WORKFLOW", description: "The prompts, scripts, control points, and recovery paths behind each local automation." },
-  settings: { title: "SETTINGS", description: "Workspace configuration, scheduling, and local integrations." }
+const tabContext: Record<Tab, { titleKey: string; descriptionKey: string }> = {
+  overview: { titleKey: "context.overview.title", descriptionKey: "context.overview.description" },
+  activity: { titleKey: "context.activity.title", descriptionKey: "context.activity.description" },
+  scan: { titleKey: "context.scan.title", descriptionKey: "context.scan.description" },
+  delivery: { titleKey: "context.delivery.title", descriptionKey: "context.delivery.description" },
+  patch: { titleKey: "context.patch.title", descriptionKey: "context.patch.description" },
+  observatory: { titleKey: "context.observatory.title", descriptionKey: "context.observatory.description" },
+  repositories: { titleKey: "context.repositories.title", descriptionKey: "context.repositories.description" },
+  prompts: { titleKey: "context.prompts.title", descriptionKey: "context.prompts.description" },
+  settings: { titleKey: "context.settings.title", descriptionKey: "context.settings.description" }
 };
 
 const workflowProfiles = [
@@ -201,6 +1671,38 @@ function workflowProfile(workflow: string) {
   return workflowProfiles.find((profile) => profile.workflow === workflow) || (workflow === "manager" ? managerProfile : null);
 }
 
+const agentAvatarSources: Record<string, string> = {
+  dylan: "assets/avatars/dylan.png",
+  mark: "assets/avatars/mark.png",
+  irving: "assets/avatars/irving.png",
+  milchick: "assets/avatars/milchick.png",
+};
+
+const agentAvatarByWorkflow: Record<string, string> = {
+  auto_scan: "dylan",
+  auto_delivery: "mark",
+  auto_patch: "irving",
+  manager: "milchick",
+};
+
+function AgentAvatar({ agentId, displayName, size }: { agentId?: unknown; displayName?: unknown; size: "card" | "guide" | "record" }) {
+  const id = String(agentId || "").trim().toLowerCase();
+  const src = agentAvatarSources[id];
+  if (src) return <img className={`agent-avatar agent-avatar-${size}`} src={src} alt="" aria-hidden="true" />;
+  const initial = String(displayName || agentId || "A").trim().slice(0, 1).toUpperCase();
+  return <span className={`activity-avatar activity-avatar-${id || "agent"}`} aria-hidden="true">{initial}</span>;
+}
+
+function localizedWorkflowProfile<T extends { workflow: string; feature: string; mission: string; input: string; output: string }>(profile: T, t: Translate) {
+  return {
+    ...profile,
+    feature: t(`workflow.${profile.workflow}.feature`),
+    mission: t(`workflow.${profile.workflow}.mission`),
+    input: t(`workflow.${profile.workflow}.input`),
+    output: t(`workflow.${profile.workflow}.output`),
+  };
+}
+
 const cursorModelOptions = [
   { label: "Auto", value: "auto" },
   { label: "Composer 2.5", value: "composer-2.5" },
@@ -219,21 +1721,26 @@ function trimmedModelValue(value: unknown) { return String(value ?? "").trim(); 
 function when(value: unknown) {
   if (!value) return "—";
   const date = new Date(String(value));
-  return Number.isNaN(date.valueOf()) ? String(value) : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+  const locale = currentDashboardLocale === "zh-Hans" ? "zh-CN" : currentDashboardLocale === "zh-Hant" ? "zh-TW" : undefined;
+  return Number.isNaN(date.valueOf()) ? String(value) : new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
 }
 function elapsed(start?: string, end?: string) {
   if (!start || !end) return "—";
   const seconds = Math.round((new Date(end).valueOf() - new Date(start).valueOf()) / 1000);
   if (!Number.isFinite(seconds) || seconds < 0) return "—";
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = String(seconds % 60).padStart(2, "0");
+  return currentDashboardLocale === "en" ? `${minutes}m ${remainder}s` : `${minutes}${currentDashboardLocale === "zh-Hans" ? "分" : "分"}${remainder}${currentDashboardLocale === "zh-Hans" ? "秒" : "秒"}`;
 }
 function durationMs(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
   const milliseconds = Number(value);
   if (!Number.isFinite(milliseconds)) return "—";
-  if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+  if (milliseconds < 1000) return currentDashboardLocale === "en" ? `${Math.round(milliseconds)}ms` : `${Math.round(milliseconds)}毫秒`;
   const seconds = Math.round(milliseconds / 1000);
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = String(seconds % 60).padStart(2, "0");
+  return currentDashboardLocale === "en" ? `${minutes}m ${remainder}s` : `${minutes}分${remainder}秒`;
 }
 function statusTone(value: unknown) {
   const normalized = String(value || "unknown").toLowerCase().replaceAll("_", " ");
@@ -245,15 +1752,15 @@ function statusTone(value: unknown) {
 function titleStatus(value: unknown) {
   const raw = text(value, "unknown").toLowerCase().replaceAll("_", " ");
   const labels: Record<string, string> = {
-    "completed with findings": "Completed", completed: "Completed", clean: "Completed",
-    passed: "Passed", failed: "Failed", skipped: "Skipped", open: "Open",
-    "in progress": "In progress", running: "Running", configured: "Active",
-    "not configured": "Not set", resolved: "Resolved", reopened: "Reopened", synced: "Synced",
-    ignored: "Ignored", blocked: "Blocked", pending: "Pending", active: "Active",
-    "pr open": "PR open", "not started": "Not started", "dev done": "Dev done",
-    approved: "Approved", ready: "Ready", draft: "Draft", done: "Done", clarifying: "Clarifying", changed: "Changed"
+    "completed with findings": "status.completed", completed: "status.completed", clean: "status.completed",
+    passed: "status.passed", failed: "status.failed", skipped: "status.skipped", open: "status.open",
+    "in progress": "status.inProgress", running: "status.running", configured: "status.active",
+    "not configured": "status.notSet", resolved: "status.resolved", reopened: "status.reopened", synced: "status.synced",
+    ignored: "status.ignored", blocked: "status.blocked", pending: "status.pending", active: "status.active",
+    "pr open": "status.prOpen", "not started": "status.notStarted", "dev done": "status.devDone",
+    approved: "status.approved", ready: "status.ready", draft: "status.draft", done: "status.done", clarifying: "status.clarifying", changed: "status.changed"
   };
-  return labels[raw] || raw.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return labels[raw] ? translateKey(currentDashboardLocale, labels[raw]) : raw.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 async function request(path: string, project: string, init: RequestInit & { json?: RecordValue } = {}) {
   const url = new URL(path, window.location.origin);
@@ -275,9 +1782,10 @@ function Badge({ value }: { value: unknown }) {
 }
 
 function StoryStatusMeta({ business, technical, compact = false }: { business: string; technical: string; compact?: boolean }) {
+  const { t } = useI18n();
   return <div className={`observatory-meta${compact ? " compact" : ""}`}>
-    <span className="observatory-meta-item"><em>Business</em><Badge value={business || "draft"} /></span>
-    <span className="observatory-meta-item"><em>Technical</em><Badge value={technical || "draft"} /></span>
+    <span className="observatory-meta-item"><em>{t("label.business")}</em><Badge value={business || "draft"} /></span>
+    <span className="observatory-meta-item"><em>{t("label.technical")}</em><Badge value={technical || "draft"} /></span>
   </div>;
 }
 
@@ -297,22 +1805,24 @@ function StoryListMeta({ date, assignee }: { date: string; assignee: string }) {
 }
 
 function StoryListStatus({ business, technical }: { business: string; technical: string }) {
+  const { t } = useI18n();
   const businessTone = statusTone(business || "draft");
   const technicalTone = statusTone(technical || "draft");
   const icon = (tone: string) => tone === "success" ? <i className="observatory-status-dot" /> : <CircleDot size={11} />;
   return <div className="observatory-story-status">
     <span className={`observatory-story-status-item ${businessTone}`}>
       {icon(businessTone)}
-      Business {titleStatus(business || "draft")}
+      {t("label.business")} {titleStatus(business || "draft")}
     </span>
     <span className={`observatory-story-status-item ${technicalTone}`}>
       {icon(technicalTone)}
-      Technical {titleStatus(technical || "draft")}
+      {t("label.technical")} {titleStatus(technical || "draft")}
     </span>
   </div>;
 }
 
 function FullscreenMedia({ label, onClose, children }: { label: string; onClose: () => void; children: React.ReactNode }) {
+  const { t } = useI18n();
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -352,10 +1862,10 @@ function FullscreenMedia({ label, onClose, children }: { label: string; onClose:
     <header>
       <span>{label}</span>
       <div className="media-fullscreen-actions">
-        <button type="button" className="button secondary" title="Zoom out" aria-label="Zoom out" onClick={() => setZoom((value) => clampZoom(value - FULLSCREEN_ZOOM_STEP))}><ZoomOut size={14} /></button>
-        <button type="button" className="button secondary media-fullscreen-zoom-label" title="Reset view" aria-label="Reset view" onClick={resetView}>{Math.round(zoom * 100)}%</button>
-        <button type="button" className="button secondary" title="Zoom in" aria-label="Zoom in" onClick={() => setZoom((value) => clampZoom(value + FULLSCREEN_ZOOM_STEP))}><ZoomIn size={14} /></button>
-        <button type="button" className="button secondary" onClick={onClose} aria-label="Close fullscreen"><X size={14} /></button>
+        <button type="button" className="button secondary" title={t("common.zoomOut")} aria-label={t("common.zoomOut")} onClick={() => setZoom((value) => clampZoom(value - FULLSCREEN_ZOOM_STEP))}><ZoomOut size={14} /></button>
+        <button type="button" className="button secondary media-fullscreen-zoom-label" title={t("common.resetView")} aria-label={t("common.resetView")} onClick={resetView}>{Math.round(zoom * 100)}%</button>
+        <button type="button" className="button secondary" title={t("common.zoomIn")} aria-label={t("common.zoomIn")} onClick={() => setZoom((value) => clampZoom(value + FULLSCREEN_ZOOM_STEP))}><ZoomIn size={14} /></button>
+        <button type="button" className="button secondary" onClick={onClose} aria-label={t("common.closeFullscreen")}><X size={14} /></button>
       </div>
     </header>
     <div
@@ -380,6 +1890,7 @@ async function renderMermaidSvg(chart: string) {
 }
 
 const MermaidBlock = memo(function MermaidBlock({ chart }: { chart: string }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
@@ -400,30 +1911,32 @@ const MermaidBlock = memo(function MermaidBlock({ chart }: { chart: string }) {
   }, [chart]);
   return <>
     <div className="mermaid-wrap">
-      <button type="button" className="mermaid-fullscreen-btn" title="Show fullscreen" aria-label="Show fullscreen" onClick={() => setFullscreen(true)}><Maximize2 size={14} /></button>
+      <button type="button" className="mermaid-fullscreen-btn" title={t("common.showFullscreen")} aria-label={t("common.showFullscreen")} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></button>
       <div className="mermaid-block" ref={ref} />
     </div>
-    {fullscreen && <FullscreenMedia label="Diagram" onClose={() => setFullscreen(false)}>
+    {fullscreen && <FullscreenMedia label={t("common.diagram")} onClose={() => setFullscreen(false)}>
       <div className="mermaid-block mermaid-block-fullscreen" dangerouslySetInnerHTML={{ __html: mermaidSvgCache.get(chart) || ref.current?.innerHTML || "" }} />
     </FullscreenMedia>}
   </>;
 });
 
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const { t } = useI18n();
   const [fullscreen, setFullscreen] = useState(false);
   if (!src) return null;
   return <>
     <span className="markdown-image-wrap">
-      <button type="button" className="mermaid-fullscreen-btn" title="Show fullscreen" aria-label="Show fullscreen" onClick={() => setFullscreen(true)}><Maximize2 size={14} /></button>
+      <button type="button" className="mermaid-fullscreen-btn" title={t("common.showFullscreen")} aria-label={t("common.showFullscreen")} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></button>
       <img src={src} alt={alt || ""} />
     </span>
-    {fullscreen && <FullscreenMedia label={alt || "Image"} onClose={() => setFullscreen(false)}>
+    {fullscreen && <FullscreenMedia label={alt || t("common.image")} onClose={() => setFullscreen(false)}>
       <img src={src} alt={alt || ""} />
     </FullscreenMedia>}
   </>;
 }
 
 function CodeFence({ className, children }: { className?: string; children?: React.ReactNode }) {
+  const { t } = useI18n();
   const value = String(children).replace(/\n$/, "");
   const [copied, setCopied] = useState(false);
   if (/language-mermaid/.test(className || "")) return <MermaidBlock chart={value} />;
@@ -435,8 +1948,8 @@ function CodeFence({ className, children }: { className?: string; children?: Rea
       <button
         type="button"
         className="md-code-copy"
-        title="Copy code"
-        aria-label="Copy code"
+        title={t("common.copyCode")}
+        aria-label={t("common.copyCode")}
         data-copied={copied ? "true" : undefined}
         onClick={() => {
           void navigator.clipboard.writeText(value).then(() => {
@@ -497,8 +2010,8 @@ function decorateCodeBlocks(root: HTMLElement) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "md-code-copy";
-    button.title = "Copy code";
-    button.setAttribute("aria-label", "Copy code");
+    button.title = translateKey(currentDashboardLocale, "common.copyCode");
+    button.setAttribute("aria-label", translateKey(currentDashboardLocale, "common.copyCode"));
     button.innerHTML = COPY_ICON;
     button.onclick = (event) => {
       event.preventDefault();
@@ -519,7 +2032,8 @@ function markdownToEditableHtml(markdown: string) {
   const rewritten = markdown.replace(/```mermaid\r?\n([\s\S]*?)```/g, (_, chart: string) => {
     const id = `mm-${++mermaidPaintSeq}`;
     mermaidChartById.set(id, chart.trim());
-    return `\n\n<div class="mermaid-wrap" contenteditable="false" data-mm-id="${id}"><button type="button" class="mermaid-fullscreen-btn" data-mm-fullscreen title="Show fullscreen" aria-label="Show fullscreen"></button><div class="mermaid-block" data-mm-host></div></div>\n\n`;
+    const label = translateKey(currentDashboardLocale, "common.showFullscreen");
+    return `\n\n<div class="mermaid-wrap" contenteditable="false" data-mm-id="${id}"><button type="button" class="mermaid-fullscreen-btn" data-mm-fullscreen title="${label}" aria-label="${label}"></button><div class="mermaid-block" data-mm-host></div></div>\n\n`;
   });
   return String(marked.parse(rewritten, { async: false }));
 }
@@ -597,6 +2111,7 @@ function shouldOpenMarkdownLink(event: { shiftKey?: boolean; metaKey?: boolean; 
 }
 
 function ObservatoryDocEditor({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const { t } = useI18n();
   const { frontmatter, body } = splitFrontmatter(value);
   const editorRef = useRef<HTMLDivElement>(null);
   const focusedRef = useRef(false);
@@ -644,8 +2159,8 @@ function ObservatoryDocEditor({ value, onChange }: { value: string; onChange: (n
       const button = document.createElement("button");
       button.type = "button";
       button.className = "mermaid-fullscreen-btn";
-      button.title = "Show fullscreen";
-      button.setAttribute("aria-label", "Show fullscreen");
+      button.title = t("common.showFullscreen");
+      button.setAttribute("aria-label", t("common.showFullscreen"));
       button.innerHTML = maximizeIcon;
       const src = image.getAttribute("src") || "";
       const alt = image.getAttribute("alt") || "";
@@ -658,7 +2173,7 @@ function ObservatoryDocEditor({ value, onChange }: { value: string; onChange: (n
       wrap.append(button, image);
     });
     await hydrateMermaidHosts(root);
-  }, []);
+  }, [t]);
   useEffect(() => {
     if (focusedRef.current) return;
     void paint(body);
@@ -681,7 +2196,7 @@ function ObservatoryDocEditor({ value, onChange }: { value: string; onChange: (n
     root?.focus();
     const existing = linkElementFromSelection(root);
     const current = existing?.getAttribute("href") || "https://";
-    const href = window.prompt(existing ? "Edit link URL" : "Link URL", current);
+    const href = window.prompt(existing ? t("editor.editLink") : t("editor.linkUrl"), current);
     if (href === null) return;
     const next = href.trim();
     if (existing) {
@@ -699,20 +2214,20 @@ function ObservatoryDocEditor({ value, onChange }: { value: string; onChange: (n
     if (next) run("createLink", next);
   };
   return <div className={`observatory-doc${docFullscreen ? " observatory-doc-fullscreen" : ""}`}>
-    <div className="observatory-toolbar" role="toolbar" aria-label="Formatting tools">
-      <button type="button" title="Heading" onMouseDown={(event) => event.preventDefault()} onClick={() => run("formatBlock", "h2")}><Heading2 size={14} /></button>
-      <button type="button" title="Bold" onMouseDown={(event) => event.preventDefault()} onClick={() => run("bold")}><Bold size={14} /></button>
-      <button type="button" title="Italic" onMouseDown={(event) => event.preventDefault()} onClick={() => run("italic")}><Italic size={14} /></button>
-      <button type="button" title="Link — Shift+click a link to place the caret, then edit" onMouseDown={(event) => event.preventDefault()} onClick={editOrCreateLink}><Link2 size={14} /></button>
-      <button type="button" title="List" onMouseDown={(event) => event.preventDefault()} onClick={() => run("insertUnorderedList")}><List size={14} /></button>
-      <button type="button" title="Code" onMouseDown={(event) => event.preventDefault()} onClick={() => run("formatBlock", "pre")}><Code2 size={14} /></button>
+    <div className="observatory-toolbar" role="toolbar" aria-label={t("common.formattingTools")}>
+      <button type="button" title={t("editor.heading")} onMouseDown={(event) => event.preventDefault()} onClick={() => run("formatBlock", "h2")}><Heading2 size={14} /></button>
+      <button type="button" title={t("editor.bold")} onMouseDown={(event) => event.preventDefault()} onClick={() => run("bold")}><Bold size={14} /></button>
+      <button type="button" title={t("editor.italic")} onMouseDown={(event) => event.preventDefault()} onClick={() => run("italic")}><Italic size={14} /></button>
+      <button type="button" title={t("editor.link")} onMouseDown={(event) => event.preventDefault()} onClick={editOrCreateLink}><Link2 size={14} /></button>
+      <button type="button" title={t("editor.list")} onMouseDown={(event) => event.preventDefault()} onClick={() => run("insertUnorderedList")}><List size={14} /></button>
+      <button type="button" title={t("editor.code")} onMouseDown={(event) => event.preventDefault()} onClick={() => run("formatBlock", "pre")}><Code2 size={14} /></button>
     </div>
     <div className="observatory-doc-preview-wrap">
       <button
         type="button"
         className="observatory-doc-fullscreen-btn"
-        title={docFullscreen ? "Exit fullscreen" : "Fullscreen"}
-        aria-label={docFullscreen ? "Exit fullscreen" : "Fullscreen"}
+        title={docFullscreen ? t("common.closeFullscreen") : t("common.showFullscreen")}
+        aria-label={docFullscreen ? t("common.closeFullscreen") : t("common.showFullscreen")}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setDocFullscreen((value) => !value)}
       >{docFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
@@ -724,7 +2239,7 @@ function ObservatoryDocEditor({ value, onChange }: { value: string; onChange: (n
         spellCheck={false}
         role="textbox"
         aria-multiline="true"
-        aria-label="Document body"
+        aria-label={t("common.documentBody")}
         onFocus={() => { focusedRef.current = true; }}
         onBlur={() => { focusedRef.current = false; syncFromDom(); }}
         onInput={() => { editedRef.current = true; syncFromDom(); }}
@@ -741,7 +2256,7 @@ function ObservatoryDocEditor({ value, onChange }: { value: string; onChange: (n
         }}
       />
     </div>
-    {fullscreen && <FullscreenMedia label={fullscreen.kind === "img" ? (fullscreen.alt || "Image") : "Diagram"} onClose={() => setFullscreen(null)}>
+    {fullscreen && <FullscreenMedia label={fullscreen.kind === "img" ? (fullscreen.alt || t("common.image")) : t("common.diagram")} onClose={() => setFullscreen(null)}>
       {fullscreen.kind === "img"
         ? <img src={fullscreen.value} alt={fullscreen.alt || ""} />
         : <div className="mermaid-block mermaid-block-fullscreen" dangerouslySetInnerHTML={{ __html: fullscreen.value }} />}
@@ -758,6 +2273,7 @@ function Panel({ title, action, children, className = "" }: { title: string; act
 }
 
 function App() {
+  const { locale, setLocale, t } = useI18n();
   const initialProject = new URLSearchParams(window.location.search).get("project") || window.DASHBOARD_DATA?.interactive?.project || "";
   const [project, setProject] = useState(initialProject);
   const [data, setData] = useState<DashboardData | null>(null);
@@ -766,7 +2282,7 @@ function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("lumen-sidebar-collapsed") === "true");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("lumon-sidebar-collapsed") === "true" || window.localStorage.getItem("lumen-sidebar-collapsed") === "true");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [observatoryDirty, setObservatoryDirty] = useState(false);
@@ -794,9 +2310,9 @@ function App() {
       if (staticData) {
         dataRef.current = true;
         setData(staticData);
-        setError("Static report mode: interactive actions are unavailable.");
+        setError(t("common.staticReport"));
       }
-      else setError(err instanceof Error ? err.message : "Unable to load Dashboard state");
+      else setError(err instanceof Error ? err.message : t("common.unableLoadState"));
     } finally { if (sequence === loadSequence.current) setLoading(false); }
   };
 
@@ -817,12 +2333,12 @@ function App() {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [project]);
   useEffect(() => { if (!notice) return; const id = window.setTimeout(() => setNotice(null), 3200); return () => window.clearTimeout(id); }, [notice]);
-  useEffect(() => { window.localStorage.setItem("lumen-sidebar-collapsed", String(sidebarCollapsed)); }, [sidebarCollapsed]);
+  useEffect(() => { window.localStorage.setItem("lumon-sidebar-collapsed", String(sidebarCollapsed)); }, [sidebarCollapsed]);
   useEffect(() => { const onPopState = () => setActiveTab((tabItems.find((item) => `/${item.id}` === window.location.pathname)?.id || "scan") as Tab); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
 
   const confirmLeaveUnsaved = () => {
-    if (settingsDirty && !window.confirm("You have unsaved Settings changes. Leave without saving?")) return false;
-    if (observatoryDirty && !window.confirm("You have unsaved Observatory changes. Leave without saving?")) return false;
+    if (settingsDirty && !window.confirm(t("common.unsavedSettings"))) return false;
+    if (observatoryDirty && !window.confirm(t("common.unsavedObservatory"))) return false;
     return true;
   };
   const changeProject = (slug: string) => {
@@ -846,33 +2362,33 @@ function App() {
   };
   const interact = async (path: string, json: RecordValue, message: string): Promise<boolean> => {
     try { await request(path, project, { method: "POST", json }); notify(message, "success"); void load(); return true; }
-    catch (err) { notify(err instanceof Error ? err.message : "Request failed", "error"); return false; }
+    catch (err) { notify(err instanceof Error ? err.message : t("common.requestFailed"), "error"); return false; }
   };
   const projects = data?.interactive?.projects || [];
   const tagline = data?.product?.tagline || "Engineering, made legible.";
   const context = tabContext[activeTab];
 
   return <main className={`dashboard-layout ${sidebarCollapsed ? "sidebar-is-collapsed" : ""}`}>
-    <aside className="sidebar" aria-label="Lumen navigation">
+    <aside className="sidebar" aria-label={t("common.navigation")}>
       <div className="sidebar-brand">
-        <img src="assets/lumen-mark.png" className="brand-mark" alt="Lumen" />
-        <div className="sidebar-brand-copy"><strong>Lumen</strong><span>{tagline}</span></div>
+        <img src="assets/lumon-mark.png" className="brand-mark" alt="Lumon" />
+        <div className="sidebar-brand-copy"><strong>Lumon</strong><span>{tagline}</span></div>
       </div>
-      <nav className="side-nav" aria-label="Dashboard sections">{tabItems.map((item) => { const Icon = item.icon; return <button title={item.label} className={activeTab === item.id ? "active" : ""} onClick={() => changeTab(item.id)} key={item.id}><Icon size={17} /><span>{item.label}</span></button>; })}</nav>
+      <nav className="side-nav" aria-label={t("common.dashboardSections")}>{tabItems.map((item) => { const Icon = item.icon; const label = t(item.labelKey); return <button title={label} className={activeTab === item.id ? "active" : ""} onClick={() => changeTab(item.id)} key={item.id}><Icon size={17} /><span>{label}</span></button>; })}</nav>
       <div className="sidebar-foot">
         {!sidebarCollapsed && <img src="assets/inspire-group-logo.png" className="company-mark" alt="INSPIRE GROUP" />}
-        <small>{sidebarCollapsed ? `V${lumenVersion}` : `Version ${lumenVersion}`}</small>
+        <small>{sidebarCollapsed ? `V${lumonVersion}` : t("common.version", { value: lumonVersion })}</small>
       </div>
     </aside>
-    <button type="button" className="icon-button sidebar-toggle" title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSidebarCollapsed((value) => !value); }}>{sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}</button>
+    <button type="button" className="icon-button sidebar-toggle" title={sidebarCollapsed ? t("common.expandNavigation") : t("common.collapseNavigation")} aria-label={sidebarCollapsed ? t("common.expandNavigation") : t("common.collapseNavigation")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSidebarCollapsed((value) => !value); }}>{sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}</button>
     <section className="content-area">
       <header className="masthead">
-        <div className="masthead-context"><strong>{context.title}</strong><span>{context.description}</span></div>
-        <div className="masthead-actions"><span className="last-updated">{lastUpdated ? `Updated ${when(lastUpdated.toISOString())}` : "Syncing…"}</span><label className="project-picker"><span>Project</span><select value={project} onChange={(event) => changeProject(event.target.value)}>{projects.map((item) => <option value={item.slug} key={item.slug}>{item.name}</option>)}</select><ChevronDown size={15} /></label></div>
+        <div className="masthead-context"><strong>{t(context.titleKey)}</strong><span>{t(context.descriptionKey)}</span></div>
+        <div className="masthead-actions"><span className="last-updated">{lastUpdated ? t("common.updated", { value: when(lastUpdated.toISOString()) }) : t("common.syncing")}</span><label className="locale-picker"><span className="sr-only">{t("language.label")}</span><select aria-label={t("language.label")} value={locale} onChange={(event) => setLocale(event.target.value as Locale)}>{localeOptions.map((option) => <option value={option.value} key={option.value}>{option.value === "en" ? t("language.en") : option.value === "zh-Hans" ? t("language.zhHans") : t("language.zhHant")}</option>)}</select></label><label className="project-picker"><span>{t("common.project")}</span><select value={project} onChange={(event) => changeProject(event.target.value)}>{projects.map((item) => <option value={item.slug} key={item.slug}>{item.name}</option>)}</select><ChevronDown size={15} /></label></div>
       </header>
       <div className="page-content" key={activeTab}>
         {error && <div className="status-note"><Activity size={15} />{error}</div>}
-        {!data && loading ? <div className="loading-state"><LoaderCircle size={22} className="spin" /> Loading local workspace state…</div> : null}
+        {!data && loading ? <div className="loading-state"><LoaderCircle size={22} className="spin" /> {t("common.loadingWorkspace")}</div> : null}
         {data && activeTab === "overview" && <OverviewView data={data} project={project} onNavigate={changeTab} />}
         {data && activeTab === "activity" && <ActivityView data={data} project={project} onNavigate={changeTab} />}
         {data && activeTab === "scan" && <ScanView data={data} project={project} notify={notify} reload={load} />}
@@ -890,13 +2406,14 @@ function App() {
 }
 
 function GitSyncConflictDialog({ conflict, project, notify, onClose, onResolved }: { conflict: RecordValue; project: string; notify: Notify; onClose: () => void; onResolved: () => Promise<void> }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const overwrite = async () => {
     setBusy(true); setError("");
     try {
       await request("/api/git-sync/force", project, { method: "POST", json: {} });
-      notify("Remote branch overwritten with the local Lumen commit", "success");
+      notify("Remote branch overwritten with the local Lumon commit", "success");
       onClose();
       await onResolved();
     } catch (err) {
@@ -904,7 +2421,7 @@ function GitSyncConflictDialog({ conflict, project, notify, onClose, onResolved 
       setError(message);
     } finally { setBusy(false); }
   };
-  return <div className="modal-backdrop" role="presentation"><section className="modal git-sync-conflict-modal" role="dialog" aria-modal="true" aria-label="Git sync conflict"><div className="modal-body compact"><strong>Remote updates need your decision</strong><p className="modal-copy">Lumen committed local workspace changes, but the remote {conflict.branch || "branch"} changed before the push. Review the remote changes before choosing whether to overwrite them.</p><div className="git-sync-conflict-details"><span>Repository</span><code>{conflict.repo || "Workspace"}</code><span>Local commit</span><code>{conflict.local_oid || "—"}</code></div>{error && <p className="git-sync-error" role="alert">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>Later</button><button className="button danger" disabled={busy} onClick={() => void overwrite()}>{busy ? "Overwriting…" : "Overwrite remote"}</button></footer></section></div>;
+  return <div className="modal-backdrop" role="presentation"><section className="modal git-sync-conflict-modal" role="dialog" aria-modal="true" aria-label={t("common.remoteDecision")}><div className="modal-body compact"><strong>{t("common.remoteDecision")}</strong><p className="modal-copy">{t("common.remoteConflictCopy").replace("remote branch", `remote ${conflict.branch || "branch"}`)}</p><div className="git-sync-conflict-details"><span>{t("label.repository")}</span><code>{conflict.repo || t("common.workspace")}</code><span>{t("label.localCommit")}</span><code>{conflict.local_oid || "—"}</code></div>{error && <p className="git-sync-error" role="alert">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>{t("common.later")}</button><button className="button danger" disabled={busy} onClick={() => void overwrite()}>{busy ? t("common.overwriting") : t("common.overwriteRemote")}</button></footer></section></div>;
 }
 
 function PageIntro({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
@@ -941,11 +2458,12 @@ function isDeliveryReadyStory(item: RecordValue) {
 }
 
 function OverviewView({ data, project, onNavigate }: { data: DashboardData; project: string; onNavigate: (tab: Tab) => void }) {
+  const { t } = useI18n();
   const settings = data.interactive?.agents || {};
   const agents = settings.agents || [];
   const pending = settings.pending_questions || [];
   const workflows = workflowProfiles.map((profile) => ({
-    ...profile,
+    ...localizedWorkflowProfile(profile, t),
     status: profile.workflow === "auto_scan" ? data.runs?.[0]?.status || "not started" : profile.workflow === "auto_delivery" ? data.delivery?.current?.delivery_status || "not started" : data.patch?.current?.patch_status || "not started",
   }));
   const agentState = (agent: AgentSettings) => {
@@ -957,86 +2475,87 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
   const activeWorkflows = workflows.filter((workflow) => /running|progress|active/i.test(String(workflow.status))).length;
   const stateLabel = (state: string) => state === "setup" ? "not configured" : state;
   return <div className="manager-overview">
-    <PageIntro title="Manager overview" description={`${project || "Current project"} · one place to see Agent ownership, workflow health, and the next decision.`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />Open Settings</button>} />
+    <PageIntro title={t("heading.managerOverview")} description={`${project || t("common.currentProject")} · ${t("context.overview.description")}`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />{t("action.openSettings")}</button>} />
     <div className="metrics">
-      <Metric label="Agents ready" value={`${readyAgents}/${agents.length}`} />
-      <Metric label="Workflows active" value={activeWorkflows} />
-      <Metric label="Questions waiting" value={pending.length} />
-      <Metric label="Gateway" value={settings.enabled ? "Enabled" : "Paused"} />
+      <Metric label={t("label.agentsReady")} value={`${readyAgents}/${agents.length}`} />
+      <Metric label={t("label.workflowsActive")} value={activeWorkflows} />
+      <Metric label={t("label.questionsWaiting")} value={pending.length} />
+      <Metric label={t("label.gateway")} value={settings.enabled ? t("common.enabled") : t("common.paused")} />
     </div>
-    <Panel title="Agent roster" action={<span className="muted">{agents.length} roles · shared runtime</span>}>
+    <Panel title={t("heading.agentRoster")} action={<span className="muted">{t("label.sharedRuntime", { count: agents.length })}</span>}>
       <div className="agent-roster">
         {agents.length ? agents.map((agent) => {
           const state = agentState(agent);
-          const profile = workflowProfile(agent.workflow) || managerProfile;
+          const profile = localizedWorkflowProfile(workflowProfile(agent.workflow) || managerProfile, t);
           const workflow = workflowProfiles.find((item) => item.workflow === agent.workflow)?.tab;
           return <article className="agent-card" key={agent.id}>
-            <div className="agent-card-heading"><div><span className="overview-kicker">{profile.feature}</span><h4>{agent.display_name}</h4><p>{profile.mission}</p></div><Badge value={stateLabel(state)} /></div>
-            <div className="agent-card-facts"><div><span>Owns</span><strong title={profile.feature}>{profile.feature}</strong></div><div><span>Receives</span><strong title={profile.input}>{profile.input}</strong></div><div><span>Returns</span><strong title={profile.output}>{profile.output}</strong></div></div>
-            <div className="agent-card-footer"><span>{state === "ready" ? "Conversation and actions available" : state === "paused" ? "Conversation is paused in Settings" : "Credentials are required"}</span>{workflow ? <button className="text-button" onClick={() => onNavigate("activity")}>View activity <ChevronRight size={13} /></button> : <span className="overview-manager-label">Manager</span>}</div>
+            <div className="agent-card-heading"><div className="agent-card-identity"><AgentAvatar agentId={agent.id} displayName={agent.display_name} size="card" /><div><span className="overview-kicker">{profile.feature}</span><h4>{agent.display_name}</h4><p>{profile.mission}</p></div></div><Badge value={stateLabel(state)} /></div>
+            <div className="agent-card-facts"><div><span>{t("label.owns")}</span><strong title={profile.feature}>{profile.feature}</strong></div><div><span>{t("label.receives")}</span><strong title={profile.input}>{profile.input}</strong></div><div><span>{t("label.returns")}</span><strong title={profile.output}>{profile.output}</strong></div></div>
+            <div className="agent-card-footer"><span>{state === "ready" ? t("label.conversationAndActions") : state === "paused" ? t("label.conversationPaused") : t("label.credentialsRequired")}</span>{workflow ? <button className="text-button" onClick={() => onNavigate("activity")}>{t("action.viewActivity")} <ChevronRight size={13} /></button> : <span className="overview-manager-label">{t("common.manager")}</span>}</div>
           </article>;
-        }) : <Empty label="No Agent roles available yet." />}
+        }) : <Empty label={t("common.noAgentRoles")} />}
       </div>
     </Panel>
-    <Panel title="Workflow control" action={<span className="muted">Three human-owned capabilities</span>}>
+    <Panel title={t("heading.workflowControl")} action={<span className="muted">{t("label.businessReadyCapabilities")}</span>}>
       <div className="workflow-roster">
         {workflows.map((workflow) => <article className="workflow-card" key={workflow.workflow}>
           <div className="workflow-card-heading"><div><span className="overview-kicker">{workflow.agent}</span><h4>{workflow.feature}</h4></div><Badge value={workflow.status} /></div>
           <p>{workflow.mission}</p>
-          <div className="workflow-card-io"><span><b>Input</b>{workflow.input}</span><span><b>Output</b>{workflow.output}</span></div>
-          <button className="button secondary" onClick={() => onNavigate(workflow.tab)}>Inspect {workflow.feature} <ChevronRight size={13} /></button>
+          <div className="workflow-card-io"><span><b>{t("label.input")}</b>{workflow.input}</span><span><b>{t("label.output")}</b>{workflow.output}</span></div>
+          <button className="button secondary" onClick={() => onNavigate(workflow.tab)}>{t("action.inspect", { feature: workflow.feature })} <ChevronRight size={13} /></button>
         </article>)}
       </div>
     </Panel>
-    <Panel title="Questions waiting for you" action={<span className="muted">{pending.length ? `${pending.length} unanswered` : "Conversation is clear"}</span>}>
-      {pending.length ? <div className="pending-question-list">{pending.map((question, index) => <article className="pending-question" key={question.question_id || `${question.agent_id}-${index}`}><div className="pending-question-heading"><div><span className="overview-kicker">{text(question.agent_id, "Agent")}</span><strong>{text(question.action, "Clarification")}</strong></div><time>{when(question.created_at)}</time></div><p>{text(question.question, "The Agent needs one more decision before continuing.")}</p></article>)}</div> : <div className="overview-empty"><CircleHelp size={17} />No unanswered Agent questions.</div>}
+    <Panel title={t("heading.questionsWaiting")} action={<span className="muted">{pending.length ? t("label.unanswered", { count: pending.length }) : t("label.conversationClear")}</span>}>
+      {pending.length ? <div className="pending-question-list">{pending.map((question, index) => <article className="pending-question" key={question.question_id || `${question.agent_id}-${index}`}><div className="pending-question-heading"><div><span className="overview-kicker">{text(question.agent_id, t("common.agent"))}</span><strong>{text(question.action, t("common.clarification"))}</strong></div><time>{when(question.created_at)}</time></div><p>{text(question.question, "The Agent needs one more decision before continuing.")}</p></article>)}</div> : <div className="overview-empty"><CircleHelp size={17} />{t("common.noAgentQuestions")}</div>}
     </Panel>
   </div>;
 }
 
 function ActivityView({ data, project, onNavigate }: { data: DashboardData; project: string; onNavigate: (tab: Tab) => void }) {
+  const { t } = useI18n();
   const records = data.activity?.items || [];
   const [agentFilter, setAgentFilter] = useState("all");
   const visible = records.filter((record) => agentFilter === "all" || String(record.agent_id || "") === agentFilter);
   const roles = Array.from(new Set(records.map((record) => String(record.agent_id || "")).filter(Boolean)));
   const completed = records.filter((record) => /completed|success|delegated/i.test(String(record.status || ""))).length;
   const attention = records.filter((record) => /failed|blocked|denied/i.test(String(record.status || ""))).length;
-  const profileFor = (record: RecordValue) => workflowProfile(String(record.workflow || "")) || _AGENT_ACTIVITY_UI_PROFILES[String(record.agent_id || "")] || managerProfile;
+  const profileFor = (record: RecordValue) => localizedWorkflowProfile(workflowProfile(String(record.workflow || "")) || _AGENT_ACTIVITY_UI_PROFILES[String(record.agent_id || "")] || managerProfile, t);
   return <div className="activity-page">
-    <PageIntro title="Agent activity" description={`${project || "Current project"} · one readable record for every conversation, handoff, and result.`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />Manage capture</button>} />
+    <PageIntro title={t("heading.agentActivity")} description={`${project || t("common.currentProject")} · ${t("context.activity.description")}`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />{t("action.manageCapture")}</button>} />
     <div className="activity-role-guide">
-      {[...workflowProfiles, managerProfile].map((profile) => <article key={profile.workflow}>
-        <span className="activity-role-dot" aria-hidden="true" />
+      {[...workflowProfiles, managerProfile].map((sourceProfile) => { const profile = localizedWorkflowProfile(sourceProfile, t); return <article key={profile.workflow}>
+        <AgentAvatar agentId={agentAvatarByWorkflow[profile.workflow]} displayName={profile.agent} size="guide" />
         <div><strong>{profile.agent} · {profile.feature}</strong><p>{profile.mission}</p></div>
-      </article>)}
+      </article>; })}
     </div>
     <div className="metrics activity-metrics">
-      <Metric label="Recorded turns" value={records.length} />
-      <Metric label="Completed" value={completed} />
-      <Metric label="Needs attention" value={attention} />
-      <Metric label="Roles seen" value={roles.length} />
+      <Metric label={t("label.recordedTurns")} value={records.length} />
+      <Metric label={t("label.completed")} value={completed} />
+      <Metric label={t("label.needsAttention")} value={attention} />
+      <Metric label={t("label.rolesSeen")} value={roles.length} />
     </div>
-    <Panel title="Conversation records" action={<div className="activity-toolbar"><span className="muted">{visible.length} shown</span><label><span>Role</span><select aria-label="Filter activity by role" value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}><option value="all">All roles</option>{roles.map((agent) => <option value={agent} key={agent}>{String(records.find((record) => String(record.agent_id || "") === agent)?.display_name || agent)}</option>)}</select></label></div>}>
-      {!data.activity?.available && <div className="activity-note"><Activity size={15} />{text(data.activity?.detail, "No Agent conversation store is available yet. New Feishu conversations will appear here after the gateway starts.")}</div>}
+    <Panel title={t("heading.conversationRecords")} action={<div className="activity-toolbar"><span className="muted">{t("common.showing", { count: visible.length })}</span><label><span>{t("label.role")}</span><select aria-label={`${t("label.role")} filter`} value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}><option value="all">{t("common.all")} {t("label.role")}s</option>{roles.map((agent) => <option value={agent} key={agent}>{String(records.find((record) => String(record.agent_id || "") === agent)?.display_name || agent)}</option>)}</select></label></div>}>
+      {!data.activity?.available && <div className="activity-note"><Activity size={15} />{text(data.activity?.detail, t("common.noAgentHistory"))}</div>}
       {visible.length ? <div className="activity-record-list">{visible.map((record) => {
         const profile = profileFor(record);
         const workflow = workflowProfiles.find((item) => item.workflow === record.workflow);
         const requestText = String(record.request_text || "").trim();
         const responseText = String(record.response_text || "").trim();
-        const sourceLabel = record.source === "conversation" ? "Request + result" : record.source === "outcome" ? "Result captured · request predates transcript capture" : "Trace only";
+        const sourceLabel = record.source === "conversation" ? t("label.requestResult") : record.source === "outcome" ? t("label.resultCaptured") : t("label.traceOnly");
         const timeline = Array.isArray(record.timeline) ? record.timeline : [];
         return <article className="activity-record" key={String(record.trace_id || `${record.agent_id}-${record.started_at}`)}>
-          <header className="activity-record-header"><div className="activity-record-identity"><span className={`activity-avatar activity-avatar-${String(record.agent_id || "agent")}`} aria-hidden="true">{String(record.display_name || profile.agent || "A").slice(0, 1)}</span><div><span className="overview-kicker">{profile.feature}</span><h4>{text(record.display_name, profile.agent)}</h4><p>{text(record.action, sourceLabel)}</p></div></div><div className="activity-record-status"><Badge value={text(record.status, "unknown")} /><time>{when(record.started_at)}</time></div></header>
+          <header className="activity-record-header"><div className="activity-record-identity"><AgentAvatar agentId={record.agent_id} displayName={record.display_name || profile.agent} size="record" /><div><span className="overview-kicker">{profile.feature}</span><h4>{text(record.display_name, profile.agent)}</h4><p>{text(record.action, sourceLabel)}</p></div></div><div className="activity-record-status"><Badge value={text(record.status, "unknown")} /><time>{when(record.started_at)}</time></div></header>
           <div className="activity-thread">
-            <div className="activity-message user"><span>You</span><p>{requestText || "This older trace has an outcome, but its incoming message was not captured by that runtime version."}</p></div>
-            <div className="activity-message agent"><span>{text(record.display_name, profile.agent)}</span><p>{responseText || "No final response text was retained; open the source trace in the Agent logs if deeper evidence is needed."}</p></div>
+            <div className="activity-message user"><span>{t("common.you")}</span><p>{requestText || t("label.olderTrace")}</p></div>
+            <div className="activity-message agent"><span>{text(record.display_name, profile.agent)}</span><p>{responseText || t("label.noFinalResponse")}</p></div>
           </div>
-          <footer className="activity-record-footer"><span>{sourceLabel}</span><span>Trace <code>{text(record.trace_id)}</code></span><span>{record.latency_ms ? `${record.latency_ms} ms` : `${record.event_count || 0} events`}</span>{workflow && <button className="text-button" onClick={() => onNavigate(workflow.tab)}>Open {workflow.feature} <ChevronRight size={13} /></button>}</footer>
-          {timeline.length > 0 && <details className="activity-trail"><summary>Execution trail</summary><div>{timeline.map((event: RecordValue, index: number) => <p key={`${event.event}-${index}`}><time>{when(event.at)}</time><strong>{text(event.event)}</strong>{event.detail && <span>{text(event.detail)}</span>}</p>)}</div></details>}
+          <footer className="activity-record-footer"><span>{sourceLabel}</span><span>{t("common.trace")} <code>{text(record.trace_id)}</code></span><span>{record.latency_ms ? `${record.latency_ms} ms` : `${record.event_count || 0} events`}</span>{workflow && <button className="text-button" onClick={() => onNavigate(workflow.tab)}>{t("common.open")} {localizedWorkflowProfile(workflow, t).feature} <ChevronRight size={13} /></button>}</footer>
+          {timeline.length > 0 && <details className="activity-trail"><summary>{t("label.executionTrail")}</summary><div>{timeline.map((event: RecordValue, index: number) => <p key={`${event.event}-${index}`}><time>{when(event.at)}</time><strong>{text(event.event)}</strong>{event.detail && <span>{text(event.detail)}</span>}</p>)}</div></details>}
         </article>;
-      })}</div> : <div className="activity-empty"><MessageCirclePlaceholder /><strong>No conversation records match this filter.</strong><span>{data.activity?.available ? "Ask one of the Agents in Feishu, then refresh this page." : "The local activity store will be created by the first Agent turn."}</span></div>}
+      })}</div> : <div className="activity-empty"><MessageCirclePlaceholder /><strong>{t("common.noConversationRecords")}</strong><span>{data.activity?.available ? t("common.askAgents") : t("common.activityStoreFirstTurn")}</span></div>}
     </Panel>
-    <p className="activity-retention-note">Only bounded local request/result text is shown here. Trace IDs and raw execution evidence remain available in the local Agent store.</p>
+    <p className="activity-retention-note">{t("label.activityRetention")}</p>
   </div>;
 }
 
@@ -1052,6 +2571,7 @@ function MessageCirclePlaceholder() {
 }
 
 function ScanView({ data, project, notify, reload }: { data: DashboardData; project: string; notify: Notify; reload: () => Promise<void> }) {
+  const { t } = useI18n();
   const stats = data.run_stats || {};
   const issues = data.issues || [];
   const runs = data.runs || [];
@@ -1078,7 +2598,7 @@ function ScanView({ data, project, notify, reload }: { data: DashboardData; proj
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to start scan";
       const detail = message === "Not found"
-        ? `Dashboard is still running an older version. Run \`lumen dashboard stop --project ${project}\`, then open the dashboard again.`
+        ? `Dashboard is still running an older version. Run \`lumon dashboard stop --project ${project}\`, then open the dashboard again.`
         : message;
       setScanError(detail);
       notify(detail, "error");
@@ -1087,9 +2607,9 @@ function ScanView({ data, project, notify, reload }: { data: DashboardData; proj
     }
   };
   return <>
-    <section className="metrics"><Metric label="Open findings" value={openIssues.length} onClick={jumpToFindings} /><Metric label="Successful Scan · 7d" value={stats.success_7d || 0} /><Metric label="Failed · 7d" value={stats.failed_7d || 0} /><Metric label="Lookback window" value={`${data.scan_window_days || 7}d`} /></section>
-    <Panel title="Scan History" action={<span className="panel-actions"><button type="button" className="button secondary" disabled={scanBusy} onClick={() => { setScanError(""); setScanStep(1); }}><Play size={14} />Start scan</button><span className="muted">{runs.length} runs</span></span>}><div className="table-scroll"><table><thead><tr><th>Started</th><th>Status</th><th>Issues</th><th>Duration</th><th>Artifacts</th></tr></thead><tbody>{pageRuns.map((run: RecordValue) => <tr key={run.id}><td>{when(run.started_at || run.finished_at)}</td><td><Badge value={run.status} /></td><td><SeverityBreakdown run={run} /></td><td>{text(run.duration)}</td><td><div className="artifact-links">{run.html && <a href={`${run.html}?project=${encodeURIComponent(project)}`} target="_blank">HTML</a>}{run.pdf && <a href={`${run.pdf}?project=${encodeURIComponent(project)}`} target="_blank">PDF</a>}{!run.html && !run.pdf && "—"}</div></td></tr>)}</tbody></table></div>{runs.length > runPageSize && <Pagination page={runPage} pageCount={Math.ceil(runs.length / runPageSize)} onChange={setRunPage} />}</Panel>
-    <Panel title="Tracked Findings" action={<span className="muted">{filteredIssues.length} of {issues.length} records</span>}><div className="finding-filters" role="tablist">{(["all", "open", "resolved", "ignored"] as const).map((value) => <button className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{value === "all" ? "All" : titleStatus(value)} <span>{counts[value]}</span></button>)}</div><div id="tracked-findings" className="findings">{filteredIssues.length ? filteredIssues.map((issue: RecordValue) => <Finding issue={issue} onIgnore={() => setIgnoreCandidate(issue)} key={issue.id} />) : <Empty label="No findings match this status." />}</div></Panel>
+    <section className="metrics"><Metric label={t("label.openFindings")} value={openIssues.length} onClick={jumpToFindings} /><Metric label={t("label.successfulScan")} value={stats.success_7d || 0} /><Metric label={t("label.failed7d")} value={stats.failed_7d || 0} /><Metric label={t("label.lookbackWindow")} value={`${data.scan_window_days || 7}d`} /></section>
+    <Panel title={t("heading.scanHistory")} action={<span className="panel-actions"><button type="button" className="button secondary" disabled={scanBusy} onClick={() => { setScanError(""); setScanStep(1); }}><Play size={14} />{t("action.startScan")}</button><span className="muted">{t("common.runs", { count: runs.length })}</span></span>}><div className="table-scroll"><table><thead><tr><th>{t("label.started")}</th><th>{t("label.status")}</th><th>{t("label.issues")}</th><th>{t("label.duration")}</th><th>{t("label.artifacts")}</th></tr></thead><tbody>{pageRuns.map((run: RecordValue) => <tr key={run.id}><td>{when(run.started_at || run.finished_at)}</td><td><Badge value={run.status} /></td><td><SeverityBreakdown run={run} /></td><td>{text(run.duration)}</td><td><div className="artifact-links">{run.html && <a href={`${run.html}?project=${encodeURIComponent(project)}`} target="_blank">HTML</a>}{run.pdf && <a href={`${run.pdf}?project=${encodeURIComponent(project)}`} target="_blank">PDF</a>}{!run.html && !run.pdf && "—"}</div></td></tr>)}</tbody></table></div>{runs.length > runPageSize && <Pagination page={runPage} pageCount={Math.ceil(runs.length / runPageSize)} onChange={setRunPage} />}</Panel>
+    <Panel title={t("heading.trackedFindings")} action={<span className="muted">{filteredIssues.length} / {issues.length} {t("label.issues")}</span>}><div className="finding-filters" role="tablist">{(["all", "open", "resolved", "ignored"] as const).map((value) => <button className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{value === "all" ? t("common.all") : titleStatus(value)} <span>{counts[value]}</span></button>)}</div><div id="tracked-findings" className="findings">{filteredIssues.length ? filteredIssues.map((issue: RecordValue) => <Finding issue={issue} onIgnore={() => setIgnoreCandidate(issue)} key={issue.id} />) : <Empty label={t("common.noFindings")} />}</div></Panel>
     {ignoreCandidate && <IgnoreDialog onClose={() => setIgnoreCandidate(null)} onConfirm={(reason) => { void interactIgnore(project, notify, reload, ignoreCandidate.id, reason); setIgnoreCandidate(null); }} />}
     {scanStep > 0 && <StartScanDialog project={project} step={scanStep === 1 ? 1 : 2} busy={scanBusy} error={scanError} onClose={() => { if (!scanBusy) setScanStep(0); }} onContinue={() => setScanStep(2)} onConfirm={() => void startScan()} />}
   </>;
@@ -1106,34 +2626,39 @@ async function interactIgnore(project: string, notify: Notify, reload: () => Pro
 }
 
 function StartScanDialog({ project, step, busy, error, onClose, onContinue, onConfirm }: { project: string; step: 1 | 2; busy: boolean; error: string; onClose: () => void; onContinue: () => void; onConfirm: () => void }) {
+  const { t } = useI18n();
   const first = step === 1;
-  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal" role="dialog" aria-modal="true" aria-label={first ? "Start scan" : "Confirm start scan"} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{first ? "Start a scan?" : "Confirm scan start"}</strong><p className="modal-copy">{first ? `This will launch an auto-scan for ${project}.` : `Are you sure you want to start a scan for ${project} now? A scan agent will run against the configured repositories.`}</p>{error && <p className="status-note">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>Cancel</button>{first ? <button className="button primary" disabled={busy} onClick={onContinue}>Continue</button> : <button className="button primary" disabled={busy} onClick={onConfirm}><Play size={14} />{busy ? "Starting…" : "Start scan"}</button>}</footer></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal" role="dialog" aria-modal="true" aria-label={first ? t("action.startScan") : t("action.confirmScan")} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{first ? t("action.runScan") : t("action.confirmScan")}</strong><p className="modal-copy">{first ? t("action.scanBody", { project }) : t("action.scanConfirmBody", { project })}</p>{error && <p className="status-note">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>{t("common.cancel")}</button>{first ? <button className="button primary" disabled={busy} onClick={onContinue}>{t("common.continue")}</button> : <button className="button primary" disabled={busy} onClick={onConfirm}><Play size={14} />{busy ? t("common.start") + "…" : t("action.startScan")}</button>}</footer></section></div>;
 }
 
 function Metric({ label, value, onClick }: { label: string; value: string | number; onClick?: () => void }) { return <div className={`metric ${onClick ? "metric-action" : ""}`} onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={(event) => { if (onClick && (event.key === "Enter" || event.key === " ")) onClick(); }}><span>{label}</span><strong>{value}</strong></div>; }
 function Empty({ label }: { label: string }) { return <div className="empty"><ShieldCheck size={20} />{label}</div>; }
 function SeverityBreakdown({ run }: { run: RecordValue }) {
-  const levels = [["High", Number(run.high || 0), "high"], ["Medium", Number(run.medium || 0), "medium"], ["Low", Number(run.low || 0), "low"]] as const;
+  const { t } = useI18n();
+  const levels = [[t("label.high"), Number(run.high || 0), "high"], [t("label.medium"), Number(run.medium || 0), "medium"], [t("label.low"), Number(run.low || 0), "low"]] as const;
   const present = levels.filter(([, count]) => count > 0);
   return present.length ? <span className="severity-breakdown">{present.map(([label, count, tone]) => <b className={tone} key={label}>{label}: {count}</b>)}</span> : <>—</>;
 }
-function Pagination({ page, pageCount, onChange }: { page: number; pageCount: number; onChange: (page: number) => void }) { return <footer className="pagination"><span>Page {page + 1} of {pageCount}</span><div><button className="button secondary" disabled={page === 0} onClick={() => onChange(page - 1)}>Previous</button><button className="button secondary" disabled={page === pageCount - 1} onClick={() => onChange(page + 1)}>Next</button></div></footer>; }
+function Pagination({ page, pageCount, onChange }: { page: number; pageCount: number; onChange: (page: number) => void }) { const { t } = useI18n(); return <footer className="pagination"><span>{t("common.pageOf", { page: page + 1, count: pageCount })}</span><div><button className="button secondary" disabled={page === 0} onClick={() => onChange(page - 1)}>{t("common.previous")}</button><button className="button secondary" disabled={page === pageCount - 1} onClick={() => onChange(page + 1)}>{t("common.next")}</button></div></footer>; }
 function Finding({ issue, onIgnore }: { issue: RecordValue; onIgnore: () => void }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const status = issue.status || issue.issue_status || "open";
   const statusKey = String(status).toLowerCase();
   const isIgnorable = !["ignored", "resolved"].includes(statusKey);
   const primaryId = text(issue.jira_key) || text(issue.id);
-  return <article className="finding"><div className="finding-main"><div className="finding-copy"><div className="finding-heading"><h4>{text(issue.title, "Untitled finding")}</h4><Badge value={status} /></div><p className="finding-meta"><code className="finding-id">{primaryId}</code><i>|</i>{text(issue.repository, "Unknown repository")} <i>|</i> {when(issue.last_seen_at)}</p><div className="finding-links finding-row-links"><button className="finding-link" onClick={() => setExpanded(!expanded)}>{expanded ? "Hide detail" : "View detail"}</button>{issue.jira_key && issue.jira_url && <a className="finding-link" href={issue.jira_url} target="_blank" rel="noreferrer">{issue.jira_key}<ExternalLink size={12} /></a>}{issue.pr_url && <a className="finding-link" href={issue.pr_url} target="_blank" rel="noreferrer">Pull request<ExternalLink size={12} /></a>}</div></div><div className="finding-actions">{isIgnorable && <button className="button secondary" onClick={onIgnore}>Mark ignored</button>}</div></div>{expanded && <div className="finding-detail"><FindingDetail label="Status" value={titleStatus(status)} /><FindingDetail label="Resolution basis" value={issue.resolution_basis_label || issue.resolution_basis} /><FindingDetail label="Verification" value={issue.verification_label || issue.verification_status} /><FindingDetail label="Resolved by" value={issue.resolved_by} /><FindingDetail label="Resolved at" value={when(issue.resolved_at)} /><FindingDetail label="Last verification" value={when(issue.last_verified_at)} /><FindingDetail label="Impact" value={issue.impact} /><FindingDetail label="Trigger" value={issue.trigger} /><FindingDetail label="Root cause" value={issue.root_cause} /><FindingDetail label="Code" value={issue.code_snippet} code /><FindingDetail label="Recommended correction" value={issue.suggestion} /><FindingDetail label="Validation" value={issue.validation} /><FindingDetail label="Risk Finding ID" value={issue.risk_finding_id} /><FindingDetail label="Legacy Issue ID" value={issue.id} /><FindingDetail label="Status source" value={issue.status_source} /></div>}</article>;
+  return <article className="finding"><div className="finding-main"><div className="finding-copy"><div className="finding-heading"><h4>{text(issue.title, t("label.untitledFinding"))}</h4><Badge value={status} /></div><p className="finding-meta"><code className="finding-id">{primaryId}</code><i>|</i>{text(issue.repository, t("label.unknownRepository"))} <i>|</i> {when(issue.last_seen_at)}</p><div className="finding-links finding-row-links"><button className="finding-link" onClick={() => setExpanded(!expanded)}>{expanded ? t("action.hideDetail") : t("action.viewDetail")}</button>{issue.jira_key && issue.jira_url && <a className="finding-link" href={issue.jira_url} target="_blank" rel="noreferrer">{issue.jira_key}<ExternalLink size={12} /></a>}{issue.pr_url && <a className="finding-link" href={issue.pr_url} target="_blank" rel="noreferrer">{t("action.pullRequest")}<ExternalLink size={12} /></a>}</div></div><div className="finding-actions">{isIgnorable && <button className="button secondary" onClick={onIgnore}>{t("action.markIgnored")}</button>}</div></div>{expanded && <div className="finding-detail"><FindingDetail label={t("label.status")} value={titleStatus(status)} /><FindingDetail label="Resolution basis" value={issue.resolution_basis_label || issue.resolution_basis} /><FindingDetail label={t("label.verification")} value={issue.verification_label || issue.verification_status} /><FindingDetail label="Resolved by" value={issue.resolved_by} /><FindingDetail label="Resolved at" value={when(issue.resolved_at)} /><FindingDetail label="Last verification" value={when(issue.last_verified_at)} /><FindingDetail label="Impact" value={issue.impact} /><FindingDetail label="Trigger" value={issue.trigger} /><FindingDetail label="Root cause" value={issue.root_cause} /><FindingDetail label="Code" value={issue.code_snippet} code /><FindingDetail label="Recommended correction" value={issue.suggestion} /><FindingDetail label="Validation" value={issue.validation} /><FindingDetail label="Risk Finding ID" value={issue.risk_finding_id} /><FindingDetail label="Legacy Issue ID" value={issue.id} /><FindingDetail label="Status source" value={issue.status_source} /></div>}</article>;
 }
 
 function FindingDetail({ label, value, code = false }: { label: string; value: unknown; code?: boolean }) { return <section className="finding-detail-row"><h5>{label}</h5>{code ? <pre><code>{text(value, "No code snippet was captured for this historical finding.")}</code></pre> : <p>{text(value, "Not recorded.")}</p>}</section>; }
 function IgnoreDialog({ onClose, onConfirm }: { onClose: () => void; onConfirm: (reason: string) => void }) {
+  const { t } = useI18n();
   const [reason, setReason] = useState("");
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal" role="dialog" aria-modal="true" aria-label="Ignore finding" onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>Mark this finding as ignored?</strong><Field label="Reason (optional)"><textarea className="ignore-reason" rows={2} autoFocus value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why is this safe to ignore?" /></Field></div><footer><button className="button" onClick={onClose}>Cancel</button><button className="button primary" onClick={() => onConfirm(reason)}>Mark ignored</button></footer></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal" role="dialog" aria-modal="true" aria-label={t("action.markIgnored")} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{t("label.ignoreQuestion")}</strong><Field label={t("label.reasonOptional")}><textarea className="ignore-reason" rows={2} autoFocus value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("label.ignorePlaceholder")} /></Field></div><footer><button className="button" onClick={onClose}>{t("common.cancel")}</button><button className="button primary" onClick={() => onConfirm(reason)}>{t("action.markIgnored")}</button></footer></section></div>;
 }
 
 function DeliveryView({ data, project, notify, reload }: { data: DashboardData; project: string; notify: Notify; reload: () => Promise<void> }) {
+  const { t } = useI18n();
   const delivery = data.delivery || {};
   const current = delivery.current || {};
   const runs = delivery.runs || [];
@@ -1179,7 +2704,7 @@ function DeliveryView({ data, project, notify, reload }: { data: DashboardData; 
   const retry = async () => {
     setRetrying(true); setRetryError("");
     try { await request("/api/delivery/retry", project, { method: "POST", json: {} }); setRetryOpen(false); notify("Delivery retry started", "success"); await reload().catch(() => undefined); }
-    catch (err) { const message = err instanceof Error ? err.message : "Unable to retry delivery"; setRetryError(message === "Not found" ? "Dashboard is still running an older version. Run `lumen dashboard stop --project …`, then open the dashboard again." : message); }
+    catch (err) { const message = err instanceof Error ? err.message : "Unable to retry delivery"; setRetryError(message === "Not found" ? "Dashboard is still running an older version. Run `lumon dashboard stop --project …`, then open the dashboard again." : message); }
     finally { setRetrying(false); }
   };
   const openStart = () => {
@@ -1229,9 +2754,9 @@ function DeliveryView({ data, project, notify, reload }: { data: DashboardData; 
   const canRetry = /failed|blocked/i.test(String(current.delivery_status || ""));
   const canStart = !running && storyOptions.length > 0;
   return <>
-    <Panel title="Current Progress" className="delivery-summary" action={<span className="panel-actions">{canStart && <button className="button secondary" disabled={actionBusy} onClick={openStart}><Play size={14} />Start</button>}{running && <button className="button danger secondary" disabled={actionBusy} onClick={() => void stop()}>Stop</button>}{canRetry && <button className="button secondary" onClick={() => setRetryOpen(true)}><RotateCcw size={14} />Retry</button>}</span>}><div className="delivery-facts"><Fact label="Current story" value={<StoryReference jiraKey={current.jira_key || current.story_id} title={current.story_title} />} /><Fact label="Status" value={<Badge value={current.delivery_status || "not started"} />} /><Fact label="Elapsed" value={elapsed(current.started_at, current.finished_at || (running ? new Date(now).toISOString() : undefined))} /><Fact label="Finished" value={running ? "Running" : when(current.finished_at)} /></div>{actionError && <div className="status-note">{actionError}</div>}<DeliveryFlow stages={stages} deliveryStatus={String(current.delivery_status || "")} currentStep={String(current.current_step || "")} startedAt={current.started_at} finishedAt={current.finished_at} remediation={current.remediation} now={now} onStageClick={openStage} /></Panel>
-    <Panel title="Delivery History" className="history-panel" action={<span className="muted">{runs.length} runs</span>}><div className="table-scroll"><table><thead><tr><th>Story</th><th>Finished</th><th>Status</th><th>Pull requests</th><th>Checks</th><th>Duration</th><th>Trace</th><th>Operation</th></tr></thead><tbody>{runs.length ? runs.map((run: RecordValue) => { const runChecks = run.verification || []; const failed = runChecks.filter((item: RecordValue) => item.status === "failed"); const canInspectStatus = failed.length || /failed|blocked/i.test(String(run.status)); return <tr key={run.run_id}><td><div className="history-story"><span className="history-story-line"><code>{text(run.jira_key || run.story || run.run_id)}</code>{run.story_title && <span className="history-story-title">{run.story_title}</span>}</span><small>{text(run.branch, "")}</small></div></td><td>{when(run.finished_at || run.started_at)}</td><td>{canInspectStatus ? <button className="status-badge-button" title="Open failure log" onClick={() => void openStage({ label: "Delivery failure", duration: elapsed(run.started_at, run.finished_at), detail: failed.map((item: RecordValue) => item.summary || item.label).filter(Boolean).join(" · ") || "Open the delivery log for details." }, run.run_id)}><Badge value={run.status} /></button> : <Badge value={run.status} />}</td><td><PrLinks items={run.pull_requests || []} /></td><td><VerificationSummary checks={runChecks} onClick={() => setSelectedChecks(runChecks)} /></td><td>{elapsed(run.started_at, run.finished_at)}</td><td>{run.agent_trace && <button className="text-button" onClick={() => void openTrace(run.run_id)}>View trace</button>}</td><td><IconButton label="Delete delivery record" danger disabled={deletingHistoryId === run.run_id} onClick={() => setDeleteCandidate(run)}><Trash2 size={15} /></IconButton></td></tr>; }) : <tr><td colSpan={8}><Empty label="No delivery history yet." /></td></tr>}</tbody></table></div></Panel>
-    <Panel title="Scheduler Activity" action={<span className="panel-actions"><span className="muted">{schedulerActivity.length} recent events</span>{delivery.scheduler_log_available && <button className="button secondary" onClick={() => void openSchedulerLog()}><Terminal size={14} />View raw log</button>}</span>}><div className="scheduler-activity">{schedulerActivity.length ? schedulerActivity.map((event: RecordValue, index: number) => <article className="scheduler-event" key={`${event.at}-${index}`}><Badge value={event.outcome} /><div><strong>{text(event.story_id || event.jira_key, "Workspace")}</strong><p>{text(event.message)}</p></div><time>{when(event.at)}</time></article>) : <Empty label="No scheduled delivery activity recorded yet." />}</div></Panel>
+    <Panel title={t("heading.currentProgress")} className="delivery-summary" action={<span className="panel-actions">{canStart && <button className="button secondary" disabled={actionBusy} onClick={openStart}><Play size={14} />{t("common.start")}</button>}{running && <button className="button danger secondary" disabled={actionBusy} onClick={() => void stop()}>{t("common.stop")}</button>}{canRetry && <button className="button secondary" onClick={() => setRetryOpen(true)}><RotateCcw size={14} />{t("common.retry")}</button>}</span>}><div className="delivery-facts"><Fact label={t("label.currentStory")} value={<StoryReference jiraKey={current.jira_key || current.story_id} title={current.story_title} />} /><Fact label={t("label.status")} value={<Badge value={current.delivery_status || "not started"} />} /><Fact label={t("label.elapsed")} value={elapsed(current.started_at, current.finished_at || (running ? new Date(now).toISOString() : undefined))} /><Fact label={t("label.finished")} value={running ? t("status.running") : when(current.finished_at)} /></div>{actionError && <div className="status-note">{actionError}</div>}<DeliveryFlow stages={stages} deliveryStatus={String(current.delivery_status || "")} currentStep={String(current.current_step || "")} startedAt={current.started_at} finishedAt={current.finished_at} remediation={current.remediation} now={now} onStageClick={openStage} /></Panel>
+    <Panel title={t("heading.deliveryHistory")} className="history-panel" action={<span className="muted">{t("common.runs", { count: runs.length })}</span>}><div className="table-scroll"><table><thead><tr><th>{t("label.story")}</th><th>{t("label.finishedAt")}</th><th>{t("label.status")}</th><th>{t("label.pullRequests")}</th><th>{t("label.checks")}</th><th>{t("label.duration")}</th><th>{t("label.trace")}</th><th>{t("label.operation")}</th></tr></thead><tbody>{runs.length ? runs.map((run: RecordValue) => { const runChecks = run.verification || []; const failed = runChecks.filter((item: RecordValue) => item.status === "failed"); const canInspectStatus = failed.length || /failed|blocked/i.test(String(run.status)); return <tr key={run.run_id}><td><div className="history-story"><span className="history-story-line"><code>{text(run.jira_key || run.story || run.run_id)}</code>{run.story_title && <span className="history-story-title">{run.story_title}</span>}</span><small>{text(run.branch, "")}</small></div></td><td>{when(run.finished_at || run.started_at)}</td><td>{canInspectStatus ? <button className="status-badge-button" title={t("action.openLog")} onClick={() => void openStage({ label: "Delivery failure", duration: elapsed(run.started_at, run.finished_at), detail: failed.map((item: RecordValue) => item.summary || item.label).filter(Boolean).join(" · ") || "Open the delivery log for details." }, run.run_id)}><Badge value={run.status} /></button> : <Badge value={run.status} />}</td><td><PrLinks items={run.pull_requests || []} /></td><td><VerificationSummary checks={runChecks} onClick={() => setSelectedChecks(runChecks)} /></td><td>{elapsed(run.started_at, run.finished_at)}</td><td>{run.agent_trace && <button className="text-button" onClick={() => void openTrace(run.run_id)}>{t("common.viewTrace")}</button>}</td><td><IconButton label="Delete delivery record" danger disabled={deletingHistoryId === run.run_id} onClick={() => setDeleteCandidate(run)}><Trash2 size={15} /></IconButton></td></tr>; }) : <tr><td colSpan={8}><Empty label={t("common.noDeliveryHistory")} /></td></tr>}</tbody></table></div></Panel>
+    <Panel title={t("heading.schedulerActivity")} action={<span className="panel-actions"><span className="muted">{t("common.recentEvents", { count: schedulerActivity.length })}</span>{delivery.scheduler_log_available && <button className="button secondary" onClick={() => void openSchedulerLog()}><Terminal size={14} />{t("action.viewRawLog")}</button>}</span>}><div className="scheduler-activity">{schedulerActivity.length ? schedulerActivity.map((event: RecordValue, index: number) => <article className="scheduler-event" key={`${event.at}-${index}`}><Badge value={event.outcome} /><div><strong>{text(event.story_id || event.jira_key, t("common.workspace"))}</strong><p>{text(event.message)}</p></div><time>{when(event.at)}</time></article>) : <Empty label={t("common.noDeliveryActivity")} />}</div></Panel>
     {selectedStage && <DeliveryLogDialog stage={selectedStage} content={logContent} error={logError} loading={loadingLog} live={selectedLogIsLive} onClose={() => setSelectedStage(null)} />}
     {schedulerLogOpen && <DeliveryLogDialog stage={{ label: "Scheduler log", duration: "Recent raw output", detail: "Launchd output is capped at 256 KiB; structured activity retains the latest 200 events." }} content={logContent} error={logError} loading={loadingLog} onClose={() => setSchedulerLogOpen(false)} />}
     {selectedChecks && <VerificationDialog checks={selectedChecks} onClose={() => setSelectedChecks(null)} />}
@@ -1242,6 +2767,7 @@ function DeliveryView({ data, project, notify, reload }: { data: DashboardData; 
 }
 
 function PatchView({ data, project, notify, reload }: { data: DashboardData; project: string; notify: Notify; reload: () => Promise<void> }) {
+  const { t } = useI18n();
   const patch = data.patch || {};
   const current = patch.current || {};
   const runs = patch.runs || [];
@@ -1299,13 +2825,13 @@ function PatchView({ data, project, notify, reload }: { data: DashboardData; pro
     finally { setDeletingHistoryId(""); }
   };
   return <>
-    <Panel title="Current Progress" action={<span className="panel-actions">{running ? <button className="button danger secondary" disabled={busy} onClick={() => void stop()}>Stop</button> : <button className="button secondary" disabled={busy} onClick={() => void openCandidates()}><Play size={14} />Run one cycle</button>}</span>}>
-      <div className="delivery-facts"><Fact label="Jira card" value={<StoryReference jiraKey={current.jira_key} title={current.jira_summary} />} /><Fact label="Status" value={<Badge value={current.patch_status || "not started"} />} /><Fact label="Branch" value={<code>{text(current.branch)}</code>} /><Fact label="Repositories" value={Array.isArray(current.repositories) ? current.repositories.map((item: RecordValue) => item.name).filter(Boolean).join(", ") || "—" : "—"} /></div>
+    <Panel title={t("heading.currentProgress")} action={<span className="panel-actions">{running ? <button className="button danger secondary" disabled={busy} onClick={() => void stop()}>{t("common.stop")}</button> : <button className="button secondary" disabled={busy} onClick={() => void openCandidates()}><Play size={14} />{t("action.runCycle")}</button>}</span>}>
+      <div className="delivery-facts"><Fact label={t("label.jiraCard")} value={<StoryReference jiraKey={current.jira_key} title={current.jira_summary} />} /><Fact label={t("label.status")} value={<Badge value={current.patch_status || "not started"} />} /><Fact label={t("label.branch")} value={<code>{text(current.branch)}</code>} /><Fact label={t("label.repositories")} value={Array.isArray(current.repositories) ? current.repositories.map((item: RecordValue) => item.name).filter(Boolean).join(", ") || "—" : "—"} /></div>
       {current.question && <div className="status-note"><CircleHelp size={15} />{current.question}</div>}
       <PatchFlow phases={Array.isArray(current.stages) ? current.stages : []} overallStatus={String(current.patch_status || "")} />
     </Panel>
-    <Panel title="Patch History" action={<span className="muted">{runs.length} runs</span>}>{historyError && <div className="status-note">{historyError}</div>}<div className="table-scroll patch-history-scroll"><table className="patch-history-table"><thead><tr><th>Jira</th><th>Summary</th><th>Status</th><th>Repositories</th><th>Finished</th><th>Log</th><th>Operation</th></tr></thead><tbody>{runs.length ? runs.map((run: RecordValue) => <tr key={run.run_id}><td><div className="patch-history-jira"><span className="patch-history-key">{text(run.jira_key)}</span>{run.jira_summary && <span className="patch-history-jira-title" title={text(run.jira_summary)}>{text(run.jira_summary)}</span>}</div></td><td><span className="patch-history-summary" title={text(run.summary)}>{text(run.summary)}</span></td><td><Badge value={run.status} /></td><td>{(run.repositories || []).map((item: RecordValue) => item.name).filter(Boolean).join(", ") || "—"}</td><td><span className="patch-history-finished">{when(run.finished_at)}</span></td><td><button className="text-button" onClick={() => void loadLog(run.run_id)}>View log</button></td><td><IconButton label="Delete Auto Patch record" danger disabled={deletingHistoryId === run.run_id} onClick={() => setDeleteCandidate(run)}><Trash2 size={15} /></IconButton></td></tr>) : <tr><td colSpan={7}><Empty label="No Auto Patch history yet." /></td></tr>}</tbody></table></div></Panel>
-    <Panel title="Scheduler Activity"><div className="scheduler-activity">{activity.length ? activity.map((event: RecordValue, index: number) => <article className="scheduler-event" key={`${event.at}-${index}`}><Badge value={event.outcome} /><div><strong>{text(event.jira_key || event.card, "Workspace")}</strong><p>{text(event.message)}</p></div><time>{when(event.at)}</time></article>) : <Empty label="No Auto Patch activity recorded yet." />}</div></Panel>
+    <Panel title={t("heading.patchHistory")} action={<span className="muted">{t("common.runs", { count: runs.length })}</span>}>{historyError && <div className="status-note">{historyError}</div>}<div className="table-scroll patch-history-scroll"><table className="patch-history-table"><thead><tr><th>{t("label.jira")}</th><th>{t("label.summary")}</th><th>{t("label.status")}</th><th>{t("label.repositories")}</th><th>{t("label.finishedAt")}</th><th>{t("label.log")}</th><th>{t("label.operation")}</th></tr></thead><tbody>{runs.length ? runs.map((run: RecordValue) => <tr key={run.run_id}><td><div className="patch-history-jira"><span className="patch-history-key">{text(run.jira_key)}</span>{run.jira_summary && <span className="patch-history-jira-title" title={text(run.jira_summary)}>{text(run.jira_summary)}</span>}</div></td><td><span className="patch-history-summary" title={text(run.summary)}>{text(run.summary)}</span></td><td><Badge value={run.status} /></td><td>{(run.repositories || []).map((item: RecordValue) => item.name).filter(Boolean).join(", ") || "—"}</td><td><span className="patch-history-finished">{when(run.finished_at)}</span></td><td><button className="text-button" onClick={() => void loadLog(run.run_id)}>{t("common.viewLog")}</button></td><td><IconButton label="Delete Auto Patch record" danger disabled={deletingHistoryId === run.run_id} onClick={() => setDeleteCandidate(run)}><Trash2 size={15} /></IconButton></td></tr>) : <tr><td colSpan={7}><Empty label={t("common.noPatchHistory")} /></td></tr>}</tbody></table></div></Panel>
+    <Panel title={t("heading.schedulerActivity")}><div className="scheduler-activity">{activity.length ? activity.map((event: RecordValue, index: number) => <article className="scheduler-event" key={`${event.at}-${index}`}><Badge value={event.outcome} /><div><strong>{text(event.jira_key || event.card, t("common.workspace"))}</strong><p>{text(event.message)}</p></div><time>{when(event.at)}</time></article>) : <Empty label={t("common.noPatchActivity")} />}</div></Panel>
     {candidateOpen && <PatchCandidateDialog candidates={candidates} selected={selectedCandidate} loading={candidateLoading} error={candidateError} busy={busy} onChange={setSelectedCandidate} onClose={() => { if (!busy) setCandidateOpen(false); }} onConfirm={() => void start(selectedCandidate)} />}
     {logOpen && <DeliveryLogDialog stage={{ label: "Auto Patch log", detail: "Recent Auto Patch agent output" }} content={log} error={logError} loading={!log && !logError} onClose={() => setLogOpen(false)} />}
     {deleteCandidate && <DeleteHistoryDialog kind="patch" run={deleteCandidate} busy={Boolean(deletingHistoryId)} onClose={() => setDeleteCandidate(null)} onConfirm={() => void removeHistory()} />}
@@ -1313,40 +2839,47 @@ function PatchView({ data, project, notify, reload }: { data: DashboardData; pro
 }
 
 function PatchCandidateDialog({ candidates, selected, loading, error, busy, onChange, onClose, onConfirm }: { candidates: RecordValue[]; selected: string; loading: boolean; error: string; busy: boolean; onChange: (value: string) => void; onClose: () => void; onConfirm: () => void }) {
+  const { t } = useI18n();
   const available = candidates.filter((candidate) => candidate.available);
   const empty = !loading && !error && !candidates.length;
   const unavailable = !loading && Boolean(error);
-  const title = loading ? "Scanning the active sprint" : unavailable ? "Auto Patch scan unavailable" : empty ? "No Jira cards to patch" : "Choose a Jira card to patch";
-  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal patch-candidate-modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{title}</strong><p className="modal-copy">Only Task and Bug cards in the current active sprint are shown.</p>{loading && <div className="patch-candidate-empty">Scanning the active sprint…</div>}{unavailable && <div className="patch-candidate-error"><CircleAlert size={17} /><div><strong>Unable to scan Jira cards</strong><p>{error}</p></div></div>}{empty && <div className="patch-candidate-empty">No pending Auto Patch Jira cards were found in the current active sprint.</div>}{!loading && !error && candidates.length > 0 && <div className="patch-candidate-list">{candidates.map((candidate: RecordValue) => { const key = String(candidate.jira_key || ""); const disabled = !candidate.available; return <label className={`patch-candidate-option${selected === key ? " selected" : ""}${disabled ? " disabled" : ""}`} key={key}><input type="radio" name="patch-candidate" value={key} checked={selected === key} disabled={disabled || busy} onChange={() => onChange(key)} /><span><strong>{key} · {text(candidate.summary)}</strong><small>{text(candidate.issue_type, "Task")} · {text(candidate.status, "Unknown status")}{candidate.priority ? ` · Priority ${candidate.priority}` : ""}</small>{candidate.reason && <em>{candidate.reason}</em>}</span></label>; })}</div>}</div><footer><button className="button" disabled={busy} onClick={onClose}>Close</button>{!empty && !unavailable && <button className="button primary" disabled={busy || !selected || available.length === 0} onClick={onConfirm}><Play size={14} />{busy ? "Starting…" : "Start patch"}</button>}</footer></section></div>;
+  const title = loading ? `${t("label.autoPatch")} · ${t("common.loading")}` : unavailable ? `${t("label.autoPatch")} · ${t("status.notSet")}` : empty ? `${t("label.autoPatch")} · ${t("common.noData")}` : `${t("label.autoPatch")} · ${t("common.selectStory")}`;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal patch-candidate-modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{title}</strong><p className="modal-copy">{t("common.onlyTaskBugCards")}</p>{loading && <div className="patch-candidate-empty">{t("common.loading")}</div>}{unavailable && <div className="patch-candidate-error"><CircleAlert size={17} /><div><strong>{t("common.unableLoadState")}</strong><p>{error}</p></div></div>}{empty && <div className="patch-candidate-empty">{t("common.noPendingPatchCards")}</div>}{!loading && !error && candidates.length > 0 && <div className="patch-candidate-list">{candidates.map((candidate: RecordValue) => { const key = String(candidate.jira_key || ""); const disabled = !candidate.available; return <label className={`patch-candidate-option${selected === key ? " selected" : ""}${disabled ? " disabled" : ""}`} key={key}><input type="radio" name="patch-candidate" value={key} checked={selected === key} disabled={disabled || busy} onChange={() => onChange(key)} /><span><strong>{key} · {text(candidate.summary)}</strong><small>{text(candidate.issue_type, "Task")} · {text(candidate.status, "Unknown status")}{candidate.priority ? ` · Priority ${candidate.priority}` : ""}</small>{candidate.reason && <em>{candidate.reason}</em>}</span></label>; })}</div>}</div><footer><button className="button" disabled={busy} onClick={onClose}>{t("common.close")}</button>{!empty && !unavailable && <button className="button primary" disabled={busy || !selected || available.length === 0} onClick={onConfirm}><Play size={14} />{busy ? `${t("common.start")}…` : `${t("common.start")} ${t("label.autoPatch")}`}</button>}</footer></section></div>;
 }
 
 function PatchFlow({ phases, overallStatus }: { phases: RecordValue[]; overallStatus: string }) {
+  const { t } = useI18n();
   const visiblePhases = phases.filter((phase) => !["screen", "context"].includes(String(phase.id || "").toLowerCase()));
   const skipped = String(overallStatus).toLowerCase() === "skipped";
   const completed = visiblePhases.filter((phase) => phase.status === "completed").length;
   const trackWidth = skipped
     ? visiblePhases.length > 1 ? Math.round(Math.max(completed - 1, 0) / (visiblePhases.length - 1) * 100) : 0
     : visiblePhases.length ? Math.round(completed / visiblePhases.length * 100) : 0;
-  return <div className="delivery-flow patch-flow"><div className="flow-heading"><div><span className="flow-title">Patch Flow</span></div><p>Capture → repository → patch → publish</p></div><div className="flow-track-wrap"><span className="flow-track"><i style={{ width: `${trackWidth}%` }} /></span><ol className="flow-steps" style={{ "--flow-count": Math.max(visiblePhases.length, 1) } as React.CSSProperties}>{visiblePhases.map((phase, index) => { const status = String(phase.status || "pending").toLowerCase(); const state = skipped && status !== "completed" ? "skipped" : status === "completed" ? "completed" : /in_progress|running/.test(status) ? "running" : /failed|blocked/.test(status) ? "failed" : "pending"; const detail = text(phase.detail || phase.status, "Pending"); const duration = phase.started_at ? elapsed(phase.started_at, phase.finished_at || new Date().toISOString()) : "—"; return <li className={`flow-step ${state}`} key={phase.id || index}><div className="flow-stage-button"><span className="flow-marker">{state === "completed" ? "✓" : state === "skipped" ? "–" : index + 1}</span><span className="flow-copy"><strong>{text(phase.label)}</strong><span className="flow-detail" title={detail}>{detail}</span><small className="flow-duration">{duration}</small></span></div></li>; })}</ol></div></div>;
+  return <div className="delivery-flow patch-flow"><div className="flow-heading"><div><span className="flow-title">{t("label.autoPatch")} Flow</span></div><p>{t("common.patchFlow")}</p></div><div className="flow-track-wrap"><span className="flow-track"><i style={{ width: `${trackWidth}%` }} /></span><ol className="flow-steps" style={{ "--flow-count": Math.max(visiblePhases.length, 1) } as React.CSSProperties}>{visiblePhases.map((phase, index) => { const status = String(phase.status || "pending").toLowerCase(); const state = skipped && status !== "completed" ? "skipped" : status === "completed" ? "completed" : /in_progress|running/.test(status) ? "running" : /failed|blocked/.test(status) ? "failed" : "pending"; const detail = text(phase.detail || phase.status, t("label.pending")); const duration = phase.started_at ? elapsed(phase.started_at, phase.finished_at || new Date().toISOString()) : "—"; return <li className={`flow-step ${state}`} key={phase.id || index}><div className="flow-stage-button"><span className="flow-marker">{state === "completed" ? "✓" : state === "skipped" ? "–" : index + 1}</span><span className="flow-copy"><strong>{text(phase.label)}</strong><span className="flow-detail" title={detail}>{detail}</span><small className="flow-duration">{duration}</small></span></div></li>; })}</ol></div></div>;
 }
 
 function StartDeliveryDialog({ stories, value, onChange, step, busy, error, onClose, onContinue, onConfirm }: { stories: Array<{ value: string; label: string }>; value: string; onChange: (value: string) => void; step: 1 | 2; busy: boolean; error: string; onClose: () => void; onContinue: () => void; onConfirm: () => void }) {
+  const { t } = useI18n();
   const first = step === 1;
   const selectedLabel = stories.find((item) => item.value === value)?.label || value;
-  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal" role="dialog" aria-modal="true" aria-label={first ? "Start delivery" : "Confirm start delivery"} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{first ? "Start delivery" : "Confirm delivery start"}</strong><p className="modal-copy">{first ? "Choose a ready story to launch." : `Are you sure you want to start delivery for ${selectedLabel} now?`}</p>{first && <label className="field"><span>Story</span><select value={value} onChange={(event) => onChange(event.target.value)} disabled={busy || stories.length === 0}>{stories.length ? stories.map((item) => <option value={item.value} key={item.value} title={item.label}>{item.label}</option>) : <option value="">No ready stories</option>}</select></label>}{error && <p className="status-note">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>Cancel</button>{first ? <button className="button primary" disabled={busy || !value} onClick={onContinue}>Continue</button> : <button className="button primary" disabled={busy || !value} onClick={onConfirm}><Play size={14} />{busy ? "Starting…" : "Start delivery"}</button>}</footer></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal" role="dialog" aria-modal="true" aria-label={first ? t("label.autoDelivery") : t("label.autoDelivery")} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{first ? t("action.startDelivery") : `${t("action.startDelivery")} · ${t("common.confirm")}`}</strong><p className="modal-copy">{first ? "Choose a ready story to launch." : `Are you sure you want to start delivery for ${selectedLabel} now?`}</p>{first && <label className="field"><span>{t("label.story")}</span><select value={value} onChange={(event) => onChange(event.target.value)} disabled={busy || stories.length === 0}>{stories.length ? stories.map((item) => <option value={item.value} key={item.value} title={item.label}>{item.label}</option>) : <option value="">{t("common.noData")}</option>}</select></label>}{error && <p className="status-note">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>{t("common.cancel")}</button>{first ? <button className="button primary" disabled={busy || !value} onClick={onContinue}>{t("common.continue")}</button> : <button className="button primary" disabled={busy || !value} onClick={onConfirm}><Play size={14} />{busy ? `${t("common.start")}…` : t("action.startDelivery")}</button>}</footer></section></div>;
 }
 
 function RetryDeliveryDialog({ story, busy, error, onClose, onConfirm }: { story: string; busy: boolean; error: string; onClose: () => void; onConfirm: () => void }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal" role="dialog" aria-modal="true" aria-label="Reset and retry delivery" onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>Reset and retry {story}?</strong><p>This removes the Story worktrees, resets its Delivery and JIRA status, then starts a new run. The failed run and logs stay in history.</p>{error && <p className="status-note">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>Cancel</button><button className="button primary" disabled={busy} onClick={onConfirm}><RotateCcw size={14} />{busy ? "Starting…" : "Retry"}</button></footer></section></div>;
+  const { t } = useI18n();
+  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal" role="dialog" aria-modal="true" aria-label={`${t("common.retry")} ${t("label.autoDelivery")}`} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>{t("common.retry")} {story}?</strong><p>{t("common.retryDeliveryCopy")}</p>{error && <p className="status-note">{error}</p>}</div><footer><button className="button" disabled={busy} onClick={onClose}>{t("common.cancel")}</button><button className="button primary" disabled={busy} onClick={onConfirm}><RotateCcw size={14} />{busy ? `${t("common.start")}…` : t("common.retry")}</button></footer></section></div>;
 }
 
 function DeleteHistoryDialog({ kind = "delivery", run, busy, onClose, onConfirm }: { kind?: "delivery" | "patch"; run: RecordValue; busy: boolean; onClose: () => void; onConfirm: () => void }) {
+  const { t } = useI18n();
   const patch = kind === "patch";
   const story = text(run.jira_key || run.story || run.run_id);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal delete-history-modal" role="dialog" aria-modal="true" aria-label={`Delete ${patch ? "Auto Patch" : "delivery"} history`} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>Delete {patch ? "Auto Patch" : "delivery"} history?</strong><p className="modal-copy">This removes the {story} record, log, and trace files. This action cannot be undone.</p></div><footer><button className="button" disabled={busy} onClick={onClose}>Cancel</button><button className="button danger delete-confirm" disabled={busy} onClick={onConfirm}><Trash2 size={14} />{busy ? "Deleting…" : "Delete record"}</button></footer></section></div>;
+  const type = patch ? t("label.autoPatch") : t("label.autoDelivery");
+  return <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal delete-history-modal" role="dialog" aria-modal="true" aria-label={`${type} history`} onMouseDown={(event) => event.stopPropagation()}><div className="modal-body compact"><strong>Delete {type} history?</strong><p className="modal-copy">This removes the {story} record, log, and trace files. This action cannot be undone.</p></div><footer><button className="button" disabled={busy} onClick={onClose}>{t("common.cancel")}</button><button className="button danger delete-confirm" disabled={busy} onClick={onConfirm}><Trash2 size={14} />{busy ? "Deleting…" : "Delete record"}</button></footer></section></div>;
 }
 
 function ObservatoryView({ project, notify, onDirtyChange }: { project: string; notify: Notify; onDirtyChange: (dirty: boolean) => void }) {
+  const { t } = useI18n();
   const initialStory = new URLSearchParams(window.location.search).get("story") || "";
   const [stories, setStories] = useState<RecordValue[]>([]);
   const [selected, setSelected] = useState(initialStory);
@@ -1423,7 +2956,7 @@ function ObservatoryView({ project, notify, onDirtyChange }: { project: string; 
   useEffect(() => { if (selected) void loadContent(selected); }, [selected, loadContent]);
   const selectStory = (story: string) => {
     if (story === selected) return;
-    if (dirty && !window.confirm("You have unsaved Observatory changes. Switch stories without saving?")) return;
+    if (dirty && !window.confirm(t("common.unsavedObservatory"))) return;
     setSelected(story);
   };
   const openStartDelivery = () => {
@@ -1438,7 +2971,7 @@ function ObservatoryView({ project, notify, onDirtyChange }: { project: string; 
       notify("Select a story to start", "error");
       return;
     }
-    if (dirty && !window.confirm("You have unsaved Observatory changes. Start delivery without saving?")) return;
+    if (dirty && !window.confirm(t("common.unsavedObservatory"))) return;
     setStartBusy(true);
     setStartError("");
     try {
@@ -1491,16 +3024,16 @@ function ObservatoryView({ project, notify, onDirtyChange }: { project: string; 
   return <div className="observatory-layout">
     <aside className="observatory-list panel">
       <div className="panel-header observatory-list-header">
-        <h3>Stories</h3>
+        <h3>{t("heading.stories")}</h3>
         <div className="observatory-list-tools">
-          <button type="button" className={`icon-button${searchOpen ? " active" : ""}`} title="Search stories" aria-label="Search stories" aria-pressed={searchOpen} onClick={() => setSearchOpen((value) => !value)}><Search size={15} /></button>
-          <button type="button" className={`icon-button${readyOnly ? " active" : ""}`} title={readyOnly ? "Showing business-ready stories" : "Filter business-ready stories"} aria-label="Filter stories" aria-pressed={readyOnly} onClick={() => setReadyOnly((value) => !value)}><ListFilter size={15} /></button>
+          <button type="button" className={`icon-button${searchOpen ? " active" : ""}`} title={t("action.searchStories")} aria-label={t("action.searchStories")} aria-pressed={searchOpen} onClick={() => setSearchOpen((value) => !value)}><Search size={15} /></button>
+          <button type="button" className={`icon-button${readyOnly ? " active" : ""}`} title={readyOnly ? t("action.showingReadyStories") : t("action.filterReadyStories")} aria-label={t("action.filterStories")} aria-pressed={readyOnly} onClick={() => setReadyOnly((value) => !value)}><ListFilter size={15} /></button>
         </div>
       </div>
-      {searchOpen && <div className="observatory-list-search"><input value={storyQuery} onChange={(event) => setStoryQuery(event.target.value)} placeholder="Search stories" aria-label="Search stories" autoFocus /></div>}
+      {searchOpen && <div className="observatory-list-search"><input value={storyQuery} onChange={(event) => setStoryQuery(event.target.value)} placeholder={t("action.searchStories")} aria-label={t("action.searchStories")} autoFocus /></div>}
       <div className="observatory-list-body">
-        {loadingList ? <div className="loading-state"><LoaderCircle size={18} className="spin" /> Loading…</div> : null}
-        {!loadingList && !visibleStories.length ? <Empty label={stories.length ? "No stories match this filter." : "No stories found in the docs repository."} /> : null}
+        {loadingList ? <div className="loading-state"><LoaderCircle size={18} className="spin" /> {t("common.loading")}</div> : null}
+        {!loadingList && !visibleStories.length ? <Empty label={stories.length ? t("common.noStoriesFilter") : t("common.noStories")} /> : null}
         {visibleStories.map((item) => {
           const key = text(item.jira_key || item.story);
           const itemTitle = text(item.title, item.story);
@@ -1513,7 +3046,7 @@ function ObservatoryView({ project, notify, onDirtyChange }: { project: string; 
       </div>
     </aside>
     <section className="observatory-detail panel">
-      {!selected ? <Empty label="Select a story to inspect." /> : <>
+      {!selected ? <Empty label={t("common.selectStory")} /> : <>
         <div className="observatory-header">
           <div className="observatory-title-row">
             <h2>
@@ -1522,18 +3055,18 @@ function ObservatoryView({ project, notify, onDirtyChange }: { project: string; 
                 : <><span className="observatory-key">{storyKey}</span><span className="observatory-heading-title">{storyTitle}</span></>}
             </h2>
             <div className="panel-actions observatory-actions">
-              {canStartDelivery && <button type="button" className="button secondary" disabled={startBusy || loadingContent} onClick={openStartDelivery}><Play size={14} />Start delivery</button>}
-              <button type="button" className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving || loadingContent} onClick={() => void save()}>{saving ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}{saving ? "Saving…" : "Save"}</button>
+              {canStartDelivery && <button type="button" className="button secondary" disabled={startBusy || loadingContent} onClick={openStartDelivery}><Play size={14} />{t("action.startDelivery")}</button>}
+              <button type="button" className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving || loadingContent} onClick={() => void save()}>{saving ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}{saving ? t("common.saving") : t("common.save")}</button>
             </div>
           </div>
           <div className="observatory-subheader">
             <StoryStatusMeta business={businessStatus || "draft"} technical={technicalStatus || "draft"} />
           </div>
         </div>
-        {loadingContent ? <div className="loading-state"><LoaderCircle size={20} className="spin" /> Loading story…</div> : <>
+        {loadingContent ? <div className="loading-state"><LoaderCircle size={20} className="spin" /> {t("common.loading")} Story…</div> : <>
           <div className="observatory-doc-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={docTab === "story"} className={docTab === "story" ? "active" : ""} onClick={() => setDocTab("story")}>Story</button>
-            <button type="button" role="tab" aria-selected={docTab === "plan"} className={docTab === "plan" ? "active" : ""} onClick={() => setDocTab("plan")}>Technical plan</button>
+            <button type="button" role="tab" aria-selected={docTab === "story"} className={docTab === "story" ? "active" : ""} onClick={() => setDocTab("story")}>{t("label.story")}</button>
+            <button type="button" role="tab" aria-selected={docTab === "plan"} className={docTab === "plan" ? "active" : ""} onClick={() => setDocTab("plan")}>{t("label.technical")} plan</button>
           </div>
           {docTab === "story"
             ? <ObservatoryDocEditor key={`${selected || "none"}-story`} value={storyMarkdown} onChange={setStoryMarkdown} />
@@ -1545,8 +3078,9 @@ function ObservatoryView({ project, notify, onDirtyChange }: { project: string; 
   </div>;
 }
 
-function StoryReference({ jiraKey, title }: { jiraKey: string; title?: string }) { return <span className="story-reference">{title ? <><code>{text(jiraKey)}</code><span className="story-reference-title">{title}</span></> : <code>{text(jiraKey, "No active delivery")}</code>}</span>; }
+function StoryReference({ jiraKey, title }: { jiraKey: string; title?: string }) { const { t } = useI18n(); return <span className="story-reference">{title ? <><code>{text(jiraKey)}</code><span className="story-reference-title">{title}</span></> : <code>{text(jiraKey, t("common.noData"))}</code>}</span>; }
 function DeliveryFlow({ stages, deliveryStatus, currentStep, startedAt, finishedAt, remediation, now, onStageClick }: { stages: RecordValue[]; deliveryStatus: string; currentStep?: string; startedAt?: string; finishedAt?: string; remediation?: RecordValue; now: number; onStageClick: (stage: RecordValue) => void }) {
+  const { t } = useI18n();
   const terminalSuccess = /completed|dev_done|pr_open/i.test(deliveryStatus);
   const stopped = /stopped from dashboard/i.test(String(currentStep || ""));
   const retrying = remediation?.status === "in_progress";
@@ -1554,22 +3088,22 @@ function DeliveryFlow({ stages, deliveryStatus, currentStep, startedAt, finished
   const states = stages.map((stage) => { const rawStatus = String(stage.status || "pending").toLowerCase(); return terminalSuccess || rawStatus === "completed" ? "completed" : /running|progress/.test(rawStatus) ? "running" : stopped && /fail|block/.test(rawStatus) ? "stopped" : /fail|block/.test(rawStatus) ? "failed" : "pending"; });
   const progressUnits = states.reduce((total, state) => total + (state === "completed" ? 1 : state === "running" ? .5 : 0), 0);
   const progress = stages.length > 1 ? Math.max(0, Math.min(100, ((progressUnits - 1) / (stages.length - 1)) * 100)) : 100;
-  return <div className="delivery-flow"><div className="flow-heading"><div><span className="flow-title">Delivery Flow</span>{retrying && <strong className="remediation-alert"><RotateCcw size={13} />Verification failed · Remediation retry {retry}</strong>}</div><p>{startedAt ? `Started ${when(startedAt)}` : "Awaiting delivery trigger"}{finishedAt ? ` · Finished ${when(finishedAt)}` : ""}</p></div><div className="flow-track-wrap"><span className="flow-track"><i style={{ width: `${progress}%` }} /></span><ol className="flow-steps" style={{ "--flow-count": stages.length } as React.CSSProperties}>{stages.map((stage, index) => {
+  return <div className="delivery-flow"><div className="flow-heading"><div><span className="flow-title">{t("nav.delivery")} Flow</span>{retrying && <strong className="remediation-alert"><RotateCcw size={13} />Verification failed · Remediation retry {retry}</strong>}</div><p>{startedAt ? t("label.startedAt", { value: when(startedAt) }) : t("label.notStarted")}{finishedAt ? ` · ${t("label.finishedAtValue", { value: when(finishedAt) })}` : ""}</p></div><div className="flow-track-wrap"><span className="flow-track"><i style={{ width: `${progress}%` }} /></span><ol className="flow-steps" style={{ "--flow-count": stages.length } as React.CSSProperties}>{stages.map((stage, index) => {
     const rawStatus = String(stage.status || "pending").toLowerCase();
     const state = terminalSuccess || rawStatus === "completed" ? "completed" : /running|progress/.test(rawStatus) ? "running" : stopped && /fail|block/.test(rawStatus) ? "stopped" : /fail|block/.test(rawStatus) ? "failed" : "pending";
     const duration = state === "running" ? elapsed(stage.active_started_at || stage.started_at, new Date(now).toISOString()) : stage.duration || "Pending";
     const attemptCount = Array.isArray(stage.attempts) && stage.attempts.length > 1 ? ` · ${stage.attempts.length} attempts` : "";
-    const caption = state === "stopped" ? "Stopped" : retrying && state === "running" && ["implement", "verification"].includes(stage.id) ? `Retry ${retry} · ${duration}` : retrying && stage.id === "verification" && state === "failed" ? `Failed · remediation ${retry}` : state === "failed" ? "Needs attention" : `${duration}${attemptCount}`;
+    const caption = state === "stopped" ? t("label.stopped") : retrying && state === "running" && ["implement", "verification"].includes(stage.id) ? `Retry ${retry} · ${duration}` : retrying && stage.id === "verification" && state === "failed" ? `Failed · remediation ${retry}` : state === "failed" ? t("label.needsAttentionState") : `${duration}${attemptCount}`;
     return <li className={`flow-step ${state}`} key={`${stage.label}-${index}`}><button className="flow-stage-button" onClick={() => onStageClick(stage)}><span className="flow-marker">{state === "completed" ? "✓" : state === "running" ? <span className="pulse-dot" /> : index + 1}</span><span className="flow-copy"><strong>{text(stage.label)}</strong><span>{caption}</span></span></button></li>;
   })}</ol></div></div>;
 }
 
-function DeliveryLogDialog({ stage, content, error, loading, live = false, onClose }: { stage: RecordValue; content: string; error: string; loading: boolean; live?: boolean; onClose: () => void }) { const logRef = useRef<HTMLPreElement>(null); useEffect(() => { if (live && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [content, live]); return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal delivery-log-modal" role="dialog" aria-modal="true" aria-label={`${stage.label} log`} onMouseDown={(event) => event.stopPropagation()}><div className="delivery-log-header"><div><span>{stage.label}</span><strong>{stage.duration || "—"}{live && <em className="live-log"><i />Live</em>}</strong><p>{stage.detail || "Delivery log excerpt"}</p>{Array.isArray(stage.attempts) && stage.attempts.length > 0 && <small className="stage-attempts">{stage.attempts.map((attempt: RecordValue) => `Attempt ${attempt.number}: ${attempt.duration}`).join(" · ")}</small>}</div><button className="button secondary" onClick={onClose}>Close</button></div><pre ref={logRef} className="delivery-log-content"><code>{loading && !content ? "Loading log…" : error || content}</code></pre></section></div>; }
+function DeliveryLogDialog({ stage, content, error, loading, live = false, onClose }: { stage: RecordValue; content: string; error: string; loading: boolean; live?: boolean; onClose: () => void }) { const { t } = useI18n(); const logRef = useRef<HTMLPreElement>(null); useEffect(() => { if (live && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [content, live]); return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal delivery-log-modal" role="dialog" aria-modal="true" aria-label={`${stage.label} ${t("label.log")}`} onMouseDown={(event) => event.stopPropagation()}><div className="delivery-log-header"><div><span>{stage.label}</span><strong>{stage.duration || "—"}{live && <em className="live-log"><i />{t("common.live")}</em>}</strong><p>{stage.detail || t("label.noLog")}</p>{Array.isArray(stage.attempts) && stage.attempts.length > 0 && <small className="stage-attempts">{stage.attempts.map((attempt: RecordValue) => t("common.attempt", { number: attempt.number, duration: attempt.duration })).join(" · ")}</small>}</div><button className="button secondary" onClick={onClose}>{t("common.close")}</button></div><pre ref={logRef} className="delivery-log-content"><code>{loading && !content ? t("common.loading") : error || content}</code></pre></section></div>; }
 
 function Fact({ label, value }: { label: string; value: React.ReactNode }) { return <div className="fact"><span>{label}</span><strong>{value}</strong></div>; }
-function PrLinks({ items }: { items: RecordValue[] }) { return items.length ? <span className="pr-links">{items.map((item, index) => <a href={item.url} target="_blank" rel="noreferrer" key={`${item.url}-${index}`}>{text(item.repository, "Pull request")}{String(item.url || "").match(/\/(\d+)\/?$/) ? ` #${String(item.url).match(/\/(\d+)\/?$/)?.[1]}` : ""}<ExternalLink size={12} /></a>)}</span> : <>—</>; }
-function VerificationSummary({ checks, onClick }: { checks: RecordValue[]; onClick: () => void }) { const failed = checks.filter((item) => item.status === "failed").length; const passed = checks.filter((item) => item.status === "passed").length; return checks.length ? <button className={`check-summary ${failed ? "failed" : ""}`} title="Open verification details" onClick={onClick}>{failed ? `${failed} failed` : `${passed}/${checks.length} passed`}</button> : <>—</>; }
-function VerificationDialog({ checks, onClose }: { checks: RecordValue[]; onClose: () => void }) { return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal verification-modal" role="dialog" aria-modal="true" aria-label="Verification checks" onMouseDown={(event) => event.stopPropagation()}><div className="delivery-log-header"><div><span>Verification</span><strong>Checks</strong><p>{checks.filter((item) => item.status === "passed").length} passed · {checks.filter((item) => item.status === "failed").length} failed · {checks.filter((item) => item.status === "skipped").length} skipped</p></div><button className="button secondary" onClick={onClose}>Close</button></div><div className="verification-list">{checks.map((check, index) => <article className="verification-check" key={`${check.repository}-${check.id}-${index}`}><div><strong>{text(check.label)}</strong><span>{text(check.repository, "Workspace")}</span></div><Badge value={check.status} /><p>{text(check.summary, "No summary recorded.")}</p>{check.command && <code>{check.command}</code>}</article>)}</div></section></div>; }
+function PrLinks({ items }: { items: RecordValue[] }) { const { t } = useI18n(); return items.length ? <span className="pr-links">{items.map((item, index) => <a href={item.url} target="_blank" rel="noreferrer" key={`${item.url}-${index}`}>{text(item.repository, t("action.pullRequest"))}{String(item.url || "").match(/\/(\d+)\/?$/) ? ` #${String(item.url).match(/\/(\d+)\/?$/)?.[1]}` : ""}<ExternalLink size={12} /></a>)}</span> : <>—</>; }
+function VerificationSummary({ checks, onClick }: { checks: RecordValue[]; onClick: () => void }) { const { t } = useI18n(); const failed = checks.filter((item) => item.status === "failed").length; const passed = checks.filter((item) => item.status === "passed").length; return checks.length ? <button className={`check-summary ${failed ? "failed" : ""}`} title={t("label.verification")} onClick={onClick}>{failed ? t("label.checksFailed", { count: failed }) : t("label.checksPassed", { count: `${passed}/${checks.length}` })}</button> : <>—</>; }
+function VerificationDialog({ checks, onClose }: { checks: RecordValue[]; onClose: () => void }) { const { t } = useI18n(); return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal verification-modal" role="dialog" aria-modal="true" aria-label={t("label.verification")} onMouseDown={(event) => event.stopPropagation()}><div className="delivery-log-header"><div><span>{t("label.verification")}</span><strong>{t("label.checksTitle")}</strong><p>{t("label.checksPassed", { count: checks.filter((item) => item.status === "passed").length })} · {t("label.checksFailed", { count: checks.filter((item) => item.status === "failed").length })} · {t("label.checksSkipped", { count: checks.filter((item) => item.status === "skipped").length })}</p></div><button className="button secondary" onClick={onClose}>{t("common.close")}</button></div><div className="verification-list">{checks.map((check, index) => <article className="verification-check" key={`${check.repository}-${check.id}-${index}`}><div><strong>{text(check.label)}</strong><span>{text(check.repository, t("common.workspace"))}</span></div><Badge value={check.status} /><p>{text(check.summary, t("label.noSummary"))}</p>{check.command && <code>{check.command}</code>}</article>)}</div></section></div>; }
 
 const promptStageMeta: Record<string, { title: string; description: string; icon: typeof Workflow }> = {
   "01-role-and-mission.md": { title: "Mission", description: "Scope, role, and review posture", icon: Sparkles },
@@ -1653,6 +3187,7 @@ function workflowColumns(mode: "scan" | "delivery" | "patch"): WorkflowColumn[] 
 }
 
 function PromptsView({ data, project, interact, notify }: { data: DashboardData; project: string; interact: (path: string, json: RecordValue, message: string) => Promise<boolean>; notify: Notify }) {
+  const { t } = useI18n();
   const prompts = data.interactive?.prompts || [];
   const [mode, setMode] = useState<"scan" | "delivery" | "patch">("scan");
   const [selected, setSelected] = useState<{ mode: "scan" | "delivery" | "patch"; path: string } | null>(null);
@@ -1704,8 +3239,8 @@ function PromptsView({ data, project, interact, notify }: { data: DashboardData;
   };
   const columns = workflowColumns(mode);
   return <>
-    <div className="workflow-mode-switch" role="tablist"><button className={mode === "scan" ? "active" : ""} onClick={() => switchMode("scan")}>Auto Scan</button><button className={mode === "delivery" ? "active" : ""} onClick={() => switchMode("delivery")}>Auto Delivery</button><button className={mode === "patch" ? "active" : ""} onClick={() => switchMode("patch")}>Auto Patch</button></div>
-    <Panel title={mode === "scan" ? "Auto Scan Workflow" : mode === "delivery" ? "Auto Delivery Workflow" : "Auto Patch Workflow"} action={<IconButton label={fullscreen ? "Exit full screen" : "View full screen"} onClick={() => setFullscreen((value) => !value)}>{fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</IconButton>} className={`workflow-panel ${fullscreen ? "workflow-panel-fullscreen" : ""}`}>
+    <div className="workflow-mode-switch" role="tablist"><button className={mode === "scan" ? "active" : ""} onClick={() => switchMode("scan")}>{t("label.autoScan")}</button><button className={mode === "delivery" ? "active" : ""} onClick={() => switchMode("delivery")}>{t("label.autoDelivery")}</button><button className={mode === "patch" ? "active" : ""} onClick={() => switchMode("patch")}>{t("label.autoPatch")}</button></div>
+    <Panel title={t("heading.workflow", { feature: mode === "scan" ? t("label.autoScan") : mode === "delivery" ? t("label.autoDelivery") : t("label.autoPatch") })} action={<IconButton label={fullscreen ? t("action.exitFullscreen") : t("action.viewFullscreen")} onClick={() => setFullscreen((value) => !value)}>{fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</IconButton>} className={`workflow-panel ${fullscreen ? "workflow-panel-fullscreen" : ""}`}>
       <div ref={viewport} className="workflow-canvas workflow-viewport" onPointerDown={startPan} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan}><div className="workflow-scale" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}><div className="workflow-columns">{columns.map((column, columnIndex) => {
         const columnPrompts = modePrompts.filter((item) => column.layers.includes(promptLayer(item, mode)));
         const nodes = [...column.scripts.map((script) => ({ kind: "script" as const, script })), ...columnPrompts.map((prompt) => ({ kind: "prompt" as const, prompt }))];
@@ -1725,12 +3260,15 @@ function PromptsView({ data, project, interact, notify }: { data: DashboardData;
 }
 
 function PromptInspectorDialog({ item, content, saving, onChange, onClose, onSave }: { item: { mode: "scan" | "delivery" | "patch"; path: string }; content: string; saving: boolean; onChange: (value: string) => void; onClose: () => void; onSave: () => void }) {
+  const { t } = useI18n();
   const meta = promptMeta(item);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={saving ? undefined : onClose}><section className="modal prompt-inspector-modal" role="dialog" aria-modal="true" aria-label={`${meta.title} prompt`} onMouseDown={(event) => event.stopPropagation()}><div className="prompt-inspector-header"><div><span>{item.mode === "scan" ? "Auto Scan" : item.mode === "delivery" ? "Auto Delivery" : "Auto Patch"} prompt</span><strong>{meta.title}</strong><code>{item.path}</code></div><button className="button secondary" disabled={saving} onClick={onClose}>Close</button></div><div className="prompt-inspector-body"><div className="markdown-workbench"><label className="markdown-pane"><span>Original Markdown</span><textarea value={content} onChange={(event) => onChange(event.target.value)} spellCheck={false} disabled={saving} /></label><article className="markdown-preview"><span>Preview</span><MarkdownBody content={content} /></article></div></div><footer><button className="button" disabled={saving} onClick={onClose}>Cancel</button><button className={`button primary${saving ? " is-busy" : ""}`} disabled={saving} onClick={onSave}>{saving ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}{saving ? "Saving…" : "Save prompt"}</button></footer></section></div>;
+  const feature = item.mode === "scan" ? t("label.autoScan") : item.mode === "delivery" ? t("label.autoDelivery") : t("label.autoPatch");
+  return <div className="modal-backdrop" role="presentation" onMouseDown={saving ? undefined : onClose}><section className="modal prompt-inspector-modal" role="dialog" aria-modal="true" aria-label={`${meta.title} prompt`} onMouseDown={(event) => event.stopPropagation()}><div className="prompt-inspector-header"><div><span>{feature} {t("label.prompt")}</span><strong>{meta.title}</strong><code>{item.path}</code></div><button className="button secondary" disabled={saving} onClick={onClose}>{t("common.close")}</button></div><div className="prompt-inspector-body"><div className="markdown-workbench"><label className="markdown-pane"><span>{t("prompt.original")}</span><textarea value={content} onChange={(event) => onChange(event.target.value)} spellCheck={false} disabled={saving} /></label><article className="markdown-preview"><span>{t("prompt.preview")}</span><MarkdownBody content={content} /></article></div></div><footer><button className="button" disabled={saving} onClick={onClose}>{t("common.cancel")}</button><button className={`button primary${saving ? " is-busy" : ""}`} disabled={saving} onClick={onSave}>{saving ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}{saving ? t("common.saving") : t("action.savePrompt")}</button></footer></section></div>;
 }
 
 function HelpTip({ children }: { children: React.ReactNode }) {
-  return <details className="field-help"><summary aria-label="Explain this setting"><CircleHelp size={13} /></summary><span role="tooltip">{children}</span></details>;
+  const { t } = useI18n();
+  return <details className="field-help"><summary aria-label={t("common.explainSetting")}><CircleHelp size={13} /></summary><span role="tooltip">{children}</span></details>;
 }
 
 function Field({ label, help, children }: { label: string; help?: React.ReactNode; children: React.ReactNode }) {
@@ -1738,6 +3276,7 @@ function Field({ label, help, children }: { label: string; help?: React.ReactNod
 }
 
 function StatusMultiSelect({ options, value, onChange, markDirty }: { options: string[]; value: string[]; onChange: (value: string[]) => void; markDirty: () => void }) {
+  const { t } = useI18n();
   const picker = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -1751,41 +3290,44 @@ function StatusMultiSelect({ options, value, onChange, markDirty }: { options: s
     onChange(value.includes(status) ? value.filter((item) => item !== status) : [...value, status]);
     markDirty();
   };
-  const summary = value.length === 0 ? "Select statuses" : value.length === 1 ? value[0] : `${value.length} statuses selected`;
+  const summary = value.length === 0 ? t("label.eligibleStatuses") : value.length === 1 ? value[0] : t("common.statusesSelected", { count: value.length });
   return <div ref={picker} className={`status-picker ${open ? "is-open" : ""}`}>
-    <button type="button" className="status-picker-trigger" aria-label="Eligible JIRA statuses" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+    <button type="button" className="status-picker-trigger" aria-label={t("label.eligibleStatuses")} aria-expanded={open} onClick={() => setOpen((current) => !current)}>
       <span className={`status-picker-summary ${value.length === 0 ? "placeholder" : ""}`} title={value.join(", ")}>{summary}</span><ChevronDown size={15} aria-hidden="true" />
     </button>
-    {open && <div className="status-picker-menu" role="listbox" aria-label="Eligible JIRA statuses" aria-multiselectable="true">
+    {open && <div className="status-picker-menu" role="listbox" aria-label={t("label.eligibleStatuses")} aria-multiselectable="true">
       <div className="status-picker-options">{options.map((status) => { const selected = value.includes(status); return <button type="button" role="option" aria-selected={selected} className={`status-picker-option ${selected ? "selected" : ""}`} key={status} onClick={() => toggle(status)}><span className="status-picker-check" aria-hidden="true">{selected ? "✓" : ""}</span><span>{status}</span></button>; })}</div>
-      <footer className="status-picker-footer"><span>{value.length} selected</span>{value.length > 0 && <button type="button" onClick={() => { onChange([]); markDirty(); }}>Clear</button>}</footer>
+      <footer className="status-picker-footer"><span>{t("common.selected", { count: value.length })}</span>{value.length > 0 && <button type="button" onClick={() => { onChange([]); markDirty(); }}>{t("common.clear")}</button>}</footer>
     </div>}
   </div>;
 }
 
 function ModelField({ label, value, onChange, markDirty }: { label: string; value: string; onChange: (value: string) => void; markDirty: () => void }) {
+  const { t } = useI18n();
   const normalizedValue = trimmedModelValue(value);
   const isPreset = cursorModelOptions.some((model) => model.value === normalizedValue);
   const [customOpen, setCustomOpen] = useState(false);
   const openCustom = () => setCustomOpen(true);
-  return <Field label={label} help="Choose a preset, or select Custom and enter a model ID supported by Cursor. Lumen does not validate custom model availability.">
+  return <Field label={label} help={t("customModel.help")}>
     <select value={isPreset ? normalizedValue : customModelOption} onChange={(event) => { if (event.target.value === customModelOption) openCustom(); else { onChange(event.target.value); markDirty(); } }}>
       {cursorModelOptions.map((model) => <option value={model.value} key={model.value}>{model.label}</option>)}
-      <option value={customModelOption}>Custom Cursor model ID…</option>
+      <option value={customModelOption}>{t("customModel.option")}</option>
     </select>
-    {!isPreset && <button type="button" className="custom-model-edit" onClick={openCustom}>Edit custom model</button>}
+    {!isPreset && <button type="button" className="custom-model-edit" onClick={openCustom}>{t("customModel.edit")}</button>}
     {customOpen && <CustomModelDialog label={label} value={value} onClose={() => setCustomOpen(false)} onConfirm={(model) => { onChange(model); markDirty(); setCustomOpen(false); }} />}
   </Field>;
 }
 
 function CustomModelDialog({ label, value, onClose, onConfirm }: { label: string; value: string; onClose: () => void; onConfirm: (value: string) => void }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(value);
   const confirm = () => { const model = draft.trim(); if (model) onConfirm(model); };
   useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [onClose]);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal custom-model-modal" role="dialog" aria-modal="true" aria-labelledby="custom-model-title" onMouseDown={(event) => event.stopPropagation()}><div className="custom-model-header"><strong id="custom-model-title">Enter a custom Cursor model</strong><p>{label} · Use a model ID supported by Cursor.</p></div><div className="modal-body compact"><Field label="Cursor model ID"><input autoFocus value={draft} placeholder="e.g. cursor-grok-4.5-medium" aria-label="Custom Cursor model ID" onChange={(event) => setDraft(event.target.value)} /></Field><p className="modal-copy">Lumen does not validate model availability. The value will be used on the next run.</p></div><footer><button type="button" className="button" onClick={onClose}>Cancel</button><button type="button" className="button primary" disabled={!draft.trim()} onClick={confirm}>Confirm</button></footer></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal custom-model-modal" role="dialog" aria-modal="true" aria-labelledby="custom-model-title" onMouseDown={(event) => event.stopPropagation()}><div className="custom-model-header"><strong id="custom-model-title">{t("customModel.enter")}</strong><p>{label} · {t("customModel.help")}</p></div><div className="modal-body compact"><Field label={t("customModel.id")}><input autoFocus value={draft} placeholder={t("customModel.placeholder")} aria-label={t("customModel.id")} onChange={(event) => setDraft(event.target.value)} /></Field><p className="modal-copy">{t("customModel.copy")}</p></div><footer><button type="button" className="button" onClick={onClose}>{t("common.cancel")}</button><button type="button" className="button primary" disabled={!draft.trim()} onClick={confirm}>{t("common.confirm")}</button></footer></section></div>;
 }
 
 function RepositoryView({ data, interact }: { data: DashboardData; interact: (path: string, json: RecordValue, message: string) => Promise<boolean> }) {
+  const { t } = useI18n();
   const workspace = data.interactive?.workspace || {};
   const [repositories, setRepositories] = useState<RecordValue[]>(workspace.repositories || []);
   const [dirty, setDirty] = useState(false);
@@ -1832,7 +3374,7 @@ function RepositoryView({ data, interact }: { data: DashboardData; interact: (pa
     const buildTools = health.build_tools?.join(", ") || "No build tool detected";
     return `${runtime} · ${buildTools}`;
   };
-  const repositoryValue = (value: unknown) => { const display = text(value, "Not configured"); return <span className="repository-fact-value" data-tooltip={display} title={display} tabIndex={0} aria-label={display}><code>{display}</code></span>; };
+  const repositoryValue = (value: unknown) => { const display = text(value, t("status.notSet")); return <span className="repository-fact-value" data-tooltip={display} title={display} tabIndex={0} aria-label={display}><code>{display}</code></span>; };
   const attention = repositories.filter((repository) => attentionReasons(repository).length > 0).length;
   const scanEnabled = repositories.filter((repository) => automationFor(repository).scan.allow_auto_fix).length;
   const deliveryEnabled = repositories.filter((repository) => automationFor(repository).delivery.enabled).length;
@@ -1844,11 +3386,11 @@ function RepositoryView({ data, interact }: { data: DashboardData; interact: (pa
   const selectedAutomation = selectedRepository ? automationFor(selectedRepository) : null;
   const selectedVerification = selectedRepository ? verificationFor(selectedRepository) : null;
   return <div className="repository-page">
-    <Panel title="Repository Governance" action={<button className="button secondary" onClick={() => setAddOpen(true)}>Add repository</button>}>
-      <div className="repository-intro">Connect repositories by Git URL. Lumen clones them into <code>repos/</code>, detects runtime and build tooling, then lets you approve the automation that may change or publish code.</div>
-      <div className="repository-overview"><Fact label="Registered" value={repositories.length} /><Fact label="Needs attention" value={attention} /><Fact label="Auto Scan" value={`${scanEnabled}/${repositories.length} enabled`} /><Fact label="Auto Delivery" value={`${deliveryEnabled}/${repositories.length} enabled`} /><Fact label="Auto Patch" value={`${patchEnabled}/${repositories.length} enabled`} /></div>
-      <div className="repository-filters"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All ({repositories.length})</button><button className={filter === "attention" ? "active" : ""} onClick={() => setFilter("attention")}>Needs attention ({attention})</button><button className={filter === "patch" ? "active" : ""} onClick={() => setFilter("patch")}>Auto Patch enabled ({patchEnabled})</button></div>
-      {filter === "attention" && <div className="repository-filter-note"><CircleAlert size={14} aria-hidden="true" /><span>Needs attention means uncommitted changes, a branch behind remote, or a diverged branch/sync.</span></div>}
+    <Panel title={t("common.repositoryGovernance")} action={<button className="button secondary" onClick={() => setAddOpen(true)}>{t("common.addRepository")}</button>}>
+      <div className="repository-intro">{t("common.repositoryIntro")}</div>
+      <div className="repository-overview"><Fact label={t("common.all")} value={repositories.length} /><Fact label={t("label.needsAttention")} value={attention} /><Fact label={t("label.autoScan")} value={`${scanEnabled}/${repositories.length} ${t("common.enabled")}`} /><Fact label={t("label.autoDelivery")} value={`${deliveryEnabled}/${repositories.length} ${t("common.enabled")}`} /><Fact label={t("label.autoPatch")} value={`${patchEnabled}/${repositories.length} ${t("common.enabled")}`} /></div>
+      <div className="repository-filters"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{t("common.all")} ({repositories.length})</button><button className={filter === "attention" ? "active" : ""} onClick={() => setFilter("attention")}>{t("label.needsAttention")} ({attention})</button><button className={filter === "patch" ? "active" : ""} onClick={() => setFilter("patch")}>{t("label.autoPatch")} {t("common.enabled")} ({patchEnabled})</button></div>
+      {filter === "attention" && <div className="repository-filter-note"><CircleAlert size={14} aria-hidden="true" /><span>{t("common.attentionNote")}</span></div>}
       <div className="repository-list"><div className="repository-grid">{visible.map((repository) => {
         const health = repository.health || {};
         const automation = automationFor(repository);
@@ -1858,27 +3400,29 @@ function RepositoryView({ data, interact }: { data: DashboardData; interact: (pa
             <div className="repository-card-bottom"><div className="repository-card-permissions"><span className={automation.scan.allow_auto_fix ? "enabled" : "disabled"}>Auto Scan {automation.scan.allow_auto_fix ? "enabled" : "disabled"}</span><span className={automation.delivery.enabled ? "enabled" : "disabled"}>Auto Delivery {automation.delivery.enabled ? "enabled" : "disabled"}</span><span className={automation.patch.enabled ? "enabled" : "disabled"}>Auto Patch {automation.patch.enabled ? "enabled" : "disabled"}</span></div><span className="repository-card-branch"><GitBranch size={12} aria-hidden="true" />{repository.default_branch || "main"}</span></div>
           </button>
         </article>;
-      })}{visible.length === 0 && <Empty label="No repositories match this view." />}</div></div>
+      })}{visible.length === 0 && <Empty label={t("common.noData")} />}</div></div>
     </Panel>
     {selectedRepository && selectedIndex >= 0 && selectedAutomation && selectedVerification && <div className="modal-backdrop repository-config-backdrop" role="presentation" onMouseDown={() => setEditing(null)}><section className="modal repository-config-modal" role="dialog" aria-modal="true" aria-labelledby="repository-config-title" onMouseDown={(event) => event.stopPropagation()}>
-      <header className="repository-config-header"><div><strong id="repository-config-title">{selectedRepository.name || "Unnamed repository"}</strong><span>Repository configuration</span><p>{selectedHealth.language || "Generic"} · {selectedHealth.build_tools?.join(", ") || "No build tool detected"} · {selectedRepository.default_branch || "main"}</p></div><IconButton label="Close repository configuration" onClick={() => setEditing(null)}><X size={15} /></IconButton></header>
+      <header className="repository-config-header"><div><strong id="repository-config-title">{selectedRepository.name || t("common.unnamedRepository")}</strong><span>{t("common.repositoryConfiguration")}</span><p>{selectedHealth.language || t("common.generic")} · {selectedHealth.build_tools?.join(", ") || t("common.noBuildTool")} · {selectedRepository.default_branch || "main"}</p></div><IconButton label={t("common.close")} onClick={() => setEditing(null)}><X size={15} /></IconButton></header>
       <div className="repository-config-body"><div className="repository-editor">
-        <section className="repository-section"><div><strong>Identity & connection</strong><span>Detected locally; the default branch is the only editable connection setting.</span></div><div className="repository-facts"><Fact label="Local path" value={repositoryValue(selectedRepository.path)} /><Fact label="Remote" value={repositoryValue(selectedHealth.remote_url || selectedRepository.remote_url)} /><Fact label="Git status" value={<Badge value={selectedHealth.git_status || "unknown"} />} /><Fact label="Branch sync" value={<Badge value={selectedHealth.sync_status || "unknown"} />} /></div><div className="form-grid compact"><Field label="Default branch"><select value={selectedRepository.default_branch || ""} onChange={(event) => update(selectedIndex, { default_branch: event.target.value })}>{Array.from(new Set([selectedRepository.default_branch, ...(selectedRepository.branches || [])].filter(Boolean))).map((branch) => <option value={branch} key={branch}>{branch}</option>)}</select></Field></div></section>
-        <section className="repository-section"><div><strong>Runtime & build</strong><span>Detected from repository files. These values are read-only until the repository changes.</span></div><div className="repository-facts"><Fact label="Language" value={selectedHealth.language || "Generic"} /><Fact label="Java" value={selectedHealth.java_version ? `Java ${selectedHealth.java_version}` : "Not detected"} /><Fact label="Node" value={selectedHealth.node_version ? `Node ${selectedHealth.node_version}` : "Not detected"} /><Fact label="Build tools" value={selectedHealth.build_tools?.join(", ") || "Not detected"} /></div></section>
-        <section className="repository-section"><div><strong>Automation permissions</strong><span>Frontend delivery remains disabled globally and cannot be enabled here.</span></div><div className="repository-policy-grid"><label><input type="checkbox" checked={selectedAutomation.scan.allow_auto_fix} onChange={(event) => updateAutomation(selectedIndex, "scan", { allow_auto_fix: event.target.checked })} /><span><strong>Auto Scan fixes</strong><small>Allow high-confidence Scan fixes and their configured publish flow.</small></span></label><label><input type="checkbox" checked={selectedAutomation.delivery.enabled} onChange={(event) => updateAutomation(selectedIndex, "delivery", { enabled: event.target.checked })} /><span><strong>Auto Delivery</strong><small>Allow approved technical delivery work for this repository.</small></span></label><label><input type="checkbox" checked={selectedAutomation.patch.enabled} onChange={(event) => updateAutomation(selectedIndex, "patch", { enabled: event.target.checked })} /><span><strong>Auto Patch</strong><small>Allow Jira-driven fixes and publishing for this repository.</small></span></label></div></section>
-        <section className="repository-section repository-verification-section"><div className="repository-section-heading"><strong>Delivery verification</strong><span>Choose what Lumen should run for this repository after implementation.</span></div><div className="verification-group"><span className="verification-group-label">Policy</span><div className="verification-mode-grid"><label className={`verification-mode-card${selectedVerification.mode !== "skip" ? " selected" : ""}`}><input type="radio" name={`verification-mode-${selectedRepository.name}`} checked={selectedVerification.mode !== "skip"} onChange={() => updateVerification(selectedIndex, { mode: selectedVerification.mode === "custom" ? "custom" : "auto" })} /><span><strong>Run verification</strong><small>Use the automatic profile or your custom commands.</small></span></label><label className={`verification-mode-card${selectedVerification.mode === "skip" ? " selected" : ""}`}><input type="radio" name={`verification-mode-${selectedRepository.name}`} checked={selectedVerification.mode === "skip"} onChange={() => updateVerification(selectedIndex, { mode: "skip" })} /><span><strong>Skip verification</strong><small>Do not run compile, static checks, or tests.</small></span></label></div></div>{selectedVerification.mode !== "skip" && <><div className="verification-group"><span className="verification-group-label">Execution source</span><div className="verification-source-toggle"><label><input type="radio" name={`verification-source-${selectedRepository.name}`} checked={selectedVerification.mode === "auto"} onChange={() => updateVerification(selectedIndex, { mode: "auto" })} /><span><strong>Automatic profile</strong><small>Detect commands from repository files at runtime.</small></span></label><label><input type="radio" name={`verification-source-${selectedRepository.name}`} checked={selectedVerification.mode === "custom"} onChange={() => updateVerification(selectedIndex, { mode: "custom" })} /><span><strong>Custom commands</strong><small>Run only the commands entered below.</small></span></label></div></div>{selectedVerification.mode === "auto" ? <div className="verification-group"><span className="verification-group-label">Checks to run</span><div className="verification-check-grid"><label><input type="checkbox" checked={selectedVerification.compile} onChange={(event) => updateVerification(selectedIndex, { compile: event.target.checked })} /><span><strong>Compile & static checks</strong><small>Compile, syntax, typecheck, lint, or PMD checks.</small></span></label><label><input type="checkbox" checked={selectedVerification.tests} onChange={(event) => updateVerification(selectedIndex, { tests: event.target.checked })} /><span><strong>Tests</strong><small>Unit, integration, and test-suite commands.</small></span></label></div></div> : <div className="verification-group"><span className="verification-group-label">Commands</span><div className="verification-command-editor">{selectedHealth.suggested_commands?.length > 0 && <button type="button" className="text-button verification-suggested-button" onClick={() => update(selectedIndex, { delivery_commands: selectedHealth.suggested_commands.join("\n") })}>Use {selectedHealth.suggested_commands.length} suggested command{selectedHealth.suggested_commands.length === 1 ? "" : "s"}</button>}<label className="field repository-commands"><textarea value={selectedRepository.delivery_commands ?? commandsFor(selectedRepository)} rows={4} placeholder="One command per line." onChange={(event) => update(selectedIndex, { delivery_commands: event.target.value })} /></label></div></div>}</>}</section>
-      </div></div><footer className="repository-config-footer"><div className="repository-config-actions"><button type="button" className="button" disabled={saving} onClick={() => setEditing(null)}>Close</button><button type="button" className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving} onClick={() => void saveGovernance()}>{saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{saving ? "Saving…" : "Save"}</button></div></footer>
+        <section className="repository-section"><div><strong>{t("common.identityConnection")}</strong><span>{t("common.identityConnectionHelp")}</span></div><div className="repository-facts"><Fact label={t("common.localPath")} value={repositoryValue(selectedRepository.path)} /><Fact label={t("common.remote")} value={repositoryValue(selectedHealth.remote_url || selectedRepository.remote_url)} /><Fact label={t("common.gitStatus")} value={<Badge value={selectedHealth.git_status || "unknown"} />} /><Fact label={t("common.branchSync")} value={<Badge value={selectedHealth.sync_status || "unknown"} />} /></div><div className="form-grid compact"><Field label={t("common.defaultBranch")}><select value={selectedRepository.default_branch || ""} onChange={(event) => update(selectedIndex, { default_branch: event.target.value })}>{Array.from(new Set([selectedRepository.default_branch, ...(selectedRepository.branches || [])].filter(Boolean))).map((branch) => <option value={branch} key={branch}>{branch}</option>)}</select></Field></div></section>
+        <section className="repository-section"><div><strong>{t("common.runtimeBuild")}</strong><span>{t("common.runtimeBuildHelp")}</span></div><div className="repository-facts"><Fact label={t("common.language")} value={selectedHealth.language || "Generic"} /><Fact label={t("common.java")} value={selectedHealth.java_version ? `Java ${selectedHealth.java_version}` : "Not detected"} /><Fact label={t("common.node")} value={selectedHealth.node_version ? `Node ${selectedHealth.node_version}` : "Not detected"} /><Fact label={t("common.buildTools")} value={selectedHealth.build_tools?.join(", ") || "Not detected"} /></div></section>
+        <section className="repository-section"><div><strong>{t("common.automationPermissions")}</strong><span>{t("common.frontendDeliveryDisabled")}</span></div><div className="repository-policy-grid"><label><input type="checkbox" checked={selectedAutomation.scan.allow_auto_fix} onChange={(event) => updateAutomation(selectedIndex, "scan", { allow_auto_fix: event.target.checked })} /><span><strong>{t("common.autoScanFixes")}</strong><small>{t("common.autoScanFixesHelp")}</small></span></label><label><input type="checkbox" checked={selectedAutomation.delivery.enabled} onChange={(event) => updateAutomation(selectedIndex, "delivery", { enabled: event.target.checked })} /><span><strong>{t("common.deliveryPermission")}</strong><small>{t("common.deliveryPermissionHelp")}</small></span></label><label><input type="checkbox" checked={selectedAutomation.patch.enabled} onChange={(event) => updateAutomation(selectedIndex, "patch", { enabled: event.target.checked })} /><span><strong>{t("common.patchPermission")}</strong><small>{t("common.patchPermissionHelp")}</small></span></label></div></section>
+        <section className="repository-section repository-verification-section"><div className="repository-section-heading"><strong>{t("common.deliveryVerification")}</strong><span>{t("common.deliveryVerificationHelp")}</span></div><div className="verification-group"><span className="verification-group-label">{t("common.policy")}</span><div className="verification-mode-grid"><label className={`verification-mode-card${selectedVerification.mode !== "skip" ? " selected" : ""}`}><input type="radio" name={`verification-mode-${selectedRepository.name}`} checked={selectedVerification.mode !== "skip"} onChange={() => updateVerification(selectedIndex, { mode: selectedVerification.mode === "custom" ? "custom" : "auto" })} /><span><strong>{t("common.runVerification")}</strong><small>{t("common.runVerificationHelp")}</small></span></label><label className={`verification-mode-card${selectedVerification.mode === "skip" ? " selected" : ""}`}><input type="radio" name={`verification-mode-${selectedRepository.name}`} checked={selectedVerification.mode === "skip"} onChange={() => updateVerification(selectedIndex, { mode: "skip" })} /><span><strong>{t("common.skipVerification")}</strong><small>{t("common.skipVerificationHelp")}</small></span></label></div></div>{selectedVerification.mode !== "skip" && <><div className="verification-group"><span className="verification-group-label">{t("common.executionSource")}</span><div className="verification-source-toggle"><label><input type="radio" name={`verification-source-${selectedRepository.name}`} checked={selectedVerification.mode === "auto"} onChange={() => updateVerification(selectedIndex, { mode: "auto" })} /><span><strong>{t("common.automaticProfile")}</strong><small>{t("common.automaticProfileHelp")}</small></span></label><label><input type="radio" name={`verification-source-${selectedRepository.name}`} checked={selectedVerification.mode === "custom"} onChange={() => updateVerification(selectedIndex, { mode: "custom" })} /><span><strong>{t("common.customCommands")}</strong><small>{t("common.customCommandsHelp")}</small></span></label></div></div>{selectedVerification.mode === "auto" ? <div className="verification-group"><span className="verification-group-label">{t("common.checksToRun")}</span><div className="verification-check-grid"><label><input type="checkbox" checked={selectedVerification.compile} onChange={(event) => updateVerification(selectedIndex, { compile: event.target.checked })} /><span><strong>{t("common.compileChecks")}</strong><small>{t("common.compileChecksHelp")}</small></span></label><label><input type="checkbox" checked={selectedVerification.tests} onChange={(event) => updateVerification(selectedIndex, { tests: event.target.checked })} /><span><strong>{t("common.tests")}</strong><small>{t("common.testsHelp")}</small></span></label></div></div> : <div className="verification-group"><span className="verification-group-label">{t("common.commands")}</span><div className="verification-command-editor">{selectedHealth.suggested_commands?.length > 0 && <button type="button" className="text-button verification-suggested-button" onClick={() => update(selectedIndex, { delivery_commands: selectedHealth.suggested_commands.join("\n") })}>{t("common.useSuggestedCommands", { count: selectedHealth.suggested_commands.length, suffix: currentDashboardLocale === "en" && selectedHealth.suggested_commands.length === 1 ? "" : currentDashboardLocale === "en" ? "s" : "" })}</button>}<label className="field repository-commands"><textarea value={selectedRepository.delivery_commands ?? commandsFor(selectedRepository)} rows={4} placeholder={t("common.oneCommandPerLine")} onChange={(event) => update(selectedIndex, { delivery_commands: event.target.value })} /></label></div></div>}</>}</section>
+      </div></div><footer className="repository-config-footer"><div className="repository-config-actions"><button type="button" className="button" disabled={saving} onClick={() => setEditing(null)}>{t("common.close")}</button><button type="button" className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving} onClick={() => void saveGovernance()}>{saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{saving ? t("common.saving") : t("common.save")}</button></div></footer>
     </section></div>}
     {addOpen && <AddRepositoryDialog onClose={() => setAddOpen(false)} onAdd={(url) => { void interact("/api/repositories/clone", { url }, "Repository cloned and registered"); setAddOpen(false); }} />}
   </div>;
 }
 
 function AddRepositoryDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (url: string) => void }) {
+  const { t } = useI18n();
   const [url, setUrl] = useState("");
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal repository-modal" role="dialog" aria-modal="true" aria-label="Add repository" onMouseDown={(event) => event.stopPropagation()}><div className="prompt-inspector-header"><div><strong>Add repository</strong><span className="repository-modal-description">Lumen clones the Git URL, detects the branch and tooling, enables existing Scan and Delivery behavior, and authorizes Auto Patch by default.</span></div></div><div className="repository-modal-body"><Field label="Clone URL"><input autoFocus value={url} placeholder="https://git.example.com/team/service.git" onChange={(event) => setUrl(event.target.value)} /></Field></div><footer><button className="button" onClick={onClose}>Cancel</button><button className="button primary" disabled={!url.trim()} onClick={() => onAdd(url.trim())}>Clone and inspect</button></footer></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal repository-modal" role="dialog" aria-modal="true" aria-label={t("common.addRepository")} onMouseDown={(event) => event.stopPropagation()}><div className="prompt-inspector-header"><div><strong>{t("common.addRepository")}</strong><span className="repository-modal-description">{t("common.addRepositoryDescription")}</span></div></div><div className="repository-modal-body"><Field label={t("common.cloneUrl")}><input autoFocus value={url} placeholder="https://git.example.com/team/service.git" onChange={(event) => setUrl(event.target.value)} /></Field></div><footer><button className="button" onClick={onClose}>{t("common.cancel")}</button><button className="button primary" disabled={!url.trim()} onClick={() => onAdd(url.trim())}>{t("common.cloneInspect")}</button></footer></section></div>;
 }
 
 function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: DashboardData; project: string; notify: Notify; onDirtyChange: (dirty: boolean) => void; reload: () => Promise<void> }) {
+  const { t } = useI18n();
   const workspace = data.interactive?.workspace || {};
   const schedules = data.interactive?.schedules || {};
   const agentsPayload = data.interactive?.agents || {};
@@ -2139,40 +3683,40 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const enabledScheduleCount = [scanEnabled, deliveryEnabled, patchEnabled].filter(Boolean).length;
   const enabledAgentCount = agentDrafts.filter((agent) => agent.conversation_enabled).length;
   return <div className="settings-stack">
-    <PageIntro title="Workspace settings" description={`${project || "Current project"} · one place for automation, Agent access, delivery policy, and integrations.`} action={<span className="settings-scope">Local configuration</span>} />
+    <PageIntro title={t("heading.workspaceSettings")} description={`${project || t("common.currentProject")} · ${t("context.settings.description")}`} action={<span className="settings-scope">{t("settings.localConfiguration")}</span>} />
     <div className="settings-summary">
-      <div><span>Schedules</span><strong>{enabledScheduleCount}/3</strong><small>running</small></div>
-      <div><span>Agent conversations</span><strong>{enabledAgentCount}/{agentDrafts.length || 4}</strong><small>enabled</small></div>
-      <div><span>Publish policy</span><strong>{deliveryPublishMode === "direct" ? "Direct" : deliveryPublishMode === "merge" ? "Merge" : "PR"}</strong><small>Auto Delivery</small></div>
-      <div><span>Integrations</span><strong>{configured.length}</strong><small>configured keys</small></div>
+      <div><span>{t("common.schedules")}</span><strong>{enabledScheduleCount}/3</strong><small>{t("common.active")}</small></div>
+      <div><span>{t("common.agentConversations")}</span><strong>{enabledAgentCount}/{agentDrafts.length || 4}</strong><small>{t("common.enabled")}</small></div>
+      <div><span>{t("heading.publishPolicy")}</span><strong>{deliveryPublishMode === "direct" ? t("settings.direct") : deliveryPublishMode === "merge" ? t("settings.merge") : t("settings.pullRequest")}</strong><small>{t("label.autoDelivery")}</small></div>
+      <div><span>{t("common.integrations")}</span><strong>{configured.length}</strong><small>{t("common.configuredKeys")}</small></div>
     </div>
-    <nav className="settings-nav" aria-label="Settings sections"><a href="#settings-automation">Automation</a><a href="#settings-agents">Agent team</a><a href="#settings-project">Project output</a><a href="#settings-runtime">Runtime &amp; integrations</a></nav>
+    <nav className="settings-nav" aria-label={t("common.settingsSections")}><a href="#settings-automation">{t("settings.automation")}</a><a href="#settings-agents">{t("settings.agentTeam")}</a><a href="#settings-project">{t("settings.projectOutput")}</a><a href="#settings-runtime">{t("settings.runtime")}</a></nav>
     <section className="settings-cluster" id="settings-automation">
-      <div className="settings-cluster-heading"><div><span>01 · CONTROL PLANE</span><h2>Automation</h2><p>Schedules and execution policies that decide when work can move.</p></div><a href="#settings-agents">Next: Agent team <ChevronRight size={13} /></a></div>
-      <Panel title="Automation Schedules">
-      <div className="settings-section"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Auto Scan</h4></div></div><p>{text(schedules.scan?.description, "No recurring scan is configured.")}</p></div><div className="settings-control wide"><div className="form-grid compact scan-settings-fields" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: 0, width: "100%" }}><Field label="Lookback, days"><input type="number" min="1" max="365" value={scanWindow} onChange={(event) => { setScanWindow(event.target.value); markDirty(); }} /></Field><Field label="Five-field cron"><input value={scanCron} onChange={(event) => { setScanCron(event.target.value); markDirty(); }} /></Field></div></div><div className="settings-toggle"><ScheduleToggle enabled={scanEnabled} onChange={(enabled) => { setScanEnabled(enabled); markDirty(); }} /></div></div>
-      <div className="settings-section divider"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Auto Delivery</h4></div></div><p>{deliveryEnabled ? `Polling every ${deliveryInterval} minute(s).` : "Delivery polling is paused."}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label="Interval, minutes"><input type="number" min="1" value={deliveryInterval} onChange={(event) => { setDeliveryInterval(event.target.value); markDirty(); }} /></Field><Field label="Eligible JIRA statuses" help="Select every Jira status that may start Auto Delivery. The Story must also be Business Ready, Technical Approved, and not already running."><StatusMultiSelect options={statusOptions} value={eligibleStatuses} onChange={setEligibleStatuses} markDirty={markDirty} /></Field><Field label="Move to when started"><select value={inDevStatus} onChange={(event) => { setInDevStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when completed"><select value={devDoneStatus} onChange={(event) => { setDevDoneStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when failed"><select value={blockedStatus} onChange={(event) => { setBlockedStatus(event.target.value); markDirty(); }}>{Array.from(new Set([...statusOptions, "Block"])).map((value) => <option value={value} key={value}>{value}</option>)}</select></Field></div><p className="schedule-note">Select To Do, Backlog, In Progress, or any other eligible Jira status. On failure, Lumen moves the Jira card to the selected Block status and adds a Needs attention comment.</p></div><div className="settings-toggle"><ScheduleToggle enabled={deliveryEnabled} onChange={(enabled) => { setDeliveryEnabled(enabled); markDirty(); }} /></div></div>
-      <div className="settings-section divider"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Auto Patch</h4></div></div><p>{patchEnabled ? `Polling every ${patchInterval} minute(s) for Task and Bug cards.` : "Auto Patch polling is paused."}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label="Interval, minutes"><input type="number" min="1" value={patchInterval} onChange={(event) => { setPatchInterval(event.target.value); markDirty(); }} /></Field><Field label="Eligible JIRA statuses"><StatusMultiSelect options={statusOptions} value={patchStatuses} onChange={setPatchStatuses} markDirty={markDirty} /></Field><Field label="Move to when started"><select value={patchStartStatus} onChange={(event) => { setPatchStartStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when completed"><select value={patchDoneStatus} onChange={(event) => { setPatchDoneStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label="Move to when blocked"><select value={patchBlockedStatus} onChange={(event) => { setPatchBlockedStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field></div><p className="schedule-note">Only Task and Bug cards are captured. Blocked cards retry after a new external Jira comment.</p></div><div className="settings-toggle"><ScheduleToggle enabled={patchEnabled} onChange={(enabled) => { setPatchEnabled(enabled); markDirty(); }} /></div></div>
+      <div className="settings-cluster-heading"><div><span>{t("settings.controlPlane")}</span><h2>{t("settings.automation")}</h2><p>{t("settings.automationDescription")}</p></div><a href="#settings-agents">{t("settings.nextAgentTeam")} <ChevronRight size={13} /></a></div>
+      <Panel title={t("heading.automationSchedules")}>
+      <div className="settings-section"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>{t("label.autoScan")}</h4></div></div><p>{text(schedules.scan?.description, t("settings.scanDefaultDescription"))}</p></div><div className="settings-control wide"><div className="form-grid compact scan-settings-fields" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: 0, width: "100%" }}><Field label={t("label.lookbackDays")}><input type="number" min="1" max="365" value={scanWindow} onChange={(event) => { setScanWindow(event.target.value); markDirty(); }} /></Field><Field label={t("label.cron")}><input value={scanCron} onChange={(event) => { setScanCron(event.target.value); markDirty(); }} /></Field></div></div><div className="settings-toggle"><ScheduleToggle enabled={scanEnabled} onChange={(enabled) => { setScanEnabled(enabled); markDirty(); }} /></div></div>
+      <div className="settings-section divider"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>{t("label.autoDelivery")}</h4></div></div><p>{deliveryEnabled ? `Polling every ${deliveryInterval} minute(s).` : t("settings.deliveryPaused")}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label={t("label.intervalMinutes")}><input type="number" min="1" value={deliveryInterval} onChange={(event) => { setDeliveryInterval(event.target.value); markDirty(); }} /></Field><Field label={t("label.eligibleStatuses")} help={t("settings.deliveryStatusHelp")}><StatusMultiSelect options={statusOptions} value={eligibleStatuses} onChange={setEligibleStatuses} markDirty={markDirty} /></Field><Field label={t("label.moveStarted")}><select value={inDevStatus} onChange={(event) => { setInDevStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label={t("label.moveCompleted")}><select value={devDoneStatus} onChange={(event) => { setDevDoneStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label={t("label.moveFailed")}><select value={blockedStatus} onChange={(event) => { setBlockedStatus(event.target.value); markDirty(); }}>{Array.from(new Set([...statusOptions, "Block"])).map((value) => <option value={value} key={value}>{value}</option>)}</select></Field></div><p className="schedule-note">{t("settings.deliveryStatusNote")}</p></div><div className="settings-toggle"><ScheduleToggle enabled={deliveryEnabled} onChange={(enabled) => { setDeliveryEnabled(enabled); markDirty(); }} /></div></div>
+      <div className="settings-section divider"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>{t("label.autoPatch")}</h4></div></div><p>{patchEnabled ? `Polling every ${patchInterval} minute(s) for Task and Bug cards.` : t("settings.patchPaused")}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label={t("label.intervalMinutes")}><input type="number" min="1" value={patchInterval} onChange={(event) => { setPatchInterval(event.target.value); markDirty(); }} /></Field><Field label={t("label.eligibleStatuses")}><StatusMultiSelect options={statusOptions} value={patchStatuses} onChange={setPatchStatuses} markDirty={markDirty} /></Field><Field label={t("label.moveStarted")}><select value={patchStartStatus} onChange={(event) => { setPatchStartStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label={t("label.moveCompleted")}><select value={patchDoneStatus} onChange={(event) => { setPatchDoneStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field><Field label={t("label.moveBlocked")}><select value={patchBlockedStatus} onChange={(event) => { setPatchBlockedStatus(event.target.value); markDirty(); }}>{statusOptions.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field></div><p className="schedule-note">{t("settings.patchStatusNote")}</p></div><div className="settings-toggle"><ScheduleToggle enabled={patchEnabled} onChange={(enabled) => { setPatchEnabled(enabled); markDirty(); }} /></div></div>
       </Panel>
     </section>
     <section className="settings-cluster" id="settings-agents">
-      <div className="settings-cluster-heading"><div><span>02 · HUMAN-FACING AGENTS</span><h2>Agent team</h2><p>Who speaks to people, what each role owns, and which conversations may mutate state.</p></div><a href="#settings-project">Next: Project output <ChevronRight size={13} /></a></div>
-      <Panel title="Agent Roles" action={<span className="muted">Global Feishu agents</span>}>
-      <div className="settings-section"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>Agent Gateway</h4></div></div><p>Enable Feishu conversational agents. Config lives in {text(agentsPayload.config_path, "~/.lumen/agents/config.json")}. Restart `lumen agents start` after saving. Mutations fail closed until mutation users are configured.</p></div><div className="settings-toggle"><ScheduleToggle enabled={agentsEnabled} onChange={(enabled) => { setAgentsEnabled(enabled); markDirty(); }} /></div></div>
+      <div className="settings-cluster-heading"><div><span>{t("settings.humanAgents")}</span><h2>{t("settings.agentTeam")}</h2><p>{t("settings.agentTeamDescription")}</p></div><a href="#settings-project">{t("settings.nextProjectOutput")} <ChevronRight size={13} /></a></div>
+      <Panel title={t("heading.agentRoles")} action={<span className="muted">{t("settings.globalFeishuAgents")}</span>}>
+      <div className="settings-section"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>{t("label.gateway")}</h4></div></div><p>Enable Feishu conversational agents. Config lives in {text(agentsPayload.config_path, "~/.lumon/agents/config.json")}. Restart `lumon agents start` after saving. Mutations fail closed until mutation users are configured.</p></div><div className="settings-toggle"><ScheduleToggle enabled={agentsEnabled} onChange={(enabled) => { setAgentsEnabled(enabled); markDirty(); }} /></div></div>
       <div className="settings-section divider access-control-section">
         <div className="settings-copy">
-          <div className="settings-heading"><div className="settings-title-stack"><h4>Access Control</h4></div></div>
-          <p>Who may talk to agents, and who may mutate (resolve findings, update schedules, start delivery). Add Allowed chat IDs to let Dylan/Milchick reply in those groups when @mentioned.</p>
+          <div className="settings-heading"><div className="settings-title-stack"><h4>{t("settings.accessControl")}</h4></div></div>
+          <p>{t("settings.accessControlDescription")}</p>
           {Boolean(accessDraft.legacy_warning ?? agentsPayload.access?.legacy_warning) && (
-            <p className="schedule-note">Legacy allow mode is unsafe for local agents. Prefer per-agent Access &amp; Exposure with default_policy=deny.</p>
+            <p className="schedule-note">{t("settings.legacyWarning")}</p>
           )}
         </div>
         <div className="settings-control wide access-control-panel">
           <div className="form-grid compact">
-            <Field label="Allowed chat IDs" help="Whitelist group chats. Dylan/Milchick stay DM-only unless a chat is listed here; @mention is still required in groups."><input value={(accessDraft.allowed_chat_ids || []).join(", ")} placeholder="oc_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, allowed_chat_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
-            <Field label="Allowed user IDs" help="Empty = all users may ask read-only questions."><input value={(accessDraft.allowed_user_ids || []).join(", ")} placeholder="ou_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, allowed_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
-            <Field label="Mutation user IDs" help="Required for resolve / schedule update / delivery start. Fail-closed when empty."><input value={(accessDraft.mutation_allowed_user_ids || []).join(", ")} placeholder="ou_… required for mutations" onChange={(event) => { setAccessDraft((current) => ({ ...current, mutation_allowed_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
-            <Field label="Admin user IDs" help="Admins can also mutate."><input value={(accessDraft.admin_user_ids || []).join(", ")} placeholder="ou_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, admin_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
+            <Field label={t("settings.allowedChatIds")} help={t("settings.allowedChatHelp")}><input value={(accessDraft.allowed_chat_ids || []).join(", ")} placeholder="oc_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, allowed_chat_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
+            <Field label={t("settings.allowedUserIds")} help={t("settings.allowedUserHelp")}><input value={(accessDraft.allowed_user_ids || []).join(", ")} placeholder="ou_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, allowed_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
+            <Field label={t("settings.mutationUserIds")} help={t("settings.mutationUserHelp")}><input value={(accessDraft.mutation_allowed_user_ids || []).join(", ")} placeholder="ou_… required for mutations" onChange={(event) => { setAccessDraft((current) => ({ ...current, mutation_allowed_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
+            <Field label={t("settings.adminUserIds")} help={t("settings.adminUserHelp")}><input value={(accessDraft.admin_user_ids || []).join(", ")} placeholder="ou_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, admin_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
           </div>
           {accessMappings.length > 0 && (
             <div className="access-mapping-list">
@@ -2182,7 +3726,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
                   <div className="access-mapping-values">
                     {ids.map((id) => (
                       <em key={`${label}-${id}`}>
-                        <strong>{feishuName(id) || "Unknown"}</strong>
+                        <strong>{feishuName(id) || t("common.unknown")}</strong>
                         <code title={id}>{shortFeishuId(id)}</code>
                       </em>
                     ))}
@@ -2196,8 +3740,8 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
               {recentPeople.length > 0 && (
                 <div className="access-identity-group">
                   <div className="access-identity-heading">
-                    <span>Recent people</span>
-                    <small>Click to add as mutation user</small>
+                    <span>{t("settings.recentPeople")}</span>
+                    <small>{t("settings.addMutationUser")}</small>
                   </div>
                   <div className="access-identity-chips">
                     {recentPeople.map((person) => (
@@ -2208,7 +3752,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
                         onClick={() => addAccessId("mutation_allowed_user_ids", String(person.id))}
                         title={`Add ${feishuLabel(String(person.id))} to Mutation user IDs`}
                       >
-                        <strong>{person.name || feishuName(String(person.id)) || "Unknown"}</strong>
+                        <strong>{person.name || feishuName(String(person.id)) || t("common.unknown")}</strong>
                         <code>{shortFeishuId(String(person.id))}</code>
                       </button>
                     ))}
@@ -2218,8 +3762,8 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
               {recentChats.length > 0 && (
                 <div className="access-identity-group">
                   <div className="access-identity-heading">
-                    <span>Recent chats</span>
-                    <small>Click to allow the chat</small>
+                    <span>{t("settings.recentChats")}</span>
+                    <small>{t("settings.allowChat")}</small>
                   </div>
                   <div className="access-identity-chips">
                     {recentChats.map((chat) => (
@@ -2254,7 +3798,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
             </div>
           )}
           {recentPeople.length === 0 && (
-            <p className="schedule-note access-empty-note">No recent Feishu people yet. Message Dylan or Mark once, then refresh Settings.</p>
+            <p className="schedule-note access-empty-note">{t("settings.noRecentPeople")}</p>
           )}
         </div>
       </div>
@@ -2262,41 +3806,41 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
         <div className={`settings-section divider agent-role-section`} key={agent.id}>
           <div className="settings-copy">
             <div className="settings-heading"><div className="settings-title-stack"><h4>{agent.display_name}</h4><span className="muted">{agent.title}</span></div></div>
-            <p>Role {agent.role} · workflow {agent.workflow}. Feishu credentials live in {text(agent.credentials_path, "~/.lumen/.env.local")}. SOUL overrides are at {text(agent.soul_override_path)} ({agent.soul_source}). Restart `lumen agents start` after changing App ID/Secret.</p>
+            <p>Role {agent.role} · workflow {agent.workflow}. Feishu credentials live in {text(agent.credentials_path, "~/.lumon/.env.local")}. SOUL overrides are at {text(agent.soul_override_path)} ({agent.soul_source}). Restart `lumon agents start` after changing App ID/Secret.</p>
             <p className="schedule-note">Security: exposure {text(agent.security?.exposure_mode, "restricted_team")} · dm_only {String(agent.security?.dm_only ?? false)} · host_read {text(agent.security?.host_read, "deny")} · runner {text(agent.security?.runner, "local_isolated")} · mutations {text(agent.security?.mutations, "brokered")} · sandbox {text(agent.security?.sandbox, "enabled")}</p>
           </div>
           <div className="settings-control wide">
             <div className="form-grid compact">
-              <Field label="Feishu App ID"><input value={agent.app_id || ""} placeholder={agent.app_id_masked || "cli_…"} onChange={(event) => updateAgent(agent.id, { app_id: event.target.value })} /></Field>
-              <Field label="Feishu App Secret" help={agent.app_secret_configured ? `Configured (${agent.app_secret_masked || "set"}). Leave blank to keep.` : "Required for Feishu client login."}><input type="password" value={agent.app_secret || ""} placeholder={agent.app_secret_configured ? "Leave blank to keep current secret" : "Enter app secret"} onChange={(event) => updateAgent(agent.id, { app_secret: event.target.value })} autoComplete="new-password" /></Field>
-              <Field label="Conversation"><select value={agent.conversation_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { conversation_enabled: event.target.value === "on" })}><option value="on">Enabled</option><option value="off">Paused</option></select></Field>
+              <Field label={t("label.feishuAppId")}><input value={agent.app_id || ""} placeholder={agent.app_id_masked || "cli_…"} onChange={(event) => updateAgent(agent.id, { app_id: event.target.value })} /></Field>
+              <Field label={t("label.feishuAppSecret")} help={agent.app_secret_configured ? `Configured (${agent.app_secret_masked || "set"}). Leave blank to keep.` : t("settings.appSecretRequired")}><input type="password" value={agent.app_secret || ""} placeholder={agent.app_secret_configured ? t("settings.keepSecret") : t("settings.enterSecret")} onChange={(event) => updateAgent(agent.id, { app_secret: event.target.value })} autoComplete="new-password" /></Field>
+              <Field label={t("label.conversation")}><select value={agent.conversation_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { conversation_enabled: event.target.value === "on" })}><option value="on">{t("common.enabled")}</option><option value="off">{t("common.paused")}</option></select></Field>
               <ModelField label="Cursor model" value={agent.model} onChange={(value) => updateAgent(agent.id, { model: value })} markDirty={markDirty} />
-              <Field label="Soft timeout, seconds"><input type="number" min="10" max="3600" value={agent.soft_timeout_seconds} onChange={(event) => updateAgent(agent.id, { soft_timeout_seconds: Number(event.target.value) || 90 })} /></Field>
-              <Field label="Hard timeout, seconds"><input type="number" min="30" max="7200" value={agent.hard_timeout_seconds} onChange={(event) => updateAgent(agent.id, { hard_timeout_seconds: Number(event.target.value) || 300 })} /></Field>
-              <Field label="Typing reaction"><select value={agent.reaction_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { reaction_enabled: event.target.value === "on" })}><option value="on">Enabled</option><option value="off">Off</option></select></Field>
-              <Field label="Max concurrent jobs"><input type="number" min="1" max="32" value={agent.max_concurrent_jobs} onChange={(event) => updateAgent(agent.id, { max_concurrent_jobs: Number(event.target.value) || 3 })} /></Field>
-              <Field label="SOUL version"><input value={agent.soul_version} onChange={(event) => updateAgent(agent.id, { soul_version: event.target.value })} /></Field>
-              <Field label="Role id" help="Runtime identity is managed by the Agent registry."><input className="settings-readonly-field" value={agent.role} readOnly aria-readonly="true" /></Field>
-              <Field label="Workflow" help="Workflow ownership is managed by the Agent registry."><input className="settings-readonly-field" value={agent.workflow} readOnly aria-readonly="true" /></Field>
+              <Field label={t("label.softTimeout")}><input type="number" min="10" max="3600" value={agent.soft_timeout_seconds} onChange={(event) => updateAgent(agent.id, { soft_timeout_seconds: Number(event.target.value) || 90 })} /></Field>
+              <Field label={t("label.hardTimeout")}><input type="number" min="30" max="7200" value={agent.hard_timeout_seconds} onChange={(event) => updateAgent(agent.id, { hard_timeout_seconds: Number(event.target.value) || 300 })} /></Field>
+              <Field label={t("label.typingReaction")}><select value={agent.reaction_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { reaction_enabled: event.target.value === "on" })}><option value="on">{t("common.enabled")}</option><option value="off">{t("common.off")}</option></select></Field>
+              <Field label={t("label.maxJobs")}><input type="number" min="1" max="32" value={agent.max_concurrent_jobs} onChange={(event) => updateAgent(agent.id, { max_concurrent_jobs: Number(event.target.value) || 3 })} /></Field>
+              <Field label={t("label.soulVersion")}><input value={agent.soul_version} onChange={(event) => updateAgent(agent.id, { soul_version: event.target.value })} /></Field>
+              <Field label={t("label.roleId")} help={t("settings.runtimeIdentityHelp")}><input className="settings-readonly-field" value={agent.role} readOnly aria-readonly="true" /></Field>
+              <Field label={t("label.workflow")} help={t("settings.workflowOwnershipHelp")}><input className="settings-readonly-field" value={agent.workflow} readOnly aria-readonly="true" /></Field>
             </div>
             <label className="field agent-soul-field"><span>SOUL.md</span><textarea rows={index === 0 ? 16 : 14} value={agent.soul} spellCheck={false} onChange={(event) => updateAgent(agent.id, { soul: event.target.value })} /></label>
           </div>
         </div>
       ))}
-      {agentDrafts.length === 0 && <div className="settings-section divider"><Empty label="No agent roles available yet." /></div>}
+      {agentDrafts.length === 0 && <div className="settings-section divider"><Empty label={t("common.noAgentRolesSettings")} /></div>}
       </Panel>
     </section>
     <section className="settings-cluster" id="settings-project">
-      <div className="settings-cluster-heading"><div><span>03 · BUSINESS OUTPUT</span><h2>Project output</h2><p>Defaults used when Mark and Milchick turn a request into a testable Story.</p></div><a href="#settings-runtime">Next: Runtime &amp; integrations <ChevronRight size={13} /></a></div>
-      <Panel title="Test Cases" action={<span className="muted">Mark · {project || "project"}</span>}>
+      <div className="settings-cluster-heading"><div><span>{t("settings.businessOutput")}</span><h2>{t("settings.projectOutput")}</h2><p>{t("settings.projectOutputDescription")}</p></div><a href="#settings-runtime">{t("settings.nextRuntime")} <ChevronRight size={13} /></a></div>
+      <Panel title={t("heading.testCases")} action={<span className="muted">Mark · {project || t("common.project")}</span>}>
       <div className="settings-section">
         <div className="settings-copy">
-          <div className="settings-heading"><div className="settings-title-stack"><h4>Generation language</h4></div></div>
-          <p>Controls the language Mark writes into the Feishu Spreadsheet for this project. Traditional Chinese is the default for mbpass.</p>
+          <div className="settings-heading"><div className="settings-title-stack"><h4>{t("settings.generationLanguage")}</h4></div></div>
+          <p>{t("settings.generationDescription")}</p>
         </div>
         <div className="settings-control wide">
           <div className="form-grid compact">
-            <Field label="Output language">
+            <Field label={t("label.outputLanguage")}>
               <select
                 value={testCaseDraft.language || "zh-Hant"}
                 onChange={(event) => {
@@ -2304,12 +3848,12 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
                   markDirty();
                 }}
               >
-                <option value="zh-Hant">Traditional Chinese (zh-Hant)</option>
-                <option value="zh-Hans">Simplified Chinese (zh-Hans)</option>
-                <option value="en">English</option>
+                <option value="zh-Hant">{t("language.zhHant")} (zh-Hant)</option>
+                <option value="zh-Hans">{t("language.zhHans")} (zh-Hans)</option>
+                <option value="en">{t("language.en")}</option>
               </select>
             </Field>
-            <Field label="Spreadsheet tab name">
+            <Field label={t("label.spreadsheetTab")}>
               <input
                 value={testCaseDraft.table_name || "Sheet1"}
                 onChange={(event) => {
@@ -2319,10 +3863,10 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
               />
             </Field>
             <Field
-              label="Spreadsheet token / URL"
+              label={t("label.spreadsheetToken")}
               help={testCaseDraft.base_app_token_configured
                 ? `Configured (${testCaseDraft.base_app_token_masked || "set"}). Leave blank to keep. Env: ${testCaseDraft.base_app_token_env || "FEISHU_MBPASS_QA_SHEET_TOKEN"}`
-                : `Stored in ~/.lumen/.env.local as ${testCaseDraft.base_app_token_env || "FEISHU_MBPASS_QA_SHEET_TOKEN"}`}
+                : `Stored in ~/.lumon/.env.local as ${testCaseDraft.base_app_token_env || "FEISHU_MBPASS_QA_SHEET_TOKEN"}`}
             >
               <input
                 value={testCaseToken}
@@ -2335,22 +3879,22 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
               />
             </Field>
           </div>
-          <p className="schedule-note">After changing language or sheet, ask Milchick/Mark to re-generate the story so new rows use the selected sheet.</p>
+          <p className="schedule-note">{t("settings.afterGeneration")}</p>
         </div>
       </div>
       </Panel>
     </section>
     <section className="settings-cluster" id="settings-runtime">
-      <div className="settings-cluster-heading"><div><span>04 · OPERATING DETAILS</span><h2>Runtime &amp; integrations</h2><p>Model selection, publish behavior, notifications, and local secret values.</p></div><a href="#settings-automation">Back to Automation <ChevronLeft size={13} /></a></div>
-      <Panel title="Execution Models"><div className="settings-section"><div className="settings-copy"><h4>Cursor model</h4><p>Choose a preset or enter a custom Cursor model ID. Custom values must be supported by Cursor; Lumen does not validate model availability.</p></div><div className="settings-control wide"><div className="form-grid compact"><ModelField label="Auto Scan model" value={scanModel} onChange={setScanModel} markDirty={markDirty} /><ModelField label="Auto Delivery model" value={deliveryModel} onChange={setDeliveryModel} markDirty={markDirty} /><ModelField label="Auto Patch model" value={patchModel} onChange={setPatchModel} markDirty={markDirty} /></div></div></div></Panel>
-    <Panel title="Publish Policy"><div className="settings-section"><div className="settings-copy"><h4>Automation outcome</h4><p>Direct push uses the repository credentials already configured for Git; PR and Merge use GitHub CLI. Auto Scan keeps a PR review gate and does not support direct push.</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label="Auto Scan"><select value={scanPublishMode} onChange={(event) => { setScanPublishMode(event.target.value); markDirty(); }}><option value="pr">Open pull request</option><option value="merge">Merge after pull request</option></select></Field><Field label="Auto Delivery"><select value={deliveryPublishMode} onChange={(event) => { setDeliveryPublishMode(event.target.value); markDirty(); }}><option value="pr">Open pull request</option><option value="merge">Merge after pull request</option><option value="direct">Push directly to main branch</option></select></Field><Field label="Auto Patch"><select value={patchPublishMode} onChange={(event) => { setPatchPublishMode(event.target.value); markDirty(); }}><option value="pr">Open pull request</option><option value="direct">Push directly to main branch</option></select></Field></div></div></div></Panel>
-    <Panel title="Notifications"><div className="settings-section"><div className="settings-copy"><h4>Feishu notifications</h4><p>Control whether Scan and Delivery post cards to the configured Feishu webhook. The webhook URL still lives under Variable Keys.</p></div><div className="settings-toggle"><ScheduleToggle enabled={feishuEnabled} onChange={(enabled) => { setFeishuEnabled(enabled); markDirty(); }} /></div></div></Panel>
-    <Panel title="Variable Keys" action={<span className="muted">Stored only in this workspace</span>}><div className="settings-section"><div className="settings-copy"><h4>Available keys</h4><p>Reveal a value to inspect it, or enter a replacement directly. Values are saved without display quotes.</p></div><div className="settings-control wide"><div className="secret-list">{configured.length ? configured.map((name: string) => { const value = changedSecrets[name] ?? secrets[name] ?? ""; return <div className="secret-row" key={name}><code>{name}</code><input type={secrets[name] || changedSecrets[name] !== undefined ? "text" : "password"} value={value} placeholder="Reveal or enter a replacement value" aria-label={`Value for ${name}`} onChange={(event) => { const next = event.target.value; setChangedSecrets((current) => ({ ...current, [name]: next })); markDirty(); }} /><div><IconButton label="Reveal value" onClick={() => void reveal(name)}>{secrets[name] ? <EyeOff size={15} /> : <Eye size={15} />}</IconButton><IconButton label="Copy value" onClick={() => void copy(name)}><Copy size={15} /></IconButton></div></div>; }) : <Empty label="No local integration keys configured." />}</div></div></div></Panel>
+      <div className="settings-cluster-heading"><div><span>{t("settings.operatingDetails")}</span><h2>{t("settings.runtime")}</h2><p>{t("settings.runtimeDescription")}</p></div><a href="#settings-automation">{t("settings.backAutomation")} <ChevronLeft size={13} /></a></div>
+      <Panel title={t("heading.executionModels")}><div className="settings-section"><div className="settings-copy"><h4>{t("label.cursorModel")}</h4><p>{t("settings.executionDescription")}</p></div><div className="settings-control wide"><div className="form-grid compact"><ModelField label={`${t("label.autoScan")} model`} value={scanModel} onChange={setScanModel} markDirty={markDirty} /><ModelField label={`${t("label.autoDelivery")} model`} value={deliveryModel} onChange={setDeliveryModel} markDirty={markDirty} /><ModelField label={`${t("label.autoPatch")} model`} value={patchModel} onChange={setPatchModel} markDirty={markDirty} /></div></div></div></Panel>
+    <Panel title={t("heading.publishPolicy")}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.automationOutcome")}</h4><p>{t("settings.publishDescription")}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label={t("label.autoScan")}><select value={scanPublishMode} onChange={(event) => { setScanPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option></select></Field><Field label={t("label.autoDelivery")}><select value={deliveryPublishMode} onChange={(event) => { setDeliveryPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field><Field label={t("label.autoPatch")}><select value={patchPublishMode} onChange={(event) => { setPatchPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field></div></div></div></Panel>
+    <Panel title={t("heading.notifications")}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.feishuNotifications")}</h4><p>{t("settings.notificationsDescription")}</p></div><div className="settings-toggle"><ScheduleToggle enabled={feishuEnabled} onChange={(enabled) => { setFeishuEnabled(enabled); markDirty(); }} /></div></div></Panel>
+    <Panel title={t("heading.variableKeys")} action={<span className="muted">{t("settings.storedWorkspace")}</span>}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.availableKeys")}</h4><p>{t("settings.availableKeysDescription")}</p></div><div className="settings-control wide"><div className="secret-list">{configured.length ? configured.map((name: string) => { const value = changedSecrets[name] ?? secrets[name] ?? ""; return <div className="secret-row" key={name}><code>{name}</code><input type={secrets[name] || changedSecrets[name] !== undefined ? "text" : "password"} value={value} placeholder={t("settings.revealReplacement")} aria-label={t("common.valueFor", { name })} onChange={(event) => { const next = event.target.value; setChangedSecrets((current) => ({ ...current, [name]: next })); markDirty(); }} /><div><IconButton label={t("common.revealValue")} onClick={() => void reveal(name)}>{secrets[name] ? <EyeOff size={15} /> : <Eye size={15} />}</IconButton><IconButton label={t("common.copyValue")} onClick={() => void copy(name)}><Copy size={15} /></IconButton></div></div>; }) : <Empty label={t("common.noIntegrationKeys")} />}</div></div></div></Panel>
       </section>
-    <footer className="settings-save-bar"><span className={dirty ? "settings-save-status unsaved" : "settings-save-status"}>{saving ? "Saving settings…" : dirty ? "You have unsaved changes" : "All changes saved"}</span><button className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving} onClick={() => void saveAll()}>{saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{saving ? "Saving…" : "Save changes"}</button></footer>
+    <footer className="settings-save-bar"><span className={dirty ? "settings-save-status unsaved" : "settings-save-status"}>{saving ? t("common.saving") : dirty ? t("settings.unsavedChanges") : t("settings.allSaved")}</span><button className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving} onClick={() => void saveAll()}>{saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{saving ? t("common.saving") : t("action.saveChanges")}</button></footer>
   </div>;
 }
 
-function ScheduleToggle({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) { return <label className="schedule-toggle"><input type="checkbox" checked={enabled} onChange={(event) => onChange(event.target.checked)} /><span aria-hidden="true" /><em>{enabled ? "Enabled" : "Paused"}</em></label>; }
+function ScheduleToggle({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) { const { t } = useI18n(); return <label className="schedule-toggle"><input type="checkbox" checked={enabled} onChange={(event) => onChange(event.target.checked)} /><span aria-hidden="true" /><em>{enabled ? t("common.enabled") : t("common.paused")}</em></label>; }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(<DashboardI18nProvider><App /></DashboardI18nProvider>);

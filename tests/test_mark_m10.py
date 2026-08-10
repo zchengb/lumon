@@ -186,6 +186,8 @@ class MarkM10Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             docs = Path(tmp)
             (docs / "stories").mkdir()
+            (docs / "admin-portal").mkdir()
+            (docs / "admin-portal" / "package.json").write_text('{"version":"1.2.3"}\n', encoding="utf-8")
             previous = os.environ.get("LUMEN_AGENTS_HOME")
             os.environ["LUMEN_AGENTS_HOME"] = tmp
             runtime = FakeRuntime(
@@ -240,9 +242,11 @@ class MarkM10Tests(unittest.TestCase):
                                 )
                 self.assertEqual("autonomous.clarification", first.get("action"))
                 self.assertIsNotNone(first.get("pending_clarification"))
+                self.assertIn("1.2.4", first.get("text", ""))
                 self.assertEqual("ok", second.get("status"))
                 execute.assert_called_once()
                 self.assertTrue(execute.call_args.kwargs["context"].explicit_authorization)
+                self.assertEqual("mutate_explicit", execute.call_args.kwargs["context"].authorization_intent)
             finally:
                 if previous is None:
                     os.environ.pop("LUMEN_AGENTS_HOME", None)

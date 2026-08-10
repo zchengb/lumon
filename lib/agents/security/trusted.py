@@ -32,8 +32,10 @@ def trusted_context_from_meta(
     user_text: str = "",
     access_decision: AccessDecision | None = None,
     explicit_authorization: bool | None = None,
+    authorization_intent: str | None = None,
 ) -> TrustedActionContext:
-    intent = classify_authorization_intent(user_text)
+    requested_intent = str(authorization_intent or "").strip().lower()
+    intent = requested_intent if requested_intent in {"none", "read", "mutate_explicit", "confirm_previous"} else classify_authorization_intent(user_text)
     explicit = bool(explicit_authorization) if explicit_authorization is not None else intent in {
         "mutate_explicit",
         "confirm_previous",
@@ -62,7 +64,10 @@ def bind_action_request(
 ) -> ActionRequest:
     args = dict(arguments or {})
     args.setdefault("chat_type", context.chat_type)
-    args.setdefault("_authorization_intent", context.authorization_intent)
+    intent = context.authorization_intent
+    if context.explicit_authorization and intent == "none":
+        intent = "mutate_explicit"
+    args.setdefault("_authorization_intent", intent)
     return ActionRequest(
         agent_id=context.agent_id,
         action=str(action or "").strip(),

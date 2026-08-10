@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-command Lumen CLI installer.
+# One-command Lumon CLI installer.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/zchengb/lumen-cli/main/get.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/zchengb/lumen-cli/main/get.sh | bash -s -- ~/Projects/MyProject
+#   curl -fsSL https://raw.githubusercontent.com/zchengb/lumon-cli/main/get.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/zchengb/lumon-cli/main/get.sh | bash -s -- ~/Projects/MyProject
 #
-# The optional argument is a workspace directory; if given, Lumen also runs
-# 'lumen init' there after installing (same as install.sh <workspace-dir>).
+# The optional argument is a workspace directory; if given, Lumon also runs
+# 'lumon init' there after installing (same as install.sh <workspace-dir>).
 #
 # Env overrides:
-#   LUMEN_REPO      GitHub "owner/repo" to install from (default: zchengb/lumen-cli)
-#   LUMEN_VERSION   Specific release tag to install (default: latest release)
-#   LUMEN_HOME      Lumen CLI installation directory (default: ~/.lumen)
-#   LUMEN_BIN_DIR   Where to place the 'lumen' executable (default: ~/.local/bin)
+#   LUMON_REPO      GitHub "owner/repo" to install from (default: zchengb/lumon-cli)
+#   LUMON_VERSION   Specific release tag to install (default: latest release)
+#   LUMON_HOME      Lumon CLI installation directory (default: ~/.lumon)
+#   LUMON_BIN_DIR   Where to place the 'lumon' executable (default: ~/.local/bin)
 
-REPO="${LUMEN_REPO:-zchengb/lumen-cli}"
-REQUESTED_VERSION="${LUMEN_VERSION:-}"
+REPO="${LUMON_REPO:-${LUMEN_REPO:-zchengb/lumon-cli}}"
+REQUESTED_VERSION="${LUMON_VERSION:-${LUMEN_VERSION:-}}"
 
 BOLD="$(printf '\033[1m')"
 GREEN="$(printf '\033[32m')"
@@ -40,7 +40,7 @@ fetch() {
   elif command -v wget >/dev/null 2>&1; then
     wget -q "${url}" -O "${out}"
   else
-    fail "Neither curl nor wget is available to download Lumen."
+    fail "Neither curl nor wget is available to download Lumon."
   fi
 }
 
@@ -51,14 +51,14 @@ fetch_stdout() {
   elif command -v wget >/dev/null 2>&1; then
     wget -qO- "${url}"
   else
-    fail "Neither curl nor wget is available to download Lumen."
+    fail "Neither curl nor wget is available to download Lumon."
   fi
 }
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
-ZIP_PATH="${WORK_DIR}/lumen.zip"
+ZIP_PATH="${WORK_DIR}/lumon.zip"
 EXTRACT_ROOT="${WORK_DIR}/extracted"
 mkdir -p "${EXTRACT_ROOT}"
 
@@ -76,7 +76,7 @@ resolve_release_asset_url() {
 
 install_from_release() {
   local asset_url="$1"
-  info "Downloading Lumen release package..."
+  info "Downloading Lumon release package..."
   fetch "${asset_url}" "${ZIP_PATH}"
   unzip -q "${ZIP_PATH}" -d "${EXTRACT_ROOT}"
   local pkg_dir
@@ -97,7 +97,7 @@ install_from_branch() {
   printf '%s' "${pkg_dir}"
 }
 
-printf '%sInstalling Lumen CLI from %s...%s\n' "${BOLD}" "${REPO}" "${RESET}"
+printf '%sInstalling Lumon CLI from %s...%s\n' "${BOLD}" "${REPO}" "${RESET}"
 
 ASSET_URL="$(resolve_release_asset_url || true)"
 

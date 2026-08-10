@@ -13,7 +13,15 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from agents.runtime.final_response import extract_final_response
-from agents.runtime.interaction import action_missing_fields, interaction_contract_prompt, normalize_clarification
+from agents.runtime.interaction import (
+    action_missing_fields,
+    clarification_choice_hint,
+    format_clarification_reply,
+    interaction_contract_prompt,
+    normalize_clarification,
+    version_upgrade_choices,
+)
+from agents.security.trusted import TrustedActionContext, bind_action_request
 from agents.runtime.session_store import SessionStore, conversation_scope_id
 from risk.store import GlobalAgentStore
 
@@ -88,6 +96,37 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual(3, pending["question_budget"])
         self.assertEqual("Keep it synchronous for the current volume.", pending["recommended"])
         self.assertEqual(["No material increase in request volume."], pending["assumptions"])
+
+    def test_version_choices_render_and_resolve_numeric_answers(self) -> None:
+        choices = version_upgrade_choices("1.2.3")
+        self.assertEqual(["1.2.4", "1.3.0", "2.0.0"], [item["value"] for item in choices])
+        reply = format_clarification_reply("Which version should I use?", choices, "1.2.3")
+        self.assertIn("Current version: 1.2.3", reply)
+        self.assertIn("1.2.4", reply)
+        self.assertIn("Recommended", reply)
+        hint = clarification_choice_hint(
+            "1",
+            {"missing": ["target_version"], "choices": choices},
+        )
+        self.assertIn("value=1.2.4", hint)
+        self.assertIn("target_version", hint)
+
+    def test_explicit_trusted_context_defaults_to_mutation_intent(self) -> None:
+        request = bind_action_request(
+            context=TrustedActionContext(
+                agent_id="milchick",
+                project_slug="mbpass",
+                actor_user_id="ou_owner",
+                chat_id="oc1",
+                thread_id="omt1",
+                source_message_id="om1",
+                trace_id="tr1",
+                explicit_authorization=True,
+            ),
+            action="jira.workitem.create",
+            arguments={"summary": "Version bump"},
+        )
+        self.assertEqual("mutate_explicit", request.arguments["_authorization_intent"])
 
     def test_interaction_contract_distinguishes_grill_from_quick_change(self) -> None:
         prompt = interaction_contract_prompt(agent_id="mark")

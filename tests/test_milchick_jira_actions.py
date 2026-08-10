@@ -67,6 +67,7 @@ class JiraActionTests(unittest.TestCase):
                                         arguments={
                                             "summary": "Preview mismatch",
                                             "description": "Backend preview != APP",
+                                            "target_version": "2.4.0",
                                         },
                                     )
                                 )
@@ -77,6 +78,8 @@ class JiraActionTests(unittest.TestCase):
         self.assertEqual(cmd[:3], ["jira", "workitem", "create"])
         self.assertIn("--summary", cmd)
         self.assertIn("Preview mismatch", cmd)
+        self.assertIn("Target version: 2.4.0", " ".join(cmd))
+        self.assertEqual("2.4.0", result["target_version"])
 
     def test_update_adapter_requires_fields(self) -> None:
         from agents.security.adapters import jira as jira_adapter

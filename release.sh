@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Cuts a new Lumen CLI release: bumps VERSION, commits, tags, and pushes.
+# Cuts a new Lumon CLI release: bumps VERSION, commits, tags, and pushes.
 # The push triggers .github/workflows/release.yml, which builds the zip
 # package and publishes it as a GitHub Release asset.
 #
@@ -51,7 +51,7 @@ printf '%s' "${NEW_VERSION}" > VERSION
 sync_dashboard_ui_version
 git add VERSION
 git commit -m "chore: release ${TAG}"
-git tag -a "${TAG}" -m "Lumen ${TAG}"
+git tag -a "${TAG}" -m "Lumon ${TAG}"
 
 ok "Committed VERSION bump and created tag ${TAG}."
 printf 'Push with:\n'

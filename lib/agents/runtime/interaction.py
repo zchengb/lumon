@@ -38,6 +38,8 @@ _FIELD_LABELS = {
     "target_version": "target version",
 }
 
+_SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
@@ -59,6 +61,97 @@ def _safe_text_list(value: Any, *, limit: int = 8, item_limit: int = 800) -> lis
     if not isinstance(value, list):
         return []
     return [str(item).strip()[:item_limit] for item in value[:limit] if str(item).strip()]
+
+
+def version_upgrade_choices(current_version: str = "") -> list[dict[str, Any]]:
+    match = _SEMVER_RE.fullmatch(str(current_version or "").strip())
+    if match:
+        major, minor, patch = (int(item) for item in match.groups())
+        values = (
+            (f"{major}.{minor}.{patch + 1}", "patch", "Smallest release change", True),
+            (f"{major}.{minor + 1}.0", "minor", "Add a backward-compatible feature", False),
+            (f"{major + 1}.0.0", "major", "Potentially breaking release", False),
+        )
+    else:
+        return [
+            {"value": "patch", "label": "Patch bump", "description": "Increase only the patch component", "recommended": True},
+            {"value": "minor", "label": "Minor bump", "description": "Increase the minor component", "recommended": False},
+            {"value": "major", "label": "Major bump", "description": "Increase the major component", "recommended": False},
+        ]
+    return [
+        {"value": value, "label": f"{value} · {kind}", "description": description, "recommended": recommended}
+        for value, kind, description, recommended in values
+    ]
+
+
+def _choice_parts(item: Any) -> tuple[str, str, str, bool]:
+    if isinstance(item, dict):
+        value = str(item.get("value") or item.get("target_version") or item.get("label") or "").strip()
+        label = str(item.get("label") or value).strip()
+        description = str(item.get("description") or "").strip()
+        recommended = bool(item.get("recommended"))
+        return value[:200], label[:240], description[:400], recommended
+    value = str(item or "").strip()
+    return value[:200], value[:240], "", False
+
+
+def format_clarification_reply(question: str, choices: Any, current_version: str = "") -> str:
+    text = str(question or "").strip()
+    rows = choices if isinstance(choices, list) else []
+    normalized = [_choice_parts(item) for item in rows[:4]]
+    normalized = [item for item in normalized if item[0] and item[1]]
+    if not normalized:
+        return text
+    lines = []
+    if str(current_version or "").strip():
+        lines.extend([f"Current version: {str(current_version).strip()}", ""])
+    lines.extend([text, "", "Suggested options (reply with the number or exact value):"])
+    for index, (_, label, description, recommended) in enumerate(normalized, start=1):
+        suffix = " — Recommended" if recommended else ""
+        detail = f" — {description}" if description else ""
+        lines.append(f"{index}. {label}{suffix}{detail}")
+    lines.append("You can also reply with a custom target version.")
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
+def clarification_choice_hint(answer: str, pending: dict[str, Any] | None) -> str:
+    if not isinstance(pending, dict):
+        return ""
+    choices = pending.get("choices") if isinstance(pending.get("choices"), list) else []
+    if not choices:
+        return ""
+    raw = str(answer or "").strip()
+    selected_index = None
+    match = re.fullmatch(r"(?:option\s*)?([1-9])(?:[.)]|\s+)?", raw, re.IGNORECASE)
+    if match:
+        index = int(match.group(1))
+        if index <= len(choices):
+            selected_index = index - 1
+    if selected_index is None:
+        answer_key = raw.casefold()
+        for index, item in enumerate(choices):
+            value, label, _, _ = _choice_parts(item)
+            if answer_key in {value.casefold(), label.casefold()}:
+                selected_index = index
+                break
+    if selected_index is None:
+        return ""
+    value, label, _, _ = _choice_parts(choices[selected_index])
+    missing = pending.get("missing") if isinstance(pending.get("missing"), list) else []
+    field_key = str(missing[0] if missing else "the requested value").strip()
+    field = field_key.replace("_", " ")
+    if value.casefold() in {"patch", "minor", "major"}:
+        resolution = (
+            f"Use {value!r} as the version bump strategy for {field_key}; inspect the current version and "
+            "convert it to the exact target version before emitting the action."
+        )
+    else:
+        resolution = f"Use {value!r} as the answer for {field_key} ({field}); do not ask for that value again."
+    return (
+        "[LUMEN CHOICE RESOLUTION]\n"
+        f"The user selected option {selected_index + 1}: {label} (value={value}). "
+        f"{resolution}"
+    )
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int = 0, maximum: int = 32) -> int:
@@ -97,10 +190,19 @@ def action_missing_fields(
             or re.search(r"\b(version|upgrade|bump)\b|版本|升级|更新版本", request)
         ) and not has_value(values.get("target_version")):
             missing.append("target_version")
+    if str(action or "").strip() == "jira.workitem.create" and "target_version" not in missing:
+        request = " ".join(
+            str(values.get(key) or "")
+            for key in ("summary", "description", "request", "task", "change", "change_type")
+        ).casefold()
+        if re.search(r"\b(version|upgrade|bump)\b|版本|升级|更新版本", request) and not has_value(values.get("target_version")):
+            missing.append("target_version")
     return missing
 
 
 def clarification_question(action: str, missing: list[str]) -> str:
+    if "target_version" in missing:
+        return "Which version should I upgrade it to?"
     if str(action or "").strip() == "delivery.quick_change":
         if "target_version" in missing:
             return "Which version should I upgrade it to?"
@@ -172,7 +274,7 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
         "Put the same user-facing question inside FINAL_RESPONSE. For a bounded quick change, preserve the user's "
         "explicit request while collecting missing details; for other mutations, ask for confirmation separately when needed.",
-        "Use the user's latest answer to fill the pending fields. Do not repeat a question that has already been answered.",
+        "Use the user's latest answer to fill the pending fields. If choices are present and the user replies with a number or label, resolve it to that choice's value. Do not repeat a question that has already been answered.",
         "[LUMEN GRILL PROTOCOL]",
         "Use mode=grill for Business Loop, Technical Loop, or design requests when an unresolved decision could change scope, behavior, safety, architecture, verification, ownership, or rollback.",
         "Inspect available evidence first. Ask for the highest-impact unknown, not every possible preference. Explain why the answer matters, offer 2–4 concrete options with one Recommended option when reasonable, and allow a custom answer.",

@@ -55,6 +55,9 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
     if not summary:
         raise ResourceDenied("summary required")
     description = str(args.get("description") or resource.get("description") or "").strip()
+    target_version = str(args.get("target_version") or resource.get("target_version") or "").strip()
+    if target_version and "target version" not in description.casefold():
+        description = f"{description}\n\nTarget version: {target_version}".strip()
     cfg = _jira_config(str(request.project_slug or "").strip())
     project_key = str(
         args.get("project_key") or args.get("space") or resource.get("project_key") or cfg.get("project_key") or ""
@@ -104,6 +107,7 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
         "summary": summary,
         "issue_type": issue_type,
         "project_key": project_key,
+        "target_version": target_version,
     }
 
 

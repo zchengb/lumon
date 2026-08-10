@@ -1,6 +1,6 @@
-# Lumen CLI
+# Lumon CLI
 
-Lumen is a local, AI-assisted engineering control plane. It provides two connected workflows:
+Lumon is a local, AI-assisted engineering control plane. It provides two connected workflows:
 
 1. **Scan**: examine recent repository change, maintain a durable issue registry, publish reports, and optionally prepare scoped pull requests.
 2. **Delivery**: turn an approved Story and technical plan into isolated worktrees, verified changes, pull requests, and an auditable delivery record.
@@ -12,7 +12,7 @@ The system is intentionally local-first. Source repositories, configuration, cre
 - **Explicit authority**: approved Story documents and technical plans govern delivery; raw conversation is not a substitute for them.
 - **Isolation**: each Story uses a dedicated feature branch and worktree per affected repository.
 - **Evidence**: scan findings, verification results, pull requests, and status transitions are materialized as local records.
-- **Minimal intervention**: Lumen changes only the configured workspace and never writes directly to a default branch.
+- **Minimal intervention**: Lumon changes only the configured workspace and never writes directly to a default branch.
 - **Human control**: scheduling and automation are configurable; pull request review and merge remain outside the default automation boundary.
 
 ## Installation
@@ -20,24 +20,24 @@ The system is intentionally local-first. Source repositories, configuration, cre
 ### Release installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumen-cli/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon-cli/main/get.sh | bash
 ```
 
-The installer places the executable in `~/.local/bin/lumen` and the supporting library in `~/.lumen/`.
+The installer places the executable in `~/.local/bin/lumon` and the supporting library in `~/.lumon/`. `lumen` and `~/.lumen/` remain compatibility aliases for existing workspaces.
 
 ### Local checkout
 
 ```bash
-git clone https://github.com/zchengb/lumen-cli.git
-cd lumen-cli
+git clone https://github.com/zchengb/lumon-cli.git
+cd lumon-cli
 ./install.sh
 ```
 
-Run `lumen doctor` after installation to inspect required and optional local dependencies.
+Run `lumon doctor` after installation to inspect required and optional local dependencies.
 
 ## Workspace Model
 
-Run `lumen init` from an empty project root or an existing documentation repository.
+Run `lumon init` from an empty project root or an existing documentation repository.
 
 ```text
 engineering-workspace/
@@ -45,7 +45,7 @@ engineering-workspace/
   stories/                     business contracts and technical plans
   standards/                   business, technical, and development loop rules
   AGENTS.md                    persistent agent contract
-  lumen/                       local Lumen control plane
+  lumen/                       local Lumon control plane
     config/                    runtime, repository, and integration configuration
     prompts/
       scan/                    editable scan instructions
@@ -65,24 +65,24 @@ engineering-workspace/
 Install the explicitly invoked, project-scoped workflow skills for Claude Code, Cursor, and Codex:
 
 ```bash
-lumen skills install --workspace ~/Projects/engineering-workspace --platform all
+lumon skills install --workspace ~/Projects/engineering-workspace --platform all
 ```
 
-Lumen keeps the canonical packages in `lumen/skills/`; the generated platform adapters are thin pointers. Cursor uses the shared `.agents/skills/` adapter installed by `--platform all`, avoiding duplicate command entries. Existing unmanaged adapter files are preserved unless `--force` is supplied.
+Lumon keeps the canonical packages in `lumen/skills/`; the generated platform adapters are thin pointers. Cursor uses the shared `.agents/skills/` adapter installed by `--platform all`, avoiding duplicate command entries. Existing unmanaged adapter files are preserved unless `--force` is supplied.
 
 ## Quick Start
 
 ```bash
 cd ~/Projects/engineering-workspace
-lumen init
-lumen doctor
-lumen list
+lumon init
+lumon doctor
+lumon list
 ```
 
-Lumen records registered workspaces locally. Select the default when working with more than one:
+Lumon records registered workspaces locally. Select the default when working with more than one:
 
 ```bash
-lumen use <project-slug>
+lumon use <project-slug>
 ```
 
 ## Scan Workflow
@@ -90,9 +90,9 @@ lumen use <project-slug>
 The Scan workflow is intended for continuous review of configured repositories. It reads a bounded commit window, asks the configured agent to identify credible issues, persists issue identity across runs, then produces deterministic reports and notifications.
 
 ```bash
-lumen scan --project <project-slug>
-lumen issue list --project <project-slug>
-lumen issue ignore ISSUE-<id> --project <project-slug> --reason "Out of scope"
+lumon scan --project <project-slug>
+lumon issue list --project <project-slug>
+lumon issue ignore ISSUE-<id> --project <project-slug> --reason "Out of scope"
 ```
 
 Issue decisions are stored in `lumen/state/issue-registry.json`. Ignoring a finding changes only that local registry; it does not modify source code, report history, or remote trackers.
@@ -102,9 +102,9 @@ Issue decisions are stored in `lumen/state/issue-registry.json`. Ignoring a find
 On macOS, schedules are installed as user-level `launchd` agents.
 
 ```bash
-lumen schedule scan add --project <project-slug> --cron "0 9 * * 1-5"
-lumen schedule scan remove --project <project-slug>
-lumen schedule list
+lumon schedule scan add --project <project-slug> --cron "0 9 * * 1-5"
+lumon schedule scan remove --project <project-slug>
+lumon schedule list
 ```
 
 Supported macOS scan forms are every-N-minutes, daily, and weekday schedules. The Dashboard offers the same configuration through the `AUTO SCAN` view.
@@ -114,11 +114,11 @@ Supported macOS scan forms are every-N-minutes, daily, and weekday schedules. Th
 Delivery begins only when a specific Story is business-ready and its technical plan is approved. A Topic is not a delivery unit; split it into concrete Stories first.
 
 ```bash
-lumen delivery run --story NOVA-101-feature-name
-lumen delivery status
+lumon delivery run --story NOVA-101-feature-name
+lumon delivery status
 ```
 
-For an eligible Story, Lumen performs the following sequence:
+For an eligible Story, Lumon performs the following sequence:
 
 1. Synchronize the docs repository and configured repositories.
 2. Validate Story and technical-plan gates.
@@ -150,8 +150,8 @@ Delivery verification commands are suggested from the detected build. If no repo
 ### Delivery Scheduling
 
 ```bash
-lumen schedule delivery add --project <project-slug> --every 5m
-lumen schedule delivery remove --project <project-slug>
+lumon schedule delivery add --project <project-slug> --every 5m
+lumon schedule delivery remove --project <project-slug>
 ```
 
 The scheduler polls for Stories that meet the existing document and Jira eligibility gates. It does not bypass an unapproved technical plan.
@@ -171,16 +171,16 @@ lumen/prompts/delivery/
 Refresh missing defaults without replacing local prompt edits:
 
 ```bash
-lumen upgrade --project <project-slug>
+lumon upgrade --project <project-slug>
 ```
 
 ## Interactive Dashboard
 
 ```bash
-lumen dashboard --project <project-slug>
+lumon dashboard --project <project-slug>
 ```
 
-The command starts a local service bound only to `127.0.0.1` and opens the full URL with its dynamically allocated port. Its React interface is prebuilt and packaged with Lumen, so operators do not need Node.js, npm, or frontend dependencies. The Dashboard has four views:
+The command starts a local service bound only to `127.0.0.1` and opens the full URL with its dynamically allocated port. Its React interface is prebuilt and packaged with Lumon, so operators do not need Node.js, npm, or frontend dependencies. The Dashboard has four views:
 
 | View | Scope |
 |---|---|
@@ -189,18 +189,18 @@ The command starts a local service bound only to `127.0.0.1` and opens the full 
 | `PROMPTS` | scan prompts, delivery prompts, workspace coding guideline |
 | `SETTINGS` | workspace controls, locally managed integration keys, scan window, and schedules |
 
-Use the exact URL printed by Lumen. `http://127.0.0.1` without a port is not the Dashboard address.
+Use the exact URL printed by Lumon. `http://127.0.0.1` without a port is not the Dashboard address.
 
 Stop the local Dashboard service when it is no longer needed:
 
 ```bash
-lumen dashboard stop --project <project-slug>
+lumon dashboard stop --project <project-slug>
 ```
 
 For a read-only artifact without the interactive local server:
 
 ```bash
-lumen dashboard --project <project-slug> --static
+lumon dashboard --project <project-slug> --static
 ```
 
 ## Configuration and Credentials
@@ -208,26 +208,26 @@ lumen dashboard --project <project-slug> --static
 Workspace configuration is stored under `lumen/config/`. Integration secrets use the workspace-local `lumen/.env.local`, except Web visual-auth credentials, which are stored in the repository runtime config and shown in the local Repository editor for debugging.
 
 ```bash
-lumen config set-webhook <feishu-webhook-url> --project <project-slug>
-lumen config set-cursor-api-key <api-key> --project <project-slug>
-lumen config set-gh-token <token> --host <git-host> --project <project-slug>
-lumen config set-visual-auth <repository> <credential> --project <project-slug>
-lumen config set-scan-window 14 --project <project-slug>
+lumon config set-webhook <feishu-webhook-url> --project <project-slug>
+lumon config set-cursor-api-key <api-key> --project <project-slug>
+lumon config set-gh-token <token> --host <git-host> --project <project-slug>
+lumon config set-visual-auth <repository> <credential> --project <project-slug>
+lumon config set-scan-window 14 --project <project-slug>
 ```
 
-Jira integration uses the locally authenticated TWG CLI. Configure it through `lumen config set-jira`; authenticate TWG separately before scheduled or delivery operations.
+Jira integration uses the locally authenticated TWG CLI. Configure it through `lumon config set-jira`; authenticate TWG separately before scheduled or delivery operations.
 
 The Jira project key is configured once in `lumen/config/common.json` under `notifications.jira.project_key` and is shared by Auto Scan, Auto Delivery, and Auto Patch. `lumen/config/delivery.json` only contains Delivery-specific workflow settings such as transition statuses.
 
 ### Jira and TWG OAuth token refresh
 
-Lumen does not store Jira credentials. When Jira sync is enabled, it calls the locally installed [TWG CLI](https://developer.atlassian.com/cloud/twg-cli/) using OAuth tokens in `~/.config/twg/auth.conf`.
+Lumon does not store Jira credentials. When Jira sync is enabled, it calls the locally installed [TWG CLI](https://developer.atlassian.com/cloud/twg-cli/) using OAuth tokens in `~/.config/twg/auth.conf`.
 
 TWG access tokens are short-lived (typically about one hour). TWG is designed to refresh them automatically with a refresh token. If refresh fails or the session is idle for too long, Jira steps can fail with `AUTH_EXPIRED` even though `twg doctor` passed earlier.
 
-**What Lumen refreshes automatically**
+**What Lumon refreshes automatically**
 
-When Jira sync is enabled for the workspace, Lumen runs `twg auth refresh --force` before:
+When Jira sync is enabled for the workspace, Lumon runs `twg auth refresh --force` before:
 
 - a scheduled or manual **scan** starts
 - a scheduled or manual **delivery** run starts
@@ -236,7 +236,7 @@ When Jira sync is enabled for the workspace, Lumen runs `twg auth refresh --forc
 - post-scan Jira issue creation
 - delivery Jira transitions and comments (including at the end of long runs)
 
-If Jira sync is disabled in `config/common.json` or `config/delivery.json`, Lumen skips the refresh call.
+If Jira sync is disabled in `config/common.json` or `config/delivery.json`, Lumon skips the refresh call.
 
 **What you should configure on the machine**
 
@@ -248,7 +248,7 @@ twg auth refresh --force
 twg doctor
 ```
 
-Upkeep runs on a per-user schedule and refreshes OAuth credentials before they expire. Lumen’s start-of-run refresh does not replace upkeep for runs that stay active longer than one access-token lifetime.
+Upkeep runs on a per-user schedule and refreshes OAuth credentials before they expire. Lumon’s start-of-run refresh does not replace upkeep for runs that stay active longer than one access-token lifetime.
 
 **When re-login is required**
 
@@ -274,18 +274,18 @@ These commands refresh only when Jira sync is enabled for that workspace.
 
 | Command | Purpose |
 |---|---|
-| `lumen init [dir]` | Initialize an integrated Scan and Delivery workspace |
-| `lumen register [dir]` | Register an existing workspace |
-| `lumen list`, `lumen use <slug>` | Inspect and select local workspaces |
-| `lumen scan` | Run one review cycle |
-| `lumen issue list`, `lumen issue ignore` | Inspect and govern tracked findings |
-| `lumen schedule` | Manage Scan and Delivery schedules |
-| `lumen delivery run --story <story>` | Execute one approved Story |
-| `lumen delivery status` | Show latest delivery progress and evidence |
-| `lumen skills install --workspace <path> --platform all` | Install explicit Business and Technical Loop skills |
-| `lumen dashboard` | Open the interactive local control plane |
-| `lumen upgrade` | Update CLI and refresh missing workspace defaults |
+| `lumon init [dir]` | Initialize an integrated Scan and Delivery workspace |
+| `lumon register [dir]` | Register an existing workspace |
+| `lumon list`, `lumon use <slug>` | Inspect and select local workspaces |
+| `lumon scan` | Run one review cycle |
+| `lumon issue list`, `lumon issue ignore` | Inspect and govern tracked findings |
+| `lumon schedule` | Manage Scan and Delivery schedules |
+| `lumon delivery run --story <story>` | Execute one approved Story |
+| `lumon delivery status` | Show latest delivery progress and evidence |
+| `lumon skills install --workspace <path> --platform all` | Install explicit Business and Technical Loop skills |
+| `lumon dashboard` | Open the interactive local control plane |
+| `lumon upgrade` | Update CLI and refresh missing workspace defaults |
 
 ## Operational Boundary
 
-Lumen does not automatically merge pull requests or deploy to production. CI/CD monitoring and deployment automation can be layered on later, but they are intentionally outside the default local execution path.
+Lumon does not automatically merge pull requests or deploy to production. CI/CD monitoring and deployment automation can be layered on later, but they are intentionally outside the default local execution path.

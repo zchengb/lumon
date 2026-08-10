@@ -1930,8 +1930,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self.serve_file(self.server.workspace / "dashboard.html", "text/html; charset=utf-8")
         if parsed.path == "/dashboard-data.js":
             return self.serve_file(self.server.workspace / "dashboard-data.js", "application/javascript; charset=utf-8")
-        if parsed.path == "/assets/lumen-mark.png":
-            return self.serve_file(self.server.workspace / "assets" / "lumen-mark.png", "image/png")
+        if parsed.path == "/assets/lumon-mark.png":
+            return self.serve_file(self.server.workspace / "assets" / "lumon-mark.png", "image/png")
         try:
             path = safe_workspace_static_path(workspace, parsed.path)
         except ValueError:

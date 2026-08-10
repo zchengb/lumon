@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -13,9 +14,12 @@ from agents.runtime.cursor_runtime import CursorAgentRuntime
 from agents.runtime.final_response import extract_final_response, prefer_action_summary
 from agents.runtime.interaction import (
     action_missing_fields,
+    clarification_choice_hint,
     clarification_question,
+    format_clarification_reply,
     interaction_contract_prompt,
     normalize_clarification,
+    version_upgrade_choices,
 )
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
@@ -70,6 +74,92 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
         "I couldn't finish this turn cleanly.\n"
         f"Trace ID: {trace_id}"
     )
+
+
+def _read_version(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+    if path.name == "package.json":
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict):
+            version = str(payload.get("version") or "").strip()
+            if version:
+                return version
+    match = re.search(r"\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", text)
+    return match.group(0) if match else ""
+
+
+def _current_version_for_clarification(workspace: Path, clarification: dict[str, Any]) -> str:
+    values: dict[str, Any] = {}
+    for key in ("resource", "arguments"):
+        item = clarification.get(key)
+        if isinstance(item, dict):
+            values.update(item)
+    repository = str(values.get("repository") or values.get("repo") or "").strip()
+    target_files = values.get("target_files") or values.get("target_file") or values.get("file") or []
+    if isinstance(target_files, str):
+        target_files = [target_files]
+    if not isinstance(target_files, list):
+        target_files = []
+    root = Path(workspace).expanduser().resolve()
+    if repository:
+        try:
+            from delivery_workspace import discover_git_repos, load_workspace_config, repo_path_for_name
+
+            workspace_root, workspace_config = load_workspace_config(root)
+            repo = repo_path_for_name(repository, workspace_root, workspace_config, discover_git_repos(workspace_root, workspace_config))
+            if repo is not None:
+                root = repo.resolve()
+        except Exception:
+            candidate = (root / repository).resolve()
+            if candidate.is_dir():
+                root = candidate
+    names = [str(item or "").strip() for item in target_files if str(item or "").strip()]
+    names.extend(name for name in ("package.json", "VERSION", "version.txt", "pyproject.toml") if name not in names)
+    for name in names[:12]:
+        candidate = (root / name).resolve()
+        if root not in candidate.parents or not candidate.is_file():
+            continue
+        version = _read_version(candidate)
+        if version:
+            return version
+    return ""
+
+
+def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dict[str, Any]:
+    action = str(clarification.get("action") or "").strip()
+    if action not in {"delivery.quick_change", "jira.workitem.create"}:
+        return clarification
+    missing = clarification.get("missing") if isinstance(clarification.get("missing"), list) else []
+    values: dict[str, Any] = {}
+    for key in ("resource", "arguments"):
+        item = clarification.get(key)
+        if isinstance(item, dict):
+            values.update(item)
+    request = " ".join(
+        str(values.get(key) or "")
+        for key in ("summary", "description", "request", "task", "change", "change_type")
+    ).casefold()
+    change_type = str(values.get("change_type") or "").casefold()
+    is_version_question = "target_version" in missing or change_type in {"version", "version_bump", "upgrade_version"} or bool(
+        re.search(r"\b(version|upgrade|bump)\b|版本|升级|更新版本", request)
+    )
+    if not is_version_question:
+        return clarification
+    enriched = dict(clarification)
+    choices = enriched.get("choices") if isinstance(enriched.get("choices"), list) else []
+    current_version = _current_version_for_clarification(workspace, enriched)
+    if not choices:
+        choices = version_upgrade_choices(current_version)
+    enriched["choices"] = choices[:4]
+    if current_version:
+        enriched["current_version"] = current_version
+    return enriched
 
 
 def handle_autonomous_conversation(
@@ -299,6 +389,9 @@ def handle_autonomous_conversation(
                     is_new = True
                 else:
                     pending = store.get_pending(session)
+                    choice_hint = clarification_choice_hint(text, pending)
+                    if choice_hint:
+                        anchored_text = f"{anchored_text}\n\n{choice_hint}"
                     checkpoint = None
                     if session.get("checkpoint_json"):
                         try:
@@ -473,16 +566,18 @@ def handle_autonomous_conversation(
                         action_requests = []
                         break
             if clarification:
+                clarification = _enrich_clarification(clarification, workspace)
                 store.save_pending(session["session_id"], clarification)
             elif action_requests:
                 store.clear_pending(session["session_id"])
             action_receipts: list[dict[str, Any]] = []
             if action_requests and not clarification:
-                quick_change_continuation = bool(
+                pending_action = str(pending.get("action") or "").strip() if pending else ""
+                pending_mutation_continuation = bool(
                     pending
-                    and pending.get("action") == "delivery.quick_change"
+                    and pending_action
                     and pending.get("authorization_intent") in {"mutate_explicit", "confirm_previous"}
-                    and any(str(item.get("action") or "") == "delivery.quick_change" for item in action_requests)
+                    and any(str(item.get("action") or "").strip() == pending_action for item in action_requests)
                 )
                 context = trusted_context_from_meta(
                     agent_id=agent_id,
@@ -491,7 +586,12 @@ def handle_autonomous_conversation(
                     trace_id=trace.trace_id,
                     user_text=text,
                     access_decision=access,
-                    explicit_authorization=True if quick_change_continuation else None,
+                    authorization_intent=(
+                        str(pending.get("authorization_intent") or "").strip()
+                        if pending_mutation_continuation
+                        else None
+                    ),
+                    explicit_authorization=True if pending_mutation_continuation else None,
                 )
                 receipts = execute_trusted_actions(context=context, requests=action_requests)
                 action_receipts = [r.to_dict() for r in receipts]
@@ -502,6 +602,12 @@ def handle_autonomous_conversation(
                     statuses=[r.get("status") for r in action_receipts],
                 )
             reply_text = parsed.text
+            if clarification and clarification.get("choices") and "suggested options" not in reply_text.casefold():
+                reply_text = format_clarification_reply(
+                    reply_text or str(clarification.get("question") or ""),
+                    clarification.get("choices"),
+                    str(clarification.get("current_version") or ""),
+                )
             if access.trust_zone == "SHARED" and any(
                 tok in (reply_text or "").lower()
                 for tok in ("disk space", "hostname", "/applications", "serial number", "free_gb")

@@ -593,9 +593,9 @@ def build_payload(root: Path) -> dict:
         "workspace_root": str(root),
         "scan_window_days": get_scan_window_days(common),
         "product": {
-            "name": product.get("name", "Lumen"),
+            "name": product.get("name", "Lumon"),
             "tagline": product.get("tagline", "Engineering, made legible."),
-            "codename": product.get("codename", "lumen"),
+            "codename": product.get("codename", "lumon"),
         },
         "project": {
             "display_name": project.get("display_name", ""),

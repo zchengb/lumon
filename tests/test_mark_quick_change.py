@@ -42,7 +42,15 @@ class MarkQuickChangeTests(unittest.TestCase):
                 "target_version": "1.2.3",
             },
         ))
+        self.assertEqual(
+            ["target_version"],
+            action_missing_fields(
+                "jira.workitem.create",
+                arguments={"summary": "Upgrade Admin Portal version"},
+            ),
+        )
         self.assertEqual("Which version should I upgrade it to?", clarification_question("delivery.quick_change", ["target_version"]))
+        self.assertEqual("Which version should I upgrade it to?", clarification_question("jira.workitem.create", ["target_version"]))
         self.assertEqual("mutate_explicit", classify_authorization_intent("Please upgrade the version number"))
 
     def test_target_file_and_publish_policy_helpers(self) -> None:
