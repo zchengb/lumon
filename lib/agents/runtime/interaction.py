@@ -51,6 +51,11 @@ _PENDING_SUPERSEDE_RE = re.compile(
     r"|(?:abandon|skip|ignore|drop|set aside|new question|new task|different issue)",
     re.IGNORECASE,
 )
+_NEW_MUTATION_REQUEST_RE = re.compile(
+    r"\b(?:change|update|modify|rename|rewrite|replace|fix|wording|copy)\b"
+    r"|(?:改(?:成|为|一下|動|动)?|修改|更改|換成|换成|替換|替换|重命名|文案|措辞|措辭|用词|用詞|文字)",
+    re.IGNORECASE,
+)
 
 
 def _now() -> datetime:
@@ -251,7 +256,7 @@ def clarification_choice_hint(answer: str, pending: dict[str, Any] | None) -> st
 
 
 def should_supersede_pending(text: str, pending: dict[str, Any] | None) -> bool:
-    """Return true when the user explicitly abandons the pending clarification."""
+    """Return true when the user abandons or clearly starts a different request."""
     if not isinstance(pending, dict):
         return False
     raw = str(text or "").strip()
@@ -259,7 +264,16 @@ def should_supersede_pending(text: str, pending: dict[str, Any] | None) -> bool:
         return False
     if raw.casefold() in {"[image attachment]", "[file attachment]", "[message attachment]"}:
         return True
-    return bool(_PENDING_SUPERSEDE_RE.search(raw))
+    if _PENDING_SUPERSEDE_RE.search(raw):
+        return True
+    # A pending read/report question must not become a conversational lock when
+    # the user gives a concrete change request instead of answering it.
+    action = str(pending.get("action") or "").strip().casefold()
+    is_read_or_loop_prompt = (
+        str(pending.get("mode") or "").strip().casefold() == "loop_confirmation"
+        or action.rsplit(".", 1)[-1] in {"get", "query", "report", "status", "list"}
+    )
+    return is_read_or_loop_prompt and bool(_NEW_MUTATION_REQUEST_RE.search(raw))
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int = 0, maximum: int = 32) -> int:

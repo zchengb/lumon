@@ -119,6 +119,9 @@ class AgentInteractionTests(unittest.TestCase):
         )
         assert pending is not None
         self.assertTrue(should_supersede_pending("先放棄這個問題，幫我改 wording", pending))
+        self.assertTrue(should_supersede_pending("Admin Portal 中的 Wording「輪播圖」改成「多圖」", pending))
+        self.assertTrue(should_supersede_pending("Please update the wording in the Admin Portal", pending))
+        self.assertFalse(should_supersede_pending("Ready for QA", pending))
         self.assertFalse(should_supersede_pending("1", {**pending, "choices": [{"value": "1", "label": "A"}]}))
 
     def test_explicit_trusted_context_defaults_to_mutation_intent(self) -> None:
