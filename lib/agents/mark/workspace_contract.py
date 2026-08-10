@@ -44,7 +44,7 @@ def _managed_block(project_slug: str) -> str:
         f"- lumen agents action --agent mark --action test_case.generate --story <Jira-key> --json\n\n"
         f"## Jira\n"
         f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
-        f"- Create/update work items only through <ACTION_REQUEST> with explicit user intent\n\n"
+        f"- Create/update work items only through <ACTION_REQUEST> when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
         f"- Conversational Mark is workspace-isolated over delivery docs\n"
         f"- Never enumerate host apps/hardware/home; never modify business source or secrets\n"

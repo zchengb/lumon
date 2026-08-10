@@ -29,7 +29,7 @@ from agents.runtime.interaction import (
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
-from agents.security.access_policy import authorize_agent_interaction, classify_authorization_intent, security_context_prompt
+from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
 from agents.security.flags import workspace_isolation_v2_enabled
 from agents.security.trusted import execute_trusted_actions, trusted_context_from_meta
 from feishu.messenger import FeishuMessenger
@@ -294,32 +294,6 @@ def handle_autonomous_conversation(
         obs.emit(trace, "reply.anchor.resolved", parent_id=parent_id)
     elif root_id and anchored_text != text:
         obs.emit(trace, "reply.anchor.resolved", parent_id=root_id)
-
-    if agent_id == "milchick":
-        from agents.milchick.jira_shortcut import try_milchick_jira_create
-
-        shortcut_context = trusted_context_from_meta(
-            agent_id=agent_id,
-            project_slug=slug,
-            meta=meta,
-            trace_id=trace.trace_id,
-            user_text=text,
-            access_decision=access,
-        )
-        shortcut = try_milchick_jira_create(
-            user_text=text,
-            anchored_text=anchored_text,
-            context=shortcut_context,
-            workspace=workspace,
-        )
-        if shortcut:
-            obs.emit(trace, "agent.jira.shortcut", status=shortcut.get("status"))
-            obs.upsert_trace(trace, state="completed" if shortcut.get("status") == "ok" else "failed", project_slug=slug)
-            shortcut["trace_id"] = trace.trace_id
-            shortcut["agent_id"] = agent_id
-            shortcut["project_slug"] = slug
-            shortcut["session_id"] = ""
-            return shortcut
 
     lock = store.lock_for(scope)
     loop_permissions_enabled = False
@@ -611,8 +585,6 @@ def handle_autonomous_conversation(
                 agent_id=agent_id,
                 source_message_id=message_id,
             ) if parsed.clarification_request else None
-            if clarification and not clarification.get("authorization_intent"):
-                clarification["authorization_intent"] = classify_authorization_intent(text)
             action_requests = list(parsed.action_requests)
             if clarification is None and action_requests:
                 for request in action_requests:
@@ -629,7 +601,6 @@ def handle_autonomous_conversation(
                                 "missing": missing,
                                 "resource": request.get("resource") or {},
                                 "arguments": request.get("arguments") or {},
-                                "authorization_intent": classify_authorization_intent(text),
                             },
                             agent_id=agent_id,
                             source_message_id=message_id,
@@ -646,26 +617,12 @@ def handle_autonomous_conversation(
                 store.clear_pending(session["session_id"])
             action_receipts: list[dict[str, Any]] = []
             if action_requests and not clarification:
-                pending_action = str(pending.get("action") or "").strip() if pending else ""
-                pending_mutation_continuation = bool(
-                    pending
-                    and pending_action
-                    and pending.get("authorization_intent") in {"mutate_explicit", "confirm_previous"}
-                    and any(str(item.get("action") or "").strip() == pending_action for item in action_requests)
-                )
                 context = trusted_context_from_meta(
                     agent_id=agent_id,
                     project_slug=slug,
                     meta=meta,
                     trace_id=trace.trace_id,
-                    user_text=text,
                     access_decision=access,
-                    authorization_intent=(
-                        str(pending.get("authorization_intent") or "").strip()
-                        if pending_mutation_continuation
-                        else None
-                    ),
-                    explicit_authorization=True if pending_mutation_continuation else None,
                 )
                 receipts = execute_trusted_actions(context=context, requests=action_requests)
                 action_receipts = [r.to_dict() for r in receipts]

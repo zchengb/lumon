@@ -7,7 +7,7 @@ from agents.security.actions import MUTATION_ACTIONS
 from agents.security.policy import ROLE_ACTIONS, load_access_config
 from feishu.config import load_agents_config
 
-POLICY_VERSION = "m0.3.3"
+POLICY_VERSION = "m0.3.4"
 
 TrustZone = Literal["PRIVATE", "RESTRICTED", "SHARED", "DENY"]
 HostReadMode = Literal["deny", "selected", "system_only"]
@@ -165,6 +165,9 @@ def load_agent_access_policy(agent_id: str, config: Optional[dict[str, Any]] = N
             source="legacy",
         )
 
+    global_users = _as_set(legacy.get("allowed_user_ids"))
+    global_mutators = _as_set(legacy.get("mutation_allowed_user_ids"))
+
     if raw is None:
         return AgentAccessPolicy(
             agent_id=agent,
@@ -189,12 +192,12 @@ def load_agent_access_policy(agent_id: str, config: Optional[dict[str, Any]] = N
     return AgentAccessPolicy(
         agent_id=agent,
         exposure_mode=exposure,
-        allowed_user_ids=_as_set(raw.get("allowed_user_ids")),
+        allowed_user_ids=_as_set(raw.get("allowed_user_ids")) | global_users,
         allowed_chat_ids=_as_set(raw.get("allowed_chat_ids")) | global_chats,
         dm_only=bool(raw.get("dm_only", exposure in {"owner_private", "admin_private"})),
         host_read_mode=host_mode,
         host_read_capabilities=caps,
-        mutation_allowed_user_ids=_as_set(raw.get("mutation_allowed_user_ids")),
+        mutation_allowed_user_ids=_as_set(raw.get("mutation_allowed_user_ids")) | global_mutators,
         owners=owners,
         admins=admins,
         default_policy=default_policy,
@@ -464,104 +467,11 @@ def security_context_prompt(decision: AccessDecision) -> str:
     return "\n".join(lines)
 
 
-def classify_authorization_intent(text: str) -> str:
-    lower = str(text or "").strip().lower()
-    if not lower:
-        return "none"
-    confirm = ("确认", "確認", "confirm", "yes", "好的", "執行", "执行", "do it", "go ahead", "批准")
-    mutate = (
-        "resolve",
-        "mark remediated",
-        "start delivery",
-        "cancel delivery",
-        "quick change",
-        "quick-change",
-        "upgrade",
-        "bump",
-        "update version",
-        "version number",
-        "升级版本",
-        "更新版本",
-        "升級版本",
-        "升级",
-        "版本号",
-        "版本號",
-        "生成测试",
-        "test case",
-        "testcase",
-        "update schedule",
-        "修复",
-        "开始交付",
-        "取消交付",
-        "retry",
-        "再试",
-        "再試",
-        "重试",
-        "重試",
-        "重新创建",
-        "重新創建",
-        "重新建立",
-        "重建 jira",
-        "re-run",
-        "rerun",
-        "re run",
-        "requeue",
-        "re-queue",
-        "re queue",
-        "generate again",
-        "重新生成",
-        "再生成",
-        "重跑",
-        "再跑",
-        "create jira",
-        "jira card",
-        "jira ticket",
-        "edit jira",
-        "update jira",
-        "建卡",
-        "创建jira",
-        "创建 jira",
-        "建立jira",
-        "建立 jira",
-        "創建jira",
-        "創建 jira",
-        "更新jira",
-        "更新 jira",
-        "change wording",
-        "update wording",
-        "edit wording",
-        "replace wording",
-        "改 wording",
-        "改文案",
-        "改文字",
-        "改標籤",
-        "改标签",
-        "修改文案",
-        "修改文字",
-        "修改名稱",
-        "修改名称",
-        "改成",
-        "改為",
-        "改为",
-        "替換",
-        "替换",
-        "更改",
-        "修改",
-    )
-    if any(tok in lower for tok in confirm):
-        return "confirm_previous"
-    if any(tok in lower for tok in mutate):
-        return "mutate_explicit"
-    return "read"
-
-
-def mutation_allowed_for_decision(decision: AccessDecision, *, action: str, intent: str) -> bool:
+def mutation_allowed_for_decision(decision: AccessDecision, *, action: str) -> bool:
     if action not in MUTATION_ACTIONS:
         return True
     if not decision.allowed or not decision.mutation_allowed:
         return False
     if decision.trust_zone == "SHARED":
-        return False
-    if intent not in {"mutate_explicit", "confirm_previous"}:
         return False
     return action in decision.effective_capabilities

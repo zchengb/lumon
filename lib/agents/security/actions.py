@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-POLICY_VERSION = "m0.3.3"
+POLICY_VERSION = "m0.3.4"
 
 
 def new_receipt_id() -> str:

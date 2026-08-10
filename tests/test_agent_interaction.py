@@ -156,7 +156,7 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertTrue(decision["supersede_pending"])
         self.assertEqual("quick_change", decision["route"])
 
-    def test_explicit_trusted_context_defaults_to_mutation_intent(self) -> None:
+    def test_trusted_context_does_not_infer_authorization_from_text(self) -> None:
         request = bind_action_request(
             context=TrustedActionContext(
                 agent_id="milchick",
@@ -171,7 +171,8 @@ class AgentInteractionTests(unittest.TestCase):
             action="jira.workitem.create",
             arguments={"summary": "Version bump"},
         )
-        self.assertEqual("mutate_explicit", request.arguments["_authorization_intent"])
+        self.assertNotIn("_authorization_intent", request.arguments)
+        self.assertTrue(request.explicit_authorization)
 
     def test_interaction_contract_distinguishes_grill_from_quick_change(self) -> None:
         prompt = interaction_contract_prompt(agent_id="mark")

@@ -18,7 +18,7 @@ def _managed_block(project_slug: str) -> str:
         f"- agent.list / agent.health\n"
         f"- agent.job.create / list / show / cancel / retry\n"
         f"- jira.workitem.get / jira.workitem.query / jira.sprint.untested.report (via host TWG)\n"
-        f"- jira.workitem.create / jira.workitem.update (via host TWG; explicit intent)\n"
+        f"- jira.workitem.create / jira.workitem.update (via host TWG; Agent-selected structured action)\n"
         f"- project.status / workflow.status / schedule.status\n\n"
         f"## Delegation\n"
         f"- Test cases → Mark test_case.generate\n"

@@ -245,8 +245,7 @@ class MarkM10Tests(unittest.TestCase):
                 self.assertIn("1.2.4", first.get("text", ""))
                 self.assertEqual("ok", second.get("status"))
                 execute.assert_called_once()
-                self.assertTrue(execute.call_args.kwargs["context"].explicit_authorization)
-                self.assertEqual("mutate_explicit", execute.call_args.kwargs["context"].authorization_intent)
+                self.assertFalse(execute.call_args.kwargs["context"].explicit_authorization)
             finally:
                 if previous is None:
                     os.environ.pop("LUMEN_AGENTS_HOME", None)

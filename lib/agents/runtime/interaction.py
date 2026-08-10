@@ -366,7 +366,6 @@ def normalize_clarification(
         "question_budget": question_budget,
         "resource": _json_safe(payload.get("resource") if isinstance(payload.get("resource"), dict) else {}),
         "arguments": _json_safe(payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}),
-        "authorization_intent": str(payload.get("authorization_intent") or "").strip(),
         "source_message_id": source_message_id,
         "created_at": str(payload.get("created_at") or now.isoformat().replace("+00:00", "Z")),
         "expires_at": str(payload.get("expires_at") or (now + timedelta(days=1)).isoformat().replace("+00:00", "Z")),
@@ -444,7 +443,7 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         "Do not grill bounded quick changes such as a clearly scoped version bump. Inspect, ask only for missing execution fields, then proceed through the configured quick-change policy.",
         "For a structured grill question, include mode=grill, loop, impact, why, recommended, assumptions, stop_condition, question_number, and question_budget in the clarification JSON.",
         "For a Loop entry confirmation, include mode=loop_confirmation, loop=business or technical, action=loop.start, and two choices: start the Loop or keep this as normal conversation.",
-        "Jira is available to every Agent through the host TWG adapter: use jira.workitem.get/query and jira.sprint.untested.report for reads; use jira.workitem.create/update for explicit writes. Never run twg in the sandbox or invent Jira results.",
+        "Jira is available to every Agent through the host TWG adapter: use jira.workitem.get/query and jira.sprint.untested.report for reads; use jira.workitem.create/update when your interpretation of the latest request calls for a Jira write. Do not create a card merely because Jira was mentioned. Never run twg in the sandbox or invent Jira results.",
     ]
     if pending:
         safe = json.dumps(_json_safe(pending), ensure_ascii=False, separators=(",", ":"))

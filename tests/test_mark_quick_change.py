@@ -20,7 +20,6 @@ for path in (LIB, SCRIPTS):
 
 from agents.mark.delivery_adapter import DeliveryActionAdapter
 from agents.runtime.interaction import action_missing_fields, clarification_question
-from agents.security.access_policy import classify_authorization_intent
 from quick_change_runner import configured_publish_mode, normalize_target_files, run
 
 
@@ -51,7 +50,6 @@ class MarkQuickChangeTests(unittest.TestCase):
         )
         self.assertEqual("Which version should I upgrade it to?", clarification_question("delivery.quick_change", ["target_version"]))
         self.assertEqual("Which version should I upgrade it to?", clarification_question("jira.workitem.create", ["target_version"]))
-        self.assertEqual("mutate_explicit", classify_authorization_intent("Please upgrade the version number"))
 
     def test_target_file_and_publish_policy_helpers(self) -> None:
         self.assertEqual(["package.json", "src/version.ts"], normalize_target_files("package.json, src/version.ts"))

@@ -57,7 +57,7 @@ def _managed_block(project_slug: str) -> str:
         f"--finding <id> --json  (host/admin only; conversational path prefers ACTION_REQUEST)\n\n"
         f"## Jira\n"
         f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
-        f"- Create/update work items only through <ACTION_REQUEST> with explicit user intent\n\n"
+        f"- Create/update work items only through <ACTION_REQUEST> when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
         f"- Conversational Dylan is workspace-isolated (no host enumeration)\n"
         f"- Never read/edit ~/Desktop, /Applications, ~/Library, ~/.ssh, or ~/.lumen secrets\n"

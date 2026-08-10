@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from agents.security.access_policy import AccessDecision, classify_authorization_intent
+from agents.security.access_policy import AccessDecision
 from agents.security.actions import ActionReceipt, ActionRequest
 from agents.security.broker import CapabilityBroker
 
@@ -18,7 +18,6 @@ class TrustedActionContext:
     source_message_id: str
     trace_id: str
     chat_type: str = ""
-    authorization_intent: str = "none"
     access_decision: AccessDecision | None = None
     explicit_authorization: bool = False
 
@@ -29,17 +28,9 @@ def trusted_context_from_meta(
     project_slug: str,
     meta: dict[str, str],
     trace_id: str,
-    user_text: str = "",
     access_decision: AccessDecision | None = None,
     explicit_authorization: bool | None = None,
-    authorization_intent: str | None = None,
 ) -> TrustedActionContext:
-    requested_intent = str(authorization_intent or "").strip().lower()
-    intent = requested_intent if requested_intent in {"none", "read", "mutate_explicit", "confirm_previous"} else classify_authorization_intent(user_text)
-    explicit = bool(explicit_authorization) if explicit_authorization is not None else intent in {
-        "mutate_explicit",
-        "confirm_previous",
-    }
     return TrustedActionContext(
         agent_id=str(agent_id or "").strip().lower(),
         project_slug=str(project_slug or "").strip(),
@@ -49,9 +40,8 @@ def trusted_context_from_meta(
         source_message_id=str(meta.get("message_id") or "").strip(),
         trace_id=str(trace_id or "").strip(),
         chat_type=str(meta.get("chat_type") or "").strip(),
-        authorization_intent=intent,
         access_decision=access_decision,
-        explicit_authorization=explicit,
+        explicit_authorization=bool(explicit_authorization),
     )
 
 
@@ -64,10 +54,6 @@ def bind_action_request(
 ) -> ActionRequest:
     args = dict(arguments or {})
     args.setdefault("chat_type", context.chat_type)
-    intent = context.authorization_intent
-    if context.explicit_authorization and intent == "none":
-        intent = "mutate_explicit"
-    args.setdefault("_authorization_intent", intent)
     return ActionRequest(
         agent_id=context.agent_id,
         action=str(action or "").strip(),

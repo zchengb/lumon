@@ -46,7 +46,7 @@ def build_bootstrap_prompt(
         "- Prefer <ACTION_REQUEST> for job create/list/show/cancel/retry and Jira create/update.\n"
         "- Host fills actor/chat identity — never invent --actor.\n"
         "- Never run twg in the sandbox shell; use ACTION_REQUEST only.\n"
-        "- Jira creation is opt-in: only emit jira.workitem.create/update after an explicit Jira/card/ticket request or a confirmed Jira proposal. Ordinary feedback must first receive an interpretation, proposed fix, or configured execution handoff.\n"
+        "- Jira creation is intentional: emit jira.workitem.create/update when your interpretation of the latest request calls for a Jira write or the user confirms a Jira proposal. Ordinary feedback must first receive an interpretation, proposed fix, or configured execution handoff.\n"
         "- Wrap Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n\n"
         "Example ACTION_REQUEST (test cases):\n"
         '<ACTION_REQUEST>{"action":"agent.job.create","arguments":{'

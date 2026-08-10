@@ -89,14 +89,7 @@ class CapabilityBroker:
                     )
                     raise AuthorizationDenied(f"host capability denied in zone {decision.trust_zone}")
             if action in MUTATION_ACTIONS:
-                intent = "none"
-                if request.explicit_authorization:
-                    intent = "mutate_explicit"
-                if isinstance(request.arguments, dict) and request.arguments.get("_authorization_intent"):
-                    stamped = str(request.arguments.get("_authorization_intent") or "none")
-                    if stamped in {"mutate_explicit", "confirm_previous"} or not request.explicit_authorization:
-                        intent = stamped
-                if not mutation_allowed_for_decision(decision, action=action, intent=intent):
+                if not mutation_allowed_for_decision(decision, action=action):
                     emit_security_event(
                         "agent.access.mutation_denied",
                         agent_id=agent_id,
@@ -104,10 +97,9 @@ class CapabilityBroker:
                         trust_zone=decision.trust_zone,
                         actor_user_id=request.actor_user_id,
                         chat_id=request.chat_id,
-                        intent=intent,
                     )
                     raise AuthorizationDenied(
-                        f"mutation denied for zone={decision.trust_zone or '-'} intent={intent}"
+                        f"mutation denied for zone={decision.trust_zone or '-'} action={action}"
                     )
             args = dict(request.arguments or {})
             args["_access_decision"] = {
