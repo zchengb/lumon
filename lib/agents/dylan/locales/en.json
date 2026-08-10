@@ -5,7 +5,7 @@
   "timeout": "I couldn't finish this check in time. The Scan and stored risk data were not changed.",
   "model_unavailable": "I understood the question, but the language model is unavailable right now. Falling back to stored evidence.",
   "agent_unavailable": "I couldn't reach the Agent planner right now. No heuristic guess was made. Please retry shortly.",
-  "agent_auth_required": "Cursor Agent is not authenticated on this machine. Run `agent login`, or set CURSOR_API_KEY in ~/.lumen/.env.local, then restart `lumen agents start`.",
+  "agent_auth_required": "Cursor Agent is not authenticated on this machine. Run `agent login`, or set CURSOR_API_KEY in ~/.lumon/.env.local, then restart `lumen agents start`.",
   "tool_unavailable": "I understood the question, but I couldn't read the current risk store. The Scan was not changed.",
   "no_project": "Which Project should I check? Please include a slug, for example: mbpass.",
   "no_finding": "I couldn't identify which Finding you mean. Share an ID, or ask for the top risks first.",

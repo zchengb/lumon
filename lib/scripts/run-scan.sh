@@ -4,7 +4,7 @@ set -euo pipefail
 # Usage: run-scan.sh <workspace-dir>
 WORKSPACE_ROOT="${1:?Usage: run-scan.sh <workspace-dir>}"
 LUMEN_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LUMEN_HOME="${LUMEN_HOME:-$HOME/.lumen}"
+LUMEN_HOME="${LUMEN_HOME:-$HOME/.lumon}"
 
 if [[ -f "${LUMEN_LIB_DIR}/ensure-path.sh" ]]; then
   # shellcheck source=/dev/null

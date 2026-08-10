@@ -20,7 +20,7 @@ def risk_db_path(workspace: Path) -> Path:
 
 def global_db_path() -> Path:
     override = os.environ.get("LUMEN_AGENTS_HOME", "").strip()
-    home = Path(override).expanduser() if override else Path.home() / ".lumen" / "agents"
+    home = Path(override).expanduser() if override else Path.home() / ".lumon" / "agents"
     return home / "agents.sqlite3"
 
 
@@ -289,7 +289,7 @@ class GlobalAgentStore:
         ).fetchone()
         if row is not None:
             return
-        path = Path.home() / ".lumen" / "agents" / "chat_projects.json"
+        path = Path.home() / ".lumon" / "agents" / "chat_projects.json"
         if path.is_file():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))

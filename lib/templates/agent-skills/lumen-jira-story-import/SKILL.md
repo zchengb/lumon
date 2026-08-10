@@ -16,7 +16,7 @@ lumen jira import <JIRA-KEY> [--project <slug>]
 Or run the installed helper directly against the workspace root that contains `stories/` and `lumen/`:
 
 ```bash
-python3 "${LUMEN_HOME:-$HOME/.lumen}/lib/scripts/import_jira_story.py" "<workspace-root>" <JIRA-KEY>
+python3 "${LUMEN_HOME:-$HOME/.lumon}/lib/scripts/import_jira_story.py" "<workspace-root>" <JIRA-KEY>
 ```
 
 The command creates the linked Story folder on first use. On later use it reads Jira again and updates the auditable snapshot without overwriting `story.md`.

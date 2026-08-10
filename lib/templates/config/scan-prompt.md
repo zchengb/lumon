@@ -39,5 +39,5 @@ Legacy manifests that only list `snippets` still inline every file (old behavior
 ## Compose manually
 
 ```bash
-python3 ~/.lumen/lib/scripts/compose_scan_prompt.py /path/to/workspace/lumen
+python3 ~/.lumon/lib/scripts/compose_scan_prompt.py /path/to/workspace/lumen
 ```

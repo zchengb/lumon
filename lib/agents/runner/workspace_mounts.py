@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def lumen_home() -> Path:
-    return Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumen")).expanduser().resolve()
+    return Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumon")).expanduser().resolve()
 
 
 def runner_root(agent_id: str) -> Path:

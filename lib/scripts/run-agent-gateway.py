@@ -36,9 +36,9 @@ def _load_dotenv(path: Path) -> None:
 
 
 def bootstrap_env() -> None:
-    home = Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumen"))
+    home = Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumon"))
     _load_dotenv(home / ".env.local")
-    _load_dotenv(Path.home() / ".lumen" / ".env.local")
+    _load_dotenv(Path.home() / ".lumon" / ".env.local")
 
 
 def pid_path() -> Path:

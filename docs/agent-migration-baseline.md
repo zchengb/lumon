@@ -48,7 +48,7 @@ Regression checklist for Feishu multi-agent work. Re-verify after each PR that t
 ### Ops (Dylan)
 
 1. Create Feishu self-built app "Dylan", enable bot + long connection, subscribe `im.message.receive_v1`.
-2. Set `FEISHU_DYLAN_APP_ID` / `FEISHU_DYLAN_APP_SECRET` in `~/.lumen/.env.local` or `$LUMEN_HOME/.env.local`.
+2. Set `FEISHU_DYLAN_APP_ID` / `FEISHU_DYLAN_APP_SECRET` in `~/.lumon/.env.local` or `$LUMEN_HOME/.env.local`.
 3. Write `$LUMEN_HOME/agents/config.json` with `{"enabled": true}` (template: `lib/templates/agents/config.json`) or export `LUMEN_AGENTS_ENABLED=1`.
 4. Install WS dependency once: `pip install lark-oapi`.
 5. Run `lumen agents start` (foreground). Use `status` / `stop` for lifecycle.

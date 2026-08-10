@@ -69,7 +69,7 @@ The docs repository is the delivery workspace. It owns the stable source checkou
 The coding guideline lives in the Lumen CLI install:
 
 ```text
-~/.lumen/lib/standards/coding-guideline.md
+~/.lumon/lib/standards/coding-guideline.md
 ```
 
 `lumen delivery run` injects it into the delivery agent prompt. It is not copied into the docs repository.

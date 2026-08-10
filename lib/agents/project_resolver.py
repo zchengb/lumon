@@ -71,7 +71,7 @@ def resolve_project(slug: str = "", chat_id: str = "", mapping: Optional[dict] =
 
 
 def chat_project_map_path() -> Path:
-    return Path.home() / ".lumen" / "agents" / "chat_projects.json"
+    return Path.home() / ".lumon" / "agents" / "chat_projects.json"
 
 
 def load_chat_project_map() -> dict:

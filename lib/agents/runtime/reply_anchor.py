@@ -10,7 +10,7 @@ def agents_home() -> Path:
     override = os.environ.get("LUMEN_AGENTS_HOME", "").strip()
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".lumen" / "agents"
+    return Path.home() / ".lumon" / "agents"
 
 
 def outbound_path(agent_id: str = "dylan") -> Path:

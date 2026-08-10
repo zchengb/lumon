@@ -60,7 +60,7 @@ def _managed_block(project_slug: str) -> str:
         f"- Create/update work items only through <ACTION_REQUEST> when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
         f"- Conversational Dylan is workspace-isolated (no host enumeration)\n"
-        f"- Never read/edit ~/Desktop, /Applications, ~/Library, ~/.ssh, or ~/.lumen secrets\n"
+        f"- Never read/edit ~/Desktop, /Applications, ~/Library, ~/.ssh, or ~/.lumon secrets\n"
         f"- Host mutations go through host-side Capability Broker via <ACTION_REQUEST>\n"
         f"- Do not supply actor_user_id, chat_id, or explicit_authorization\n"
         f"- Do not use python/node/curl/ls/find to probe the host\n\n"

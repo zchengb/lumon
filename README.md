@@ -23,7 +23,7 @@ The system is intentionally local-first. Source repositories, configuration, cre
 curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/main/get.sh | bash
 ```
 
-The installer places the executable in `~/.local/bin/lumon` and the supporting library in `~/.lumon/`. `lumen` and `~/.lumen/` remain compatibility aliases for existing workspaces.
+The installer places the executable in `~/.local/bin/lumon` and the supporting library in `~/.lumon/`. `lumen` remains a compatibility executable alias; old `~/.lumen/` installations should be migrated to `~/.lumon/`.
 
 ### Local checkout
 
@@ -266,8 +266,8 @@ There is no permanent “forever” personal access token for TWG. For fully hea
 **Manual refresh**
 
 ```bash
-python3 ~/.lumen/lib/scripts/jira_sync.py refresh --scan-workspace <workspace>/lumen
-python3 ~/.lumen/lib/scripts/jira_sync.py refresh --delivery-workspace <workspace>/lumen
+python3 ~/.lumon/lib/scripts/jira_sync.py refresh --scan-workspace <workspace>/lumen
+python3 ~/.lumon/lib/scripts/jira_sync.py refresh --delivery-workspace <workspace>/lumen
 ```
 
 These commands refresh only when Jira sync is enabled for that workspace.

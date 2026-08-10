@@ -130,7 +130,7 @@ def _load_lumen_dotenv() -> None:
     override = os.environ.get("LUMEN_HOME", "").strip()
     if override:
         homes.append(Path(override).expanduser())
-    homes.append(Path.home() / ".lumen")
+    homes.append(Path.home() / ".lumon")
     seen: set[Path] = set()
     for home in homes:
         path = home / ".env.local"

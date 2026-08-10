@@ -70,7 +70,7 @@ def schedule_update(project: str, cron: str) -> dict[str, Any]:
         raise ResourceDenied("unsupported cron expression")
     workspace = _project_workspace(slug)
     lumen_bin = shutil.which("lumen") or str(Path.home() / ".local/bin/lumen")
-    lumen_home = os.environ.get("LUMEN_HOME", str(Path.home() / ".lumen"))
+    lumen_home = os.environ.get("LUMEN_HOME", str(Path.home() / ".lumon"))
     log_file = str((workspace or Path.home()) / "lumen" / "logs" / "scan-schedule.log")
     if workspace:
         log_dir = workspace / "lumen" / "logs" if (workspace / "lumen").is_dir() else workspace / "logs"

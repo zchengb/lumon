@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-LUMEN_HOME = Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumen"))
+LUMEN_HOME = Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumon"))
 REGISTRY_PATH = LUMEN_HOME / "projects.json"
 CONFIG_PATH = LUMEN_HOME / "config.json"
 SCHEMA_VERSION = "1.0"

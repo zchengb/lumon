@@ -52,7 +52,7 @@ def _system_health() -> dict[str, Any]:
     return {
         "agents": [{"id": d.id, "role": d.role} for d in list_definitions()],
         "workspace_isolation_v2": workspace_isolation_v2_enabled(),
-        "lumen_home": str(Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumen")).expanduser()),
+        "lumen_home": str(Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumon")).expanduser()),
     }
 
 

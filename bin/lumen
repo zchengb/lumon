@@ -10,10 +10,8 @@ elif [[ -z "${LUMEN_HOME:-}" && -f "${LUMEN_CLI_ROOT}/lib/scripts/workspace_conf
 else
   if [[ -n "${LUMEN_HOME:-}" ]]; then
     LUMEN_HOME="${LUMEN_HOME}"
-  elif [[ -d "$HOME/.lumon" || ! -d "$HOME/.lumen" ]]; then
-    LUMEN_HOME="$HOME/.lumon"
   else
-    LUMEN_HOME="$HOME/.lumen"
+    LUMEN_HOME="$HOME/.lumon"
   fi
 fi
 if [[ -f "${LUMEN_HOME}/lib/scripts/ensure-path.sh" ]]; then
@@ -436,7 +434,7 @@ Usage:
   lumen help                    Show this help message
 
 Environment:
-  LUMEN_HOME                    Lumen CLI installation directory (default: ~/.lumen)
+  LUMEN_HOME                    Lumon installation directory (default: ~/.lumon)
   CURSOR_AGENT_MODEL            Overrides the Cursor model set in config/common.json (execution.model)
   FEISHU_WEBHOOK_URL            Optional shell override for a workspace Feishu webhook
 
@@ -445,7 +443,7 @@ Feishu webhook resolution order (highest priority first):
   2. <workspace>/.env.local (per-project, set with 'lumen config set-webhook <url> --project <slug>')
 
 Project registry:
-  Registered projects are stored in ~/.lumen/projects.json
+  Registered projects are stored in ~/.lumon/projects.json
   Select a project by slug:
     lumen scan --project mbpass
     lumen use mbpass && lumen scan
@@ -4113,7 +4111,7 @@ cmd_agents() {
       printf '  lumen agents security-check [--agent dylan|mark] [--project <slug>]\n'
       printf '  lumen agents action --agent <id> --action <name> [options]\n'
       printf '  lumen agents logs --agent dylan [--follow] [--trace id] [--event name] [--level LEVEL]\n'
-      printf '\nEnable with ~/.lumen/agents/config.json {"enabled": true} or LUMEN_AGENTS_ENABLED=1\n'
+      printf '\nEnable with ~/.lumon/agents/config.json {"enabled": true} or LUMEN_AGENTS_ENABLED=1\n'
       printf 'Credentials: FEISHU_DYLAN_APP_ID / FEISHU_DYLAN_APP_SECRET\n'
       ;;
     *)

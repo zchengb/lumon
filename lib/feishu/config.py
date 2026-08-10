@@ -11,7 +11,7 @@ def agents_home() -> Path:
     if override:
         path = Path(override).expanduser().resolve()
     else:
-        path = Path.home() / ".lumen" / "agents"
+        path = Path.home() / ".lumon" / "agents"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -36,7 +36,7 @@ def save_agents_config(config: dict[str, Any]) -> Path:
 
 
 def lumen_env_local_path() -> Path:
-    home = Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumen")).expanduser()
+    home = Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumon")).expanduser()
     return home / ".env.local"
 
 

@@ -5,7 +5,7 @@
   "timeout": "这次检查超时了。Scan 与已存风险数据没有被改动。",
   "model_unavailable": "我理解了问题，但目前无法使用语言模型，会改用已存证据回答。",
   "agent_unavailable": "当前无法连接 Agent 规划器，没有做关键词猜测。请稍后重试。",
-  "agent_auth_required": "本机 Cursor Agent 尚未登录。请运行 `agent login`，或在 ~/.lumen/.env.local 设置 CURSOR_API_KEY，然后重启 `lumen agents start`。",
+  "agent_auth_required": "本机 Cursor Agent 尚未登录。请运行 `agent login`，或在 ~/.lumon/.env.local 设置 CURSOR_API_KEY，然后重启 `lumen agents start`。",
   "tool_unavailable": "我理解了问题，但读取风险数据失败。Scan 没有被改动。",
   "no_project": "你指的是哪个 Project？请写明 slug，例如：mbpass。",
   "no_finding": "我还无法确定你指的是哪个 Finding。可以给编号，或先问最近最大的风险。",

@@ -46,7 +46,7 @@ class AgentJob:
 class AgentJobStore:
     def __init__(self, path: Path | None = None) -> None:
         if path is None:
-            home = Path.home() / ".lumen" / "agents"
+            home = Path.home() / ".lumon" / "agents"
             home.mkdir(parents=True, exist_ok=True)
             path = home / "agent_jobs.sqlite3"
         self.path = Path(path)
