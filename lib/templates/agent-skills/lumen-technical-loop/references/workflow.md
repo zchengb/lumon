@@ -2,6 +2,8 @@
 
 # Technical Loop workflow
 
+The Feishu Loop Gateway is an accepted entry point. A clear natural-language request to turn a business-ready requirement or Story into a technical plan/design starts this workflow directly; an ambiguous request gets one confirmation. The gateway never authorizes delivery or code changes.
+
 Frontend delivery is disabled. Do not plan or approve Web, Native, mobile UI, frontend source, Figma-to-code, browser/device runtime, Visual Delivery Contract, or visual QA work. Keep it out of scope or blocked and return to the Business Loop if the Story cannot be delivered without frontend changes. Backend-only work may proceed only when it is independently deliverable without frontend changes.
 
 Preflight safely refreshes the docs and relevant clean repositories. For a Story with `metadata.json.jiraKey`, invoke `$lumen-jira-story-import` before reading requirements. If `jiraSyncStatus` is `changed`, ask exactly: `Jira changed since this Story was confirmed. A. Pull and reconcile the Jira changes in the Business Loop B. Keep the local Story and continue technical planning C. Review the difference first`. Only A returns to the Business Loop; B is an explicit local-source decision and may continue planning. Gate on one Story with `businessStatus: ready`; keep `technicalStatus` as `draft` until explicit approval. Inspect real repositories, build/test setup, permission patterns, and affected modules before planning. Never modify application source code.

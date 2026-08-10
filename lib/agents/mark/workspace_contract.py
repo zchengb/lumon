@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "1"
+MANAGED_VERSION = "2"
 _MANAGED_START = f"<!-- LUMEN MARK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MARK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MARK MANAGED START"
@@ -26,6 +26,12 @@ def _managed_block(project_slug: str) -> str:
         f"- Explicit start only → lumen delivery run\n"
         f"- Follow-up from progress/result files\n"
         f"- Finalize (commit/push/PR/notify) stays in Lumen pipeline\n\n"
+        f"## Business / Technical Loops\n"
+        f"- Feishu natural language: create/capture/turn into a requirement → Business Loop\n"
+        f"- Turn a business-ready requirement into a technical plan/design → Technical Loop\n"
+        f"- Clear intent starts the matching Loop; ambiguous intent gets one confirmation\n"
+        f"- Loop entry is not delivery authorization; `delivery.start` still requires explicit authorization\n"
+        f"- Business Loop owns topic/story artifacts; Technical Loop owns technical-plan.md and technicalStatus\n\n"
         f"## Commands\n"
         f"- lumen delivery readiness --story <id> --json\n"
         f"- lumen delivery status --story <id> --json\n"

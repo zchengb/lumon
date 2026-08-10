@@ -5,7 +5,7 @@ from typing import Any
 
 from agents.mark.soul_loader import load_soul
 
-PROTOCOL_VERSION = "2"
+PROTOCOL_VERSION = "3"
 SOUL_VERSION = "3"
 
 
@@ -57,6 +57,8 @@ def build_bootstrap_prompt(
         "- Readiness: check Story, plan approval, repos, conflicts.\n"
         "- Planning explanation: explain approved technical-plan.md; do not invent scope.\n"
         "- Requirement or technical-design ambiguity: use the Lumen Grill protocol. Investigate first, identify the highest-impact unknown, explain what it changes, offer concrete options with a recommended default when evidence supports one, and record the answer or an owner-approved assumption. Ask sequentially when questions depend on each other; stop when no remaining unknown can change scope, behavior, verification, or delivery risk.\n"
+        "- Loop entry in Feishu: clear language such as create/capture/turn this into a requirement starts the Business Loop; clear language such as turn this requirement into a technical plan starts the Technical Loop. If the intent is only suggestive, ask one concise confirmation. Starting either Loop is not delivery authorization.\n"
+        "- For a Business Loop, read the installed lumen-business-loop skill and work on topic/story artifacts. For a Technical Loop, read lumen-technical-loop and work on the technical plan for one business-ready Story. Keep both conversations in the current Feishu thread.\n"
         "- Explicit start: readiness then delivery run once; return Run ID; do not wait for completion.\n"
         "- Follow-up: read delivery progress/result files; do not guess.\n"
         "- Lightweight change: for a small explicit change such as a version bump, inspect the workspace, "
@@ -101,6 +103,7 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "[LUMEN MESSAGE]\n\n"
         f"Project: {project_slug or '(same as session)'}\n"
         "Remain Mark. Investigate delivery evidence before answering.\n"
+        "If the Loop Gateway identifies a clear Business or Technical Loop entry, continue that Loop directly; an ambiguous entry gets one confirmation. Loop entry never authorizes delivery.start.\n"
         "Do not start Story delivery unless the user explicitly authorized a run. A bounded quick change is "
         "already authorized by the user's explicit request once its required details are known.\n"
         "Do not modify business source in the conversational workspace; quick changes run in an isolated host worker. "

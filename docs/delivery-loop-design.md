@@ -14,6 +14,37 @@ Technical Loop  -> technical-plan.md    (Codex / Cursor)
 Development Loop -> code + PR          (lumen delivery run)
 ```
 
+## Feishu Loop Gateway
+
+Feishu is the conversation surface; the workspace remains the source of truth for `topic.md`, `story.md`, `technical-plan.md`, and `metadata.json`. Users do not need to name an internal Loop. Mark is the default group entry point when a message has clear requirement or technical-plan language and no Agent is mentioned; replies continue in the same Feishu thread.
+
+| User language | Gateway decision | Workflow boundary |
+|---|---|---|
+| “Create/capture/turn this into a requirement” | Start Business Loop directly | Topic/Story artifacts only |
+| “Turn this requirement into a technical plan/design” | Start Technical Loop directly | One business-ready Story and its technical plan |
+| “Let’s整理/梳理 this requirement” | Ask one confirmation with options | No artifact change before confirmation |
+| “What is the Business Loop?” | Normal conversation | No Loop starts |
+
+The gateway persists a pending confirmation in the Agent session and the active Loop in its checkpoint. A numeric reply such as `1` or a natural confirmation such as “开始” resumes the same thread and starts the workflow. Starting either Loop is never delivery authorization: `delivery.start` still requires an explicit user instruction after Business and Technical gates are satisfied.
+
+```mermaid
+flowchart TD
+    A[Feishu group message] --> B{Loop language clear?}
+    B -->|Business| C[Start Business Loop]
+    B -->|Technical| D[Start Technical Loop]
+    B -->|Suggestive only| E[Ask one confirmation]
+    B -->|No| F[Normal Agent conversation]
+    E -->|Confirm| C
+    E -->|Decline| F
+    C --> G[Update topic/Story artifacts]
+    G --> H{Business ready and technical work requested?}
+    H -->|Yes| D
+    D --> I[Update technical plan and technical status]
+    I --> J{Explicit delivery authorization?}
+    J -->|Yes| K[Development / Delivery Loop]
+    J -->|No| L[Remain in planning]
+```
+
 ## Workspace layout
 
 The docs repository is the delivery workspace. It owns the stable source checkouts, delivery state, and Story-specific feature worktrees:

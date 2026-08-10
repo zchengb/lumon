@@ -90,6 +90,70 @@ SECURE_PERMISSIONS = {
 
 DEFAULT_PERMISSIONS = SECURE_PERMISSIONS
 
+# Loop planning needs to persist business/technical artifacts, but it must not
+# turn the conversational Agent into a source-code or publishing worker.
+LOOP_PERMISSIONS = {
+    "permissions": {
+        "allow": [
+            "Read(**)",
+            "Write(topics/**)",
+            "Write(stories/**)",
+            "Shell(lumen)",
+            "Shell(rg)",
+            "Shell(git)",
+        ],
+        "deny": [
+            "Write(**/.env*)",
+            "Write(**/*.pem)",
+            "Write(**/*.key)",
+            "Write(.cursor/**)",
+            "Write(AGENTS.md)",
+            "Write(lumen/**)",
+            "Write(repos/**)",
+            "Write(lumen/worktrees/**)",
+            "Write(**/.git/**)",
+            "Write(**/package.json)",
+            "Write(**/pyproject.toml)",
+            "Write(**/*.py)",
+            "Write(**/*.java)",
+            "Write(**/*.kt)",
+            "Write(**/*.js)",
+            "Write(**/*.jsx)",
+            "Write(**/*.ts)",
+            "Write(**/*.tsx)",
+            "Write(**/*.go)",
+            "Write(**/*.rs)",
+            "Write(**/*.rb)",
+            "Write(**/*.swift)",
+            "Write(**/*.c)",
+            "Write(**/*.cc)",
+            "Write(**/*.cpp)",
+            "Write(**/*.h)",
+            "Write(**/*.hpp)",
+            "Shell(ls)",
+            "Shell(find)",
+            "Shell(cat)",
+            "Shell(head)",
+            "Shell(tail)",
+            "Shell(wc)",
+            "Shell(python)",
+            "Shell(python3)",
+            "Shell(node)",
+            "Shell(npm)",
+            "Shell(pnpm)",
+            "Shell(yarn)",
+            "Shell(sudo)",
+            "Shell(ssh)",
+            "Shell(scp)",
+            "Shell(curl)",
+            "Shell(wget)",
+            *HOST_INTROSPECTION_DENY,
+            *GIT_WRITE_DENY,
+            "Shell(git add)",
+        ],
+    }
+}
+
 
 def write_permission_profile(workspace: Path, *, force: bool = True) -> Path:
     cursor_dir = Path(workspace).expanduser().resolve() / ".cursor"
@@ -97,6 +161,15 @@ def write_permission_profile(workspace: Path, *, force: bool = True) -> Path:
     path = cursor_dir / "cli.json"
     if force or not path.is_file():
         path.write_text(json.dumps(SECURE_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def write_loop_permission_profile(workspace: Path, *, force: bool = True) -> Path:
+    cursor_dir = Path(workspace).expanduser().resolve() / ".cursor"
+    cursor_dir.mkdir(parents=True, exist_ok=True)
+    path = cursor_dir / "cli.json"
+    if force or not path.is_file():
+        path.write_text(json.dumps(LOOP_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
     return path
 
 

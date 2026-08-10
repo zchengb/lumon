@@ -21,6 +21,7 @@ from agents.runtime.interaction import (
     normalize_clarification,
     version_upgrade_choices,
 )
+from agents.runtime.loop_intent import classify_loop_intent, loop_confirmation_text, loop_gateway_prompt
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
@@ -160,6 +161,40 @@ def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dic
     if current_version:
         enriched["current_version"] = current_version
     return enriched
+
+
+def _loop_gateway_result(
+    *,
+    action: str,
+    text: str,
+    pending: dict[str, Any] | None,
+    trace: TraceContext,
+    session: dict[str, Any],
+    project_slug: str,
+    workspace: Path,
+    agent_id: str,
+    bootstrap: bool,
+) -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "action": action,
+        "text": text,
+        "final_response_mode": "loop_confirmation",
+        "final_response_valid": True,
+        "action_receipts": [],
+        "pending_clarification": pending,
+        "trace_id": trace.trace_id,
+        "session_id": session["session_id"],
+        "provider_session_id": session.get("provider_session_id") or "",
+        "project_slug": project_slug,
+        "workspace": str(workspace),
+        "agent_id": agent_id,
+        "latency_ms": 0,
+        "tool_events": [],
+        "bootstrap": bootstrap,
+        "typing": {"enabled": False},
+        "flags": {"conversation_v4": True, "mode": "loop_gateway"},
+    }
 
 
 def handle_autonomous_conversation(
@@ -307,6 +342,7 @@ def handle_autonomous_conversation(
             return shortcut
 
     lock = store.lock_for(scope)
+    loop_permissions_enabled = False
     with lock:
         try:
             obs.emit(trace, "agent.message.received")
@@ -330,25 +366,31 @@ def handle_autonomous_conversation(
                 )
                 store.close_session(session["session_id"])
                 session = None
+            checkpoint: dict[str, Any] | None = None
             if session and session.get("checkpoint_json"):
                 try:
                     prior = json.loads(session["checkpoint_json"])
                 except Exception:
                     prior = None
                 if isinstance(prior, dict):
+                    checkpoint = prior
                     prior_zone = str(prior.get("trust_zone") or "")
                     prior_exposure = str(prior.get("exposure_mode") or "")
                     if prior_zone and prior_zone != str(access.trust_zone or ""):
                         obs.emit(trace, "agent.session.trust_zone_mismatch", prior=prior_zone, current=access.trust_zone)
                         store.close_session(session["session_id"])
                         session = None
+                        checkpoint = None
                     elif prior_exposure and prior_exposure != str(access.exposure_mode or ""):
                         store.close_session(session["session_id"])
                         session = None
+                        checkpoint = None
 
             is_new = session is None
             pending: dict[str, Any] | None = None
-            if is_new:
+            if session is not None and not is_new and str(Path(session["workspace_path"]).resolve()) != str(workspace):
+                store.close_session(session["session_id"])
+                checkpoint = None
                 session = store.create(
                     agent_id=agent_id,
                     chat_id=chat_id,
@@ -359,52 +401,135 @@ def handle_autonomous_conversation(
                     soul_version=definition.soul_version,
                     protocol_version=definition.protocol_version,
                 )
+                is_new = True
+            if session is not None and not is_new:
+                pending = store.get_pending(session)
+            elif is_new:
+                session = session or store.create(
+                    agent_id=agent_id,
+                    chat_id=chat_id,
+                    conversation_scope_id=scope,
+                    workspace_path=str(workspace),
+                    project_slug=slug,
+                    user_id=user_id,
+                    soul_version=definition.soul_version,
+                    protocol_version=definition.protocol_version,
+                )
+            active_loop = str((checkpoint or {}).get("active_loop") or "").strip().lower()
+            loop_intent = (
+                classify_loop_intent(text, active_loop=active_loop, pending=pending)
+                if agent_id == "mark"
+                else classify_loop_intent("")
+            )
+            if agent_id == "mark" and loop_intent.decision in {"direct", "continue"}:
+                from agents.dylan.permission_policy import write_loop_permission_profile
+
+                loop_permissions_enabled = True
+                write_loop_permission_profile(workspace, force=True)
+
+            def _prompt_with_contract(base: str, current_pending: dict[str, Any] | None = None) -> str:
+                gateway = loop_gateway_prompt(loop_intent, active_loop=active_loop)
+                return "\n\n".join(
+                    part
+                    for part in (
+                        base,
+                        security_block,
+                        interaction_contract_prompt(agent_id=agent_id, pending=current_pending),
+                        gateway,
+                    )
+                    if part
+                )
+
+            if loop_intent.decision == "confirm":
+                chinese = bool(re.search(r"[\u4e00-\u9fff]", text))
+                loop_pending = normalize_clarification(
+                    {
+                        "action": "loop.start",
+                        "mode": "loop_confirmation",
+                        "loop": loop_intent.loop,
+                        "question": loop_confirmation_text(loop_intent, chinese=chinese),
+                        "missing": ["loop"],
+                        "choices": [
+                            {
+                                "value": loop_intent.loop,
+                                "label": f"Start {loop_intent.loop.title()} Loop" if not chinese else f"开始 {loop_intent.loop.title()} Loop",
+                                "description": "Enter the workflow and keep the conversation in this Feishu thread"
+                                if not chinese
+                                else "进入对应流程，并继续在当前飞书线程中沟通",
+                                "recommended": True,
+                            },
+                            {
+                                "value": "decline",
+                                "label": "Keep normal conversation" if not chinese else "先不启动",
+                                "description": "Do not create or update Loop artifacts" if not chinese else "不创建或修改 Loop 文档",
+                                "recommended": False,
+                            },
+                        ],
+                        "impact": "Starting a Loop creates or updates its planning artifacts; it does not authorize code delivery.",
+                        "why": loop_intent.reason,
+                        "recommended": f"Start {loop_intent.loop.title()} Loop" if not chinese else f"开始 {loop_intent.loop.title()} Loop",
+                        "stop_condition": "Stop asking for entry confirmation after the user chooses an option.",
+                    },
+                    agent_id=agent_id,
+                    source_message_id=message_id,
+                )
+                if loop_pending is not None:
+                    store.save_pending(session["session_id"], loop_pending)
+                obs.emit(trace, "loop.gateway.confirmation", loop=loop_intent.loop, confidence=loop_intent.confidence)
+                obs.upsert_trace(trace, state="completed", project_slug=slug)
+                return _loop_gateway_result(
+                    action="autonomous.loop_confirmation",
+                    text=loop_confirmation_text(loop_intent, chinese=chinese),
+                    pending=loop_pending,
+                    trace=trace,
+                    session=session,
+                    project_slug=slug,
+                    workspace=workspace,
+                    agent_id=agent_id,
+                    bootstrap=is_new,
+                )
+
+            if loop_intent.decision == "decline" and pending:
+                store.clear_pending(session["session_id"])
+                chinese = bool(re.search(r"[\u4e00-\u9fff]", text))
+                declined = (
+                    "好的，我先不启动这个 Loop，继续按普通对话处理。"
+                    if chinese
+                    else "Understood. I won't start the Loop; we can keep this as a normal conversation."
+                )
+                obs.emit(trace, "loop.gateway.declined", loop=pending.get("loop") or "")
+                obs.upsert_trace(trace, state="completed", project_slug=slug)
+                return _loop_gateway_result(
+                    action="autonomous.loop_declined",
+                    text=declined,
+                    pending=None,
+                    trace=trace,
+                    session=session,
+                    project_slug=slug,
+                    workspace=workspace,
+                    agent_id=agent_id,
+                    bootstrap=is_new,
+                )
+
+            if is_new:
                 prompt = definition.build_bootstrap_prompt(
                     project_slug=slug,
                     workspace_path=str(workspace),
                     user_message=anchored_text,
                 )
-                prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id)}"
+                prompt = _prompt_with_contract(prompt)
                 provider_session_id = None
             else:
-                if str(Path(session["workspace_path"]).resolve()) != str(workspace):
-                    store.close_session(session["session_id"])
-                    session = store.create(
-                        agent_id=agent_id,
-                        chat_id=chat_id,
-                        conversation_scope_id=scope,
-                        workspace_path=str(workspace),
-                        project_slug=slug,
-                        user_id=user_id,
-                        soul_version=definition.soul_version,
-                        protocol_version=definition.protocol_version,
-                    )
-                    prompt = definition.build_bootstrap_prompt(
-                        project_slug=slug,
-                        workspace_path=str(workspace),
-                        user_message=anchored_text,
-                    )
-                    prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id)}"
-                    provider_session_id = None
-                    is_new = True
-                else:
-                    pending = store.get_pending(session)
-                    choice_hint = clarification_choice_hint(text, pending)
-                    if choice_hint:
-                        anchored_text = f"{anchored_text}\n\n{choice_hint}"
-                    checkpoint = None
-                    if session.get("checkpoint_json"):
-                        try:
-                            checkpoint = json.loads(session["checkpoint_json"])
-                        except Exception:
-                            checkpoint = None
-                    prompt = definition.build_resume_prompt(
-                        user_message=anchored_text,
-                        project_slug=slug,
-                        checkpoint=checkpoint,
-                    )
-                    prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id, pending=pending)}"
-                    provider_session_id = session.get("provider_session_id") or None
+                choice_hint = clarification_choice_hint(text, pending)
+                if choice_hint:
+                    anchored_text = f"{anchored_text}\n\n{choice_hint}"
+                prompt = definition.build_resume_prompt(
+                    user_message=anchored_text,
+                    project_slug=slug,
+                    checkpoint=checkpoint,
+                )
+                prompt = _prompt_with_contract(prompt, pending)
+                provider_session_id = session.get("provider_session_id") or None
 
             cursor = runtime or CursorAgentRuntime(
                 model=flags.model.model_name,
@@ -467,7 +592,7 @@ def handle_autonomous_conversation(
                     workspace_path=str(workspace),
                     user_message=anchored_text,
                 )
-                prompt = f"{prompt}\n\n{security_block}\n\n{interaction_contract_prompt(agent_id=agent_id)}"
+                prompt = _prompt_with_contract(prompt)
                 run_kwargs = {
                     "workspace": workspace,
                     "prompt": prompt,
@@ -495,6 +620,7 @@ def handle_autonomous_conversation(
                             "project_slug": slug,
                             "last_user_message_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
                             "last_answer_summary": (result.text or "")[:240],
+                            "active_loop": loop_intent.loop if loop_intent.decision in {"direct", "continue"} else active_loop,
                             "trust_zone": access.trust_zone,
                             "exposure_mode": access.exposure_mode,
                             "policy_version": access.policy_version,
@@ -567,8 +693,11 @@ def handle_autonomous_conversation(
                         break
             if clarification:
                 clarification = _enrich_clarification(clarification, workspace)
+                if loop_intent.loop and loop_intent.decision in {"direct", "continue"}:
+                    if str(clarification.get("loop") or "").strip().lower() in {"", "general"}:
+                        clarification["loop"] = loop_intent.loop
                 store.save_pending(session["session_id"], clarification)
-            elif action_requests:
+            else:
                 store.clear_pending(session["session_id"])
             action_receipts: list[dict[str, Any]] = []
             if action_requests and not clarification:
@@ -654,5 +783,12 @@ def handle_autonomous_conversation(
                 "flags": {"conversation_v4": True, "mode": "autonomous_workspace"},
             }
         finally:
+            if loop_permissions_enabled:
+                try:
+                    from agents.dylan.permission_policy import write_permission_profile
+
+                    write_permission_profile(workspace, force=True)
+                except Exception as exc:
+                    obs.emit(trace, "loop.gateway.permission_restore_failed", error=str(exc)[:300], level="ERROR")
             if owned_obs:
                 obs.close()

@@ -5,6 +5,7 @@ from typing import Any
 
 from feishu.client_registry import FeishuClientConfig
 from agents.bridge import handle_agent_message
+from agents.runtime.loop_intent import classify_loop_intent
 
 
 def extract_text(event: dict[str, Any]) -> str:
@@ -152,7 +153,7 @@ def should_handle(event: dict[str, Any], client: FeishuClientConfig) -> bool:
         return True
     if isinstance(mentions, list) and len(mentions) > 0:
         return _mention_targets_agent(mentions, agent_id)
-    content = str(message.get("content") or "")
+    content = extract_text(event)
     if _content_targets_agent(content, agent_id):
         return True
     parent_id = str(message.get("parent_id") or "").strip()
@@ -171,6 +172,10 @@ def should_handle(event: dict[str, Any], client: FeishuClientConfig) -> bool:
                 return True
         except Exception:
             pass
+    # Mark is the default Loop front door in a group: clear requirement or
+    # technical-plan language should not require a ceremony-only @Mark.
+    if agent_id == "mark":
+        return classify_loop_intent(content).should_route_in_group
     return False
 
 

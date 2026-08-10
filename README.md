@@ -62,13 +62,15 @@ engineering-workspace/
 
 ## Business and Technical Loop Skills
 
-Install the explicitly invoked, project-scoped workflow skills for Claude Code, Cursor, and Codex:
+Install the project-scoped workflow skills for Claude Code, Cursor, and Codex:
 
 ```bash
 lumon skills install --workspace ~/Projects/engineering-workspace --platform all
 ```
 
 Lumon keeps the canonical packages in `lumen/skills/`; the generated platform adapters are thin pointers. Cursor uses the shared `.agents/skills/` adapter installed by `--platform all`, avoiding duplicate command entries. Existing unmanaged adapter files are preserved unless `--force` is supplied.
+
+When the Agent Gateway is connected to a Feishu group, users do not need to name an internal Loop. Clear language such as “create a requirement” starts the Business Loop; “turn this requirement into a technical plan” starts the Technical Loop. Ambiguous language gets one confirmation. Loop entry stays in the Feishu thread and never authorizes Delivery by itself.
 
 ## Quick Start
 

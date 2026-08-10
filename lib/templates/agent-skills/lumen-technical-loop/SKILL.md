@@ -1,6 +1,6 @@
 ---
 name: lumen-technical-loop
-description: Use only when explicitly asked to turn one business-ready Lumen Story into a technical plan. It may modify that Story's technical-plan.md and metadata.json; it must not modify application source code or story.md, and it must not start implicitly.
+description: Use when the user explicitly asks for a Technical Loop or when the Feishu Loop Gateway detects a clear request to turn one business-ready Lumen Story or requirement into a technical plan/design. It may modify that Story's technical-plan.md and metadata.json; it must not modify application source code or story.md.
 ---
 
 <!-- Lumen managed: agent-skill -->
@@ -8,3 +8,5 @@ description: Use only when explicitly asked to turn one business-ready Lumen Sto
 # Lumen Technical Loop
 
 Read `references/workflow.md` before acting. Frontend/Web/Native UI delivery, Figma-to-code work, browser/device runtime work, Visual Delivery Contracts, and visual QA are disabled; keep them out of scope or blocked. Use the smallest sufficient plan profile and keep status in `metadata.json`; do not use a CLI approval command.
+
+In Feishu, do not make the user name this Loop. Start directly when the Loop Gateway marks the intent clear; ask one concise confirmation when it marks the intent ambiguous. Technical Loop entry is not delivery authorization, and it requires `businessStatus: ready` before planning can proceed.

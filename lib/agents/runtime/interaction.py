@@ -8,6 +8,7 @@ from typing import Any
 
 
 _ACTION_REQUIREMENTS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "loop.start": (("loop",),),
     "delivery.start": (("story", "story_id", "issue_key"),),
     "delivery.cancel": (("run_id", "story", "story_id"),),
     "delivery.quick_change": (("repository", "repo", "repository_name"), ("target_files", "target_file", "file"), ("request", "task", "change")),
@@ -32,6 +33,7 @@ _FIELD_LABELS = {
     "capability": "capability",
     "job_id": "job ID",
     "summary": "Jira title",
+    "loop": "Business or Technical Loop",
     "repository": "repository",
     "target_files": "target file(s)",
     "request": "requested change",
@@ -234,7 +236,7 @@ def normalize_clarification(
         question = clarification_question(action, missing)
     now = _now()
     raw_mode = str(payload.get("mode") or payload.get("interaction_mode") or "clarification").strip().lower()
-    mode = raw_mode if raw_mode in {"clarification", "grill"} else "clarification"
+    mode = raw_mode if raw_mode in {"clarification", "grill", "loop_confirmation"} else "clarification"
     raw_loop = str(payload.get("loop") or "").strip().lower()
     loop = raw_loop if raw_loop in {"business", "technical", "delivery", "quick_change", "general"} else "general"
     question_number = _bounded_int(payload.get("question_number"), default=1, minimum=1)
@@ -282,6 +284,7 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         "Record confirmed answers and owner-approved assumptions in the relevant Story or Technical Plan. Stop grilling when no remaining unknown can change the decision; summarize the result and ask for the explicit approval required by that loop.",
         "Do not grill bounded quick changes such as a clearly scoped version bump. Inspect, ask only for missing execution fields, then proceed through the configured quick-change policy.",
         "For a structured grill question, include mode=grill, loop, impact, why, recommended, assumptions, stop_condition, question_number, and question_budget in the clarification JSON.",
+        "For a Loop entry confirmation, include mode=loop_confirmation, loop=business or technical, action=loop.start, and two choices: start the Loop or keep this as normal conversation.",
     ]
     if pending:
         safe = json.dumps(_json_safe(pending), ensure_ascii=False, separators=(",", ":"))

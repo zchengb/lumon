@@ -1,6 +1,6 @@
 ---
 name: lumen-business-loop
-description: Use when explicitly asked to discover a business topic or clarify a Lumen Story, and when continuing after `$lumen-jira-story-import`. It may modify topics/<slug>.md, stories/<slug>/story.md, and that Story's metadata.json; it must not modify application source code or technical-plan.md.
+description: Use when the user explicitly asks for a Business Loop or when the Feishu Loop Gateway detects a clear request to create, capture, or turn something into a requirement or Story. It may modify topics/<slug>.md, stories/<slug>/story.md, and that Story's metadata.json; it must not modify application source code or technical-plan.md.
 ---
 
 <!-- Lumen managed: agent-skill -->
@@ -8,3 +8,5 @@ description: Use when explicitly asked to discover a business topic or clarify a
 # Lumen Business Loop
 
 Read `references/workflow.md` before acting. Work in the user's business language. Use `templates/topic.md` and `templates/story.md` from the workspace. Status remains in `metadata.json`; do not use a CLI approval command.
+
+In Feishu, do not make the user name this Loop. Start directly when the Loop Gateway marks the intent clear; ask one concise confirmation when it marks the intent ambiguous. Starting the Business Loop does not authorize technical planning or delivery.
