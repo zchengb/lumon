@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from pathlib import PurePosixPath
 from typing import Any, Optional
 
 from agents.jobs.store import AgentJob, AgentJobStore, new_job_id
@@ -9,6 +11,55 @@ from agents.security.trusted import TrustedActionContext, bind_action_request
 
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
+_QUICK_CHANGE_FILE_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|js|jsx|ts|tsx|py|md|yaml|yml|toml|xml|html|css|scss|java|kt|go|rs|rb|php|sh|properties|gradle|conf|ini|lock)(?![A-Za-z0-9_.-])",
+    re.IGNORECASE,
+)
+
+
+def _inferred_quick_change_files(text: str, repository: str) -> list[str]:
+    repo = str(repository or "").strip()
+    files: list[str] = []
+    for match in _QUICK_CHANGE_FILE_RE.findall(str(text or "")):
+        value = match.strip("`'\"()[]{}<>,.;:")
+        for prefix in (f"repos/{repo}/", f"{repo}/"):
+            if repo and value.casefold().startswith(prefix.casefold()):
+                value = value[len(prefix) :]
+                break
+        if value.startswith("repos/"):
+            continue
+        path = PurePosixPath(value)
+        if value.startswith("/") or ".." in path.parts or ".git" in path.parts:
+            continue
+        normalized = path.as_posix()
+        if normalized and normalized not in files:
+            files.append(normalized)
+    return files[:8]
+
+
+def _normalize_child_input(capability: str, input_data: Optional[dict[str, Any]]) -> dict[str, Any]:
+    values = dict(input_data or {})
+    if str(capability or "").strip() != "delivery.quick_change":
+        return values
+
+    if not any(str(values.get(key) or "").strip() for key in ("request", "task", "change")):
+        for key in ("instruction", "summary"):
+            value = str(values.get(key) or "").strip()
+            if value:
+                values["request"] = value
+                break
+
+    target_files = values.get("target_files") or values.get("target_file") or values.get("file")
+    if target_files:
+        values["target_files"] = target_files
+    else:
+        target_files = _inferred_quick_change_files(
+            "\n".join(str(values.get(key) or "") for key in ("instruction", "request", "summary")),
+            str(values.get("repository") or values.get("repo") or ""),
+        )
+        if target_files:
+            values["target_files"] = target_files
+    return values
 
 
 class AgentJobBroker:
@@ -72,7 +123,7 @@ class AgentJobBroker:
             capability=capability,
             parent_job_id=parent.job_id,
             depends_on=deps,
-            input=dict(input_data or {}),
+            input=_normalize_child_input(capability, input_data),
             source_message_id=parent.source_message_id,
             chat_id=parent.chat_id,
             thread_id=parent.thread_id,

@@ -389,6 +389,35 @@ class MilchickJobTests(unittest.TestCase):
             summary = broker.summarize(parent.job_id)
             self.assertIn(summary["overall_state"], {"running", "completed", "blocked"})
 
+    def test_quick_change_job_normalizes_instruction_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentJobStore(Path(tmp) / "jobs.sqlite3")
+            broker = AgentJobBroker(store)
+            parent = broker.create_parent(
+                project="mbpass",
+                requested_by="ou_owner",
+                delegated_by="milchick",
+                source_message_id="om1",
+                chat_id="oc1",
+                thread_id="",
+                trace_id="tr1",
+            )
+            child = broker.create_child(
+                parent=parent,
+                target_agent="mark",
+                capability="delivery.quick_change",
+                input_data={
+                    "repository": "digital-platform-admin",
+                    "summary": "內容管理新增區塊選單：輪播圖 → 多圖",
+                    "instruction": (
+                        "Set repos/digital-platform-admin/src/locales/mbtw/zh-TW.json "
+                        "from 輪播圖 to 多圖."
+                    ),
+                },
+            )
+            self.assertEqual(child.input["request"], child.input["instruction"])
+            self.assertEqual(child.input["target_files"], ["src/locales/mbtw/zh-TW.json"])
+
 
 if __name__ == "__main__":
     unittest.main()
