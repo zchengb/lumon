@@ -7,7 +7,7 @@ from agents.security.actions import MUTATION_ACTIONS
 from agents.security.policy import ROLE_ACTIONS, load_access_config
 from feishu.config import load_agents_config
 
-POLICY_VERSION = "m0.3.2"
+POLICY_VERSION = "m0.3.3"
 
 TrustZone = Literal["PRIVATE", "RESTRICTED", "SHARED", "DENY"]
 HostReadMode = Literal["deny", "selected", "system_only"]

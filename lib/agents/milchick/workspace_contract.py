@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "2"
+MANAGED_VERSION = "3"
 _MANAGED_START = f"<!-- LUMEN MILCHICK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MILCHICK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MILCHICK MANAGED START"
@@ -17,7 +17,8 @@ def _managed_block(project_slug: str) -> str:
         f"## Direct capabilities\n"
         f"- agent.list / agent.health\n"
         f"- agent.job.create / list / show / cancel / retry\n"
-        f"- jira.workitem.create / jira.workitem.update (via host TWG)\n"
+        f"- jira.workitem.get / jira.workitem.query / jira.sprint.untested.report (via host TWG)\n"
+        f"- jira.workitem.create / jira.workitem.update (via host TWG; explicit intent)\n"
         f"- project.status / workflow.status / schedule.status\n\n"
         f"## Delegation\n"
         f"- Test cases → Mark test_case.generate\n"

@@ -7,7 +7,7 @@ from agents.definitions import AgentDefinition
 from agents.irving.session_bootstrap import PROTOCOL_VERSION, SOUL_VERSION, build_bootstrap_prompt, build_resume_prompt
 from agents.irving.workspace_contract import ensure_workspace_contract
 from agents.project_resolver import known_project_slugs, load_chat_project_map, resolve_project
-from agents.security.actions import IRVING_ACTIONS
+from agents.security.actions import IRVING_ACTIONS, JIRA_ACTIONS, JIRA_MUTATION_ACTIONS
 
 
 def _resolve_workspace(project_slug: str, chat_id: str) -> tuple[str, Path]:
@@ -45,14 +45,14 @@ IRVING_DEFINITION = AgentDefinition(
     permission_profile="workspace_autonomous",
     capabilities=AgentCapabilities(
         actions=IRVING_ACTIONS,
-        read_scopes=("risk_findings", "scan_results", "code"),
+        read_scopes=("risk_findings", "scan_results", "code", "jira"),
         filesystem_mode="workspace_read",
         network_profile="deny",
         secret_profile="isolated",
         direct_workspace_write=False,
-        allowed_workflows=("risk.read", "risk.mark_remediated"),
-        allowed_mutations=("risk.mark_remediated",),
-        external_side_effects=(),
+        allowed_workflows=("risk.read", "risk.mark_remediated", *JIRA_ACTIONS),
+        allowed_mutations=("risk.mark_remediated", *JIRA_MUTATION_ACTIONS),
+        external_side_effects=("jira",),
     ),
     build_bootstrap_prompt=build_bootstrap_prompt,
     build_resume_prompt=build_resume_prompt,

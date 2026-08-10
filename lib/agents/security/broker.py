@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable, Optional
 
 from agents.security.actions import (
+    JIRA_ACTIONS,
     MUTATION_ACTIONS,
     ActionReceipt,
     ActionRequest,
@@ -249,7 +250,7 @@ def default_executors() -> dict[str, Executor]:
     mapping["test_case.generate"] = execute_test_case_action
     from agents.security.adapters.jira import execute_jira_action
 
-    for action in ("jira.workitem.create", "jira.workitem.update"):
+    for action in JIRA_ACTIONS:
         mapping[action] = execute_jira_action
     from agents.security.adapters.host_read import execute_host_read_action
 

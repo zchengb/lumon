@@ -8,7 +8,7 @@ from agents.mark.delivery_adapter import DeliveryActionAdapter
 from agents.mark.session_bootstrap import PROTOCOL_VERSION, SOUL_VERSION, build_bootstrap_prompt, build_resume_prompt
 from agents.mark.workspace_contract import ensure_workspace_contract
 from agents.project_resolver import known_project_slugs, load_chat_project_map, resolve_project
-from agents.security.actions import MARK_ACTIONS
+from agents.security.actions import JIRA_ACTIONS, JIRA_MUTATION_ACTIONS, MARK_ACTIONS
 
 
 def _resolve_workspace(project_slug: str, chat_id: str) -> tuple[str, Path]:
@@ -46,14 +46,14 @@ MARK_DEFINITION = AgentDefinition(
     permission_profile="delivery_conversational",
     capabilities=AgentCapabilities(
         actions=MARK_ACTIONS,
-        read_scopes=("delivery_docs", "story", "technical_plan", "jira_story"),
+        read_scopes=("delivery_docs", "story", "technical_plan", "jira"),
         filesystem_mode="workspace_read",
         network_profile="deny",
         secret_profile="isolated",
         direct_workspace_write=False,
-        allowed_workflows=("delivery.readiness", "delivery.status", "delivery.run", "delivery.cancel", "delivery.quick_change", "test_case.generate"),
-        allowed_mutations=("delivery.start", "delivery.quick_change", "test_case.generate"),
-        external_side_effects=("feishu.bitable.write",),
+        allowed_workflows=("delivery.readiness", "delivery.status", "delivery.run", "delivery.cancel", "delivery.quick_change", "test_case.generate", *JIRA_ACTIONS),
+        allowed_mutations=("delivery.start", "delivery.quick_change", "test_case.generate", *JIRA_MUTATION_ACTIONS),
+        external_side_effects=("feishu.bitable.write", "jira"),
     ),
     build_bootstrap_prompt=build_bootstrap_prompt,
     build_resume_prompt=build_resume_prompt,

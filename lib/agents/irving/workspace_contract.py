@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "1"
+MANAGED_VERSION = "2"
 _MANAGED_START = f"<!-- LUMEN IRVING MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN IRVING MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN IRVING MANAGED START"
@@ -17,6 +17,9 @@ def _managed_block(project_slug: str) -> str:
         f"## Direct capabilities\n"
         f"- risk.read\n"
         f"- risk.mark_remediated (explicit authorization only)\n\n"
+        f"## Jira\n"
+        f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
+        f"- Create/update work items only through <ACTION_REQUEST> with explicit user intent\n\n"
         f"## Security Boundary\n"
         f"- Workspace-isolated; no host enumeration\n"
         f"- Mutations via <ACTION_REQUEST> only; host fills identity\n\n"

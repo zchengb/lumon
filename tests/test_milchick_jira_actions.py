@@ -15,8 +15,8 @@ if str(LIB) not in sys.path:
 
 from agents.definitions import ensure_definitions_loaded, get_definition
 from agents.security.access_policy import classify_authorization_intent
-from agents.security.actions import ActionRequest
-from agents.security.broker import CapabilityBroker
+from agents.security.actions import JIRA_ACTIONS, ActionRequest
+from agents.security.broker import CapabilityBroker, default_executors
 from agents.security.policy import is_action_allowed_for_agent
 from agents.runtime.final_response import prefer_action_summary
 
@@ -30,11 +30,13 @@ class JiraActionTests(unittest.TestCase):
         self.assertEqual(classify_authorization_intent("update jira MBPAS-1 summary"), "mutate_explicit")
         self.assertEqual(classify_authorization_intent("how's MBPAS-1491 going?"), "read")
 
-    def test_milchick_allowed_others_denied(self) -> None:
-        self.assertTrue(is_action_allowed_for_agent("milchick", "jira.workitem.create"))
-        self.assertTrue(is_action_allowed_for_agent("milchick", "jira.workitem.update"))
-        self.assertFalse(is_action_allowed_for_agent("dylan", "jira.workitem.create"))
-        self.assertFalse(is_action_allowed_for_agent("mark", "jira.workitem.update"))
+    def test_all_agents_have_the_same_jira_action_surface(self) -> None:
+        for agent_id in ("dylan", "mark", "milchick", "irving"):
+            for action in JIRA_ACTIONS:
+                self.assertTrue(is_action_allowed_for_agent(agent_id, action), (agent_id, action))
+        executors = default_executors()
+        for action in JIRA_ACTIONS:
+            self.assertIn(action, executors)
 
     def test_definition_lists_jira_actions(self) -> None:
         ensure_definitions_loaded()
@@ -42,6 +44,57 @@ class JiraActionTests(unittest.TestCase):
         assert milchick is not None
         self.assertIn("jira.workitem.create", milchick.capabilities.actions)
         self.assertIn("jira.workitem.update", milchick.capabilities.allowed_mutations)
+
+    def test_untested_report_uses_host_twg(self) -> None:
+        from agents.security.adapters import jira as jira_adapter
+
+        with mock.patch.object(jira_adapter, "_jira_config", return_value={"project_key": "MBPAS", "board_id": "42"}):
+            with mock.patch("jira_sync.twg_ready", return_value=(True, "")):
+                with mock.patch("jira_sync.resolve_active_sprint", return_value=("7", "Sprint 7")):
+                    with mock.patch(
+                        "jira_sync.run_twg",
+                        return_value=(0, '{"data":{"issues":[{"key":"MBPAS-1","fields":{"summary":"QA","status":{"name":"Ready for QA"}}}]}}'),
+                    ) as run:
+                        with mock.patch("jira_sync.parse_twg_json", return_value={"data": {"issues": [{"key": "MBPAS-1", "fields": {"summary": "QA", "status": {"name": "Ready for QA"}}}]}}):
+                            with mock.patch("jira_sync.site_args", return_value=[]):
+                                result = jira_adapter.execute_jira_action(
+                                    ActionRequest(
+                                        agent_id="milchick",
+                                        action="jira.sprint.untested.report",
+                                        project_slug="mbpass",
+                                        actor_user_id="ou_1",
+                                        chat_id="oc_1",
+                                        thread_id="",
+                                        source_message_id="om_1",
+                                        trace_id="tr_1",
+                                        resource={"project_key": "MBPAS"},
+                                        arguments={"standard": "1"},
+                                    )
+                                )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["issue_key"], "MBPAS-1")
+        self.assertIn("jira", run.call_args.args[0])
+        self.assertIn("Ready for QA", run.call_args.args[0][run.call_args.args[0].index("--jql") + 1])
+
+    def test_format_sprint_report_summary(self) -> None:
+        text = prefer_action_summary(
+            "I will check the sprint.",
+            [
+                {
+                    "action": "jira.sprint.untested.report",
+                    "status": "succeeded",
+                    "result": {
+                        "status": "completed",
+                        "sprint_name": "Sprint 7",
+                        "count": 1,
+                        "items": [{"issue_key": "MBPAS-1", "summary": "QA", "status": "Ready for QA"}],
+                    },
+                }
+            ],
+        )
+        self.assertIn("Sprint 7", text)
+        self.assertIn("MBPAS-1", text)
 
     def test_create_adapter_uses_twg(self) -> None:
         from agents.security.adapters import jira as jira_adapter

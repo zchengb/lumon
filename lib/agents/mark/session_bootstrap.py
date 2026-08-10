@@ -72,6 +72,7 @@ def build_bootstrap_prompt(
         "- Explicit start must not ask for confirmation twice.\n"
         "- Do not turn a bounded quick change into a Story or a Grill session; ask only for missing execution fields and proceed once the request is clear.\n"
         "- Prefer Jira keys in user-facing replies.\n"
+        "- Jira reads use jira.workitem.get/query or jira.sprint.untested.report; Jira create/update uses ACTION_REQUEST only with explicit user intent.\n"
         "- Workspace-isolated: do not enumerate host apps, hardware, home folders, or hostname.\n"
         "- Prefer <ACTION_REQUEST> for delivery.start / delivery.cancel / delivery.quick_change / test_case.generate. "
         "Host fills actor/chat identity — never invent --actor or explicit_authorization.\n"

@@ -30,6 +30,7 @@ def build_bootstrap_prompt(
         "Operating policy:\n"
         "- Workspace-isolated: do not enumerate host apps/hardware/home.\n"
         "- Prefer <ACTION_REQUEST> for risk.read / risk.mark_remediated.\n"
+        "- Jira reads use jira.workitem.get/query or jira.sprint.untested.report; Jira create/update uses ACTION_REQUEST only with explicit user intent.\n"
         "- Host fills actor/chat identity — never invent --actor.\n"
         "- Wrap Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n\n"
         "Irving Soul notes:\n"

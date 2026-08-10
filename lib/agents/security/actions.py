@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-POLICY_VERSION = "m0.3.1"
+POLICY_VERSION = "m0.3.3"
 
 
 def new_receipt_id() -> str:
@@ -65,6 +65,20 @@ class ActionReceipt:
         return asdict(self)
 
 
+JIRA_READ_ACTIONS = (
+    "jira.workitem.get",
+    "jira.workitem.query",
+    "jira.sprint.untested.report",
+)
+
+JIRA_MUTATION_ACTIONS = (
+    "jira.workitem.create",
+    "jira.workitem.update",
+)
+
+JIRA_ACTIONS = JIRA_READ_ACTIONS + JIRA_MUTATION_ACTIONS
+
+
 DYLAN_ACTIONS = (
     "risk.read",
     "risk.resolve",
@@ -77,6 +91,7 @@ DYLAN_ACTIONS = (
     "host.disk.summary",
     "host.runtime.summary",
     "host.applications.summary",
+    *JIRA_ACTIONS,
 )
 
 MARK_ACTIONS = (
@@ -89,6 +104,7 @@ MARK_ACTIONS = (
     "story.read",
     "technical_plan.read",
     "test_case.generate",
+    *JIRA_ACTIONS,
 )
 
 MILCHICK_ACTIONS = (
@@ -99,8 +115,7 @@ MILCHICK_ACTIONS = (
     "agent.job.create",
     "agent.job.cancel",
     "agent.job.retry",
-    "jira.workitem.create",
-    "jira.workitem.update",
+    *JIRA_ACTIONS,
     "project.status",
     "workflow.status",
     "schedule.status",
@@ -113,6 +128,7 @@ MILCHICK_ACTIONS = (
 IRVING_ACTIONS = (
     "risk.read",
     "risk.mark_remediated",
+    *JIRA_ACTIONS,
 )
 
 MUTATION_ACTIONS = frozenset(
@@ -129,7 +145,6 @@ MUTATION_ACTIONS = frozenset(
         "agent.job.create",
         "agent.job.cancel",
         "agent.job.retry",
-        "jira.workitem.create",
-        "jira.workitem.update",
+        *JIRA_MUTATION_ACTIONS,
     }
 )

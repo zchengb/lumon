@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import re
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,195 @@ def _labels_arg(value: Any) -> str:
     if isinstance(value, list):
         return ",".join(str(item).strip() for item in value if str(item).strip())
     return str(value or "").strip()
+
+
+def _action_jira_config(request: ActionRequest) -> dict[str, Any]:
+    args = request.arguments if isinstance(request.arguments, dict) else {}
+    resource = request.resource if isinstance(request.resource, dict) else {}
+    config = dict(_jira_config(str(request.project_slug or "").strip()))
+    for key in ("project_key", "board_id", "site"):
+        value = str(args.get(key) or resource.get(key) or "").strip()
+        if value and not str(config.get(key) or "").strip():
+            config[key] = value
+    return config
+
+
+def _unwrap_jira_payload(payload: Any) -> Any:
+    if isinstance(payload, dict) and isinstance(payload.get("data"), (dict, list)):
+        payload = payload["data"]
+    if isinstance(payload, dict):
+        for key in ("issues", "items", "workitems", "results"):
+            if isinstance(payload.get(key), list):
+                return payload[key]
+        if isinstance(payload.get("issue"), dict):
+            return payload["issue"]
+    return payload
+
+
+def _issue_fields(item: dict[str, Any]) -> dict[str, Any]:
+    fields = item.get("fields")
+    return fields if isinstance(fields, dict) else item
+
+
+def _issue_value(item: dict[str, Any], key: str) -> str:
+    fields = _issue_fields(item)
+    value = fields.get(key) or item.get(key) or ""
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("value") or value.get("key") or ""
+    return str(value).strip()
+
+
+def _normalized_issue(item: Any, config: dict[str, Any]) -> dict[str, str]:
+    if not isinstance(item, dict):
+        return {}
+    key = _issue_value(item, "key") or _issue_value(item, "issueKey") or _issue_value(item, "id")
+    if not key:
+        return {}
+    from jira_sync import jira_browse_url_from_config
+
+    return {
+        "issue_key": key,
+        "summary": _issue_value(item, "summary"),
+        "status": _issue_value(item, "status"),
+        "issue_type": _issue_value(item, "issuetype") or _issue_value(item, "issue_type"),
+        "url": jira_browse_url_from_config(key, config) or "",
+    }
+
+
+def _get_workitem(request: ActionRequest) -> dict[str, Any]:
+    from jira_sync import parse_twg_json, run_twg, site_args, truncate_error, twg_ready
+
+    args = request.arguments if isinstance(request.arguments, dict) else {}
+    resource = request.resource if isinstance(request.resource, dict) else {}
+    issue_key = str(
+        args.get("issue_key")
+        or args.get("id")
+        or args.get("key")
+        or resource.get("issue_key")
+        or resource.get("id")
+        or resource.get("key")
+        or ""
+    ).strip()
+    if not issue_key:
+        raise ResourceDenied("issue_key required")
+    config = _action_jira_config(request)
+    ready, reason = twg_ready()
+    if not ready:
+        return {"status": "failed", "code": "TWG_UNAVAILABLE", "message": reason}
+    code, output = run_twg(["jira", "workitem", "get", issue_key, "-o", "json", *site_args(config)])
+    if code != 0:
+        return {"status": "failed", "code": "JIRA_GET_FAILED", "issue_key": issue_key, "message": truncate_error(output or f"twg exit {code}")}
+    payload = _unwrap_jira_payload(parse_twg_json(output))
+    if not isinstance(payload, dict):
+        return {"status": "failed", "code": "JIRA_GET_PARSE", "issue_key": issue_key, "message": "TWG returned no Jira work item"}
+    item = _normalized_issue(payload, config)
+    return {
+        "status": "completed",
+        "issue_key": item.get("issue_key") or issue_key,
+        "summary": item.get("summary") or "",
+        "issue_status": item.get("status") or "",
+        "issue_type": item.get("issue_type") or "",
+        "url": item.get("url") or "",
+        "workitem": payload,
+    }
+
+
+def _query_workitems(request: ActionRequest, *, jql: str | None = None) -> dict[str, Any]:
+    from jira_sync import parse_twg_json, run_twg, site_args, truncate_error, twg_ready
+
+    args = request.arguments if isinstance(request.arguments, dict) else {}
+    query = str(jql or args.get("jql") or "").strip()
+    if not query:
+        raise ResourceDenied("jql required")
+    config = _action_jira_config(request)
+    ready, reason = twg_ready()
+    if not ready:
+        return {"status": "failed", "code": "TWG_UNAVAILABLE", "message": reason}
+    try:
+        limit = max(1, min(int(args.get("limit") or 50), 100))
+    except (TypeError, ValueError):
+        limit = 50
+    code, output = run_twg(
+        ["jira", "workitem", "query", "--jql", query, "--limit", str(limit), "-o", "json", *site_args(config)]
+    )
+    if code != 0:
+        return {"status": "failed", "code": "JIRA_QUERY_FAILED", "jql": query, "message": truncate_error(output or f"twg exit {code}")}
+    payload = _unwrap_jira_payload(parse_twg_json(output))
+    raw_items = payload if isinstance(payload, list) else []
+    items = [_normalized_issue(item, config) for item in raw_items]
+    items = [item for item in items if item]
+    return {"status": "completed", "jql": query, "count": len(items), "items": items}
+
+
+def _as_text_list(value: Any) -> list[str]:
+    values = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
+    return [str(item).strip() for item in values if str(item).strip()]
+
+
+def _jql_quote(value: str) -> str:
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _untested_report(request: ActionRequest) -> dict[str, Any]:
+    from jira_sync import resolve_active_sprint, truncate_error, twg_ready
+
+    args = request.arguments if isinstance(request.arguments, dict) else {}
+    config = _action_jira_config(request)
+    project_key = str(config.get("project_key") or "").strip()
+    if not project_key:
+        return {"status": "failed", "code": "JIRA_CONFIG_MISSING", "message": "project_key required"}
+    ready, reason = twg_ready()
+    if not ready:
+        return {"status": "failed", "code": "TWG_UNAVAILABLE", "message": reason}
+
+    criterion = str(args.get("standard") or args.get("criterion") or "A").strip().upper()
+    criterion = {"1": "A", "2": "B", "3": "C", "4": "D"}.get(criterion[:1], criterion)
+    criterion = criterion[:1] if criterion[:1] in {"A", "B", "C", "D"} else criterion
+    if criterion == "A":
+        statuses = _as_text_list(args.get("statuses")) or ["Ready for QA", "待测", "待測", "待测试", "待測試"]
+        status_clause = "status in (" + ", ".join(_jql_quote(item) for item in statuses) + ")"
+    elif criterion == "B":
+        statuses = _as_text_list(args.get("exclude_statuses")) or ["Done", "Verified"]
+        status_clause = "status not in (" + ", ".join(_jql_quote(item) for item in statuses) + ")"
+    elif criterion == "C":
+        field = str(args.get("test_case_field") or "").strip()
+        if not field or not re.fullmatch(r"[A-Za-z0-9_]+", field):
+            return {
+                "status": "failed",
+                "code": "JIRA_REPORT_FIELD_REQUIRED",
+                "message": "standard C requires a configured Jira test_case_field",
+            }
+        status_clause = f'"{field}" is EMPTY'
+    elif criterion == "D":
+        statuses = _as_text_list(args.get("statuses") or args.get("status_names"))
+        if not statuses:
+            return {"status": "failed", "code": "JIRA_REPORT_STATUS_REQUIRED", "message": "standard D requires statuses"}
+        status_clause = "status in (" + ", ".join(_jql_quote(item) for item in statuses) + ")"
+    else:
+        return {"status": "failed", "code": "JIRA_REPORT_STANDARD_INVALID", "message": "standard must be A, B, C, or D"}
+
+    try:
+        sprint_id, sprint_name = resolve_active_sprint(config)
+    except Exception as exc:
+        return {"status": "failed", "code": "JIRA_SPRINT_LOOKUP_FAILED", "message": truncate_error(str(exc))}
+    if not sprint_id:
+        return {"status": "failed", "code": "JIRA_NO_ACTIVE_SPRINT", "message": "No active sprint found"}
+
+    query = f"project = {project_key} AND sprint = {sprint_id} AND {status_clause} ORDER BY updated DESC"
+    result = _query_workitems(request, jql=query)
+    if result.get("status") != "completed":
+        return {**result, "criterion": criterion, "sprint_id": sprint_id, "sprint_name": sprint_name or ""}
+    items = result.get("items") if isinstance(result.get("items"), list) else []
+    return {
+        "status": "completed",
+        "criterion": criterion,
+        "project_key": project_key,
+        "sprint_id": sprint_id,
+        "sprint_name": sprint_name or "",
+        "count": len(items),
+        "items": items,
+        "summary": f"Found {len(items)} Jira work items in the active sprint matching standard {criterion}.",
+    }
 
 
 def _create_workitem(request: ActionRequest) -> dict[str, Any]:
@@ -183,6 +373,12 @@ def _update_workitem(request: ActionRequest) -> dict[str, Any]:
 
 def execute_jira_action(request: ActionRequest) -> dict[str, Any]:
     action = str(request.action or "").strip()
+    if action == "jira.workitem.get":
+        return _get_workitem(request)
+    if action == "jira.workitem.query":
+        return _query_workitems(request)
+    if action == "jira.sprint.untested.report":
+        return _untested_report(request)
     if action == "jira.workitem.create":
         return _create_workitem(request)
     if action == "jira.workitem.update":

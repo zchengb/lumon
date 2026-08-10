@@ -170,6 +170,9 @@ _STATUS_READ_ACTIONS = frozenset(
         "agent.job.list",
         "agent.job.show",
         "agent.job.create",
+        "jira.workitem.get",
+        "jira.workitem.query",
+        "jira.sprint.untested.report",
         "jira.workitem.create",
         "jira.workitem.update",
         "agent.health",
@@ -333,6 +336,36 @@ def _format_jira_receipt(action: str, result: dict[str, Any]) -> str:
     if not isinstance(result, dict):
         return ""
     nested_status = str(result.get("status") or "").strip().lower()
+    if action == "jira.sprint.untested.report":
+        if nested_status == "failed":
+            return f"Jira sprint report failed: {str(result.get('message') or result.get('code') or 'failed').strip()}"
+        count = result.get("count", 0)
+        sprint = str(result.get("sprint_name") or result.get("sprint_id") or "active sprint").strip()
+        lines = [f"Active sprint report ({sprint}): {count} matching Jira work item(s)."]
+        for item in (result.get("items") if isinstance(result.get("items"), list) else [])[:12]:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("issue_key") or "").strip()
+            summary = str(item.get("summary") or "").strip()
+            status = str(item.get("status") or "").strip()
+            subject = " — ".join(part for part in (key, summary) if part)
+            lines.append(f"- {subject}" + (f" [{status}]" if status else ""))
+        return "\n".join(lines)
+    if action == "jira.workitem.get":
+        if nested_status == "failed":
+            return f"Jira read failed for {str(result.get('issue_key') or '').strip()}: {str(result.get('message') or result.get('code') or 'failed').strip()}"
+        key = str(result.get("issue_key") or "").strip()
+        summary = str(result.get("summary") or "").strip()
+        status = str(result.get("issue_status") or "").strip()
+        url = str(result.get("url") or "").strip()
+        head = " — ".join(part for part in (key, summary) if part) or "Jira work item read"
+        if status:
+            head += f" [{status}]"
+        return f"{head}\n{url}" if url else head
+    if action == "jira.workitem.query":
+        if nested_status == "failed":
+            return f"Jira query failed: {str(result.get('message') or result.get('code') or 'failed').strip()}"
+        return f"Jira query returned {result.get('count', 0)} work item(s)."
     key = str(result.get("issue_key") or "").strip()
     url = str(result.get("url") or "").strip()
     title = str(result.get("summary") or "").strip()
@@ -397,7 +430,7 @@ def format_action_receipts_summary(receipts: list[dict[str, Any]]) -> str:
         if receipt.get("status") != "succeeded":
             continue
         result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
-        if action in {"jira.workitem.create", "jira.workitem.update"} and not job_detail:
+        if action.startswith("jira.") and not job_detail:
             detail = _format_jira_receipt(action, result)
             if detail:
                 job_detail = detail
@@ -471,7 +504,7 @@ def prefer_action_summary(reply_text: str, receipts: list[dict[str, Any]]) -> st
         result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
         detail = (
             _format_jira_receipt(action, result)
-            if action.startswith("jira.workitem.") and any(result.get(key) for key in ("status", "issue_key", "summary"))
+            if action.startswith("jira.") and any(result.get(key) for key in ("status", "issue_key", "summary", "count"))
             else ""
         )
         err = detail or str(receipt.get("error") or receipt.get("error_code") or "failed").strip()

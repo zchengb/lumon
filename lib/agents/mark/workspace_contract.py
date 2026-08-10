@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "2"
+MANAGED_VERSION = "3"
 _MANAGED_START = f"<!-- LUMEN MARK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MARK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MARK MANAGED START"
@@ -42,6 +42,9 @@ def _managed_block(project_slug: str) -> str:
         f"- lumen agents action --agent mark --action delivery.start --story <id> --json "
         f"(host/admin only; conversational path prefers ACTION_REQUEST)\n"
         f"- lumen agents action --agent mark --action test_case.generate --story <Jira-key> --json\n\n"
+        f"## Jira\n"
+        f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
+        f"- Create/update work items only through <ACTION_REQUEST> with explicit user intent\n\n"
         f"## Security Boundary\n"
         f"- Conversational Mark is workspace-isolated over delivery docs\n"
         f"- Never enumerate host apps/hardware/home; never modify business source or secrets\n"
