@@ -113,6 +113,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "common.next": "Next",
     "common.pageOf": "Page {{page}} of {{count}}",
     "common.showing": "{{count}} shown",
+    "common.debugDetails": "Debug details",
+    "common.originalPrompt": "Original Agent prompt",
     "common.records": "{{count}} records",
     "common.runs": "{{count}} runs",
     "common.recentEvents": "{{count}} recent events",
@@ -253,6 +255,20 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.globalFeishuAgents": "Global Feishu agents",
     "settings.accessControl": "Access Control",
     "settings.accessControlDescription": "Who may talk to agents, and who may mutate (resolve findings, update schedules, start delivery). Add Allowed chat IDs to let Dylan/Milchick reply in those groups when @mentioned.",
+    "settings.accessPerson": "Person",
+    "settings.accessChat": "Group chat",
+    "settings.selectPerson": "Select a person",
+    "settings.selectChat": "Select a group chat",
+    "settings.identityRoles": "Access for this identity",
+    "settings.selectIdentityHelp": "Choose one identity, then edit the three access roles below.",
+    "settings.canTalk": "Can talk to Agents",
+    "settings.canMutate": "Can run mutations",
+    "settings.canAdmin": "Can administer Agents",
+    "settings.accessSummary": "Configured identities",
+    "settings.identityCount": "{{count}} identity records",
+    "settings.rolesApplied": "roles",
+    "settings.agentCoreDescription": "Core controls are editable here. Role ownership, safety boundaries, and SOUL files stay managed by the Agent registry.",
+    "settings.responsibility": "Responsibility",
     "settings.legacyWarning": "Legacy allow mode is unsafe for local agents. Prefer per-agent Access & Exposure with default_policy=deny.",
     "settings.recentPeople": "Recent people",
     "settings.recentChats": "Recent chats",
@@ -361,6 +377,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.autoDelivery": "Auto Delivery",
     "label.autoPatch": "Auto Patch",
     "label.manager": "Manager",
+    "label.entryPoint": "Entry point",
+    "label.feishuEntry": "User / Feishu entry",
+    "label.managerLayer": "Coordination layer",
+    "label.capabilityOwners": "Capability owners",
     "label.role": "Role",
     "label.input": "Input",
     "label.output": "Output",
@@ -371,7 +391,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.agentsReady": "Agents ready",
     "label.workflowsActive": "Workflows active",
     "label.questionsWaiting": "Questions waiting",
+    "label.agentRoles": "Agent roles",
     "label.recordedTurns": "Recorded turns",
+    "label.processedQuestions": "Questions handled",
+    "label.averageDuration": "Average duration",
     "label.needsAttention": "Needs attention",
     "label.rolesSeen": "Roles seen",
     "label.businessReadyCapabilities": "Three human-owned capabilities",
@@ -436,6 +459,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.resultCaptured": "Result captured · request predates transcript capture",
     "label.traceOnly": "Trace only",
     "label.executionTrail": "Execution trail",
+    "label.debugDetails": "Debug details",
+    "label.promptNotCaptured": "This runtime did not capture the original prompt.",
     "label.olderTrace": "This older trace has an outcome, but its incoming message was not captured by that runtime version.",
     "label.noFinalResponse": "No final response text was retained; open the source trace in the Agent logs if deeper evidence is needed.",
     "label.activityRetention": "Only bounded local request/result text is shown here. Trace IDs and raw execution evidence remain available in the local Agent store.",
@@ -472,6 +497,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.agentActivity": "Agent activity",
     "heading.conversationRecords": "Conversation records",
     "heading.agentRoster": "Agent roster",
+    "heading.agentArchitecture": "Agent architecture",
     "heading.workflowControl": "Workflow control",
     "heading.questionsWaiting": "Questions waiting for you",
     "heading.scanHistory": "Scan History",
@@ -491,6 +517,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.testCases": "Test Cases",
     "heading.workflow": "{{feature}} Workflow",
     "action.openSettings": "Open Settings",
+    "action.configureAgent": "Configure agent",
     "action.manageCapture": "Manage capture",
     "action.viewActivity": "View activity",
     "action.inspect": "Inspect {{feature}}",
@@ -589,6 +616,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "common.next": "下一页",
     "common.pageOf": "第 {{page}} 页，共 {{count}} 页",
     "common.showing": "显示 {{count}} 项",
+    "common.debugDetails": "调试详情",
+    "common.originalPrompt": "发送给 Agent 的原始提示词",
     "common.records": "{{count}} 条记录",
     "common.runs": "{{count}} 次运行",
     "common.recentEvents": "最近 {{count}} 个事件",
@@ -729,6 +758,20 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.globalFeishuAgents": "全局飞书 Agent",
     "settings.accessControl": "访问控制",
     "settings.accessControlDescription": "谁可以与 Agent 对话、谁可以修改状态（解决问题、更新调度、启动交付）。添加允许的群聊 ID 后，Dylan/Milchick 才能在被 @提及时回复这些群聊。",
+    "settings.accessPerson": "用户",
+    "settings.accessChat": "群聊",
+    "settings.selectPerson": "选择用户",
+    "settings.selectChat": "选择群聊",
+    "settings.identityRoles": "此身份的访问权限",
+    "settings.selectIdentityHelp": "选择一个身份，然后编辑下面的三项访问权限。",
+    "settings.canTalk": "可以与 Agent 对话",
+    "settings.canMutate": "可以执行变更操作",
+    "settings.canAdmin": "可以管理 Agent",
+    "settings.accessSummary": "已配置身份",
+    "settings.identityCount": "{{count}} 个身份记录",
+    "settings.rolesApplied": "项权限",
+    "settings.agentCoreDescription": "这里只编辑核心控制项。角色归属、安全边界和 SOUL 文件仍由 Agent 注册表管理。",
+    "settings.responsibility": "职责",
     "settings.legacyWarning": "旧版 allow 模式对本地 Agent 不安全。建议使用按 Agent 配置的 Access & Exposure，并将 default_policy 设为 deny。",
     "settings.recentPeople": "最近联系人",
     "settings.recentChats": "最近群聊",
@@ -837,6 +880,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.autoDelivery": "自动交付",
     "label.autoPatch": "自动修复",
     "label.manager": "Manager",
+    "label.entryPoint": "入口",
+    "label.feishuEntry": "用户 / 飞书入口",
+    "label.managerLayer": "协调层",
+    "label.capabilityOwners": "能力负责人",
     "label.role": "角色",
     "label.input": "输入",
     "label.output": "输出",
@@ -847,7 +894,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.agentsReady": "就绪 Agent",
     "label.workflowsActive": "运行中工作流",
     "label.questionsWaiting": "待回答问题",
+    "label.agentRoles": "Agent 角色",
     "label.recordedTurns": "已记录对话",
+    "label.processedQuestions": "已处理问题",
+    "label.averageDuration": "平均耗时",
     "label.needsAttention": "需要关注",
     "label.rolesSeen": "涉及角色",
     "label.businessReadyCapabilities": "三个真人负责的能力",
@@ -912,6 +962,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.resultCaptured": "已记录结果 · 请求来自未记录转录的旧版本",
     "label.traceOnly": "仅 Trace",
     "label.executionTrail": "执行轨迹",
+    "label.debugDetails": "调试详情",
+    "label.promptNotCaptured": "当前运行时没有记录原始提示词。",
     "label.olderTrace": "这条旧 Trace 有结果，但当时的运行时没有记录收到的消息。",
     "label.noFinalResponse": "没有保留最终响应文本；如需更多证据，请打开 Agent 日志中的源 Trace。",
     "label.activityRetention": "这里只显示有边界的本地请求/结果文本。Trace ID 和原始执行证据仍保存在本地 Agent 存储中。",
@@ -948,6 +1000,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.agentActivity": "Agent 活动",
     "heading.conversationRecords": "对话记录",
     "heading.agentRoster": "Agent 阵容",
+    "heading.agentArchitecture": "Agent 架构",
     "heading.workflowControl": "工作流控制",
     "heading.questionsWaiting": "等待你的问题",
     "heading.scanHistory": "扫描历史",
@@ -967,6 +1020,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.testCases": "测试用例",
     "heading.workflow": "{{feature}} 工作流",
     "action.openSettings": "打开设置",
+    "action.configureAgent": "配置 Agent",
     "action.manageCapture": "管理记录",
     "action.viewActivity": "查看活动",
     "action.inspect": "查看 {{feature}}",
@@ -1065,6 +1119,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "common.next": "下一頁",
     "common.pageOf": "第 {{page}} 頁，共 {{count}} 頁",
     "common.showing": "顯示 {{count}} 項",
+    "common.debugDetails": "除錯詳情",
+    "common.originalPrompt": "傳送給 Agent 的原始提示詞",
     "common.records": "{{count}} 筆記錄",
     "common.runs": "{{count}} 次執行",
     "common.recentEvents": "最近 {{count}} 個事件",
@@ -1205,6 +1261,20 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.globalFeishuAgents": "全域飛書 Agent",
     "settings.accessControl": "存取控制",
     "settings.accessControlDescription": "誰可以與 Agent 對話、誰可以修改狀態（解決問題、更新排程、啟動交付）。新增允許的群組聊天 ID 後，Dylan/Milchick 才能在被 @提及時回覆這些群組。",
+    "settings.accessPerson": "使用者",
+    "settings.accessChat": "群組聊天",
+    "settings.selectPerson": "選擇使用者",
+    "settings.selectChat": "選擇群組聊天",
+    "settings.identityRoles": "此身分的存取權限",
+    "settings.selectIdentityHelp": "選擇一個身分，然後編輯下方的三項存取權限。",
+    "settings.canTalk": "可以與 Agent 對話",
+    "settings.canMutate": "可以執行變更操作",
+    "settings.canAdmin": "可以管理 Agent",
+    "settings.accessSummary": "已設定身分",
+    "settings.identityCount": "{{count}} 個身分記錄",
+    "settings.rolesApplied": "項權限",
+    "settings.agentCoreDescription": "這裡只編輯核心控制項。角色歸屬、安全邊界和 SOUL 檔案仍由 Agent 登錄表管理。",
+    "settings.responsibility": "職責",
     "settings.legacyWarning": "舊版 allow 模式對本地 Agent 不安全。建議使用按 Agent 設定的 Access & Exposure，並將 default_policy 設為 deny。",
     "settings.recentPeople": "最近聯絡人",
     "settings.recentChats": "最近群組聊天",
@@ -1313,6 +1383,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.autoDelivery": "自動交付",
     "label.autoPatch": "自動修復",
     "label.manager": "Manager",
+    "label.entryPoint": "入口",
+    "label.feishuEntry": "使用者 / 飛書入口",
+    "label.managerLayer": "協調層",
+    "label.capabilityOwners": "能力負責人",
     "label.role": "角色",
     "label.input": "輸入",
     "label.output": "輸出",
@@ -1323,7 +1397,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.agentsReady": "就緒 Agent",
     "label.workflowsActive": "執行中工作流",
     "label.questionsWaiting": "待回答問題",
+    "label.agentRoles": "Agent 角色",
     "label.recordedTurns": "已記錄對話",
+    "label.processedQuestions": "已處理問題",
+    "label.averageDuration": "平均耗時",
     "label.needsAttention": "需要關注",
     "label.rolesSeen": "涉及角色",
     "label.businessReadyCapabilities": "三個真人負責的能力",
@@ -1388,6 +1465,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.resultCaptured": "已記錄結果 · 請求來自未記錄轉錄的舊版本",
     "label.traceOnly": "僅 Trace",
     "label.executionTrail": "執行軌跡",
+    "label.debugDetails": "除錯詳情",
+    "label.promptNotCaptured": "目前執行時沒有記錄原始提示詞。",
     "label.olderTrace": "這條舊 Trace 有結果，但當時的執行時沒有記錄收到的訊息。",
     "label.noFinalResponse": "沒有保留最終回應文字；如需更多證據，請開啟 Agent 日誌中的源 Trace。",
     "label.activityRetention": "這裡只顯示有邊界的本地請求/結果文字。Trace ID 和原始執行證據仍保存在本地 Agent 儲存中。",
@@ -1424,6 +1503,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.agentActivity": "Agent 活動",
     "heading.conversationRecords": "對話記錄",
     "heading.agentRoster": "Agent 陣容",
+    "heading.agentArchitecture": "Agent 架構",
     "heading.workflowControl": "工作流控制",
     "heading.questionsWaiting": "等待你的問題",
     "heading.scanHistory": "掃描歷史",
@@ -1443,6 +1523,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.testCases": "測試案例",
     "heading.workflow": "{{feature}} 工作流",
     "action.openSettings": "開啟設定",
+    "action.configureAgent": "設定 Agent",
     "action.manageCapture": "管理記錄",
     "action.viewActivity": "查看活動",
     "action.inspect": "查看 {{feature}}",
@@ -1591,7 +1672,7 @@ interface AgentsSettingsPayload {
 }
 
 interface DashboardData extends RecordValue {
-  activity?: { available?: boolean; detail?: string; count?: number; items?: RecordValue[] };
+  activity?: { available?: boolean; detail?: string; count?: number; total?: number; items?: RecordValue[] };
   interactive?: {
     enabled?: boolean;
     project?: string;
@@ -1723,7 +1804,7 @@ function when(value: unknown) {
   if (!value) return "—";
   const date = new Date(String(value));
   const locale = currentDashboardLocale === "zh-Hans" ? "zh-CN" : currentDashboardLocale === "zh-Hant" ? "zh-TW" : undefined;
-  return Number.isNaN(date.valueOf()) ? String(value) : new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+  return Number.isNaN(date.valueOf()) ? String(value) : new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(date);
 }
 function elapsed(start?: string, end?: string) {
   if (!start || !end) return "—";
@@ -2458,11 +2539,38 @@ function isDeliveryReadyStory(item: RecordValue) {
   return business === "ready" && technical === "approved" && ["", "not_started", "blocked"].includes(delivery);
 }
 
+function AgentArchitecture({ agents, t, onNavigate }: { agents: AgentSettings[]; t: Translate; onNavigate: (tab: Tab) => void }) {
+  const titles: Record<string, string> = {
+    dylan: "Engineering Risk Analyst",
+    mark: "Delivery Lead",
+    irving: "Remediation Engineer",
+    milchick: "Engineering Operations Manager",
+  };
+  const findAgent = (id: string, workflow?: string) => agents.find((agent) => agent.id === id) || (workflow ? agents.find((agent) => agent.workflow === workflow) : undefined);
+  const manager = findAgent("milchick");
+  const state = (agent?: AgentSettings) => !agent ? "not configured" : !agent.app_id || !agent.app_secret_configured ? "setup" : !agent.conversation_enabled ? "paused" : "ready";
+  const node = (agent: AgentSettings | undefined, profile: typeof managerProfile, kind: "manager" | "worker") => {
+    const localized = localizedWorkflowProfile(profile, t);
+    const id = String(agent?.id || localized.agent).toLowerCase();
+    return <button type="button" className={`architecture-node architecture-node-${kind}`} onClick={() => onNavigate("settings")}>
+      <AgentAvatar agentId={agent?.id || id} displayName={agent?.display_name || localized.agent} size="card" />
+      <span className="architecture-node-copy"><span className="overview-kicker">{localized.feature}</span><strong>{text(agent?.display_name, localized.agent)}</strong><small>{text(agent?.title, titles[id])}</small><em>{localized.mission}</em></span>
+      <Badge value={state(agent)} />
+    </button>;
+  };
+  return <div className="agent-architecture">
+    <div className="architecture-entry"><span className="architecture-entry-icon"><User size={18} /></span><span><span className="overview-kicker">{t("label.entryPoint")}</span><strong>{t("label.feishuEntry")}</strong><small>{t("context.activity.description")}</small></span></div>
+    <span className="architecture-connector" aria-hidden="true" />
+    {node(manager, managerProfile, "manager")}
+    <span className="architecture-connector" aria-hidden="true" />
+    <div className="architecture-workers"><span className="architecture-layer-label">{t("label.capabilityOwners")}</span>{workflowProfiles.map((profile) => node(findAgent(profile.agent.toLowerCase(), profile.workflow), profile, "worker"))}</div>
+  </div>;
+}
+
 function OverviewView({ data, project, onNavigate }: { data: DashboardData; project: string; onNavigate: (tab: Tab) => void }) {
   const { t } = useI18n();
   const settings = data.interactive?.agents || {};
   const agents = settings.agents || [];
-  const pending = settings.pending_questions || [];
   const workflows = workflowProfiles.map((profile) => ({
     ...localizedWorkflowProfile(profile, t),
     status: profile.workflow === "auto_scan" ? data.runs?.[0]?.status || "not started" : profile.workflow === "auto_delivery" ? data.delivery?.current?.delivery_status || "not started" : data.patch?.current?.patch_status || "not started",
@@ -2480,22 +2588,11 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
     <div className="metrics">
       <Metric label={t("label.agentsReady")} value={`${readyAgents}/${agents.length}`} />
       <Metric label={t("label.workflowsActive")} value={activeWorkflows} />
-      <Metric label={t("label.questionsWaiting")} value={pending.length} />
+      <Metric label={t("label.agentRoles")} value={agents.length} />
       <Metric label={t("label.gateway")} value={settings.enabled ? t("common.enabled") : t("common.paused")} />
     </div>
-    <Panel title={t("heading.agentRoster")} action={<span className="muted">{t("label.sharedRuntime", { count: agents.length })}</span>}>
-      <div className="agent-roster">
-        {agents.length ? agents.map((agent) => {
-          const state = agentState(agent);
-          const profile = localizedWorkflowProfile(workflowProfile(agent.workflow) || managerProfile, t);
-          const workflow = workflowProfiles.find((item) => item.workflow === agent.workflow)?.tab;
-          return <article className="agent-card" key={agent.id}>
-            <div className="agent-card-heading"><div className="agent-card-identity"><AgentAvatar agentId={agent.id} displayName={agent.display_name} size="card" /><div><span className="overview-kicker">{profile.feature}</span><h4>{agent.display_name}</h4><p>{profile.mission}</p></div></div><Badge value={stateLabel(state)} /></div>
-            <div className="agent-card-facts"><div><span>{t("label.owns")}</span><strong title={profile.feature}>{profile.feature}</strong></div><div><span>{t("label.receives")}</span><strong title={profile.input}>{profile.input}</strong></div><div><span>{t("label.returns")}</span><strong title={profile.output}>{profile.output}</strong></div></div>
-            <div className="agent-card-footer"><span>{state === "ready" ? t("label.conversationAndActions") : state === "paused" ? t("label.conversationPaused") : t("label.credentialsRequired")}</span>{workflow ? <button className="text-button" onClick={() => onNavigate("activity")}>{t("action.viewActivity")} <ChevronRight size={13} /></button> : <span className="overview-manager-label">{t("common.manager")}</span>}</div>
-          </article>;
-        }) : <Empty label={t("common.noAgentRoles")} />}
-      </div>
+    <Panel title={t("heading.agentArchitecture")} action={<button className="text-button" onClick={() => onNavigate("settings")}>{t("action.openSettings")} <ChevronRight size={13} /></button>}>
+      <AgentArchitecture agents={agents} t={t} onNavigate={onNavigate} />
     </Panel>
     <Panel title={t("heading.workflowControl")} action={<span className="muted">{t("label.businessReadyCapabilities")}</span>}>
       <div className="workflow-roster">
@@ -2507,9 +2604,6 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
         </article>)}
       </div>
     </Panel>
-    <Panel title={t("heading.questionsWaiting")} action={<span className="muted">{pending.length ? t("label.unanswered", { count: pending.length }) : t("label.conversationClear")}</span>}>
-      {pending.length ? <div className="pending-question-list">{pending.map((question, index) => <article className="pending-question" key={question.question_id || `${question.agent_id}-${index}`}><div className="pending-question-heading"><div><span className="overview-kicker">{text(question.agent_id, t("common.agent"))}</span><strong>{text(question.action, t("common.clarification"))}</strong></div><time>{when(question.created_at)}</time></div><p>{text(question.question, "The Agent needs one more decision before continuing.")}</p></article>)}</div> : <div className="overview-empty"><CircleHelp size={17} />{t("common.noAgentQuestions")}</div>}
-    </Panel>
   </div>;
 }
 
@@ -2517,10 +2611,19 @@ function ActivityView({ data, project, onNavigate }: { data: DashboardData; proj
   const { t } = useI18n();
   const records = data.activity?.items || [];
   const [agentFilter, setAgentFilter] = useState("all");
+  const [activityPage, setActivityPage] = useState(0);
   const visible = records.filter((record) => agentFilter === "all" || String(record.agent_id || "") === agentFilter);
   const roles = Array.from(new Set(records.map((record) => String(record.agent_id || "")).filter(Boolean)));
   const completed = records.filter((record) => /completed|success|delegated/i.test(String(record.status || ""))).length;
   const attention = records.filter((record) => /failed|blocked|denied/i.test(String(record.status || ""))).length;
+  const processedQuestions = Number(data.activity?.total ?? records.length);
+  const durations = records.map((record) => Number(record.latency_ms)).filter((value) => Number.isFinite(value) && value >= 0);
+  const averageDuration = durations.length ? durationMs(Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)) : "—";
+  const activityPageSize = 10;
+  const activityPageCount = Math.max(1, Math.ceil(visible.length / activityPageSize));
+  const pageRecords = visible.slice(activityPage * activityPageSize, (activityPage + 1) * activityPageSize);
+  useEffect(() => { setActivityPage(0); }, [agentFilter]);
+  useEffect(() => { setActivityPage((page) => Math.min(page, activityPageCount - 1)); }, [activityPageCount]);
   const profileFor = (record: RecordValue) => localizedWorkflowProfile(workflowProfile(String(record.workflow || "")) || _AGENT_ACTIVITY_UI_PROFILES[String(record.agent_id || "")] || managerProfile, t);
   return <div className="activity-page">
     <PageIntro title={t("heading.agentActivity")} description={`${project || t("common.currentProject")} · ${t("context.activity.description")}`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />{t("action.manageCapture")}</button>} />
@@ -2531,30 +2634,33 @@ function ActivityView({ data, project, onNavigate }: { data: DashboardData; proj
       </article>; })}
     </div>
     <div className="metrics activity-metrics">
-      <Metric label={t("label.recordedTurns")} value={records.length} />
+      <Metric label={t("label.processedQuestions")} value={processedQuestions} />
+      <Metric label={t("label.averageDuration")} value={averageDuration} />
       <Metric label={t("label.completed")} value={completed} />
       <Metric label={t("label.needsAttention")} value={attention} />
-      <Metric label={t("label.rolesSeen")} value={roles.length} />
     </div>
     <Panel title={t("heading.conversationRecords")} action={<div className="activity-toolbar"><span className="muted">{t("common.showing", { count: visible.length })}</span><label><span>{t("label.role")}</span><select aria-label={`${t("label.role")} filter`} value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}><option value="all">{t("common.all")} {t("label.role")}s</option>{roles.map((agent) => <option value={agent} key={agent}>{String(records.find((record) => String(record.agent_id || "") === agent)?.display_name || agent)}</option>)}</select></label></div>}>
       {!data.activity?.available && <div className="activity-note"><Activity size={15} />{text(data.activity?.detail, t("common.noAgentHistory"))}</div>}
-      {visible.length ? <div className="activity-record-list">{visible.map((record) => {
+      {pageRecords.length ? <div className="activity-record-list">{pageRecords.map((record) => {
         const profile = profileFor(record);
         const workflow = workflowProfiles.find((item) => item.workflow === record.workflow);
         const requestText = String(record.request_text || "").trim();
         const responseText = String(record.response_text || "").trim();
+        const promptText = String(record.prompt_text || "").trim();
         const sourceLabel = record.source === "conversation" ? t("label.requestResult") : record.source === "outcome" ? t("label.resultCaptured") : t("label.traceOnly");
         const timeline = Array.isArray(record.timeline) ? record.timeline : [];
         return <article className="activity-record" key={String(record.trace_id || `${record.agent_id}-${record.started_at}`)}>
           <header className="activity-record-header"><div className="activity-record-identity"><AgentAvatar agentId={record.agent_id} displayName={record.display_name || profile.agent} size="record" /><div><span className="overview-kicker">{profile.feature}</span><h4>{text(record.display_name, profile.agent)}</h4><p>{text(record.action, sourceLabel)}</p></div></div><div className="activity-record-status"><Badge value={text(record.status, "unknown")} /><time>{when(record.started_at)}</time></div></header>
           <div className="activity-thread">
-            <div className="activity-message user"><span>{t("common.you")}</span><p>{requestText || t("label.olderTrace")}</p></div>
-            <div className="activity-message agent"><span>{text(record.display_name, profile.agent)}</span><p>{responseText || t("label.noFinalResponse")}</p></div>
+            <div className="activity-message user"><span>{t("common.you")}</span><MarkdownBody content={requestText || t("label.olderTrace")} /></div>
+            <div className="activity-message agent"><span>{text(record.display_name, profile.agent)}</span><MarkdownBody content={responseText || t("label.noFinalResponse")} /></div>
           </div>
-          <footer className="activity-record-footer"><span>{sourceLabel}</span><span>{t("common.trace")} <code>{text(record.trace_id)}</code></span><span>{record.latency_ms ? `${record.latency_ms} ms` : `${record.event_count || 0} events`}</span>{workflow && <button className="text-button" onClick={() => onNavigate(workflow.tab)}>{t("common.open")} {localizedWorkflowProfile(workflow, t).feature} <ChevronRight size={13} /></button>}</footer>
+          <footer className="activity-record-footer"><span>{sourceLabel}</span><span>{t("common.trace")} <code>{text(record.trace_id)}</code></span><span>{record.latency_ms !== undefined && record.latency_ms !== null ? durationMs(record.latency_ms) : `${record.event_count || 0} events`}</span>{workflow && <button className="text-button" onClick={() => onNavigate(workflow.tab)}>{t("common.open")} {localizedWorkflowProfile(workflow, t).feature} <ChevronRight size={13} /></button>}</footer>
+          <details className="activity-debug"><summary>{t("label.debugDetails")}</summary><div className="activity-debug-grid"><div><span>{t("label.input")}</span><MarkdownBody content={requestText || t("label.olderTrace")} /></div><div><span>{t("label.output")}</span><MarkdownBody content={responseText || t("label.noFinalResponse")} /></div><div className="activity-debug-prompt"><span>{t("common.originalPrompt")}</span>{promptText ? <pre>{promptText}</pre> : <p>{t("label.promptNotCaptured")}</p>}</div></div></details>
           {timeline.length > 0 && <details className="activity-trail"><summary>{t("label.executionTrail")}</summary><div>{timeline.map((event: RecordValue, index: number) => <p key={`${event.event}-${index}`}><time>{when(event.at)}</time><strong>{text(event.event)}</strong>{event.detail && <span>{text(event.detail)}</span>}</p>)}</div></details>}
         </article>;
       })}</div> : <div className="activity-empty"><MessageCirclePlaceholder /><strong>{t("common.noConversationRecords")}</strong><span>{data.activity?.available ? t("common.askAgents") : t("common.activityStoreFirstTurn")}</span></div>}
+      {visible.length > activityPageSize && <Pagination page={activityPage} pageCount={activityPageCount} onChange={setActivityPage} />}
     </Panel>
     <p className="activity-retention-note">{t("label.activityRetention")}</p>
   </div>;
@@ -3469,6 +3575,8 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     chats: agentsPayload.recent_feishu?.chats || [],
     names: agentsPayload.recent_feishu?.names || {},
   });
+  const [selectedPersonId, setSelectedPersonId] = useState("");
+  const [selectedChatId, setSelectedChatId] = useState("");
   const [agentsBaseline, setAgentsBaseline] = useState({
     enabled: Boolean(agentsPayload.enabled),
     agents: Array.isArray(agentsPayload.agents) ? JSON.stringify(agentsPayload.agents) : "[]",
@@ -3499,10 +3607,6 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     if (value.length <= 14) return value;
     return `${value.slice(0, 10)}…${value.slice(-4)}`;
   };
-  const feishuLabel = (id: string) => {
-    const name = feishuName(id);
-    return name ? `${name} · ${shortFeishuId(id)}` : shortFeishuId(id);
-  };
   const recentPeople = (recentFeishu.users?.length
     ? recentFeishu.users
     : recentFeishu.user_ids.map((id) => ({ id, name: feishuName(id) }))
@@ -3511,6 +3615,34 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     ? recentFeishu.chats
     : recentFeishu.chat_ids.map((id) => ({ id, name: feishuName(id) }))
   ).filter((item) => item.id);
+  const configuredUserIds = Array.from(new Set([
+    ...(accessDraft.allowed_user_ids || []),
+    ...(accessDraft.mutation_allowed_user_ids || []),
+    ...(accessDraft.admin_user_ids || []),
+  ]));
+  const accessPeopleById = new Map<string, FeishuIdentityItem>();
+  for (const person of recentPeople) if (person.id) accessPeopleById.set(String(person.id), person);
+  for (const id of configuredUserIds) if (!accessPeopleById.has(id)) accessPeopleById.set(id, { id, name: feishuName(id) });
+  const accessPeople = Array.from(accessPeopleById.values()).filter((item) => item.id);
+  const accessPeopleGroups: Array<{ name: string; ids: string[] }> = [];
+  for (const person of accessPeople) {
+    const id = String(person.id);
+    const name = String(person.name || feishuName(id) || t("common.unknown"));
+    const group = accessPeopleGroups.find((item) => item.name === name);
+    if (group) group.ids.push(id);
+    else accessPeopleGroups.push({ name, ids: [id] });
+  }
+  const accessChatIds = Array.from(new Set([...(accessDraft.allowed_chat_ids || []), ...(recentFeishu.chat_ids || [])]));
+  const accessChats = accessChatIds.map((id) => recentChats.find((chat) => String(chat.id) === id) || { id, name: feishuName(id) });
+  const hasAccess = (field: "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids", id: string) => (accessDraft[field] || []).includes(id);
+  const toggleAccess = (field: "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids" | "allowed_chat_ids", id: string, enabled: boolean) => {
+    setAccessDraft((current) => {
+      const values = current[field] || [];
+      return { ...current, [field]: enabled ? Array.from(new Set([...values, id])) : values.filter((value) => value !== id) };
+    });
+    markDirty();
+  };
+  const configuredPeople = accessPeopleGroups.filter((group) => group.ids.some((id) => configuredUserIds.includes(id)));
   const syncAgents = (payload: AgentsSettingsPayload) => {
     const nextAgents = Array.isArray(payload.agents)
       ? payload.agents.map((agent) => ({ ...agent, app_secret: "" }))
@@ -3547,19 +3679,6 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       base_app_token_masked: payload.test_case?.base_app_token_masked || "",
     });
     setTestCaseToken("");
-  };
-  const addAccessId = (
-    field: "allowed_chat_ids" | "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids",
-    value: string,
-  ) => {
-    const id = value.trim();
-    if (!id) return;
-    setAccessDraft((current) => {
-      const existing = current[field] || [];
-      if (existing.includes(id)) return current;
-      return { ...current, [field]: [...existing, id] };
-    });
-    markDirty();
   };
   const updateAgent = (agentId: string, patch: Partial<AgentSettings>) => {
     setAgentDrafts((current) => current.map((agent) => agent.id === agentId ? { ...agent, ...patch } : agent));
@@ -3612,14 +3731,6 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       return JSON.stringify({ language: "zh-Hant", table_name: "Sheet1", base_app_token_env: "FEISHU_MBPASS_QA_SHEET_TOKEN" });
     }
   })() || Boolean(testCaseToken.trim());
-  const accessMappings = (
-    [
-      ["Chats", accessDraft.allowed_chat_ids || []],
-      ["Allowed users", accessDraft.allowed_user_ids || []],
-      ["Mutation users", accessDraft.mutation_allowed_user_ids || []],
-      ["Admins", accessDraft.admin_user_ids || []],
-    ] as Array<[string, string[]]>
-  ).filter(([, ids]) => ids.length > 0);
   const saveAll = async () => {
     if (saving) return;
     setSaving(true);
@@ -3627,7 +3738,6 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       if (!scanModel.trim() || !deliveryModel.trim() || !patchModel.trim()) throw new Error("Choose a preset or enter a Cursor-supported model ID for all workflows.");
       for (const agent of agentDrafts) {
         if (!String(agent.model || "").trim()) throw new Error(`${agent.display_name || agent.id} needs a Cursor model.`);
-        if (!String(agent.soul || "").trim()) throw new Error(`${agent.display_name || agent.id} SOUL cannot be empty.`);
       }
       const saves = [
         () => request("/api/workspace", project, { method: "POST", json: { scan_window_days: Number(scanWindow), scan_model: scanModel.trim(), delivery_model: deliveryModel.trim(), patch_model: patchModel.trim(), feishu_notifications_enabled: feishuEnabled } }),
@@ -3713,121 +3823,33 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
           )}
         </div>
         <div className="settings-control wide access-control-panel">
-          <div className="form-grid compact">
-            <Field label={t("settings.allowedChatIds")} help={t("settings.allowedChatHelp")}><input value={(accessDraft.allowed_chat_ids || []).join(", ")} placeholder="oc_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, allowed_chat_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
-            <Field label={t("settings.allowedUserIds")} help={t("settings.allowedUserHelp")}><input value={(accessDraft.allowed_user_ids || []).join(", ")} placeholder="ou_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, allowed_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
-            <Field label={t("settings.mutationUserIds")} help={t("settings.mutationUserHelp")}><input value={(accessDraft.mutation_allowed_user_ids || []).join(", ")} placeholder="ou_… required for mutations" onChange={(event) => { setAccessDraft((current) => ({ ...current, mutation_allowed_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
-            <Field label={t("settings.adminUserIds")} help={t("settings.adminUserHelp")}><input value={(accessDraft.admin_user_ids || []).join(", ")} placeholder="ou_…" onChange={(event) => { setAccessDraft((current) => ({ ...current, admin_user_ids: event.target.value.split(",").map((v) => v.trim()).filter(Boolean) })); markDirty(); }} /></Field>
+          <div className="access-selector-grid">
+            <Field label={t("settings.accessPerson")} help={t("settings.selectIdentityHelp")}><select value={selectedPersonId} onChange={(event) => setSelectedPersonId(event.target.value)}><option value="">{t("settings.selectPerson")}</option>{accessPeopleGroups.map((group) => <optgroup label={`${group.name} · ${group.ids.length}`} key={group.name}>{group.ids.map((id) => <option value={id} key={id}>{shortFeishuId(id)}</option>)}</optgroup>)}</select></Field>
+            <Field label={t("settings.accessChat")} help={t("settings.allowedChatHelp")}><select value={selectedChatId} onChange={(event) => setSelectedChatId(event.target.value)}><option value="">{t("settings.selectChat")}</option>{accessChats.map((chat) => <option value={String(chat.id)} key={String(chat.id)}>{chat.name || feishuName(String(chat.id)) || shortFeishuId(String(chat.id))}</option>)}</select></Field>
           </div>
-          {accessMappings.length > 0 && (
-            <div className="access-mapping-list">
-              {accessMappings.map(([label, ids]) => (
-                <div className="access-mapping-row" key={label}>
-                  <span>{label}</span>
-                  <div className="access-mapping-values">
-                    {ids.map((id) => (
-                      <em key={`${label}-${id}`}>
-                        <strong>{feishuName(id) || t("common.unknown")}</strong>
-                        <code title={id}>{shortFeishuId(id)}</code>
-                      </em>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {(recentPeople.length > 0 || recentChats.length > 0) && (
-            <div className="access-identity-panel">
-              {recentPeople.length > 0 && (
-                <div className="access-identity-group">
-                  <div className="access-identity-heading">
-                    <span>{t("settings.recentPeople")}</span>
-                    <small>{t("settings.addMutationUser")}</small>
-                  </div>
-                  <div className="access-identity-chips">
-                    {recentPeople.map((person) => (
-                      <button
-                        type="button"
-                        className="access-chip"
-                        key={`user-${person.id}`}
-                        onClick={() => addAccessId("mutation_allowed_user_ids", String(person.id))}
-                        title={`Add ${feishuLabel(String(person.id))} to Mutation user IDs`}
-                      >
-                        <strong>{person.name || feishuName(String(person.id)) || t("common.unknown")}</strong>
-                        <code>{shortFeishuId(String(person.id))}</code>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {recentChats.length > 0 && (
-                <div className="access-identity-group">
-                  <div className="access-identity-heading">
-                    <span>{t("settings.recentChats")}</span>
-                    <small>{t("settings.allowChat")}</small>
-                  </div>
-                  <div className="access-identity-chips">
-                    {recentChats.map((chat) => (
-                      <button
-                        type="button"
-                        className="access-chip chat"
-                        key={`chat-${chat.id}`}
-                        onClick={() => addAccessId("allowed_chat_ids", String(chat.id))}
-                        title={`Add ${feishuLabel(String(chat.id))} to Allowed chat IDs`}
-                      >
-                        <strong>{chat.name || feishuName(String(chat.id)) || "Chat"}</strong>
-                        <code>{shortFeishuId(String(chat.id))}</code>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {recentPeople[0]?.id && (
-                <button
-                  type="button"
-                  className="button ghost access-owner-button"
-                  onClick={() => {
-                    const id = String(recentPeople[0].id);
-                    addAccessId("mutation_allowed_user_ids", id);
-                    addAccessId("admin_user_ids", id);
-                    addAccessId("allowed_user_ids", id);
-                  }}
-                >
-                  Use {feishuName(String(recentPeople[0].id)) || "latest user"} as owner
-                </button>
-              )}
-            </div>
-          )}
-          {recentPeople.length === 0 && (
-            <p className="schedule-note access-empty-note">{t("settings.noRecentPeople")}</p>
-          )}
+          {selectedPersonId && <div className="access-identity-editor"><div className="access-identity-heading"><span>{t("settings.identityRoles")}</span><code>{shortFeishuId(selectedPersonId)}</code></div><label><input type="checkbox" checked={hasAccess("allowed_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("allowed_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canTalk")}</label><label><input type="checkbox" checked={hasAccess("mutation_allowed_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("mutation_allowed_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canMutate")}</label><label><input type="checkbox" checked={hasAccess("admin_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("admin_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canAdmin")}</label></div>}
+          {selectedChatId && <div className="access-identity-editor"><div className="access-identity-heading"><span>{t("settings.accessChat")}</span><code>{shortFeishuId(selectedChatId)}</code></div><label><input type="checkbox" checked={(accessDraft.allowed_chat_ids || []).includes(selectedChatId)} onChange={(event) => toggleAccess("allowed_chat_ids", selectedChatId, event.target.checked)} />{t("settings.allowChat")}</label></div>}
+          {configuredPeople.length > 0 && <div className="access-summary"><div className="access-identity-heading"><span>{t("settings.accessSummary")}</span><small>{t("settings.identityCount", { count: configuredPeople.reduce((count, group) => count + group.ids.length, 0) })}</small></div>{configuredPeople.map((group) => <button type="button" className="access-summary-row" key={group.name} onClick={() => setSelectedPersonId(group.ids[0])}><strong>{group.name}</strong><span>{t("settings.identityCount", { count: group.ids.length })}</span><em>{["allowed_user_ids", "mutation_allowed_user_ids", "admin_user_ids"].filter((field) => group.ids.some((id) => hasAccess(field as "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids", id))).length} {t("settings.rolesApplied")}</em></button>)}</div>}
+          {accessPeople.length === 0 && <p className="schedule-note access-empty-note">{t("settings.noRecentPeople")}</p>}
         </div>
       </div>
-      {agentDrafts.map((agent, index) => (
-        <div className={`settings-section divider agent-role-section`} key={agent.id}>
+      {agentDrafts.map((agent) => {
+        const profile = localizedWorkflowProfile(workflowProfile(agent.workflow) || managerProfile, t);
+        return <div className="settings-section divider agent-role-section" key={agent.id}>
           <div className="settings-copy">
-            <div className="settings-heading"><div className="settings-title-stack"><h4>{agent.display_name}</h4><span className="muted">{agent.title}</span></div></div>
-            <p>Role {agent.role} · workflow {agent.workflow}. Feishu credentials live in {text(agent.credentials_path, "~/.lumon/.env.local")}. SOUL overrides are at {text(agent.soul_override_path)} ({agent.soul_source}). Restart `lumon agents start` after changing App ID/Secret.</p>
-            <p className="schedule-note">Security: exposure {text(agent.security?.exposure_mode, "restricted_team")} · dm_only {String(agent.security?.dm_only ?? false)} · host_read {text(agent.security?.host_read, "deny")} · runner {text(agent.security?.runner, "local_isolated")} · mutations {text(agent.security?.mutations, "brokered")} · sandbox {text(agent.security?.sandbox, "enabled")}</p>
+            <div className="settings-heading"><div className="settings-title-stack"><div className="agent-settings-identity"><AgentAvatar agentId={agent.id} displayName={agent.display_name} size="guide" /><span><h4>{agent.display_name}</h4><small>{agent.title}</small></span></div></div><Badge value={agent.conversation_enabled ? t("common.enabled") : t("common.paused")} /></div>
+            <p>{profile.mission}</p>
+            <div className="agent-settings-responsibility"><span>{t("settings.responsibility")}</span><strong>{profile.feature}</strong><span>{t("label.role")}</span><strong>{agent.role}</strong><span>{t("label.workflow")}</span><strong>{agent.workflow}</strong></div>
+            <p className="schedule-note">{t("settings.agentCoreDescription")} Credentials live in {text(agent.credentials_path, "~/.lumon/.env.local")}.</p>
           </div>
-          <div className="settings-control wide">
-            <div className="form-grid compact">
-              <Field label={t("label.feishuAppId")}><input value={agent.app_id || ""} placeholder={agent.app_id_masked || "cli_…"} onChange={(event) => updateAgent(agent.id, { app_id: event.target.value })} /></Field>
-              <Field label={t("label.feishuAppSecret")} help={agent.app_secret_configured ? `Configured (${agent.app_secret_masked || "set"}). Leave blank to keep.` : t("settings.appSecretRequired")}><input type="password" value={agent.app_secret || ""} placeholder={agent.app_secret_configured ? t("settings.keepSecret") : t("settings.enterSecret")} onChange={(event) => updateAgent(agent.id, { app_secret: event.target.value })} autoComplete="new-password" /></Field>
-              <Field label={t("label.conversation")}><select value={agent.conversation_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { conversation_enabled: event.target.value === "on" })}><option value="on">{t("common.enabled")}</option><option value="off">{t("common.paused")}</option></select></Field>
-              <ModelField label="Cursor model" value={agent.model} onChange={(value) => updateAgent(agent.id, { model: value })} markDirty={markDirty} />
-              <Field label={t("label.softTimeout")}><input type="number" min="10" max="3600" value={agent.soft_timeout_seconds} onChange={(event) => updateAgent(agent.id, { soft_timeout_seconds: Number(event.target.value) || 90 })} /></Field>
-              <Field label={t("label.hardTimeout")}><input type="number" min="30" max="7200" value={agent.hard_timeout_seconds} onChange={(event) => updateAgent(agent.id, { hard_timeout_seconds: Number(event.target.value) || 300 })} /></Field>
-              <Field label={t("label.typingReaction")}><select value={agent.reaction_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { reaction_enabled: event.target.value === "on" })}><option value="on">{t("common.enabled")}</option><option value="off">{t("common.off")}</option></select></Field>
-              <Field label={t("label.maxJobs")}><input type="number" min="1" max="32" value={agent.max_concurrent_jobs} onChange={(event) => updateAgent(agent.id, { max_concurrent_jobs: Number(event.target.value) || 3 })} /></Field>
-              <Field label={t("label.soulVersion")}><input value={agent.soul_version} onChange={(event) => updateAgent(agent.id, { soul_version: event.target.value })} /></Field>
-              <Field label={t("label.roleId")} help={t("settings.runtimeIdentityHelp")}><input className="settings-readonly-field" value={agent.role} readOnly aria-readonly="true" /></Field>
-              <Field label={t("label.workflow")} help={t("settings.workflowOwnershipHelp")}><input className="settings-readonly-field" value={agent.workflow} readOnly aria-readonly="true" /></Field>
-            </div>
-            <label className="field agent-soul-field"><span>SOUL.md</span><textarea rows={index === 0 ? 16 : 14} value={agent.soul} spellCheck={false} onChange={(event) => updateAgent(agent.id, { soul: event.target.value })} /></label>
-          </div>
-        </div>
-      ))}
+          <div className="settings-control wide"><div className="form-grid compact agent-core-fields">
+            <Field label={t("label.feishuAppId")}><input value={agent.app_id || ""} placeholder={agent.app_id_masked || "cli_…"} onChange={(event) => updateAgent(agent.id, { app_id: event.target.value })} /></Field>
+            <Field label={t("label.feishuAppSecret")} help={agent.app_secret_configured ? `Configured (${agent.app_secret_masked || "set"}). Leave blank to keep.` : t("settings.appSecretRequired")}><input type="password" value={agent.app_secret || ""} placeholder={agent.app_secret_configured ? t("settings.keepSecret") : t("settings.enterSecret")} onChange={(event) => updateAgent(agent.id, { app_secret: event.target.value })} autoComplete="new-password" /></Field>
+            <Field label={t("label.conversation")}><select value={agent.conversation_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { conversation_enabled: event.target.value === "on" })}><option value="on">{t("common.enabled")}</option><option value="off">{t("common.paused")}</option></select></Field>
+            <ModelField label={t("label.cursorModel")} value={agent.model} onChange={(value) => updateAgent(agent.id, { model: value })} markDirty={markDirty} />
+          </div></div>
+        </div>;
+      })}
       {agentDrafts.length === 0 && <div className="settings-section divider"><Empty label={t("common.noAgentRolesSettings")} /></div>}
       </Panel>
     </section>

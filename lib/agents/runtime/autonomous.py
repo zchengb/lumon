@@ -453,6 +453,12 @@ def handle_autonomous_conversation(
                 "trace": trace,
                 "obs": obs,
             }
+            obs.emit(
+                trace,
+                "agent.prompt.composed",
+                prompt=str(prompt or "")[:20000],
+                prompt_truncated=len(str(prompt or "")) > 20000,
+            )
             if workspace_isolation_v2_enabled() and runtime is None:
                 result = runner.run(definition=definition, **run_kwargs)
             else:
@@ -499,6 +505,12 @@ def handle_autonomous_conversation(
                     "trace": trace,
                     "obs": obs,
                 }
+                obs.emit(
+                    trace,
+                    "agent.prompt.composed",
+                    prompt=str(prompt or "")[:20000],
+                    prompt_truncated=len(str(prompt or "")) > 20000,
+                )
                 if workspace_isolation_v2_enabled() and runtime is None:
                     result = runner.run(definition=definition, **run_kwargs)
                 else:

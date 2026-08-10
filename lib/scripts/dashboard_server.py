@@ -1223,6 +1223,7 @@ _AGENT_ACTIVITY_PROFILES = {
 _ACTIVITY_TIMELINE_EVENTS = {
     "conversation.request",
     "conversation.completed",
+    "agent.prompt.composed",
     "agent.jira.shortcut",
     "agent.run.started",
     "agent.result.completed",
@@ -1249,7 +1250,7 @@ def _activity_log_index(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str
     return traces, outbound
 
 
-def agent_activity_payload(project: str, limit: int = 60) -> dict[str, Any]:
+def agent_activity_payload(project: str, limit: int = 240) -> dict[str, Any]:
     """Return a small, local-only conversation read model for the dashboard."""
     try:
         from risk.store import global_db_path
@@ -1270,8 +1271,15 @@ def agent_activity_payload(project: str, limit: int = 60) -> dict[str, Any]:
             ORDER BY started_at DESC
             LIMIT ?
             """,
-            (str(project or ""), str(project or ""), max(1, min(int(limit), 120))),
+            (str(project or ""), str(project or ""), max(1, min(int(limit), 240))),
         ).fetchall()
+        total = int(connection.execute(
+            """
+            SELECT COUNT(*) FROM conversation_trace
+            WHERE (? = '' OR project_slug = ? OR COALESCE(project_slug, '') = '')
+            """,
+            (str(project or ""), str(project or "")),
+        ).fetchone()[0] or 0)
         log_index, outbound_index = _activity_log_index(database.parent)
         items: list[dict[str, Any]] = []
         for trace in traces:
@@ -1284,6 +1292,7 @@ def agent_activity_payload(project: str, limit: int = 60) -> dict[str, Any]:
             profile = dict(log_index.get(trace_id, {}))
             request_text = ""
             response_text = ""
+            prompt_text = ""
             action = ""
             outcome = str(trace["state"] or "unknown")
             for row in raw_events:
@@ -1296,6 +1305,8 @@ def agent_activity_payload(project: str, limit: int = 60) -> dict[str, Any]:
                 profile.update({key: payload[key] for key in ("agent_id", "role", "workflow", "project_slug") if payload.get(key)})
                 if row["event"] == "conversation.request":
                     request_text = str(payload.get("text") or "")[:4000]
+                if row["event"] == "agent.prompt.composed":
+                    prompt_text = str(payload.get("prompt") or "")[:20000]
                 if row["event"] in {"conversation.completed", "conversation.result"}:
                     response_text = str(payload.get("text") or payload.get("response_text") or "")[:4000]
                     action = str(payload.get("action") or action)
@@ -1326,6 +1337,7 @@ def agent_activity_payload(project: str, limit: int = 60) -> dict[str, Any]:
                     "action": action,
                     "request_text": request_text,
                     "response_text": response_text,
+                    "prompt_text": prompt_text,
                     "source": source,
                     "started_at": str(trace["started_at"] or ""),
                     "completed_at": str(trace["completed_at"] or ""),
@@ -1335,7 +1347,7 @@ def agent_activity_payload(project: str, limit: int = 60) -> dict[str, Any]:
                 }
             )
         connection.close()
-        return {"available": True, "items": items, "count": len(items)}
+        return {"available": True, "items": items, "count": len(items), "total": total}
     except (OSError, sqlite3.Error, ValueError) as exc:
         return {"available": False, "items": [], "detail": f"Unable to read Agent activity: {exc}"}
 
