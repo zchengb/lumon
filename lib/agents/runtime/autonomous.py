@@ -16,6 +16,7 @@ from agents.runtime.interaction import (
     action_missing_fields,
     clarification_choice_hint,
     clarification_question,
+    current_version_for_workspace,
     format_clarification_reply,
     interaction_contract_prompt,
     normalize_clarification,
@@ -77,61 +78,6 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
     )
 
 
-def _read_version(path: Path) -> str:
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return ""
-    if path.name == "package.json":
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            payload = {}
-        if isinstance(payload, dict):
-            version = str(payload.get("version") or "").strip()
-            if version:
-                return version
-    match = re.search(r"\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", text)
-    return match.group(0) if match else ""
-
-
-def _current_version_for_clarification(workspace: Path, clarification: dict[str, Any]) -> str:
-    values: dict[str, Any] = {}
-    for key in ("resource", "arguments"):
-        item = clarification.get(key)
-        if isinstance(item, dict):
-            values.update(item)
-    repository = str(values.get("repository") or values.get("repo") or "").strip()
-    target_files = values.get("target_files") or values.get("target_file") or values.get("file") or []
-    if isinstance(target_files, str):
-        target_files = [target_files]
-    if not isinstance(target_files, list):
-        target_files = []
-    root = Path(workspace).expanduser().resolve()
-    if repository:
-        try:
-            from delivery_workspace import discover_git_repos, load_workspace_config, repo_path_for_name
-
-            workspace_root, workspace_config = load_workspace_config(root)
-            repo = repo_path_for_name(repository, workspace_root, workspace_config, discover_git_repos(workspace_root, workspace_config))
-            if repo is not None:
-                root = repo.resolve()
-        except Exception:
-            candidate = (root / repository).resolve()
-            if candidate.is_dir():
-                root = candidate
-    names = [str(item or "").strip() for item in target_files if str(item or "").strip()]
-    names.extend(name for name in ("package.json", "VERSION", "version.txt", "pyproject.toml") if name not in names)
-    for name in names[:12]:
-        candidate = (root / name).resolve()
-        if root not in candidate.parents or not candidate.is_file():
-            continue
-        version = _read_version(candidate)
-        if version:
-            return version
-    return ""
-
-
 def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dict[str, Any]:
     action = str(clarification.get("action") or "").strip()
     if action not in {"delivery.quick_change", "jira.workitem.create"}:
@@ -154,7 +100,8 @@ def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dic
         return clarification
     enriched = dict(clarification)
     choices = enriched.get("choices") if isinstance(enriched.get("choices"), list) else []
-    current_version = _current_version_for_clarification(workspace, enriched)
+    values.update({"request": request})
+    current_version = current_version_for_workspace(workspace, values)
     if not choices:
         choices = version_upgrade_choices(current_version)
     enriched["choices"] = choices[:4]
@@ -745,9 +692,6 @@ def handle_autonomous_conversation(
             if action_receipts:
                 for receipt in action_receipts:
                     result_payload = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
-                    action_name = str(receipt.get("action") or "").strip()
-                    if action_name.startswith("jira.workitem.") and receipt.get("status") == "succeeded":
-                        continue
                     if receipt.get("status") == "succeeded" and result_payload.get("summary"):
                         if not parsed.valid:
                             reply_text = str(result_payload["summary"])

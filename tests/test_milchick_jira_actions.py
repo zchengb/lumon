@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -229,6 +230,89 @@ class JiraActionTests(unittest.TestCase):
         self.assertIn("## Problem", text)
         self.assertIn("## Source feedback", text)
         self.assertIn("raw email body", text)
+
+    def test_jira_retry_in_traditional_chinese_is_explicit_and_reports_result(self) -> None:
+        from agents.milchick.jira_shortcut import try_milchick_jira_create, wants_jira_create
+        from agents.security.actions import ActionReceipt
+        from agents.security.trusted import TrustedActionContext
+
+        user_text = (
+            "jira.workitem.create was not executed: mutation denied for zone=RESTRICTED intent=read\n"
+            "這個問題請再試試看是不是已修復\n"
+            "另外版本號請基於既有的升級一個 minor 即可"
+        )
+        self.assertTrue(wants_jira_create(user_text))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "repos" / "digital-platform-admin" / "public"
+            config.mkdir(parents=True)
+            (config / "config.js").write_text("VERSION: '1.1.0'", encoding="utf-8")
+
+            class FakeBroker:
+                def execute(self, request):
+                    self.request = request
+                    return ActionReceipt(
+                        receipt_id="act-retry",
+                        status="succeeded",
+                        action=request.action,
+                        agent_id=request.agent_id,
+                        actor=request.actor_user_id,
+                        resource=request.resource,
+                        trace_id=request.trace_id,
+                        executed_at="now",
+                        result={
+                            "status": "completed",
+                            "issue_key": "MBPAS-2200",
+                            "summary": request.arguments["summary"],
+                            "url": "https://example.atlassian.net/browse/MBPAS-2200",
+                        },
+                    )
+
+            broker = FakeBroker()
+            out = try_milchick_jira_create(
+                user_text=user_text,
+                anchored_text=user_text,
+                context=TrustedActionContext(
+                    agent_id="milchick",
+                    project_slug="mbpass",
+                    actor_user_id="ou_1",
+                    chat_id="oc_1",
+                    thread_id="omt_1",
+                    source_message_id="om_1",
+                    trace_id="tr_retry",
+                    authorization_intent="read",
+                ),
+                broker=broker,
+                workspace=root,
+                designer_runner=lambda prompt: json.dumps(
+                    {"summary": "Upgrade Admin Portal displayed version", "issue_type": "Task"}
+                ),
+            )
+
+        assert out is not None
+        self.assertEqual("ok", out["status"])
+        self.assertIn("MBPAS-2200", out["text"])
+        self.assertIn("https://example.atlassian.net/browse/MBPAS-2200", out["text"])
+        self.assertTrue(broker.request.explicit_authorization)
+        self.assertEqual("mutate_explicit", broker.request.arguments["_authorization_intent"])
+        self.assertEqual("1.2.0", broker.request.arguments["target_version"])
+        self.assertIn("Current displayed version: 1.1.0", broker.request.arguments["description"])
+
+    def test_failed_jira_receipt_reports_reason(self) -> None:
+        text = prefer_action_summary(
+            "The Jira task is being created.",
+            [
+                {
+                    "action": "jira.workitem.create",
+                    "status": "failed",
+                    "error": "twg CLI returned exit 1",
+                    "error_code": "EXECUTOR_ERROR",
+                }
+            ],
+        )
+        self.assertIn("Action failed", text)
+        self.assertIn("twg CLI returned exit 1", text)
 
     def test_broker_denies_dylan(self) -> None:
         receipt = CapabilityBroker(config={"access": {"mutation_allowed_user_ids": ["ou_owner"]}}).execute(

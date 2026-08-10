@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
 
 from agents.milchick.jira_designer import JiraDesignUnavailable, design_jira_issue
 from agents.runtime.final_response import prefer_action_summary
+from agents.runtime.interaction import current_version_for_workspace
 from agents.security.access_policy import classify_authorization_intent
 from agents.security.broker import CapabilityBroker
 from agents.security.trusted import TrustedActionContext, bind_action_request
@@ -20,13 +22,19 @@ _CREATE_TOKENS = (
     "建卡",
     "创建jira",
     "创建 jira",
+    "建立jira",
+    "建立 jira",
+    "創建jira",
+    "創建 jira",
 )
 _UPDATE_TOKENS = (
     "edit jira",
     "update jira",
+    "jira.workitem.update",
     "更新jira",
     "更新 jira",
 )
+_RETRY_TOKENS = ("retry", "re-run", "rerun", "重试", "重試", "再试", "再試", "重新创建", "重新創建", "重新建立")
 
 
 def wants_jira_create(text: str) -> bool:
@@ -37,7 +45,23 @@ def wants_jira_create(text: str) -> bool:
         return False
     if any(tok in lower for tok in _UPDATE_TOKENS) and not any(tok in lower for tok in ("create", "建", "创建")):
         return False
-    return any(tok in lower for tok in _CREATE_TOKENS)
+    direct = any(tok in lower for tok in _CREATE_TOKENS)
+    retry = any(tok in lower for tok in _RETRY_TOKENS) and any(
+        tok in lower for tok in ("jira", "workitem", "建卡")
+    )
+    return direct or retry
+
+
+def _version_target(user_text: str, *, current_version: str) -> str:
+    raw = str(user_text or "")
+    explicit = re.search(r"\bv?(\d+\.\d+\.\d+)\b", raw)
+    minor_requested = bool(re.search(r"\bminor\b|小版本|次版本|minor", raw.casefold()))
+    if explicit and not minor_requested:
+        return explicit.group(1)
+    if not current_version or not minor_requested:
+        return ""
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?", current_version.strip())
+    return f"{match.group(1)}.{int(match.group(2)) + 1}.0" if match else ""
 
 
 def _anchor_blob(anchored_text: str) -> str:
@@ -142,7 +166,7 @@ def _draft_issue(
                 f"{source_body or source_title}\n\n"
                 "## Source feedback\n"
                 f"{source_body}\n\n"
-                "_Workspace investigation unavailable; created from Feishu feedback only._"
+                "_Automated Jira draft enrichment was unavailable; the source feedback was retained._"
             ).strip(),
             "issue_type": "Bug",
             "priority": "",
@@ -180,8 +204,29 @@ def try_milchick_jira_create(
         arguments["priority"] = draft["priority"]
     if draft.get("labels"):
         arguments["labels"] = draft["labels"]
+    version_values = {
+        "summary": draft["summary"],
+        "description": draft["description"],
+        "request": user_text,
+    }
+    current_version = current_version_for_workspace(Path(workspace), version_values) if workspace else ""
+    target_version = _version_target(user_text, current_version=current_version)
+    if current_version and target_version:
+        arguments["target_version"] = target_version
+        arguments["description"] = (
+            f"{arguments['description'].rstrip()}\n\n"
+            "## Version target\n"
+            f"Current displayed version: {current_version}\n"
+            f"Target version: {target_version} (+1 minor)."
+        ).strip()
+    elif current_version:
+        arguments["description"] = (
+            f"{arguments['description'].rstrip()}\n\n"
+            f"Current displayed version read from the registered workspace: {current_version}."
+        ).strip()
+    request_context = replace(context, authorization_intent="mutate_explicit", explicit_authorization=True)
     request = bind_action_request(
-        context=context,
+        context=request_context,
         action="jira.workitem.create",
         arguments=arguments,
         resource={"summary": draft["summary"]},
@@ -210,4 +255,5 @@ def try_milchick_jira_create(
             "jira_shortcut": True,
             "jira_drafted": bool(draft.get("drafted")),
         },
+        "workspace": str(workspace) if workspace else "",
     }

@@ -468,7 +468,7 @@ def classify_authorization_intent(text: str) -> str:
     lower = str(text or "").strip().lower()
     if not lower:
         return "none"
-    confirm = ("确认", "confirm", "yes", "好的", "执行", "do it", "go ahead", "批准")
+    confirm = ("确认", "確認", "confirm", "yes", "好的", "執行", "执行", "do it", "go ahead", "批准")
     mutate = (
         "resolve",
         "mark remediated",
@@ -482,8 +482,10 @@ def classify_authorization_intent(text: str) -> str:
         "version number",
         "升级版本",
         "更新版本",
+        "升級版本",
         "升级",
         "版本号",
+        "版本號",
         "生成测试",
         "test case",
         "testcase",
@@ -492,6 +494,14 @@ def classify_authorization_intent(text: str) -> str:
         "开始交付",
         "取消交付",
         "retry",
+        "再试",
+        "再試",
+        "重试",
+        "重試",
+        "重新创建",
+        "重新創建",
+        "重新建立",
+        "重建 jira",
         "re-run",
         "rerun",
         "re run",
@@ -511,6 +521,10 @@ def classify_authorization_intent(text: str) -> str:
         "建卡",
         "创建jira",
         "创建 jira",
+        "建立jira",
+        "建立 jira",
+        "創建jira",
+        "創建 jira",
         "更新jira",
         "更新 jira",
     )

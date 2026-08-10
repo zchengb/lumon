@@ -4,6 +4,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 
@@ -84,6 +85,90 @@ def version_upgrade_choices(current_version: str = "") -> list[dict[str, Any]]:
         {"value": value, "label": f"{value} · {kind}", "description": description, "recommended": recommended}
         for value, kind, description, recommended in values
     ]
+
+
+def _read_version_file(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+    if path.name == "package.json":
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict) and str(payload.get("version") or "").strip():
+            return str(payload["version"]).strip()
+    match = re.search(r"\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", text)
+    return match.group(0) if match else ""
+
+
+def current_version_for_workspace(workspace: Path, values: dict[str, Any] | None = None) -> str:
+    """Read the most relevant registered version without leaving the workspace."""
+    data = values if isinstance(values, dict) else {}
+    request = " ".join(
+        str(data.get(key) or "")
+        for key in ("summary", "description", "request", "task", "change", "change_type")
+    ).casefold()
+    repository = str(data.get("repository") or data.get("repo") or "").strip()
+    root = Path(workspace).expanduser().resolve()
+    try:
+        from delivery_workspace import discover_git_repos, load_workspace_config, repo_path_for_name
+
+        workspace_root, workspace_config = load_workspace_config(root)
+        discovered = discover_git_repos(workspace_root, workspace_config)
+        if not repository and "admin portal" in request and "digital-platform-admin" in discovered:
+            repository = "digital-platform-admin"
+        if not repository:
+            repository = next(
+                (
+                    name
+                    for name in discovered
+                    if name.casefold() in request or name.casefold().replace("-", " ") in request
+                ),
+                "",
+            )
+        if repository:
+            repo = repo_path_for_name(repository, workspace_root, workspace_config, discovered)
+            if repo is not None:
+                root = repo.resolve()
+            else:
+                candidate = workspace_root / "repos" / repository
+                if candidate.is_dir():
+                    root = candidate.resolve()
+    except Exception:
+        if repository:
+            for candidate in (root / repository, root / "repos" / repository):
+                if candidate.is_dir():
+                    root = candidate.resolve()
+                    break
+        elif "admin portal" in request:
+            candidate = root / "repos" / "digital-platform-admin"
+            if candidate.is_dir():
+                root = candidate.resolve()
+
+    raw_targets = data.get("target_files") or data.get("target_file") or data.get("file") or []
+    targets = [raw_targets] if isinstance(raw_targets, str) else raw_targets
+    if not isinstance(targets, list):
+        targets = []
+    names = [str(item or "").strip() for item in targets if str(item or "").strip()]
+    display_version = bool(
+        re.search(r"admin portal|display|shown|bottom|left|ui|frontend|页面|左下角|版本号|版本號", request)
+    )
+    defaults = (
+        ("public/config.js", "public/config.local.js", "public/config.dev.js", "package.json", "VERSION")
+        if display_version
+        else ("package.json", "VERSION", "version.txt", "pyproject.toml")
+    )
+    names.extend(name for name in defaults if name not in names)
+    for name in names[:16]:
+        candidate = (root / name).resolve()
+        if root not in candidate.parents or not candidate.is_file():
+            continue
+        version = _read_version_file(candidate)
+        if version:
+            return version
+    return ""
 
 
 def _choice_parts(item: Any) -> tuple[str, str, str, bool]:

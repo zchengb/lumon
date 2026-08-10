@@ -350,7 +350,7 @@ def _format_jira_receipt(action: str, result: dict[str, Any]) -> str:
     elif title:
         head = f"{verb}: {title}"
     else:
-        head = f"{verb} Jira work item."
+        head = f"{verb} Jira work item, but no issue key was returned."
     if url and url not in head:
         return f"{head}\n{url}"
     return head
@@ -463,18 +463,32 @@ def prefer_action_summary(reply_text: str, receipts: list[dict[str, Any]]) -> st
     denial_text = ""
     if denial_lines:
         denial_text = "**Action blocked**\n" + "\n".join(denial_lines)
+    failure_lines: list[str] = []
+    for receipt in receipts:
+        if str(receipt.get("status") or "") != "failed":
+            continue
+        action = str(receipt.get("action") or "action").strip()
+        result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+        detail = (
+            _format_jira_receipt(action, result)
+            if action.startswith("jira.workitem.") and any(result.get(key) for key in ("status", "issue_key", "summary"))
+            else ""
+        )
+        err = detail or str(receipt.get("error") or receipt.get("error_code") or "failed").strip()
+        failure_lines.append(f"- **{action}** failed: {err}")
+    failure_text = "**Action failed**\n" + "\n".join(failure_lines) if failure_lines else ""
     has_status_read = any(
         str(r.get("action") or "").strip() in _STATUS_READ_ACTIONS and r.get("status") == "succeeded"
         for r in receipts
     )
     if has_status_read and summary:
-        if denial_text:
-            return f"{summary}\n\n{denial_text}"
-        return summary
-    if denial_text and (not reply_text or is_planning_reply(reply_text)):
-        return denial_text
-    if denial_text and reply_text and denial_text not in reply_text:
-        return f"{reply_text}\n\n{denial_text}"
+        notices = "\n\n".join(item for item in (denial_text, failure_text) if item)
+        return f"{summary}\n\n{notices}" if notices else summary
+    notices = "\n\n".join(item for item in (denial_text, failure_text) if item)
+    if notices and (not reply_text or is_planning_reply(reply_text)):
+        return notices
+    if notices and reply_text and not all(item in reply_text for item in (denial_text, failure_text) if item):
+        return f"{reply_text}\n\n{notices}"
     if not reply_text:
         return summary
     return reply_text
