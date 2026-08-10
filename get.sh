@@ -16,7 +16,7 @@ set -euo pipefail
 #   LUMON_HOME      Lumon installation directory (default: ~/.lumon)
 #   LUMON_BIN_DIR   Where to place the 'lumon' executable (default: ~/.local/bin)
 
-REPO="${LUMON_REPO:-${LUMEN_REPO:-zchengb/lumon-cli}}"
+REPO="${LUMON_REPO:-${LUMEN_REPO:-zchengb/lumon}}"
 REQUESTED_VERSION="${LUMON_VERSION:-${LUMEN_VERSION:-}}"
 
 BOLD="$(printf '\033[1m')"

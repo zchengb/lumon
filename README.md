@@ -20,7 +20,7 @@ The system is intentionally local-first. Source repositories, configuration, cre
 ### Release installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon-cli/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/main/get.sh | bash
 ```
 
 The installer places the executable in `~/.local/bin/lumon` and the supporting library in `~/.lumon/`. `lumen` and `~/.lumen/` remain compatibility aliases for existing workspaces.
@@ -28,7 +28,7 @@ The installer places the executable in `~/.local/bin/lumon` and the supporting l
 ### Local checkout
 
 ```bash
-git clone https://github.com/zchengb/lumon-cli.git lumon
+git clone https://github.com/zchengb/lumon.git lumon
 cd lumon
 ./install.sh
 ```
