@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "3"
+MANAGED_VERSION = "4"
 _MANAGED_START = f"<!-- LUMEN MARK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MARK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MARK MANAGED START"
@@ -40,15 +40,15 @@ def _managed_block(project_slug: str) -> str:
         f"- lumen agents action --agent mark --action delivery.quick_change --json "
         f"(bounded explicit change; no Story/technical plan required)\n"
         f"- lumen agents action --agent mark --action delivery.start --story <id> --json "
-        f"(host/admin only; conversational path prefers ACTION_REQUEST)\n"
+        f"(host/admin only; conversational path uses the internal host execution channel)\n"
         f"- lumen agents action --agent mark --action test_case.generate --story <Jira-key> --json\n\n"
         f"## Jira\n"
         f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
-        f"- Create/update work items only through <ACTION_REQUEST> when the latest request calls for that write\n\n"
+        f"- Create/update work items only through the internal <ACTION_REQUEST> channel when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
         f"- Conversational Mark is workspace-isolated over delivery docs\n"
         f"- Never enumerate host apps/hardware/home; never modify business source or secrets\n"
-        f"- Start delivery / quick changes / generate test cases via host-side broker <ACTION_REQUEST> only\n"
+        f"- Start delivery / quick changes / generate test cases via the host-side broker; the internal <ACTION_REQUEST> envelope is never shown to users\n"
         f"- Do not supply actor_user_id, chat_id, or explicit_authorization\n\n"
         f"## Test Case Skill\n"
         f"- Owner: Mark / test_case.generate\n"
@@ -60,7 +60,7 @@ def _managed_block(project_slug: str) -> str:
         f"- Do not invent PR / verification / Jira status.\n"
         f"- Ordinary questions must not start delivery.\n"
         f"- Put Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>\n"
-        f"- Mutations: <ACTION_REQUEST>{{action,arguments,resource}}</ACTION_REQUEST>\n"
+        f"- Mutations: internal <ACTION_REQUEST>{{action,arguments,resource}}</ACTION_REQUEST>; strip it before Feishu output\n"
         f"{_MANAGED_END}\n"
     )
 

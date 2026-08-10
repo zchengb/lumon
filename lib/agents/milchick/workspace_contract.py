@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "4"
+MANAGED_VERSION = "5"
 _MANAGED_START = f"<!-- LUMEN MILCHICK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MILCHICK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MILCHICK MANAGED START"
@@ -26,13 +26,14 @@ def _managed_block(project_slug: str) -> str:
         f"- Child jobs may set depends_on\n\n"
         f"## Natural-language routing\n"
         f"- A readable screenshot or bounded wording request is not a Jira request by default\n"
-        f"- Infer the smallest safe action and delegate clear source changes to Mark quick-change\n"
-        f"- Ask only when missing repository, file, meaning, or outcome changes execution\n\n"
+        f"- Route clear source or delivery work to Mark without pre-reading the repository or inferring files\n"
+        f"- The host preserves the original message and image context; Mark reads the workspace himself\n"
+        f"- Ask only when the owner, capability, user intent, or outcome is genuinely unclear\n\n"
         f"## Security Boundary\n"
         f"- Workspace-isolated; no host enumeration\n"
         f"- Jira create/update only via <ACTION_REQUEST>; no shell twg\n"
         f"- No feishu.bitable.write / risk.resolve\n"
-        f"- Mutations via <ACTION_REQUEST> only; host fills identity\n\n"
+        f"- Mutations use an internal <ACTION_REQUEST> channel; never ask the user to write or confirm it\n\n"
         f"## Rules\n"
         f"- Put Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>\n"
         f"- Summarize parent-job graphs when asked for status\n"

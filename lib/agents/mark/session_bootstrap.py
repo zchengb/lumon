@@ -5,7 +5,7 @@ from typing import Any
 
 from agents.mark.soul_loader import load_soul
 
-PROTOCOL_VERSION = "3"
+PROTOCOL_VERSION = "4"
 SOUL_VERSION = "3"
 
 
@@ -20,7 +20,7 @@ def _default_commands(project_slug: str) -> list[str]:
         f"lumen delivery result --run-id <run-id> --project {project_slug} --json",
         (
             f"lumen agents action --agent mark --action delivery.quick_change --project {project_slug} "
-            "--json (bounded source change; ACTION_REQUEST only)"
+            "--json (bounded source change; internal host execution)"
         ),
         (
             "lumen delivery cancel --run-id <run-id> --actor <user-id> "
@@ -61,8 +61,8 @@ def build_bootstrap_prompt(
         "- For a Business Loop, read the installed lumen-business-loop skill and work on topic/story artifacts. For a Technical Loop, read lumen-technical-loop and work on the technical plan for one business-ready Story. Keep both conversations in the current Feishu thread.\n"
         "- Explicit start: readiness then delivery run once; return Run ID; do not wait for completion.\n"
         "- Follow-up: read delivery progress/result files; do not guess.\n"
-        "- Lightweight change: for a small explicit change such as a version bump, inspect the workspace, "
-        "infer the single repository and canonical file when safe, then emit delivery.quick_change. "
+        "- Lightweight change: for a small explicit change such as a version bump, inspect the workspace yourself, "
+        "identify the repository and canonical file, then use the internal host execution channel. "
         "Do not require a Story or technical plan for this bounded path. Ask one focused question only "
         "when the repository, target file, requested change, or target version remains ambiguous.\n"
         "- Test cases: when the latest request calls for them, emit test_case.generate ACTION_REQUEST "
@@ -74,7 +74,8 @@ def build_bootstrap_prompt(
         "- Prefer Jira keys in user-facing replies.\n"
         "- Jira reads use jira.workitem.get/query or jira.sprint.untested.report; Jira create/update uses ACTION_REQUEST when the latest request calls for a Jira write.\n"
         "- Workspace-isolated: do not enumerate host apps, hardware, home folders, or hostname.\n"
-        "- Prefer <ACTION_REQUEST> for delivery.start / delivery.cancel / delivery.quick_change / test_case.generate. "
+        "- Use <ACTION_REQUEST> only as an internal host execution channel for delivery.start / delivery.cancel / delivery.quick_change / test_case.generate. "
+        "The host removes it before the Feishu reply; never expose it or ask the user to write or confirm it. "
         "Host fills actor/chat identity — never invent --actor or explicit_authorization.\n"
         "- Wrap the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         "- Stay in Mark's calm delivery-lead voice from the Soul notes.\n\n"
@@ -85,11 +86,11 @@ def build_bootstrap_prompt(
         "[LUMEN MESSAGE]\n"
         f"User message:\n{user_message}\n\n"
         "Respond after any necessary Workspace investigation.\n"
-        "For host mutations emit ACTION_REQUEST, e.g.\n"
+        "For host mutations emit the internal ACTION_REQUEST envelope; it is stripped before Feishu output and is never a user-facing step. For example:\n"
         "<ACTION_REQUEST>{\"action\":\"test_case.generate\",\"arguments\":{\"issue_key\":\"MBPAS-1601\"},"
         "\"resource\":{\"issue_key\":\"MBPAS-1601\"}}</ACTION_REQUEST>\n"
         "or delivery.start / delivery.cancel as before.\n"
-        "For a bounded quick change use: <ACTION_REQUEST>{\"action\":\"delivery.quick_change\",\"arguments\":{\"repository\":\"repo\",\"target_files\":[\"package.json\"],\"request\":\"upgrade the version number\",\"change_type\":\"version_bump\",\"target_version\":\"1.2.3\"}}</ACTION_REQUEST>\n"
+        "For a bounded quick change, inspect the workspace first and then use: <ACTION_REQUEST>{\"action\":\"delivery.quick_change\",\"arguments\":{\"repository\":\"repo\",\"target_files\":[\"package.json\"],\"request\":\"upgrade the version number\",\"change_type\":\"version_bump\",\"target_version\":\"1.2.3\"}}</ACTION_REQUEST>\n"
         "Put only the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
     )
 
@@ -107,7 +108,10 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "If the Loop Gateway identifies a clear Business or Technical Loop entry, continue that Loop directly; an ambiguous entry gets one confirmation. Loop entry never authorizes delivery.start.\n"
         "Do not start Story delivery unless the user explicitly authorized a run. A bounded quick change is "
         "already authorized by the user's explicit request once its required details are known.\n"
+        "If another agent hands you a task, use the original user input and attachments as the source of truth; "
+        "do not rely on a repository or file analysis from the previous agent.\n"
         "Do not modify business source in the conversational workspace; quick changes run in an isolated host worker. "
+        "Use the internal host execution channel when a mutation is needed; the user never needs to see ACTION_REQUEST. "
         "Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         f"User message:\n{user_message}\n"
         f"{extra}\n"

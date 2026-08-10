@@ -20,6 +20,8 @@ class TrustedActionContext:
     chat_type: str = ""
     access_decision: AccessDecision | None = None
     explicit_authorization: bool = False
+    user_message: str = ""
+    image_keys: str = ""
 
 
 def trusted_context_from_meta(
@@ -42,6 +44,8 @@ def trusted_context_from_meta(
         chat_type=str(meta.get("chat_type") or "").strip(),
         access_decision=access_decision,
         explicit_authorization=bool(explicit_authorization),
+        user_message=str(meta.get("_user_message") or ""),
+        image_keys=str(meta.get("image_keys") or ""),
     )
 
 
@@ -81,8 +85,8 @@ def execute_trusted_actions(
         action = str(item.get("action") or "").strip()
         if not action:
             continue
-        resource = item.get("resource") if isinstance(item.get("resource"), dict) else {}
-        arguments = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+        resource = dict(item.get("resource") if isinstance(item.get("resource"), dict) else {})
+        arguments = dict(item.get("arguments") if isinstance(item.get("arguments"), dict) else {})
         for key in (
             "actor_user_id",
             "actor",
@@ -96,6 +100,11 @@ def execute_trusted_actions(
         ):
             arguments.pop(key, None)
             resource.pop(key, None)
+        if action == "agent.job.create":
+            if context.user_message:
+                arguments["user_message"] = context.user_message
+            if context.image_keys:
+                arguments["image_keys"] = context.image_keys
         request = bind_action_request(
             context=context,
             action=action,

@@ -127,6 +127,7 @@ def _run_autonomous_worker(
         )
         success = False
         result: dict[str, Any] = {}
+        suppress_reply = str(meta.get("_suppress_reply") or "") == "1"
         try:
             obs.emit(trace, "message.received")
             obs.emit(trace, "conversation.request", text=_audit_text(text))
@@ -169,35 +170,38 @@ def _run_autonomous_worker(
                 success = True
                 return result
             reply_text = str(result.get("text") or "暂无数据。")
-            obs.emit(trace, "reply.started")
-            reply_in_thread = should_reply_in_thread(meta)
-            if message_id:
-                sent = None
-                for attempt in range(4):
-                    sent = messenger.safe_reply_text(
-                        message_id,
-                        reply_text,
-                        reply_in_thread=reply_in_thread,
-                    )
-                    if sent is not None:
-                        break
-                    time.sleep(min(2 ** attempt, 8))
-                if sent is None:
-                    obs.emit(trace, "reply.failed", level="ERROR")
-                    obs.upsert_trace(trace, reply_status="failed", state="failed", error_code="reply_failed")
-                    raise RuntimeError("final reply failed")
-                try:
-                    remember_outbound(
-                        message_id=extract_message_id(sent),
-                        text=reply_text,
-                        chat_id=chat_id,
-                        agent_id=agent,
-                        reply_to=message_id,
-                        thread_id=str(meta.get("thread_id") or ""),
-                    )
-                except Exception:
-                    pass
-            obs.emit(trace, "reply.succeeded")
+            if suppress_reply:
+                obs.emit(trace, "reply.suppressed")
+            else:
+                obs.emit(trace, "reply.started")
+                reply_in_thread = should_reply_in_thread(meta)
+                if message_id:
+                    sent = None
+                    for attempt in range(4):
+                        sent = messenger.safe_reply_text(
+                            message_id,
+                            reply_text,
+                            reply_in_thread=reply_in_thread,
+                        )
+                        if sent is not None:
+                            break
+                        time.sleep(min(2 ** attempt, 8))
+                    if sent is None:
+                        obs.emit(trace, "reply.failed", level="ERROR")
+                        obs.upsert_trace(trace, reply_status="failed", state="failed", error_code="reply_failed")
+                        raise RuntimeError("final reply failed")
+                    try:
+                        remember_outbound(
+                            message_id=extract_message_id(sent),
+                            text=reply_text,
+                            chat_id=chat_id,
+                            agent_id=agent,
+                            reply_to=message_id,
+                            thread_id=str(meta.get("thread_id") or ""),
+                        )
+                    except Exception:
+                        pass
+                obs.emit(trace, "reply.succeeded")
             obs.upsert_trace(trace, reply_status="succeeded", state="completed")
             receipts = result.get("action_receipts") if isinstance(result.get("action_receipts"), list) else []
             obs.emit(
@@ -224,7 +228,7 @@ def _run_autonomous_worker(
                 obs.upsert_trace(trace, state="failed", error_code="worker_error")
             except Exception:
                 pass
-            if message_id and result.get("status") not in {"ok", "delegate", "error"}:
+            if message_id and not suppress_reply and result.get("status") not in {"ok", "delegate", "error"}:
                 messenger.safe_reply_text(
                     message_id,
                     f"I couldn't finish this turn.\nTrace ID: {trace.trace_id}",
@@ -241,6 +245,8 @@ def _run_autonomous_worker(
             except Exception:
                 pass
 
+    if str(meta.get("_nested_handoff") or "") == "1":
+        return _worker()
     queued = run_conversation_job(
         message_id=message_id or f"local-{chat_id}-{meta.get('thread_id')}-{meta.get('user_id')}",
         chat_id=chat_id,
@@ -296,7 +302,11 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
     in_thread = should_reply_in_thread(meta)
     known = known_project_slugs()
 
-    mapped = resolve_project(chat_id=chat_id, mapping=load_chat_project_map())
+    mapped = resolve_project(
+        slug=str(meta.get("_project_slug") or ""),
+        chat_id=chat_id,
+        mapping=load_chat_project_map(),
+    )
     probe_common = _load_workspace_common(str(mapped.get("workspace") or "")) if mapped else {}
     flags = ConversationFlags.from_common(probe_common, config, agent_id=agent)
 

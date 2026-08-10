@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-from pathlib import PurePosixPath
 from typing import Any, Optional
 
 from agents.jobs.store import AgentJob, AgentJobStore, new_job_id
@@ -11,57 +9,6 @@ from agents.security.trusted import TrustedActionContext, bind_action_request
 
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
-_QUICK_CHANGE_FILE_RE = re.compile(
-    r"(?<![A-Za-z0-9_./-])(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|js|jsx|ts|tsx|py|md|yaml|yml|toml|xml|html|css|scss|java|kt|go|rs|rb|php|sh|properties|gradle|conf|ini|lock)(?![A-Za-z0-9_.-])",
-    re.IGNORECASE,
-)
-
-
-def _inferred_quick_change_files(text: str, repository: str) -> list[str]:
-    repo = str(repository or "").strip()
-    files: list[str] = []
-    for match in _QUICK_CHANGE_FILE_RE.findall(str(text or "")):
-        value = match.strip("`'\"()[]{}<>,.;:")
-        for prefix in (f"repos/{repo}/", f"{repo}/"):
-            if repo and value.casefold().startswith(prefix.casefold()):
-                value = value[len(prefix) :]
-                break
-        if value.startswith("repos/"):
-            continue
-        path = PurePosixPath(value)
-        if value.startswith("/") or ".." in path.parts or ".git" in path.parts:
-            continue
-        normalized = path.as_posix()
-        if normalized and normalized not in files:
-            files.append(normalized)
-    return files[:8]
-
-
-def _normalize_child_input(capability: str, input_data: Optional[dict[str, Any]]) -> dict[str, Any]:
-    values = dict(input_data or {})
-    if str(capability or "").strip() != "delivery.quick_change":
-        return values
-
-    if not any(str(values.get(key) or "").strip() for key in ("request", "task", "change")):
-        for key in ("instruction", "summary"):
-            value = str(values.get(key) or "").strip()
-            if value:
-                values["request"] = value
-                break
-
-    target_files = values.get("target_files") or values.get("target_file") or values.get("file")
-    if target_files:
-        values["target_files"] = target_files
-    else:
-        target_files = _inferred_quick_change_files(
-            "\n".join(str(values.get(key) or "") for key in ("instruction", "request", "summary")),
-            str(values.get("repository") or values.get("repo") or ""),
-        )
-        if target_files:
-            values["target_files"] = target_files
-    return values
-
-
 class AgentJobBroker:
     def __init__(self, store: AgentJobStore | None = None) -> None:
         self.store = store or AgentJobStore()
@@ -123,7 +70,7 @@ class AgentJobBroker:
             capability=capability,
             parent_job_id=parent.job_id,
             depends_on=deps,
-            input=_normalize_child_input(capability, input_data),
+            input=dict(input_data or {}),
             source_message_id=parent.source_message_id,
             chat_id=parent.chat_id,
             thread_id=parent.thread_id,
@@ -210,42 +157,104 @@ class AgentJobBroker:
             return current
         current.status = "running"
         self.store.save(current)
-        context = TrustedActionContext(
-            agent_id=current.target_agent,
-            project_slug=current.project,
-            actor_user_id=current.requested_by,
-            chat_id=current.chat_id,
-            thread_id=current.thread_id,
-            source_message_id=current.source_message_id,
-            trace_id=current.trace_id,
-            explicit_authorization=True,
-        )
-        request = bind_action_request(
-            context=context,
-            action=current.capability,
-            resource=dict(current.input),
-            arguments=dict(current.input),
-        )
-        receipt = (broker or CapabilityBroker()).execute(request)
-        current.result = receipt.to_dict()
-        nested = receipt.result if isinstance(receipt.result, dict) else {}
-        nested_failed = str(nested.get("status") or "").lower() == "failed"
-        if receipt.status == "succeeded" and not nested_failed:
+        handoff = self._execute_mark_handoff(current)
+        if handoff is not None:
+            receipt_payload = handoff
+            succeeded = handoff.get("status") == "succeeded"
+            error = str(handoff.get("error") or "agent_handoff_failed")
+        else:
+            context = TrustedActionContext(
+                agent_id=current.target_agent,
+                project_slug=current.project,
+                actor_user_id=current.requested_by,
+                chat_id=current.chat_id,
+                thread_id=current.thread_id,
+                source_message_id=current.source_message_id,
+                trace_id=current.trace_id,
+                explicit_authorization=True,
+            )
+            request = bind_action_request(
+                context=context,
+                action=current.capability,
+                resource=dict(current.input),
+                arguments=dict(current.input),
+            )
+            receipt = (broker or CapabilityBroker()).execute(request)
+            receipt_payload = receipt.to_dict()
+            nested = receipt.result if isinstance(receipt.result, dict) else {}
+            nested_failed = str(nested.get("status") or "").lower() == "failed"
+            succeeded = receipt.status == "succeeded" and not nested_failed
+            error = (
+                str(nested.get("code") or nested.get("message") or "action_failed")
+                if nested_failed
+                else receipt.error or receipt.error_code or receipt.status
+            )
+        current.result = receipt_payload
+        if succeeded:
             current.status = "completed"
             current.error = ""
-            self._handoff_reply(current, receipt.to_dict())
+            self._handoff_reply(current, receipt_payload)
         else:
             current.status = "failed"
-            if nested_failed:
-                current.error = str(nested.get("code") or nested.get("message") or "action_failed")
-            else:
-                current.error = receipt.error or receipt.error_code or receipt.status
-            self._handoff_reply(current, receipt.to_dict(), failed=True)
+            current.error = error
+            self._handoff_reply(current, receipt_payload, failed=True)
         self.store.save(current)
         if current.parent_job_id:
             self.refresh_dependencies(current.parent_job_id)
             self.summarize(current.parent_job_id)
         return current
+
+    def _execute_mark_handoff(self, child: AgentJob) -> dict[str, Any] | None:
+        """Give Mark the original turn; do not make Milchick discover its files."""
+        if str(child.target_agent or "").strip().lower() != "mark" or child.capability != "delivery.quick_change":
+            return None
+        raw_message = str(child.input.get("user_message") or "")
+        if not raw_message.strip():
+            return None
+
+        from agents.bridge import handle_agent_message
+
+        handoff_text = (
+            "[LUMEN HANDOFF]\n"
+            "This task is handed to you. Read the original user input and any attached image, "
+            "inspect the workspace yourself, and decide and execute the smallest safe next step.\n\n"
+            "[ORIGINAL USER INPUT]\n"
+            f"{raw_message}"
+        )
+        meta = {
+            "message_id": child.source_message_id,
+            "chat_id": child.chat_id,
+            "thread_id": child.thread_id,
+            "chat_type": str(child.input.get("chat_type") or "group"),
+            "user_id": child.requested_by,
+            "_project_slug": child.project,
+            "image_keys": str(child.input.get("image_keys") or ""),
+            "_nested_handoff": "1",
+            "_suppress_reply": "1",
+            "_new_agent_turn": "1",
+        }
+        try:
+            result = handle_agent_message(agent_id="mark", text=handoff_text, meta=meta)
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "action": "agent.handoff",
+                "error": str(exc)[:300],
+                "result": {"summary": "Mark could not take over this task."},
+            }
+        status = str(result.get("status") or "").strip().lower()
+        succeeded = status in {"ok", "delegate"}
+        summary = str(result.get("text") or "").strip()
+        if not summary:
+            summary = "Mark has taken over this task." if succeeded else "Mark could not take over this task."
+        payload = {
+            "status": "succeeded" if succeeded else "failed",
+            "action": "agent.handoff",
+            "result": {"summary": summary, "agent_result": result},
+        }
+        if not succeeded:
+            payload["error"] = str(result.get("detail") or status or "agent_handoff_failed")
+        return payload
 
     def _handoff_reply(self, child: AgentJob, receipt: dict[str, Any], *, failed: bool = False) -> None:
         if not child.source_message_id or not child.target_agent:

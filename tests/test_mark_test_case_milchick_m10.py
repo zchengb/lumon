@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from typing import Any
 
@@ -389,7 +390,7 @@ class MilchickJobTests(unittest.TestCase):
             summary = broker.summarize(parent.job_id)
             self.assertIn(summary["overall_state"], {"running", "completed", "blocked"})
 
-    def test_quick_change_job_normalizes_instruction_contract(self) -> None:
+    def test_quick_change_handoff_preserves_original_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = AgentJobStore(Path(tmp) / "jobs.sqlite3")
             broker = AgentJobBroker(store)
@@ -407,16 +408,30 @@ class MilchickJobTests(unittest.TestCase):
                 target_agent="mark",
                 capability="delivery.quick_change",
                 input_data={
-                    "repository": "digital-platform-admin",
-                    "summary": "內容管理新增區塊選單：輪播圖 → 多圖",
-                    "instruction": (
-                        "Set repos/digital-platform-admin/src/locales/mbtw/zh-TW.json "
-                        "from 輪播圖 to 多圖."
-                    ),
+                    "user_message": "Admin Portal 中的 Wording「輪播圖」改成「多圖」",
+                    "image_keys": '["img_v3"]',
+                    "chat_type": "group",
                 },
             )
-            self.assertEqual(child.input["request"], child.input["instruction"])
-            self.assertEqual(child.input["target_files"], ["src/locales/mbtw/zh-TW.json"])
+            with mock.patch(
+                "agents.bridge.handle_agent_message",
+                return_value={"status": "ok", "text": "Mark started the bounded change."},
+            ) as handoff, mock.patch(
+                "feishu.messenger.FeishuMessenger.safe_reply_text",
+                return_value={"message_id": "om2"},
+            ):
+                completed = broker.execute_ready_child(child)
+
+            self.assertEqual("completed", completed.status)
+            handoff.assert_called_once()
+            kwargs = handoff.call_args.kwargs
+            self.assertEqual("mark", kwargs["agent_id"])
+            self.assertIn("This task is handed to you", kwargs["text"])
+            self.assertIn(child.input["user_message"], kwargs["text"])
+            self.assertEqual("mbpass", kwargs["meta"]["_project_slug"])
+            self.assertEqual('["img_v3"]', kwargs["meta"]["image_keys"])
+            self.assertEqual("1", kwargs["meta"]["_nested_handoff"])
+            self.assertEqual("1", kwargs["meta"]["_new_agent_turn"])
 
 
 if __name__ == "__main__":

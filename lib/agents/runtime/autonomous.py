@@ -207,7 +207,11 @@ def handle_autonomous_conversation(
         }
     security_block = security_context_prompt(access)
 
-    mapped = resolve_project(chat_id=chat_id, mapping=load_chat_project_map())
+    mapped = resolve_project(
+        slug=str(meta.get("_project_slug") or ""),
+        chat_id=chat_id,
+        mapping=load_chat_project_map(),
+    )
     project_slug = str((mapped or {}).get("slug") or "")
     if not project_slug:
         known = sorted(known_project_slugs())
@@ -321,6 +325,10 @@ def handle_autonomous_conversation(
                     expected_soul=definition.soul_version,
                     expected_protocol=definition.protocol_version,
                 )
+                store.close_session(session["session_id"])
+                session = None
+            if session is not None and str(meta.get("_new_agent_turn") or "") == "1":
+                obs.emit(trace, "agent.session.new_turn")
                 store.close_session(session["session_id"])
                 session = None
             checkpoint: dict[str, Any] | None = None
@@ -617,10 +625,12 @@ def handle_autonomous_conversation(
                 store.clear_pending(session["session_id"])
             action_receipts: list[dict[str, Any]] = []
             if action_requests and not clarification:
+                action_meta = dict(meta)
+                action_meta["_user_message"] = text
                 context = trusted_context_from_meta(
                     agent_id=agent_id,
                     project_slug=slug,
-                    meta=meta,
+                    meta=action_meta,
                     trace_id=trace.trace_id,
                     access_decision=access,
                 )

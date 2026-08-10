@@ -5,7 +5,7 @@ from typing import Any
 
 from agents.milchick.soul_loader import load_soul
 
-PROTOCOL_VERSION = "3"
+PROTOCOL_VERSION = "4"
 SOUL_VERSION = "1"
 
 
@@ -36,15 +36,17 @@ def build_bootstrap_prompt(
         "- Jira reads → use jira.workitem.get/query or jira.sprint.untested.report; create/edit → emit "
         "jira.workitem.create / jira.workitem.update yourself (do not ask Mark).\n"
         "- You may split one request into multiple child jobs with depends_on.\n"
-        "- For a delivery.quick_change child, include repository, target_files, and request; include target_version/change_type when relevant.\n"
+        "- For clear source or delivery work, delegate to Mark without discovering the repository or files first. "
+        "The host carries the original user message and image context; Mark reads the workspace and decides the execution details.\n"
         "- Mark owns technical failure explanations in the same thread.\n"
         "- A simple version bump, configuration update, or similarly bounded task should use the quick-change or domain-action path, not Story/Jira/Technical planning gates.\n"
-        "- A screenshot or wording request is not a Jira request by default. Read the visible request and workspace evidence first; if it is clear and bounded, choose the smallest safe execution path or delegate it to Mark's delivery.quick_change. Do not present a Bug/Story/Jira/Investigate menu unless the user's intent is genuinely unclear or the requested outcome materially differs.\n"
-        "- Do not ask the user to restate a readable screenshot or supply a separate 'phenomenon or requirement' when the image and message already establish the change. Infer the problem, expected result, and likely fix; state assumptions briefly.\n"
+        "- A screenshot or wording request is not a Jira request by default. If it clearly asks for a bounded source change, delegate it to Mark immediately. Do not present a Bug/Story/Jira/Investigate menu unless the user's intent or desired outcome is genuinely unclear.\n"
+        "- Preserve the user's message and attachment context across delegation. Do not ask the user to supply Mark's repository, file, or execution fields.\n"
+        "- Ask only when the owner, capability, user intent, or desired outcome is genuinely unclear; Mark owns workspace-level ambiguity.\n"
         "- You summarize overall parent-job status when asked “how’s this going?”.\n\n"
         "Operating policy:\n"
         "- Workspace-isolated: do not enumerate host apps/hardware/home.\n"
-        "- Prefer <ACTION_REQUEST> for job create/list/show/cancel/retry and Jira create/update.\n"
+        "- Prefer the internal <ACTION_REQUEST> channel for job create/list/show/cancel/retry and Jira create/update; never ask the user to write or confirm the envelope.\n"
         "- Host fills actor/chat identity — never invent --actor.\n"
         "- Never run twg in the sandbox shell; use ACTION_REQUEST only.\n"
         "- Jira creation is intentional: emit jira.workitem.create/update when your interpretation of the latest request calls for a Jira write or the user confirms a Jira proposal. Ordinary feedback must first receive an interpretation, proposed fix, or configured execution handoff.\n"
@@ -77,9 +79,9 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         f"Project: {project_slug or '(same as session)'}\n"
         "Remain Milchick. Delegate specialist work. Do not execute Mark/Irving domain actions yourself.\n"
         "Jira reads/report are yours via TWG ACTION_REQUEST; Jira create/update is yours via ACTION_REQUEST.\n"
-        "When delegating delivery.quick_change, provide structured repository, target_files, and request fields.\n"
-        "Do not make Jira the default response to a screenshot or wording request. Read the visible request, infer the smallest safe next action, and delegate a clear bounded change to Mark's delivery.quick_change when appropriate. Ask only for a missing repository/file/meaning that changes execution.\n"
-        "Do not ask the user to restate readable screenshot text or provide a separate phenomenon/requirement when the evidence already supports a reasonable interpretation.\n"
+        "For clear source or delivery work, delegate to Mark immediately; do not pre-analyze the repository or infer target files for him. The host carries the original user message and image context, and Mark reads the workspace himself.\n"
+        "Do not make Jira the default response to a screenshot or wording request. Ask only when the owner, capability, user intent, or desired outcome is genuinely unclear.\n"
+        "Do not ask the user to restate readable screenshot text or provide Mark's execution fields.\n"
         "Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         f"User message:\n{user_message}\n"
         f"{extra}\n"

@@ -23,7 +23,7 @@ from agents.runtime.interaction import (
     normalize_conversation_decision,
     version_upgrade_choices,
 )
-from agents.security.trusted import TrustedActionContext, bind_action_request
+from agents.security.trusted import TrustedActionContext, bind_action_request, execute_trusted_actions
 from agents.runtime.session_store import SessionStore, conversation_scope_id
 from risk.store import GlobalAgentStore
 
@@ -173,6 +173,42 @@ class AgentInteractionTests(unittest.TestCase):
         )
         self.assertNotIn("_authorization_intent", request.arguments)
         self.assertTrue(request.explicit_authorization)
+
+    def test_job_handoff_injects_original_message_and_images(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeBroker:
+            def execute(self, request: object) -> object:
+                captured["request"] = request
+                return object()
+
+        execute_trusted_actions(
+            context=TrustedActionContext(
+                agent_id="milchick",
+                project_slug="mbpass",
+                actor_user_id="ou_owner",
+                chat_id="oc1",
+                thread_id="omt1",
+                source_message_id="om1",
+                trace_id="tr1",
+                user_message="Admin Portal 中的 Wording 改成多圖",
+                image_keys='["img_v3"]',
+            ),
+            requests=[
+                {
+                    "action": "agent.job.create",
+                    "arguments": {
+                        "target_agent": "mark",
+                        "capability": "delivery.quick_change",
+                        "user_message": "wrong intermediate summary",
+                    },
+                }
+            ],
+            broker=FakeBroker(),
+        )
+        request = captured["request"]
+        self.assertEqual("Admin Portal 中的 Wording 改成多圖", request.arguments["user_message"])
+        self.assertEqual('["img_v3"]', request.arguments["image_keys"])
 
     def test_interaction_contract_distinguishes_grill_from_quick_change(self) -> None:
         prompt = interaction_contract_prompt(agent_id="mark")
