@@ -15,7 +15,7 @@ if str(LIB) not in sys.path:
 from agents.parser import parse_dylan_text
 from agents.runtime.autonomous import _prepare_feishu_image_context
 from feishu.dedup import MessageDeduper
-from feishu.handlers import extract_message_meta, extract_text, should_handle
+from feishu.handlers import extract_message_meta, extract_text, handle_message_event, should_handle
 from feishu.client_registry import FeishuClientConfig
 from agents.profiles import PROFILES
 
@@ -114,6 +114,60 @@ class AgentBridgeScanTests(unittest.TestCase):
         text = extract_text(event)
         self.assertIn("[Image attachment]", text)
         self.assertIn("Wording「輪播圖」改成「多圖」", text)
+
+    def test_extract_text_from_message_read_response_body(self) -> None:
+        event = {
+            "event": {
+                "message": {
+                    "msg_type": "post",
+                    "body": {
+                        "content": '{"content":[[{"tag":"text","text":"Wording 輪播圖改成多圖"}]]}'
+                    },
+                }
+            }
+        }
+        self.assertIn("Wording 輪播圖改成多圖", extract_text(event))
+
+    def test_handler_recovers_post_text_omitted_from_websocket_image_event(self) -> None:
+        from unittest.mock import patch
+
+        client = FeishuClientConfig(
+            agent_id="milchick",
+            app_id="cli_mil",
+            app_secret="secret",
+            profile=PROFILES["milchick"],
+        )
+        event = {
+            "event": {
+                "sender": {"sender_type": "user"},
+                "message": {
+                    "message_id": "om_image_1",
+                    "msg_type": "image",
+                    "chat_type": "group",
+                    "mentions": [{"name": "Milchick"}],
+                    "content": '{"image_key":"img_1"}',
+                },
+            }
+        }
+        response = {
+            "data": {
+                "items": [
+                    {
+                        "msg_type": "post",
+                        "body": {
+                            "content": '{"content":[[{"tag":"text","text":"Admin Portal Wording 輪播圖改成多圖"}]]}'
+                        },
+                    }
+                ]
+            }
+        }
+        with (
+            patch("feishu.handlers.FeishuMessenger.safe_get_message", return_value=response),
+            patch("feishu.handlers.remember_message_identities"),
+            patch("feishu.handlers.handle_agent_message", return_value={}) as handle,
+        ):
+            handle_message_event(event, client)
+        self.assertIn("Wording 輪播圖改成多圖", handle.call_args.kwargs["text"])
 
     def test_should_handle_requires_mention_in_group(self) -> None:
         client = FeishuClientConfig(

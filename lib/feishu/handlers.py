@@ -4,9 +4,66 @@ import json
 from typing import Any
 
 from feishu.client_registry import FeishuClientConfig
+from feishu.messenger import FeishuMessenger
 from agents.bridge import handle_agent_message
 from agents.runtime.loop_intent import classify_loop_intent
 from agents.runtime.reply_anchor import extract_content_text, extract_feishu_image_keys
+
+
+def _message_content(message: dict[str, Any]) -> Any:
+    content = message.get("content")
+    if content is not None:
+        return content
+    body = message.get("body")
+    return body.get("content") if isinstance(body, dict) else None
+
+
+def _message_from_response(response: object) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {}
+    data = response.get("data") if isinstance(response.get("data"), dict) else response
+    items = data.get("items") if isinstance(data, dict) else None
+    message = items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else None
+    if message is None and isinstance(data, dict) and isinstance(data.get("message"), dict):
+        message = data["message"]
+    if message is None and isinstance(data, dict) and data.get("msg_type"):
+        message = data
+    if not message:
+        return {}
+    normalized = dict(message)
+    if normalized.get("content") is None:
+        body = normalized.get("body")
+        if isinstance(body, dict) and body.get("content") is not None:
+            normalized["content"] = body["content"]
+    return normalized
+
+
+def _hydrate_missing_text(
+    text: str,
+    meta: dict[str, str],
+    client: FeishuClientConfig,
+) -> tuple[str, dict[str, str]]:
+    """Recover content omitted by Feishu's image/post websocket payload."""
+    current = str(text or "").strip()
+    if current and current not in {"[Image attachment]", "[Message attachment]"}:
+        return current, meta
+    message_id = str(meta.get("message_id") or "").strip()
+    if not message_id:
+        return current, meta
+    fetched = FeishuMessenger(client.agent_id).safe_get_message(message_id)
+    message = _message_from_response(fetched)
+    if not message:
+        return current, meta
+    fetched_event = {"event": {"message": message}}
+    fetched_text = extract_text(fetched_event)
+    fetched_meta = extract_message_meta(fetched_event)
+    merged_meta = dict(meta)
+    for key, value in fetched_meta.items():
+        if value and not merged_meta.get(key):
+            merged_meta[key] = value
+    if fetched_text and fetched_text not in {"[Image attachment]", "[Message attachment]"}:
+        return fetched_text, merged_meta
+    return current, merged_meta
 
 
 def extract_text(event: dict[str, Any]) -> str:
@@ -16,7 +73,7 @@ def extract_text(event: dict[str, Any]) -> str:
         return ""
     msg_type = str(message.get("msg_type") or "text")
     chunks: list[str] = []
-    content_text = extract_content_text(msg_type, message.get("content"))
+    content_text = extract_content_text(msg_type, _message_content(message))
     if content_text:
         chunks.append(content_text)
     for field in ("text", "caption", "description"):
@@ -40,7 +97,7 @@ def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
         sender = {}
     sender_id = sender.get("sender_id") if isinstance(sender.get("sender_id"), dict) else {}
     msg_type = str(message.get("msg_type") or "text")
-    content = message.get("content")
+    content = _message_content(message)
     # thread_id is Feishu topic id (omt_*). Never fall back to root_id (om_* message id).
     meta = {
         "message_id": str(message.get("message_id") or "").strip(),
@@ -198,8 +255,9 @@ def handle_message_event(event: dict[str, Any], client: FeishuClientConfig) -> N
             (message.get("thread_id") if isinstance(message, dict) else None),
         )
         return
-    text = extract_text(event)
     meta = extract_message_meta(event)
+    text = extract_text(event)
+    text, meta = _hydrate_missing_text(text, meta, client)
     if not meta.get("app_id"):
         meta["app_id"] = client.app_id
     remember_message_identities(event, meta, agent_id=client.agent_id)
