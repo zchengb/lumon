@@ -472,6 +472,12 @@ def is_dry_run(data: dict) -> bool:
     return bool(data.get("dry_run"))
 
 
+def is_renderable_scan_result(data: dict) -> bool:
+    if not data or is_dry_run(data):
+        return False
+    return bool(str(data.get("started_at") or "").strip() or str(data.get("finished_at") or "").strip())
+
+
 def trend_points(runs: list, limit: int = 10) -> list:
     points = []
     for run in runs[:limit]:
@@ -504,7 +510,7 @@ def build_payload(root: Path) -> dict:
     latest_run = None
     latest_path = results_dir / "scan-result.json"
     latest_data = load_json(latest_path, {})
-    if latest_data and not is_dry_run(latest_data):
+    if is_renderable_scan_result(latest_data):
         scan_results.append(latest_data)
         latest_run = {
             "id": latest_path.stem,
@@ -515,7 +521,7 @@ def build_payload(root: Path) -> dict:
 
     for path in sorted(results_dir.glob("scan-result-*.json"), reverse=True):
         data = load_json(path, {})
-        if not data or is_dry_run(data):
+        if not is_renderable_scan_result(data):
             continue
         scan_results.append(data)
         counts = severity_counts(data.get("findings", []))

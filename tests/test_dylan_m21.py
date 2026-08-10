@@ -215,6 +215,40 @@ class DashboardOverlayTests(unittest.TestCase):
             self.assertEqual(issue["status_source"], "risk_store")
             self.assertEqual(payload["issue_counts"]["open_total"], 0)
 
+    def test_build_payload_ignores_incomplete_scan_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "config").mkdir()
+            (workspace / "config" / "common.json").write_text("{}\n", encoding="utf-8")
+            (workspace / "config" / "repos.json").write_text('{"repositories":[]}\n', encoding="utf-8")
+            (workspace / "results").mkdir()
+            (workspace / "reports").mkdir()
+            (workspace / "logs").mkdir()
+            (workspace / "state").mkdir()
+            (workspace / "results" / "scan-result-tmp-test.json").write_text(
+                json.dumps({"scan_status": "completed_with_findings"}),
+                encoding="utf-8",
+            )
+            (workspace / "results" / "scan-result-20260810-040000.json").write_text(
+                json.dumps({
+                    "started_at": "2026-08-10T04:00:00Z",
+                    "finished_at": "2026-08-10T04:01:00Z",
+                    "scan_status": "completed",
+                    "findings": [],
+                }),
+                encoding="utf-8",
+            )
+
+            path = ROOT / "lib" / "scripts" / "render-dashboard.py"
+            spec = importlib.util.spec_from_file_location("render_dashboard_incomplete_test", path)
+            assert spec is not None and spec.loader is not None
+            renderer = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(renderer)
+
+            payload = renderer.build_payload(workspace)
+
+            self.assertEqual(["scan-result-20260810-040000"], [run["id"] for run in payload["runs"]])
+
 
 class ReconcileTests(unittest.TestCase):
     def test_dry_run_and_repair(self) -> None:
