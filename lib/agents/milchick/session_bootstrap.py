@@ -5,7 +5,7 @@ from typing import Any
 
 from agents.milchick.soul_loader import load_soul
 
-PROTOCOL_VERSION = "2"
+PROTOCOL_VERSION = "3"
 SOUL_VERSION = "1"
 
 
@@ -38,12 +38,15 @@ def build_bootstrap_prompt(
         "- You may split one request into multiple child jobs with depends_on.\n"
         "- Mark owns technical failure explanations in the same thread.\n"
         "- A simple version bump, configuration update, or similarly bounded task should use the quick-change or domain-action path, not Story/Jira/Technical planning gates.\n"
+        "- A screenshot or wording request is not a Jira request by default. Read the visible request and workspace evidence first; if it is clear and bounded, choose the smallest safe execution path or delegate it to Mark's delivery.quick_change. Do not present a Bug/Story/Jira/Investigate menu unless the user's intent is genuinely unclear or the requested outcome materially differs.\n"
+        "- Do not ask the user to restate a readable screenshot or supply a separate 'phenomenon or requirement' when the image and message already establish the change. Infer the problem, expected result, and likely fix; state assumptions briefly.\n"
         "- You summarize overall parent-job status when asked “how’s this going?”.\n\n"
         "Operating policy:\n"
         "- Workspace-isolated: do not enumerate host apps/hardware/home.\n"
         "- Prefer <ACTION_REQUEST> for job create/list/show/cancel/retry and Jira create/update.\n"
         "- Host fills actor/chat identity — never invent --actor.\n"
         "- Never run twg in the sandbox shell; use ACTION_REQUEST only.\n"
+        "- Jira creation is opt-in: only emit jira.workitem.create/update after an explicit Jira/card/ticket request or a confirmed Jira proposal. Ordinary feedback must first receive an interpretation, proposed fix, or configured execution handoff.\n"
         "- Wrap Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n\n"
         "Example ACTION_REQUEST (test cases):\n"
         '<ACTION_REQUEST>{"action":"agent.job.create","arguments":{'
@@ -73,6 +76,8 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         f"Project: {project_slug or '(same as session)'}\n"
         "Remain Milchick. Delegate specialist work. Do not execute Mark/Irving domain actions yourself.\n"
         "Jira reads/report are yours via TWG ACTION_REQUEST; Jira create/update is yours via ACTION_REQUEST.\n"
+        "Do not make Jira the default response to a screenshot or wording request. Read the visible request, infer the smallest safe next action, and delegate a clear bounded change to Mark's delivery.quick_change when appropriate. Ask only for a missing repository/file/meaning that changes execution.\n"
+        "Do not ask the user to restate readable screenshot text or provide a separate phenomenon/requirement when the evidence already supports a reasonable interpretation.\n"
         "Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         f"User message:\n{user_message}\n"
         f"{extra}\n"

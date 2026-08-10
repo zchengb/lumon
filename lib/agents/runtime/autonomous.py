@@ -17,6 +17,7 @@ from agents.runtime.final_response import extract_final_response, prefer_action_
 from agents.runtime.interaction import (
     action_missing_fields,
     clarification_choice_hint,
+    clarification_has_rendered_choices,
     clarification_question,
     current_version_for_workspace,
     format_clarification_reply,
@@ -136,7 +137,7 @@ def _prepare_feishu_image_context(
         )
     lines = [
         "[FEISHU IMAGE ATTACHMENT]",
-        "The user attached the following image(s). Open and inspect them before answering; do not treat the attachment marker as the image content:",
+        "The user attached the following image(s). Open and inspect them before answering; read visible text, marked UI, wording, errors, and requested changes. Do not ask the user to transcribe readable content or treat the attachment marker as the image content:",
     ]
     lines.extend(f"- {path}" for path in paths)
     return "\n".join(lines), temp_dir
@@ -783,7 +784,10 @@ def handle_autonomous_conversation(
                     statuses=[r.get("status") for r in action_receipts],
                 )
             reply_text = parsed.text
-            if clarification and clarification.get("choices") and "suggested options" not in reply_text.casefold():
+            if clarification and clarification.get("choices") and not clarification_has_rendered_choices(
+                reply_text,
+                clarification.get("choices"),
+            ):
                 reply_text = format_clarification_reply(
                     reply_text or str(clarification.get("question") or ""),
                     clarification.get("choices"),

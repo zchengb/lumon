@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "3"
+MANAGED_VERSION = "4"
 _MANAGED_START = f"<!-- LUMEN MILCHICK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MILCHICK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MILCHICK MANAGED START"
@@ -24,6 +24,10 @@ def _managed_block(project_slug: str) -> str:
         f"- Test cases → Mark test_case.generate\n"
         f"- Never ask redundant confirmation before delegation\n"
         f"- Child jobs may set depends_on\n\n"
+        f"## Natural-language routing\n"
+        f"- A readable screenshot or bounded wording request is not a Jira request by default\n"
+        f"- Infer the smallest safe action and delegate clear source changes to Mark quick-change\n"
+        f"- Ask only when missing repository, file, meaning, or outcome changes execution\n\n"
         f"## Security Boundary\n"
         f"- Workspace-isolated; no host enumeration\n"
         f"- Jira create/update only via <ACTION_REQUEST>; no shell twg\n"

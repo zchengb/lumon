@@ -203,6 +203,8 @@ def format_clarification_reply(question: str, choices: Any, current_version: str
     normalized = [item for item in normalized if item[0] and item[1]]
     if not normalized:
         return text
+    if clarification_has_rendered_choices(text, rows):
+        return text
     lines = []
     if str(current_version or "").strip():
         lines.extend([f"Current version: {str(current_version).strip()}", ""])
@@ -211,8 +213,24 @@ def format_clarification_reply(question: str, choices: Any, current_version: str
         suffix = " — Recommended" if recommended else ""
         detail = f" — {description}" if description else ""
         lines.append(f"{index}. {label}{suffix}{detail}")
-    lines.append("You can also reply with a custom target version.")
+    custom_label = "custom target version" if current_version or any(_SEMVER_RE.search(value) for value, *_ in normalized) else "custom answer"
+    lines.append(f"You can also reply with a {custom_label}.")
     return "\n".join(line for line in lines if line is not None).strip()
+
+
+def clarification_has_rendered_choices(text: str, choices: Any) -> bool:
+    """Avoid appending a second option list when the Agent already rendered it."""
+    if not isinstance(choices, list) or len(choices) < 2:
+        return False
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    if "suggested options" in raw.casefold():
+        return True
+    expected = min(2, len(choices))
+    letter_rows = len(re.findall(r"(?im)^\s*(?:[-*]\s*)?\*{0,2}[A-D]\*{0,2}(?:[.)：:、-]|\s)", raw))
+    numbered_rows = len(re.findall(r"(?m)^\s*(?:[-*]\s*)?\*{0,2}\d+\*{0,2}[.)：:、-]\s", raw))
+    return max(letter_rows, numbered_rows) >= expected
 
 
 def clarification_choice_hint(answer: str, pending: dict[str, Any] | None) -> str:
@@ -397,6 +415,8 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         "Put the same user-facing question inside FINAL_RESPONSE. For a bounded quick change, preserve the user's "
         "explicit request while collecting missing details; for other mutations, ask for confirmation separately when needed.",
         "Use the user's latest answer to fill the pending fields. If choices are present and the user replies with a number or label, resolve it to that choice's value. Do not repeat a question that has already been answered.",
+        "Jira is a tool, not the default workflow. Do not turn a screenshot, wording request, or ordinary feedback into a Bug/Story/Jira choice menu by default. Create or update Jira only when the user explicitly asks for a Jira card/ticket/issue, or confirms that proposal.",
+        "If the attached image contains a readable request, marked UI, wording, error, or expected change, inspect and use that evidence; do not ask the user to transcribe visible content. Infer the smallest safe action, explain the likely solution, and ask only when competing interpretations materially change the work.",
         "[LUMEN GRILL PROTOCOL]",
         "Use mode=grill for Business Loop, Technical Loop, or design requests when an unresolved decision could change scope, behavior, safety, architecture, verification, ownership, or rollback.",
         "Inspect available evidence first. Ask for the highest-impact unknown, not every possible preference. Explain why the answer matters, offer 2–4 concrete options with one Recommended option when reasonable, and allow a custom answer.",

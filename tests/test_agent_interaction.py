@@ -16,6 +16,7 @@ from agents.runtime.final_response import extract_final_response
 from agents.runtime.interaction import (
     action_missing_fields,
     clarification_choice_hint,
+    clarification_has_rendered_choices,
     format_clarification_reply,
     interaction_contract_prompt,
     normalize_clarification,
@@ -112,6 +113,18 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertIn("value=1.2.4", hint)
         self.assertIn("target_version", hint)
 
+    def test_clarification_does_not_duplicate_agent_rendered_choices(self) -> None:
+        choices = [
+            {"value": "bug", "label": "A", "description": "Create Bug"},
+            {"value": "story", "label": "B", "description": "Create Story"},
+            {"value": "investigate", "label": "C", "description": "Investigate first"},
+            {"value": "other", "label": "D", "description": "Other"},
+        ]
+        agent_text = "A. Create Bug\nB. Create Story\nC. Investigate first\nD. Other"
+        self.assertTrue(clarification_has_rendered_choices(agent_text, choices))
+        self.assertEqual(agent_text, format_clarification_reply(agent_text, choices))
+        self.assertIn("custom answer", format_clarification_reply("What should I do?", choices))
+
     def test_explicit_topic_change_supersedes_pending_clarification(self) -> None:
         pending = normalize_clarification(
             {"action": "jira.sprint.untested.report", "question": "Which standard?", "missing": ["standard"]},
@@ -145,6 +158,7 @@ class AgentInteractionTests(unittest.TestCase):
         prompt = interaction_contract_prompt(agent_id="mark")
         self.assertIn("[LUMEN GRILL PROTOCOL]", prompt)
         self.assertIn("Do not grill bounded quick changes", prompt)
+        self.assertIn("Jira is a tool, not the default workflow", prompt)
         self.assertIn("question_budget", prompt)
 
 
