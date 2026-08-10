@@ -23,10 +23,9 @@ from agents.runtime.interaction import (
     format_clarification_reply,
     interaction_contract_prompt,
     normalize_clarification,
-    should_supersede_pending,
+    normalize_conversation_decision,
     version_upgrade_choices,
 )
-from agents.runtime.loop_intent import classify_loop_intent, loop_confirmation_text, loop_gateway_prompt
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
@@ -173,40 +172,6 @@ def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dic
     if current_version:
         enriched["current_version"] = current_version
     return enriched
-
-
-def _loop_gateway_result(
-    *,
-    action: str,
-    text: str,
-    pending: dict[str, Any] | None,
-    trace: TraceContext,
-    session: dict[str, Any],
-    project_slug: str,
-    workspace: Path,
-    agent_id: str,
-    bootstrap: bool,
-) -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "action": action,
-        "text": text,
-        "final_response_mode": "loop_confirmation",
-        "final_response_valid": True,
-        "action_receipts": [],
-        "pending_clarification": pending,
-        "trace_id": trace.trace_id,
-        "session_id": session["session_id"],
-        "provider_session_id": session.get("provider_session_id") or "",
-        "project_slug": project_slug,
-        "workspace": str(workspace),
-        "agent_id": agent_id,
-        "latency_ms": 0,
-        "tool_events": [],
-        "bootstrap": bootstrap,
-        "typing": {"enabled": False},
-        "flags": {"conversation_v4": True, "mode": "loop_gateway"},
-    }
 
 
 def handle_autonomous_conversation(
@@ -434,53 +399,23 @@ def handle_autonomous_conversation(
                     protocol_version=definition.protocol_version,
                 )
 
-            if pending and should_supersede_pending(text, pending):
-                previous_action = str(pending.get("action") or "")
-                old_session_id = str(session.get("session_id") or "")
-                old_provider_session_id = str(session.get("provider_session_id") or "")
-                if old_provider_session_id:
-                    store.invalidate_provider(old_session_id)
-                store.close_session(old_session_id)
-                session = store.create(
-                    agent_id=agent_id,
-                    chat_id=chat_id,
-                    conversation_scope_id=scope,
-                    workspace_path=str(workspace),
-                    project_slug=slug,
-                    user_id=user_id,
-                    soul_version=definition.soul_version,
-                    protocol_version=definition.protocol_version,
-                )
-                checkpoint = None
-                pending = None
-                is_new = True
-                obs.emit(
-                    trace,
-                    "clarification.superseded",
-                    previous_action=previous_action,
-                    previous_session_id=old_session_id,
-                )
             active_loop = str((checkpoint or {}).get("active_loop") or "").strip().lower()
-            loop_intent = (
-                classify_loop_intent(text, active_loop=active_loop, pending=pending)
-                if agent_id == "mark"
-                else classify_loop_intent("")
-            )
-            if agent_id == "mark" and loop_intent.decision in {"direct", "continue"}:
+            if agent_id == "mark":
+                # Agent-owned Loop decisions still need the planning-only
+                # filesystem surface during this turn. Source and publish
+                # paths remain denied by this profile.
                 from agents.dylan.permission_policy import write_loop_permission_profile
 
                 loop_permissions_enabled = True
                 write_loop_permission_profile(workspace, force=True)
 
             def _prompt_with_contract(base: str, current_pending: dict[str, Any] | None = None) -> str:
-                gateway = loop_gateway_prompt(loop_intent, active_loop=active_loop)
                 return "\n\n".join(
                     part
                     for part in (
                         base,
                         security_block,
                         interaction_contract_prompt(agent_id=agent_id, pending=current_pending),
-                        gateway,
                     )
                     if part
                 )
@@ -488,77 +423,6 @@ def handle_autonomous_conversation(
             image_context, attachment_dir = _prepare_feishu_image_context(meta=meta, messenger=messenger)
             if image_context:
                 anchored_text = f"{anchored_text}\n\n{image_context}"
-
-            if loop_intent.decision == "confirm":
-                chinese = bool(re.search(r"[\u4e00-\u9fff]", text))
-                loop_pending = normalize_clarification(
-                    {
-                        "action": "loop.start",
-                        "mode": "loop_confirmation",
-                        "loop": loop_intent.loop,
-                        "question": loop_confirmation_text(loop_intent, chinese=chinese),
-                        "missing": ["loop"],
-                        "choices": [
-                            {
-                                "value": loop_intent.loop,
-                                "label": f"Start {loop_intent.loop.title()} Loop" if not chinese else f"开始 {loop_intent.loop.title()} Loop",
-                                "description": "Enter the workflow and keep the conversation in this Feishu thread"
-                                if not chinese
-                                else "进入对应流程，并继续在当前飞书线程中沟通",
-                                "recommended": True,
-                            },
-                            {
-                                "value": "decline",
-                                "label": "Keep normal conversation" if not chinese else "先不启动",
-                                "description": "Do not create or update Loop artifacts" if not chinese else "不创建或修改 Loop 文档",
-                                "recommended": False,
-                            },
-                        ],
-                        "impact": "Starting a Loop creates or updates its planning artifacts; it does not authorize code delivery.",
-                        "why": loop_intent.reason,
-                        "recommended": f"Start {loop_intent.loop.title()} Loop" if not chinese else f"开始 {loop_intent.loop.title()} Loop",
-                        "stop_condition": "Stop asking for entry confirmation after the user chooses an option.",
-                    },
-                    agent_id=agent_id,
-                    source_message_id=message_id,
-                )
-                if loop_pending is not None:
-                    store.save_pending(session["session_id"], loop_pending)
-                obs.emit(trace, "loop.gateway.confirmation", loop=loop_intent.loop, confidence=loop_intent.confidence)
-                obs.upsert_trace(trace, state="completed", project_slug=slug)
-                return _loop_gateway_result(
-                    action="autonomous.loop_confirmation",
-                    text=loop_confirmation_text(loop_intent, chinese=chinese),
-                    pending=loop_pending,
-                    trace=trace,
-                    session=session,
-                    project_slug=slug,
-                    workspace=workspace,
-                    agent_id=agent_id,
-                    bootstrap=is_new,
-                )
-
-            if loop_intent.decision == "decline" and pending:
-                store.clear_pending(session["session_id"])
-                chinese = bool(re.search(r"[\u4e00-\u9fff]", text))
-                declined = (
-                    "好的，我先不启动这个 Loop，继续按普通对话处理。"
-                    if chinese
-                    else "Understood. I won't start the Loop; we can keep this as a normal conversation."
-                )
-                obs.emit(trace, "loop.gateway.declined", loop=pending.get("loop") or "")
-                obs.upsert_trace(trace, state="completed", project_slug=slug)
-                return _loop_gateway_result(
-                    action="autonomous.loop_declined",
-                    text=declined,
-                    pending=None,
-                    trace=trace,
-                    session=session,
-                    project_slug=slug,
-                    workspace=workspace,
-                    agent_id=agent_id,
-                    bootstrap=is_new,
-                )
 
             if is_new:
                 prompt = definition.build_bootstrap_prompt(
@@ -668,18 +532,6 @@ def handle_autonomous_conversation(
                     last_trace_id=trace.trace_id,
                     last_request_id=result.request_id or None,
                     failure_count=0,
-                    checkpoint_json=json.dumps(
-                        {
-                            "project_slug": slug,
-                            "last_user_message_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
-                            "last_answer_summary": (result.text or "")[:240],
-                            "active_loop": loop_intent.loop if loop_intent.decision in {"direct", "continue"} else active_loop,
-                            "trust_zone": access.trust_zone,
-                            "exposure_mode": access.exposure_mode,
-                            "policy_version": access.policy_version,
-                        },
-                        ensure_ascii=False,
-                    ),
                 )
             elif result.status == "succeeded" and not str(result.text or "").strip() and result.provider_session_id:
                 store.invalidate_provider(session["session_id"])
@@ -714,6 +566,46 @@ def handle_autonomous_conversation(
 
             obs.upsert_trace(trace, state="completed", latency_ms=result.duration_ms, project_slug=slug)
             parsed = extract_final_response(result.text)
+            conversation_decision = normalize_conversation_decision(
+                parsed.conversation_decision,
+                pending=pending,
+            )
+            if conversation_decision and conversation_decision.get("supersede_pending") and pending:
+                obs.emit(
+                    trace,
+                    "clarification.superseded",
+                    previous_action=str(pending.get("action") or ""),
+                    reason=conversation_decision.get("reason") or "agent_decision",
+                )
+                store.clear_pending(session["session_id"])
+                pending = None
+
+            next_active_loop = active_loop
+            if conversation_decision:
+                route = str(conversation_decision.get("route") or "").casefold()
+                selected_loop = str(conversation_decision.get("active_loop") or "").strip().lower()
+                if selected_loop in {"business", "technical"}:
+                    next_active_loop = selected_loop
+                elif route in {"business_loop", "business loop", "business"}:
+                    next_active_loop = "business"
+                elif route in {"technical_loop", "technical loop", "technical"}:
+                    next_active_loop = "technical"
+                elif conversation_decision.get("mode") == "new_request":
+                    next_active_loop = ""
+            if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
+                checkpoint_json = json.dumps(
+                    {
+                        "project_slug": slug,
+                        "last_user_message_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
+                        "last_answer_summary": (result.text or "")[:240],
+                        "active_loop": next_active_loop,
+                        "trust_zone": access.trust_zone,
+                        "exposure_mode": access.exposure_mode,
+                        "policy_version": access.policy_version,
+                    },
+                    ensure_ascii=False,
+                )
+                store.update(session["session_id"], checkpoint_json=checkpoint_json)
             clarification = normalize_clarification(
                 parsed.clarification_request or {},
                 agent_id=agent_id,
@@ -746,9 +638,9 @@ def handle_autonomous_conversation(
                         break
             if clarification:
                 clarification = _enrich_clarification(clarification, workspace)
-                if loop_intent.loop and loop_intent.decision in {"direct", "continue"}:
+                if conversation_decision and conversation_decision.get("active_loop"):
                     if str(clarification.get("loop") or "").strip().lower() in {"", "general"}:
-                        clarification["loop"] = loop_intent.loop
+                        clarification["loop"] = conversation_decision["active_loop"]
                 store.save_pending(session["session_id"], clarification)
             else:
                 store.clear_pending(session["session_id"])
@@ -823,6 +715,7 @@ def handle_autonomous_conversation(
                 "final_response_valid": parsed.valid,
                 "action_receipts": action_receipts,
                 "pending_clarification": clarification,
+                "conversation_decision": conversation_decision,
                 "trace_id": trace.trace_id,
                 "session_id": session["session_id"],
                 "provider_session_id": result.provider_session_id,

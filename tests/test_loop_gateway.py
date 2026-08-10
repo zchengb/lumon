@@ -96,7 +96,7 @@ class LoopGatewayTests(unittest.TestCase):
         self.assertTrue(should_handle(event, mark))
         self.assertFalse(should_handle(event, dylan))
 
-    def test_ambiguous_entry_is_confirmed_before_cursor_and_then_continues(self) -> None:
+    def test_agent_owns_loop_decision_and_continues_same_session(self) -> None:
         ensure_definitions_loaded()
         mark = get_definition("mark")
         assert mark is not None
@@ -108,10 +108,26 @@ class LoopGatewayTests(unittest.TestCase):
             runtime = FakeRuntime(
                 [
                     AgentRunResult(
-                        text="<FINAL_RESPONSE>Business Loop started. I need one product decision.</FINAL_RESPONSE>",
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"clarify","route":"business_loop",'
+                            '"active_loop":"business","confidence":0.78}</CONVERSATION_DECISION>'
+                            '<CLARIFICATION_REQUEST>{"action":"loop.start","mode":"grill",'
+                            '"loop":"business","question":"要不要开始 Business Loop？",'
+                            '"missing":["loop"],"choices":[{"value":"business","label":"开始 Business Loop"},'
+                            '{"value":"decline","label":"先不启动"}]}</CLARIFICATION_REQUEST>'
+                        ),
                         provider_session_id="provider-mark",
                         status="succeeded",
-                    )
+                    ),
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"continue_pending","route":"business_loop",'
+                            '"active_loop":"business","confidence":1}</CONVERSATION_DECISION>'
+                            '<FINAL_RESPONSE>Business Loop started.</FINAL_RESPONSE>'
+                        ),
+                        provider_session_id="provider-mark",
+                        status="succeeded",
+                    ),
                 ]
             )
             definition = replace(
@@ -138,12 +154,13 @@ class LoopGatewayTests(unittest.TestCase):
                                 common=_common(),
                                 runtime=runtime,
                             )
-                self.assertEqual("autonomous.loop_confirmation", first["action"])
+                self.assertEqual("autonomous.clarification", first["action"])
                 self.assertEqual("business", first["pending_clarification"]["loop"])
-                self.assertEqual(1, len(runtime.calls))
+                self.assertEqual(2, len(runtime.calls))
                 self.assertEqual("ok", second["status"])
-                self.assertIn("[LUMEN LOOP GATEWAY]", runtime.calls[0]["prompt"])
-                self.assertIn("Business Loop", runtime.calls[0]["prompt"])
+                self.assertEqual("provider-mark", runtime.calls[1]["provider_session_id"])
+                self.assertIn("CONVERSATION_DECISION", runtime.calls[0]["prompt"])
+                self.assertNotIn("[LUMEN LOOP GATEWAY]", runtime.calls[0]["prompt"])
                 profile = json.loads((docs / ".cursor" / "cli.json").read_text(encoding="utf-8"))
                 self.assertIn("Write(**)", profile["permissions"]["deny"])
                 self.assertNotIn("Write(stories/**)", profile["permissions"]["allow"])

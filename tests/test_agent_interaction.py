@@ -20,7 +20,7 @@ from agents.runtime.interaction import (
     format_clarification_reply,
     interaction_contract_prompt,
     normalize_clarification,
-    should_supersede_pending,
+    normalize_conversation_decision,
     version_upgrade_choices,
 )
 from agents.security.trusted import TrustedActionContext, bind_action_request
@@ -36,6 +36,23 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual("Which Story should I start?", parsed.text)
         self.assertEqual("delivery.start", parsed.clarification_request["action"])
         self.assertEqual([], parsed.action_requests)
+
+    def test_conversation_decision_is_internal_metadata(self) -> None:
+        parsed = extract_final_response(
+            '<CONVERSATION_DECISION>{"mode":"new_request","route":"quick_change",'
+            '"confidence":0.96,"supersede_pending":true}</CONVERSATION_DECISION>'
+            '<FINAL_RESPONSE>我会处理这个小改动。</FINAL_RESPONSE>'
+        )
+        self.assertEqual("我会处理这个小改动。", parsed.text)
+        self.assertEqual("new_request", parsed.conversation_decision["mode"])
+        self.assertEqual("quick_change", parsed.conversation_decision["route"])
+        decision = normalize_conversation_decision(
+            parsed.conversation_decision,
+            pending={"action": "jira.sprint.untested.report"},
+        )
+        assert decision is not None
+        self.assertTrue(decision["supersede_pending"])
+        self.assertAlmostEqual(0.96, decision["confidence"])
 
     def test_action_requirements_detect_missing_target(self) -> None:
         self.assertEqual(["story"], action_missing_fields("delivery.start", arguments={}))
@@ -125,17 +142,19 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual(agent_text, format_clarification_reply(agent_text, choices))
         self.assertIn("custom answer", format_clarification_reply("What should I do?", choices))
 
-    def test_explicit_topic_change_supersedes_pending_clarification(self) -> None:
+    def test_agent_decision_keeps_pending_context_explicit(self) -> None:
         pending = normalize_clarification(
             {"action": "jira.sprint.untested.report", "question": "Which standard?", "missing": ["standard"]},
             agent_id="milchick",
         )
         assert pending is not None
-        self.assertTrue(should_supersede_pending("先放棄這個問題，幫我改 wording", pending))
-        self.assertTrue(should_supersede_pending("Admin Portal 中的 Wording「輪播圖」改成「多圖」", pending))
-        self.assertTrue(should_supersede_pending("Please update the wording in the Admin Portal", pending))
-        self.assertFalse(should_supersede_pending("Ready for QA", pending))
-        self.assertFalse(should_supersede_pending("1", {**pending, "choices": [{"value": "1", "label": "A"}]}))
+        decision = normalize_conversation_decision(
+            {"mode": "new_request", "route": "quick_change", "reason": "latest message is a wording change"},
+            pending=pending,
+        )
+        assert decision is not None
+        self.assertTrue(decision["supersede_pending"])
+        self.assertEqual("quick_change", decision["route"])
 
     def test_explicit_trusted_context_defaults_to_mutation_intent(self) -> None:
         request = bind_action_request(
@@ -160,6 +179,14 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertIn("Do not grill bounded quick changes", prompt)
         self.assertIn("Jira is a tool, not the default workflow", prompt)
         self.assertIn("question_budget", prompt)
+        self.assertIn("[LUMEN INTERACTION CONTRACT]", prompt)
+        self.assertIn("CONVERSATION_DECISION", prompt)
+
+    def test_all_agents_receive_agent_owned_turn_decision_contract(self) -> None:
+        for agent_id in ("dylan", "mark", "milchick", "irving"):
+            prompt = interaction_contract_prompt(agent_id=agent_id)
+            self.assertIn("CONVERSATION_DECISION", prompt)
+            self.assertIn("pending clarification is context, not a lock", prompt)
 
 
 if __name__ == "__main__":

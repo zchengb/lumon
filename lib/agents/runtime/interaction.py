@@ -45,17 +45,6 @@ _FIELD_LABELS = {
 }
 
 _SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
-_PENDING_SUPERSEDE_RE = re.compile(
-    r"(?:先?\s*(?:放弃|放棄|放下|跳过|跳過|忽略|搁置|擱置|暫不處理|暂不处理))"
-    r"|(?:换个|換個|换一个|換一個|新的问题|新的問題|新任务|新任務|另一个问题|另一個問題)"
-    r"|(?:abandon|skip|ignore|drop|set aside|new question|new task|different issue)",
-    re.IGNORECASE,
-)
-_NEW_MUTATION_REQUEST_RE = re.compile(
-    r"\b(?:change|update|modify|rename|rewrite|replace|fix|wording|copy)\b"
-    r"|(?:改(?:成|为|一下|動|动)?|修改|更改|換成|换成|替換|替换|重命名|文案|措辞|措辭|用词|用詞|文字)",
-    re.IGNORECASE,
-)
 
 
 def _now() -> datetime:
@@ -273,27 +262,6 @@ def clarification_choice_hint(answer: str, pending: dict[str, Any] | None) -> st
     )
 
 
-def should_supersede_pending(text: str, pending: dict[str, Any] | None) -> bool:
-    """Return true when the user abandons or clearly starts a different request."""
-    if not isinstance(pending, dict):
-        return False
-    raw = str(text or "").strip()
-    if not raw or clarification_choice_hint(raw, pending):
-        return False
-    if raw.casefold() in {"[image attachment]", "[file attachment]", "[message attachment]"}:
-        return True
-    if _PENDING_SUPERSEDE_RE.search(raw):
-        return True
-    # A pending read/report question must not become a conversational lock when
-    # the user gives a concrete change request instead of answering it.
-    action = str(pending.get("action") or "").strip().casefold()
-    is_read_or_loop_prompt = (
-        str(pending.get("mode") or "").strip().casefold() == "loop_confirmation"
-        or action.rsplit(".", 1)[-1] in {"get", "query", "report", "status", "list"}
-    )
-    return is_read_or_loop_prompt and bool(_NEW_MUTATION_REQUEST_RE.search(raw))
-
-
 def _bounded_int(value: Any, *, default: int, minimum: int = 0, maximum: int = 32) -> int:
     try:
         parsed = int(value)
@@ -405,10 +373,61 @@ def normalize_clarification(
     }
 
 
+def normalize_conversation_decision(
+    payload: dict[str, Any] | None,
+    *,
+    pending: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Normalize Agent-owned turn routing without granting it host authority."""
+    if not isinstance(payload, dict):
+        return None
+    aliases = {
+        "answer": "normal",
+        "continue": "continue_pending",
+        "new": "new_request",
+        "question": "clarify",
+    }
+    raw_mode = str(payload.get("mode") or "").strip().lower().replace("-", "_")
+    mode = aliases.get(raw_mode, raw_mode)
+    if mode not in {"continue_pending", "new_request", "normal", "clarify"}:
+        return None
+    route = str(payload.get("route") or "normal").strip()[:120] or "normal"
+    active_loop = str(payload.get("active_loop") or payload.get("loop") or "").strip().lower()
+    if active_loop not in {"business", "technical"}:
+        active_loop = ""
+    try:
+        raw_confidence = float(payload.get("confidence") or 0)
+    except (TypeError, ValueError):
+        raw_confidence = 0.0
+    confidence = raw_confidence if 0 <= raw_confidence <= 1 else raw_confidence / 100
+    confidence = max(0.0, min(confidence, 1.0))
+    raw_supersede = payload.get("supersede_pending")
+    explicit_supersede = (
+        raw_supersede is True
+        or str(raw_supersede or "").strip().casefold() in {"1", "true", "yes"}
+    )
+    supersede_pending = bool(pending) and (mode == "new_request" or explicit_supersede)
+    return {
+        "mode": mode,
+        "route": route,
+        "confidence": confidence,
+        "reason": str(payload.get("reason") or "").strip()[:800],
+        "supersede_pending": supersede_pending,
+        "active_loop": active_loop,
+        "target_agent": str(payload.get("target_agent") or "").strip().lower()[:40],
+        "assumptions": _safe_text_list(payload.get("assumptions"), limit=8),
+    }
+
+
 def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None = None) -> str:
     lines = [
         "[LUMEN INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumen conversation.",
+        "Before the final answer, decide what this turn means from the latest user message and emit exactly one internal envelope:",
+        '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[]}</CONVERSATION_DECISION>',
+        "This is routing metadata, not user-facing text. A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true; otherwise choose normal or clarify. Keep the same conversation session unless the user explicitly asks for /new.",
+        "Choose the route yourself from the evidence (ordinary answer, quick change, Business Loop, Technical Loop, Jira, risk, delivery, delegation, or another route). Do not wait for Lumon regex rules to tell you which interpretation is correct.",
+        "The decision envelope never authorizes a mutation, supplies identity, or bypasses host permission checks. Use ACTION_REQUEST for host actions and let the host validate required fields and authorization.",
         "If a request is ambiguous or a required target is missing, ask one focused question before acting.",
         "For a structured clarification, emit exactly one JSON object inside:",
         '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
@@ -431,7 +450,7 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         safe = json.dumps(_json_safe(pending), ensure_ascii=False, separators=(",", ":"))
         lines.extend(
             [
-                "There is an active clarification. Continue it when the user's message answers it:",
+                "There is an active clarification. Decide whether the latest message answers it or starts a different request; never repeat it solely because it is pending:",
                 safe,
             ]
         )
