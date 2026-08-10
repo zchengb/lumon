@@ -92,6 +92,8 @@ def test_denied_mutation_surfaces_instead_of_planning_lie() -> None:
     from agents.security.access_policy import classify_authorization_intent
 
     assert classify_authorization_intent("please re-run it") == "mutate_explicit"
+    assert classify_authorization_intent("D: 改 Wording 我框起來的 輪播圖 -> 多圖") == "mutate_explicit"
+    assert classify_authorization_intent("請修改文案標籤") == "mutate_explicit"
     assert classify_authorization_intent("how's MBPAS-1491 going?") == "read"
     receipts = [
         {
@@ -127,6 +129,23 @@ def test_denied_mutation_surfaces_instead_of_planning_lie() -> None:
     assert "queued" not in text.lower()
     assert "Action blocked" in text
     assert "agent.job.create" in text
+
+
+def test_denied_job_create_does_not_claim_job_was_created() -> None:
+    text = prefer_action_summary(
+        "已確認需求。\n\n已建立 Mark job。完成後會回報 PR／結果。",
+        [
+            {
+                "action": "agent.job.create",
+                "status": "denied",
+                "error": "mutation denied for zone=RESTRICTED intent=read",
+            }
+        ],
+    )
+    assert "已建立 Mark job" not in text
+    assert "已確認需求" in text
+    assert "Action blocked" in text
+    assert "was not executed" in text
 
 
 def test_job_list_keeps_latest_per_issue_only() -> None:

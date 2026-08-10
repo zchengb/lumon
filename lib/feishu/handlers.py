@@ -14,7 +14,19 @@ def extract_text(event: dict[str, Any]) -> str:
     message = body.get("message") if isinstance(body, dict) else {}
     if not isinstance(message, dict):
         return ""
-    return extract_content_text(str(message.get("msg_type") or "text"), message.get("content"))
+    msg_type = str(message.get("msg_type") or "text")
+    chunks: list[str] = []
+    content_text = extract_content_text(msg_type, message.get("content"))
+    if content_text:
+        chunks.append(content_text)
+    for field in ("text", "caption", "description"):
+        value = message.get(field)
+        if not isinstance(value, (str, dict)):
+            continue
+        field_text = extract_content_text("text", value)
+        if field_text and field_text not in chunks:
+            chunks.append(field_text)
+    return "\n".join(chunks).strip()
 
 
 def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:

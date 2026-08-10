@@ -101,6 +101,20 @@ class AgentBridgeScanTests(unittest.TestCase):
         }
         self.assertEqual("[Image attachment]", extract_text(event))
 
+    def test_extract_text_from_image_message_with_separate_caption(self) -> None:
+        event = {
+            "event": {
+                "message": {
+                    "msg_type": "image",
+                    "content": '{"image_key":"img_1"}',
+                    "text": "Admin Portal 中的 Wording「輪播圖」改成「多圖」",
+                }
+            }
+        }
+        text = extract_text(event)
+        self.assertIn("[Image attachment]", text)
+        self.assertIn("Wording「輪播圖」改成「多圖」", text)
+
     def test_should_handle_requires_mention_in_group(self) -> None:
         client = FeishuClientConfig(
             agent_id="dylan",
