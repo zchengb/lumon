@@ -309,38 +309,43 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertTrue(any(s.get("bold") and s.get("range_a1") == "A1:H1" for s in fake.styles))
         self.assertIn("/sheets/OG4Js7cIlh7d0QtHOEnc1kDfnvf?sheet=sht1", result["sheet_url"])
 
-    def test_broker_mark_action_allowed(self) -> None:
+    def test_broker_test_case_action_uses_request_agent_identity(self) -> None:
         ensure_definitions_loaded()
-        mark = get_definition("mark")
-        assert mark is not None
-        self.assertIn("test_case.generate", mark.capabilities.actions)
-        fake = FakeBitable()
-
-        def reader(key: str) -> StoryContext:
-            return StoryContext(key=key, type="Bug", summary="Fix", description="", acceptance_criteria=["bug fixed"])
-
+        for agent_id in ("mark", "milchick"):
+            definition = get_definition(agent_id)
+            assert definition is not None
+            self.assertIn("test_case.generate", definition.capabilities.actions)
         from unittest import mock
 
         with mock.patch("skills.test_case.skill.generate_test_cases_for_issue") as gen:
             gen.return_value = {"status": "completed", "summary": "ok", "created": 1, "generated": 1}
-            receipt = CapabilityBroker(
-                config={"access": {"mutation_allowed_user_ids": ["ou_owner"]}}
-            ).execute(
-                ActionRequest(
-                    agent_id="mark",
-                    action="test_case.generate",
-                    project_slug="mbpass",
-                    actor_user_id="ou_owner",
-                    chat_id="oc1",
-                    thread_id="",
-                    source_message_id="om1",
-                    trace_id="tr1",
-                    resource={"issue_key": "MBPAS-1601"},
-                    arguments={"issue_key": "MBPAS-1601"},
-                    explicit_authorization=True,
-                )
+            broker = CapabilityBroker(
+                config={
+                    "access": {
+                        "allowed_chat_ids": ["oc1"],
+                        "allowed_user_ids": ["ou_owner"],
+                        "mutation_allowed_user_ids": ["ou_owner"],
+                    }
+                }
             )
-            self.assertEqual(receipt.status, "succeeded")
+            for agent_id in ("mark", "milchick"):
+                receipt = broker.execute(
+                    ActionRequest(
+                        agent_id=agent_id,
+                        action="test_case.generate",
+                        project_slug="mbpass",
+                        actor_user_id="ou_owner",
+                        chat_id="oc1",
+                        thread_id="",
+                        source_message_id="om1",
+                        trace_id="tr1",
+                        resource={"issue_key": "MBPAS-1601"},
+                        arguments={"issue_key": "MBPAS-1601", "chat_type": "group"},
+                        explicit_authorization=True,
+                    )
+                )
+                self.assertEqual(receipt.status, "succeeded")
+                self.assertEqual(gen.call_args.kwargs["generated_by"], agent_id)
 
 
 class MilchickJobTests(unittest.TestCase):
@@ -351,7 +356,7 @@ class MilchickJobTests(unittest.TestCase):
         self.assertEqual(milchick.role, "orchestrator")
         self.assertIn("agent.job.create", milchick.capabilities.actions)
         self.assertIn("jira.workitem.create", milchick.capabilities.actions)
-        self.assertNotIn("test_case.generate", milchick.capabilities.actions)
+        self.assertIn("test_case.generate", milchick.capabilities.actions)
 
     def test_job_dependency_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -115,6 +115,7 @@ MILCHICK_ACTIONS = (
     "agent.job.create",
     "agent.job.cancel",
     "agent.job.retry",
+    "test_case.generate",
     *JIRA_ACTIONS,
     "project.status",
     "workflow.status",

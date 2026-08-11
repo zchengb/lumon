@@ -174,6 +174,43 @@ def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dic
     return enriched
 
 
+_ACTION_RESULT_CONTINUATION_ACTIONS = frozenset(
+    {
+        "jira.workitem.query",
+        "jira.sprint.untested.report",
+    }
+)
+
+
+def _action_results_need_continuation(receipts: list[dict[str, Any]]) -> bool:
+    """Return whether an Agent needs its own decision turn after a read."""
+    for receipt in receipts:
+        if str(receipt.get("action") or "").strip() not in _ACTION_RESULT_CONTINUATION_ACTIONS:
+            continue
+        if str(receipt.get("status") or "").strip() != "succeeded":
+            continue
+        result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+        items = result.get("items")
+        if isinstance(items, list) and items:
+            return True
+    return False
+
+
+def _action_results_for_agent(receipts: list[dict[str, Any]]) -> str:
+    """Keep the host result structured while bounding prompt growth."""
+    payload = [
+        {
+            "action": item.get("action"),
+            "status": item.get("status"),
+            "result": item.get("result") if isinstance(item.get("result"), dict) else {},
+            "error": item.get("error") or item.get("error_code") or "",
+        }
+        for item in receipts
+        if isinstance(item, dict)
+    ]
+    return json.dumps(payload, ensure_ascii=False, default=str)[:30000]
+
+
 def handle_autonomous_conversation(
     *,
     definition: AgentDefinition,
@@ -446,23 +483,26 @@ def handle_autonomous_conversation(
                 else cursor
             )
             obs.upsert_trace(trace, state="running", project_slug=slug)
-            run_kwargs = {
-                "workspace": workspace,
-                "prompt": prompt,
-                "provider_session_id": provider_session_id,
-                "trace": trace,
-                "obs": obs,
-            }
-            obs.emit(
-                trace,
-                "agent.prompt.composed",
-                prompt=str(prompt or "")[:20000],
-                prompt_truncated=len(str(prompt or "")) > 20000,
-            )
-            if workspace_isolation_v2_enabled() and runtime is None:
-                result = runner.run(definition=definition, **run_kwargs)
-            else:
-                result = runner.run(**run_kwargs)
+
+            def _run_agent_turn(turn_prompt: str, turn_provider_session_id: str | None) -> Any:
+                run_kwargs = {
+                    "workspace": workspace,
+                    "prompt": turn_prompt,
+                    "provider_session_id": turn_provider_session_id,
+                    "trace": trace,
+                    "obs": obs,
+                }
+                obs.emit(
+                    trace,
+                    "agent.prompt.composed",
+                    prompt=str(turn_prompt or "")[:20000],
+                    prompt_truncated=len(str(turn_prompt or "")) > 20000,
+                )
+                if workspace_isolation_v2_enabled() and runtime is None:
+                    return runner.run(definition=definition, **run_kwargs)
+                return runner.run(**run_kwargs)
+
+            result = _run_agent_turn(prompt, provider_session_id)
 
             if (
                 provider_session_id
@@ -498,23 +538,7 @@ def handle_autonomous_conversation(
                     user_message=anchored_text,
                 )
                 prompt = _prompt_with_contract(prompt)
-                run_kwargs = {
-                    "workspace": workspace,
-                    "prompt": prompt,
-                    "provider_session_id": None,
-                    "trace": trace,
-                    "obs": obs,
-                }
-                obs.emit(
-                    trace,
-                    "agent.prompt.composed",
-                    prompt=str(prompt or "")[:20000],
-                    prompt_truncated=len(str(prompt or "")) > 20000,
-                )
-                if workspace_isolation_v2_enabled() and runtime is None:
-                    result = runner.run(definition=definition, **run_kwargs)
-                else:
-                    result = runner.run(**run_kwargs)
+                result = _run_agent_turn(prompt, None)
                 is_new = True
                 provider_session_id = None
 
@@ -558,85 +582,107 @@ def handle_autonomous_conversation(
                     "flags": {"conversation_v4": True, "mode": "autonomous_workspace"},
                 }
 
-            obs.upsert_trace(trace, state="completed", latency_ms=result.duration_ms, project_slug=slug)
-            parsed = extract_final_response(result.text)
-            conversation_decision = normalize_conversation_decision(
-                parsed.conversation_decision,
-                pending=pending,
-            )
-            if conversation_decision and conversation_decision.get("supersede_pending") and pending:
-                obs.emit(
-                    trace,
-                    "clarification.superseded",
-                    previous_action=str(pending.get("action") or ""),
-                    reason=conversation_decision.get("reason") or "agent_decision",
-                )
-                store.clear_pending(session["session_id"])
-                pending = None
-
-            next_active_loop = active_loop
-            if conversation_decision:
-                route = str(conversation_decision.get("route") or "").casefold()
-                selected_loop = str(conversation_decision.get("active_loop") or "").strip().lower()
-                if selected_loop in {"business", "technical"}:
-                    next_active_loop = selected_loop
-                elif route in {"business_loop", "business loop", "business"}:
-                    next_active_loop = "business"
-                elif route in {"technical_loop", "technical loop", "technical"}:
-                    next_active_loop = "technical"
-                elif conversation_decision.get("mode") == "new_request":
-                    next_active_loop = ""
-            if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
-                checkpoint_json = json.dumps(
-                    {
-                        "project_slug": slug,
-                        "last_user_message_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
-                        "last_answer_summary": (result.text or "")[:240],
-                        "active_loop": next_active_loop,
-                        "trust_zone": access.trust_zone,
-                        "exposure_mode": access.exposure_mode,
-                        "policy_version": access.policy_version,
-                    },
-                    ensure_ascii=False,
-                )
-                store.update(session["session_id"], checkpoint_json=checkpoint_json)
-            clarification = normalize_clarification(
-                parsed.clarification_request or {},
-                agent_id=agent_id,
-                source_message_id=message_id,
-            ) if parsed.clarification_request else None
-            action_requests = list(parsed.action_requests)
-            if clarification is None and action_requests:
-                for request in action_requests:
-                    missing = action_missing_fields(
-                        str(request.get("action") or ""),
-                        resource=request.get("resource") if isinstance(request.get("resource"), dict) else {},
-                        arguments=request.get("arguments") if isinstance(request.get("arguments"), dict) else {},
-                    )
-                    if missing:
-                        clarification = normalize_clarification(
-                            {
-                                "action": str(request.get("action") or ""),
-                                "question": clarification_question(str(request.get("action") or ""), missing),
-                                "missing": missing,
-                                "resource": request.get("resource") or {},
-                                "arguments": request.get("arguments") or {},
-                            },
-                            agent_id=agent_id,
-                            source_message_id=message_id,
-                        )
-                        action_requests = []
-                        break
-            if clarification:
-                clarification = _enrich_clarification(clarification, workspace)
-                if conversation_decision and conversation_decision.get("active_loop"):
-                    if str(clarification.get("loop") or "").strip().lower() in {"", "general"}:
-                        clarification["loop"] = conversation_decision["active_loop"]
-                store.save_pending(session["session_id"], clarification)
-            else:
-                store.clear_pending(session["session_id"])
             action_receipts: list[dict[str, Any]] = []
-            if action_requests and not clarification:
+            parsed = None
+            clarification = None
+            conversation_decision = None
+            next_active_loop = active_loop
+            total_latency_ms = 0
+            continuation_count = 0
+            continuation_error = ""
+
+            while True:
+                total_latency_ms += int(result.duration_ms or 0)
+                if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
+                    store.update(
+                        session["session_id"],
+                        provider_session_id=result.provider_session_id,
+                        status="active",
+                        last_trace_id=trace.trace_id,
+                        last_request_id=result.request_id or None,
+                        failure_count=0,
+                    )
+
+                parsed = extract_final_response(result.text)
+                conversation_decision = normalize_conversation_decision(
+                    parsed.conversation_decision,
+                    pending=pending,
+                )
+                if conversation_decision and conversation_decision.get("supersede_pending") and pending:
+                    obs.emit(
+                        trace,
+                        "clarification.superseded",
+                        previous_action=str(pending.get("action") or ""),
+                        reason=conversation_decision.get("reason") or "agent_decision",
+                    )
+                    store.clear_pending(session["session_id"])
+                    pending = None
+
+                if conversation_decision:
+                    route = str(conversation_decision.get("route") or "").casefold()
+                    selected_loop = str(conversation_decision.get("active_loop") or "").strip().lower()
+                    if selected_loop in {"business", "technical"}:
+                        next_active_loop = selected_loop
+                    elif route in {"business_loop", "business loop", "business"}:
+                        next_active_loop = "business"
+                    elif route in {"technical_loop", "technical loop", "technical"}:
+                        next_active_loop = "technical"
+                    elif conversation_decision.get("mode") == "new_request":
+                        next_active_loop = ""
+                if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
+                    checkpoint_json = json.dumps(
+                        {
+                            "project_slug": slug,
+                            "last_user_message_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
+                            "last_answer_summary": (result.text or "")[:240],
+                            "active_loop": next_active_loop,
+                            "trust_zone": access.trust_zone,
+                            "exposure_mode": access.exposure_mode,
+                            "policy_version": access.policy_version,
+                        },
+                        ensure_ascii=False,
+                    )
+                    store.update(session["session_id"], checkpoint_json=checkpoint_json)
+
+                clarification = normalize_clarification(
+                    parsed.clarification_request or {},
+                    agent_id=agent_id,
+                    source_message_id=message_id,
+                ) if parsed.clarification_request else None
+                action_requests = list(parsed.action_requests)
+                if clarification is None and action_requests:
+                    for request in action_requests:
+                        missing = action_missing_fields(
+                            str(request.get("action") or ""),
+                            resource=request.get("resource") if isinstance(request.get("resource"), dict) else {},
+                            arguments=request.get("arguments") if isinstance(request.get("arguments"), dict) else {},
+                        )
+                        if missing:
+                            clarification = normalize_clarification(
+                                {
+                                    "action": str(request.get("action") or ""),
+                                    "question": clarification_question(str(request.get("action") or ""), missing),
+                                    "missing": missing,
+                                    "resource": request.get("resource") or {},
+                                    "arguments": request.get("arguments") or {},
+                                },
+                                agent_id=agent_id,
+                                source_message_id=message_id,
+                            )
+                            action_requests = []
+                            break
+                if clarification:
+                    clarification = _enrich_clarification(clarification, workspace)
+                    if conversation_decision and conversation_decision.get("active_loop"):
+                        if str(clarification.get("loop") or "").strip().lower() in {"", "general"}:
+                            clarification["loop"] = conversation_decision["active_loop"]
+                    store.save_pending(session["session_id"], clarification)
+                else:
+                    store.clear_pending(session["session_id"])
+
+                if not action_requests or clarification:
+                    break
+
                 action_meta = dict(meta)
                 action_meta["_user_message"] = text
                 context = trusted_context_from_meta(
@@ -647,12 +693,68 @@ def handle_autonomous_conversation(
                     access_decision=access,
                 )
                 receipts = execute_trusted_actions(context=context, requests=action_requests)
-                action_receipts = [r.to_dict() for r in receipts]
+                new_action_receipts = [r.to_dict() for r in receipts]
+                action_receipts.extend(new_action_receipts)
                 obs.emit(
                     trace,
                     "security.action_requests.executed",
-                    count=len(action_receipts),
-                    statuses=[r.get("status") for r in action_receipts],
+                    count=len(new_action_receipts),
+                    statuses=[r.get("status") for r in new_action_receipts],
+                )
+
+                if not _action_results_need_continuation(new_action_receipts) or continuation_count >= 3:
+                    break
+                provider_id = result.provider_session_id or provider_session_id
+                if not provider_id:
+                    break
+                continuation_count += 1
+                continuation_prompt = _prompt_with_contract(
+                    definition.build_resume_prompt(
+                        user_message=(
+                            "[LUMEN HOST ACTION RESULTS]\n"
+                            "The host has executed your previous ACTION_REQUEST(s). These results are authoritative. "
+                            "Continue the same latest user request from the results below. Do not repeat completed reads. "
+                            "Decide yourself whether more work is required; if the user's goal is not complete, emit the "
+                            "next ACTION_REQUEST(s) before giving the final answer.\n\n"
+                            f"Original user request:\n{text}\n\n"
+                            f"Executed results:\n{_action_results_for_agent(action_receipts)}"
+                        ),
+                        project_slug=slug,
+                        checkpoint=checkpoint,
+                    )
+                )
+                obs.emit(
+                    trace,
+                    "agent.action_results.returned",
+                    continuation=continuation_count,
+                    action_count=len(action_receipts),
+                )
+                next_result = _run_agent_turn(continuation_prompt, provider_id)
+                if next_result.status != "succeeded" or not str(next_result.text or "").strip():
+                    continuation_error = next_result.error or next_result.status or "agent continuation failed"
+                    obs.emit(
+                        trace,
+                        "agent.action_results.continuation_failed",
+                        error=continuation_error[:300],
+                        level="ERROR",
+                    )
+                    break
+                result = next_result
+
+            obs.upsert_trace(
+                trace,
+                state="failed" if continuation_error else "completed",
+                latency_ms=total_latency_ms,
+                project_slug=slug,
+                **({"error_code": "ACTION_RESULT_CONTINUATION_FAILED"} if continuation_error else {}),
+            )
+            if continuation_error:
+                action_receipts.append(
+                    {
+                        "action": "agent.action_results.continuation",
+                        "status": "failed",
+                        "error": continuation_error[:500],
+                    }
                 )
             reply_text = parsed.text
             if clarification and clarification.get("choices") and not clarification_has_rendered_choices(
@@ -701,7 +803,7 @@ def handle_autonomous_conversation(
                 "project_slug": slug,
                 "workspace": str(workspace),
                 "agent_id": agent_id,
-                "latency_ms": result.duration_ms,
+                "latency_ms": total_latency_ms,
                 "tool_events": [e.__dict__ for e in result.tool_events],
                 "bootstrap": is_new,
                 "typing": {"enabled": False},

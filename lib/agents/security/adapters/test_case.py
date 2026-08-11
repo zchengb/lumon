@@ -48,6 +48,7 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
         issue_key=issue_key,
         workspace=workspace,
         requested_by=request.actor_user_id,
+        generated_by=request.agent_id,
         source_message_id=request.source_message_id,
         trace_id=request.trace_id,
     )

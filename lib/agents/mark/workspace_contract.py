@@ -51,7 +51,7 @@ def _managed_block(project_slug: str) -> str:
         f"- Start delivery / quick changes / generate test cases via the host-side broker; the internal <ACTION_REQUEST> envelope is never shown to users\n"
         f"- Do not supply actor_user_id, chat_id, or explicit_authorization\n\n"
         f"## Test Case Skill\n"
-        f"- Owner: Mark / test_case.generate\n"
+        f"- Compatibility action: Mark / test_case.generate (Milchick is the default coordinator)\n"
         f"- Explicit user intent only (Story/Bug)\n"
         f"- Additive Feishu Bitable writes; never overwrite matching titles\n"
         f"- Reply with generation summary, not every row\n\n"

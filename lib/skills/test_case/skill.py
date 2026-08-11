@@ -321,6 +321,7 @@ def generate_test_cases_for_issue(
     issue_key: str,
     workspace: Path | None = None,
     requested_by: str = "",
+    generated_by: str = "mark",
     source_message_id: str = "",
     trace_id: str = "",
     config: Optional[dict[str, Any]] = None,
@@ -330,6 +331,7 @@ def generate_test_cases_for_issue(
     designer_runner: DesignRunner | None = None,
 ) -> dict[str, Any]:
     cfg = load_test_case_config(project, config=config)
+    generated_by = str(generated_by or "mark").strip() or "mark"
     destination = str(cfg.get("destination") or "bitable")
     language = str(cfg.get("language") or "zh-Hant")
     app_token = cfg.get("base_app_token") or ""
@@ -405,7 +407,7 @@ def generate_test_cases_for_issue(
         }
     try:
         if destination == "sheet":
-            sheets = sheets_client or FeishuSheets(agent_id="mark")
+            sheets = sheets_client or FeishuSheets(agent_id=generated_by)
             written = _write_cases_to_sheet(
                 client=sheets,
                 cfg=cfg,
@@ -421,14 +423,14 @@ def generate_test_cases_for_issue(
             view_id = written["view_id"]
             sheet_url = written["sheet_url"]
         else:
-            bitable = client or FeishuBitable(agent_id="mark")
+            bitable = client or FeishuBitable(agent_id=generated_by)
             table_id = _ensure_table(bitable, app_token, cfg["table_name"])
             _ensure_fields(bitable, app_token, table_id)
             records = bitable.list_records(app_token, table_id)
             existing = _existing_titles_for_story(records, story.key)
             created_cases, skipped_cases = partition_new_cases(generated, existing)
             for case in created_cases:
-                case.generated_by = "mark"
+                case.generated_by = generated_by
                 bitable.create_record(app_token, table_id, case.to_fields())
             view_name, view_id = _ensure_story_view(
                 bitable,

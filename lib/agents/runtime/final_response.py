@@ -388,7 +388,16 @@ def _format_jira_receipt(action: str, result: dict[str, Any]) -> str:
     if action == "jira.workitem.query":
         if nested_status == "failed":
             return f"Jira query failed: {str(result.get('message') or result.get('code') or 'failed').strip()}"
-        return f"Jira query returned {result.get('count', 0)} work item(s)."
+        lines = [f"Jira query returned {result.get('count', 0)} work item(s)."]
+        for item in (result.get("items") if isinstance(result.get("items"), list) else [])[:12]:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("issue_key") or "").strip()
+            summary = str(item.get("summary") or "").strip()
+            status = str(item.get("status") or "").strip()
+            subject = " — ".join(part for part in (key, summary) if part)
+            lines.append(f"- {subject}" + (f" [{status}]" if status else ""))
+        return "\n".join(lines)
     key = str(result.get("issue_key") or "").strip()
     url = str(result.get("url") or "").strip()
     title = str(result.get("summary") or "").strip()
@@ -446,8 +455,19 @@ def format_action_receipts_summary(receipts: list[dict[str, Any]]) -> str:
     job_detail = ""
     agent_detail = ""
     note_detail = ""
+    test_case_details: list[str] = []
     for receipt in receipts:
         action = str(receipt.get("action") or "").strip()
+        if action == "test_case.generate" and receipt.get("status") == "succeeded":
+            result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+            if str(result.get("status") or "").strip().lower() == "failed":
+                detail = str(result.get("message") or result.get("code") or "generation failed").strip()
+                test_case_details.append(f"Test-case generation failed: {detail}")
+            else:
+                detail = str(result.get("summary") or "").strip()
+                if detail:
+                    test_case_details.append(detail)
+            continue
         if action not in _STATUS_READ_ACTIONS:
             continue
         if receipt.get("status") != "succeeded":
@@ -491,7 +511,9 @@ def format_action_receipts_summary(receipts: list[dict[str, Any]]) -> str:
             if note:
                 note_detail = f"**{action}:** {note}"
     if job_detail:
-        return job_detail
+        return "\n\n".join([job_detail, *test_case_details]).strip()
+    if test_case_details:
+        return "\n\n".join(test_case_details)
     if agent_detail:
         return agent_detail
     if note_detail:

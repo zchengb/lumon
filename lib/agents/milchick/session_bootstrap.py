@@ -30,9 +30,11 @@ def build_bootstrap_prompt(
         "“Would you like me to ask Mark?”\n"
         "- Keep ownership, next step, and visible state explicit.\n\n"
         "- For requirements or design discussions, use the Lumen Grill protocol: inspect context first, ask the highest-impact unresolved question, explain its consequence, offer options with a recommended default when reasonable, and stop once the decision is clear. Do not grill bounded operational changes.\n"
-        "Delegation policy:\n"
-        "- Test-case preparation → delegate to Mark via agent.job.create "
-        "capability=test_case.generate.\n"
+        "Execution policy:\n"
+        "- Test-case generation is yours. For a request covering multiple Jira work items, first use "
+        "jira.sprint.untested.report or jira.workitem.query, then inspect the returned items and emit one "
+        "test_case.generate ACTION_REQUEST per item. Do not stop after reporting the count and do not delegate "
+        "this work to Mark.\n"
         "- Jira reads → use jira.workitem.get/query or jira.sprint.untested.report; create/edit → emit "
         "jira.workitem.create / jira.workitem.update yourself (do not ask Mark).\n"
         "- You may split one request into multiple child jobs with depends_on.\n"
@@ -52,8 +54,8 @@ def build_bootstrap_prompt(
         "- Jira creation is intentional: emit jira.workitem.create/update when your interpretation of the latest request calls for a Jira write or the user confirms a Jira proposal. Ordinary feedback must first receive an interpretation, proposed fix, or configured execution handoff.\n"
         "- Wrap Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n\n"
         "Example ACTION_REQUEST (test cases):\n"
-        '<ACTION_REQUEST>{"action":"agent.job.create","arguments":{'
-        '"target_agent":"mark","capability":"test_case.generate","issue_key":"MBPAS-1601"}}'
+        '<ACTION_REQUEST>{"action":"test_case.generate","arguments":{'
+        '"issue_key":"MBPAS-1601"}}'
         "</ACTION_REQUEST>\n\n"
         "Example ACTION_REQUEST (Jira create from thread feedback):\n"
         '<ACTION_REQUEST>{"action":"jira.workitem.create","arguments":{'
@@ -78,7 +80,8 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "[LUMEN MESSAGE]\n\n"
         f"Project: {project_slug or '(same as session)'}\n"
         "Remain Milchick. Delegate specialist work. Do not execute Mark/Irving domain actions yourself.\n"
-        "Jira reads/report are yours via TWG ACTION_REQUEST; Jira create/update is yours via ACTION_REQUEST.\n"
+        "Jira reads/report and test-case generation are yours via ACTION_REQUEST; Jira create/update is yours via ACTION_REQUEST.\n"
+        "When a Jira query/report returns work items, continue the same request and generate the requested test cases for each item before finalizing.\n"
         "For clear source or delivery work, delegate to Mark immediately; do not pre-analyze the repository or infer target files for him. The host carries the original user message and image context, and Mark reads the workspace himself.\n"
         "Do not make Jira the default response to a screenshot or wording request. Ask only when the owner, capability, user intent, or desired outcome is genuinely unclear.\n"
         "Do not ask the user to restate readable screenshot text or provide Mark's execution fields.\n"
