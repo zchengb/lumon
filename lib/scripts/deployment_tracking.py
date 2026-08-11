@@ -1,7 +1,8 @@
 """Small provider seam for post-publish deployment tracking.
 
 The delivery and quick-change runners only know that a deployment is pending.
-This module owns provider-specific polling and the final customer/Agent report.
+This module owns provider-specific polling and sends terminal evidence to Milchick,
+the Agent owner responsible for the final report and failure triage.
 Credentials are deliberately read from environment variables, never persisted.
 """
 
@@ -71,18 +72,14 @@ def normalized_config(delivery_config: dict[str, Any]) -> dict[str, Any]:
         "provider": provider,
         "poll_interval_seconds": poll_interval,
         "timeout_seconds": timeout,
-        "failure_policy": "notify" if raw.get("failure_policy") == "notify" else "dispatch_agent",
         "jenkins": {
             "job": str(jenkins.get("job") or "").strip(),
-            "trigger_mode": "cli" if jenkins.get("trigger_mode") == "cli" else "observe",
             "url_env": str(jenkins.get("url_env") or "JENKINS_URL").strip() or "JENKINS_URL",
             "auth_env": str(jenkins.get("auth_env") or "JENKINS_AUTH").strip() or "JENKINS_AUTH",
-            "cli": str(jenkins.get("cli") or "jenkins-cli").strip() or "jenkins-cli",
         },
         "github_actions": {
             "repository": str(github.get("repository") or "").strip(),
             "workflow": str(github.get("workflow") or "").strip(),
-            "trigger_mode": "gh" if github.get("trigger_mode") == "gh" else "observe",
             "gh_bin": str(github.get("gh_bin") or "gh").strip() or "gh",
         },
     }
@@ -245,28 +242,6 @@ def poll_jenkins(config: dict[str, Any], target: dict[str, Any]) -> dict[str, An
     }
 
 
-def trigger_jenkins(config: dict[str, Any]) -> dict[str, Any]:
-    settings = config.get("jenkins", {})
-    job = str(settings.get("job") or "").strip()
-    if not job:
-        return {"status": "failed", "detail": "Jenkins job is not configured"}
-    try:
-        completed = subprocess.run(
-            [str(settings.get("cli") or "jenkins-cli"), "build", job, "-s", "-v"],
-            capture_output=True,
-            text=True,
-            timeout=max(60, int(config.get("timeout_seconds") or 3600)),
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"status": "failed", "detail": f"Jenkins CLI failed: {exc}"}
-    output = (completed.stdout or completed.stderr or "").strip()
-    return {
-        "status": "succeeded" if completed.returncode == 0 else "failed",
-        "detail": output[-500:] or f"Jenkins CLI exited with {completed.returncode}",
-    }
-
-
 def poll(config: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
     if config.get("provider") == "jenkins":
         return poll_jenkins(config, target)
@@ -345,7 +320,7 @@ def _quick_reply(result: dict[str, Any], succeeded: bool) -> bool:
         from feishu.messenger import FeishuMessenger, should_reply_in_thread
 
         return bool(
-            FeishuMessenger("mark").safe_reply_text(
+            FeishuMessenger("milchick").safe_reply_text(
                 message_id,
                 text,
                 reply_in_thread=should_reply_in_thread(
@@ -370,9 +345,11 @@ def _dispatch_failure(result: dict[str, Any]) -> bool:
         return False
     deployment = result["deployment"]
     handoff = (
-        "[LUMEN DEPLOYMENT FAILURE — NEW TURN]\n"
+        "[LUMEN DEPLOYMENT FAILURE — MANAGER TRIAGE]\n"
         "The user's original change was published, but its CI/CD deployment did not complete. "
-        "Treat this as a new repair turn. Read the workspace and CI evidence yourself; do not rely on stale session context.\n\n"
+        "You are the follow-up owner. Inspect the workspace and CI evidence yourself, then decide "
+        "whether the next repair belongs to Mark (source, build, or delivery), Irving (Jira patch), "
+        "or a human (provider, credential, or ambiguous infrastructure issue). Never route every failure to Mark.\n\n"
         f"Original user request:\n{original}\n\n"
         f"Run: {result.get('run_id') or ''}\n"
         f"Provider: {deployment.get('provider') or ''}\n"
@@ -384,7 +361,7 @@ def _dispatch_failure(result: dict[str, Any]) -> bool:
         from agents.bridge import handle_agent_message
 
         outcome = handle_agent_message(
-            agent_id="mark",
+            agent_id="milchick",
             text=handoff,
             meta={
                 "_new_agent_turn": "1",
@@ -418,33 +395,27 @@ def track(result_path: Path, source: str = "delivery") -> int:
     if not deployment:
         return 0
 
-    if config.get("provider") == "jenkins" and config.get("jenkins", {}).get("trigger_mode") == "cli":
-        result = _write_tracking(result_path, "running", {"detail": "Jenkins CLI build started"})
-        update = trigger_jenkins(config)
-        final_status = str(update.pop("status") or "failed")
-        result = _write_tracking(result_path, final_status, update)
-    else:
-        deadline = time.monotonic() + int(config.get("timeout_seconds") or 3600)
-        while True:
+    deadline = time.monotonic() + int(config.get("timeout_seconds") or 3600)
+    while True:
+        result = load_json(result_path, {})
+        target = result.get("deployment") if isinstance(result.get("deployment"), dict) else deployment
+        update = poll(config, target)
+        status = str(update.pop("status") or "queued").casefold()
+        if status not in PENDING | TERMINAL:
+            status = "queued"
+        result = _write_tracking(result_path, status, update)
+        if status in TERMINAL:
+            break
+        if time.monotonic() >= deadline:
+            _write_tracking(result_path, "timeout", {"detail": "Deployment tracking timed out"})
             result = load_json(result_path, {})
-            target = result.get("deployment") if isinstance(result.get("deployment"), dict) else deployment
-            update = poll(config, target)
-            status = str(update.pop("status") or "queued").casefold()
-            if status not in PENDING | TERMINAL:
-                status = "queued"
-            result = _write_tracking(result_path, status, update)
-            if status in TERMINAL:
-                break
-            if time.monotonic() >= deadline:
-                _write_tracking(result_path, "timeout", {"detail": "Deployment tracking timed out"})
-                result = load_json(result_path, {})
-                break
-            time.sleep(int(config.get("poll_interval_seconds") or 30))
+            break
+        time.sleep(int(config.get("poll_interval_seconds") or 30))
 
     deployment = result.get("deployment") if isinstance(result.get("deployment"), dict) else {}
     succeeded = deployment.get("status") == "succeeded"
     if source == "quick_change":
-        if not succeeded and config.get("failure_policy") == "dispatch_agent":
+        if not succeeded:
             dispatched = _dispatch_failure(result)
             if not dispatched:
                 _quick_reply(result, False)
@@ -452,7 +423,7 @@ def track(result_path: Path, source: str = "delivery") -> int:
             _quick_reply(result, succeeded)
     else:
         _render_standard(result_path, "delivery.deployed" if succeeded else "delivery.deployment_failed")
-        if not succeeded and config.get("failure_policy") == "dispatch_agent":
+        if not succeeded:
             _dispatch_failure(result)
     return 0 if succeeded else 1
 

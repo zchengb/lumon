@@ -22,13 +22,16 @@ class DeploymentTrackingTests(unittest.TestCase):
                     "enabled": True,
                     "provider": "github_actions",
                     "poll_interval_seconds": 1,
-                    "github_actions": {"repository": "acme/app", "workflow": "deploy.yml"},
+                    "failure_policy": "dispatch_agent",
+                    "github_actions": {"repository": "acme/app", "workflow": "deploy.yml", "trigger_mode": "gh"},
                 }
             }
         )
         self.assertTrue(config["enabled"])
         self.assertEqual(5, config["poll_interval_seconds"])
         self.assertEqual("acme/app", config["github_actions"]["repository"])
+        self.assertNotIn("failure_policy", config)
+        self.assertNotIn("trigger_mode", json.dumps(config))
         self.assertNotIn("token", json.dumps(config).lower())
 
     def test_prepare_tracking_moves_published_result_to_awaiting(self) -> None:

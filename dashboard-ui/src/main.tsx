@@ -322,16 +322,21 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.githubActions": "GitHub Actions",
     "settings.pollInterval": "Poll interval (seconds)",
     "settings.deploymentTimeout": "Timeout (seconds)",
-    "settings.failurePolicy": "On deployment failure",
-    "settings.notifyOnly": "Report failure only",
-    "settings.dispatchAgent": "Hand back to Mark",
-    "settings.jenkinsJob": "Jenkins job",
+    "settings.deploymentProviderHelp": "The CI/CD system whose deployment run should be observed after publish.",
+    "settings.deploymentOwner": "Tracking owner",
+    "settings.deploymentOwnerValue": "Milchick · Engineering Operations Manager",
+    "settings.deploymentOwnerHelp": "Milchick owns the follow-up decision. Source or delivery failures go to Mark; Jira repair work goes to Irving; unclear infrastructure failures are reported for a human decision.",
+    "settings.deploymentFailureHandling": "The host worker polls the provider. Milchick receives the terminal evidence and decides the next owner; no failure is hard-coded to Mark.",
+    "settings.credentials": "Credentials",
+    "settings.configured": "Configured",
+    "settings.notConfigured": "Not configured",
+    "settings.localGhLogin": "Local gh login",
+    "settings.jenkinsPipeline": "Jenkins deployment pipeline",
+    "settings.jenkinsPipelineHelp": "Required to identify the Jenkins pipeline to observe. Example: folder/job-name. Lumon does not use this field to run code.",
+    "settings.jenkinsCredentials": "Set JENKINS_URL and JENKINS_AUTH in Variable Keys. Values stay in the workspace environment and are never written to delivery.json.",
+    "settings.githubCredentials": "GitHub Actions uses the workspace runner's local gh login. No token is entered or stored here.",
     "settings.githubRepository": "GitHub repository",
     "settings.githubWorkflow": "Workflow (optional)",
-    "settings.triggerMode": "Trigger mode",
-    "settings.observeRun": "Observe push-triggered run",
-    "settings.triggerWithCli": "Trigger with local CLI",
-    "settings.deploymentTrackingNote": "Jenkins reads JENKINS_URL/JENKINS_AUTH; GitHub Actions reads the local gh login. The adapter never stores credential values in delivery.json.",
     "label.deployment": "Deployment",
     "label.provider": "Provider",
     "label.lastChecked": "Last checked",
@@ -352,6 +357,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "customModel.copy": "Lumon does not validate model availability. The value will be used on the next run.",
     "customModel.edit": "Edit custom model",
     "customModel.option": "Custom Cursor model ID…",
+    "customModel.badge": "Custom",
     "customModel.help": "Use a model ID supported by Cursor.",
     "status.completed": "Completed",
     "status.passed": "Passed",
@@ -363,6 +369,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "status.running": "Running",
     "status.active": "Active",
     "status.notSet": "Not set",
+    "status.notConfigured": "Not configured",
     "status.resolved": "Resolved",
     "status.reopened": "Reopened",
     "status.synced": "Synced",
@@ -849,16 +856,21 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.githubActions": "GitHub Actions",
     "settings.pollInterval": "轮询间隔（秒）",
     "settings.deploymentTimeout": "超时（秒）",
-    "settings.failurePolicy": "部署失败时",
-    "settings.notifyOnly": "仅回报失败",
-    "settings.dispatchAgent": "交回 Mark 处理",
-    "settings.jenkinsJob": "Jenkins Job",
+    "settings.deploymentProviderHelp": "发布后需要观察哪个 CI/CD 系统的部署运行。",
+    "settings.deploymentOwner": "跟踪负责人",
+    "settings.deploymentOwnerValue": "Milchick · 工程运营经理",
+    "settings.deploymentOwnerHelp": "Milchick 负责判断后续归属：源码或交付失败交给 Mark，Jira 修复交给 Irving，基础设施或无法判断的问题回报人工决策。",
+    "settings.deploymentFailureHandling": "后台 worker 负责轮询提供商；Milchick 接收最终证据并决定下一位负责人，不再把所有失败硬编码交给 Mark。",
+    "settings.credentials": "凭证",
+    "settings.configured": "已配置",
+    "settings.notConfigured": "未配置",
+    "settings.localGhLogin": "本地 gh 登录",
+    "settings.jenkinsPipeline": "Jenkins 部署流水线",
+    "settings.jenkinsPipelineHelp": "用于定位需要观察的 Jenkins 流水线。例如：folder/job-name。Lumon 不会用此字段执行代码。",
+    "settings.jenkinsCredentials": "请在变量密钥中配置 JENKINS_URL 和 JENKINS_AUTH。值保留在工作区环境中，不会写入 delivery.json。",
+    "settings.githubCredentials": "GitHub Actions 使用工作区运行器的本地 gh 登录状态。这里不输入也不保存 Token。",
     "settings.githubRepository": "GitHub 仓库",
     "settings.githubWorkflow": "Workflow（可选）",
-    "settings.triggerMode": "触发模式",
-    "settings.observeRun": "观察推送触发的运行",
-    "settings.triggerWithCli": "使用本地 CLI 触发",
-    "settings.deploymentTrackingNote": "Jenkins 读取 JENKINS_URL/JENKINS_AUTH；GitHub Actions 使用本地 gh 登录状态。适配器不会把凭证写入 delivery.json。",
     "label.deployment": "部署",
     "label.provider": "提供商",
     "label.lastChecked": "最近检查",
@@ -879,6 +891,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "customModel.copy": "Lumon 不会验证模型是否可用，该值将在下一次运行时使用。",
     "customModel.edit": "编辑自定义模型",
     "customModel.option": "自定义 Cursor 模型 ID…",
+    "customModel.badge": "自定义",
     "customModel.help": "使用 Cursor 支持的模型 ID。",
     "status.completed": "已完成",
     "status.passed": "通过",
@@ -890,6 +903,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "status.running": "运行中",
     "status.active": "活跃",
     "status.notSet": "未设置",
+    "status.notConfigured": "未配置",
     "status.resolved": "已解决",
     "status.reopened": "已重新打开",
     "status.synced": "已同步",
@@ -1376,16 +1390,21 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.githubActions": "GitHub Actions",
     "settings.pollInterval": "輪詢間隔（秒）",
     "settings.deploymentTimeout": "逾時（秒）",
-    "settings.failurePolicy": "部署失敗時",
-    "settings.notifyOnly": "只回報失敗",
-    "settings.dispatchAgent": "交回 Mark 處理",
-    "settings.jenkinsJob": "Jenkins Job",
+    "settings.deploymentProviderHelp": "發布後要觀察哪個 CI/CD 系統的部署執行。",
+    "settings.deploymentOwner": "追蹤負責人",
+    "settings.deploymentOwnerValue": "Milchick · 工程營運經理",
+    "settings.deploymentOwnerHelp": "Milchick 負責判斷後續歸屬：原始碼或交付失敗交給 Mark，Jira 修復交給 Irving，基礎設施或無法判斷的問題回報人工決策。",
+    "settings.deploymentFailureHandling": "背景 worker 負責輪詢提供者；Milchick 接收最終證據並決定下一位負責人，不再把所有失敗硬編碼交給 Mark。",
+    "settings.credentials": "憑證",
+    "settings.configured": "已設定",
+    "settings.notConfigured": "未設定",
+    "settings.localGhLogin": "本機 gh 登入",
+    "settings.jenkinsPipeline": "Jenkins 部署流水線",
+    "settings.jenkinsPipelineHelp": "用於定位要觀察的 Jenkins 流水線。例如：folder/job-name。Lumon 不會用此欄位執行程式碼。",
+    "settings.jenkinsCredentials": "請在變數金鑰中設定 JENKINS_URL 和 JENKINS_AUTH。值保留在工作區環境中，不會寫入 delivery.json。",
+    "settings.githubCredentials": "GitHub Actions 使用工作區執行器的本機 gh 登入狀態。這裡不輸入也不儲存 Token。",
     "settings.githubRepository": "GitHub 儲存庫",
     "settings.githubWorkflow": "Workflow（可選）",
-    "settings.triggerMode": "觸發模式",
-    "settings.observeRun": "觀察推送觸發的執行",
-    "settings.triggerWithCli": "使用本機 CLI 觸發",
-    "settings.deploymentTrackingNote": "Jenkins 讀取 JENKINS_URL/JENKINS_AUTH；GitHub Actions 使用本機 gh 登入狀態。適配器不會把憑證寫入 delivery.json。",
     "label.deployment": "部署",
     "label.provider": "提供者",
     "label.lastChecked": "上次檢查",
@@ -1406,6 +1425,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "customModel.copy": "Lumon 不會驗證模型是否可用，該值將在下一次執行時使用。",
     "customModel.edit": "編輯自訂模型",
     "customModel.option": "自訂 Cursor 模型 ID…",
+    "customModel.badge": "自訂",
     "customModel.help": "使用 Cursor 支援的模型 ID。",
     "status.completed": "已完成",
     "status.passed": "通過",
@@ -1417,6 +1437,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "status.running": "執行中",
     "status.active": "使用中",
     "status.notSet": "未設定",
+    "status.notConfigured": "未設定",
     "status.resolved": "已解決",
     "status.reopened": "已重新開啟",
     "status.synced": "已同步",
@@ -1909,7 +1930,7 @@ function titleStatus(value: unknown) {
     "completed with findings": "status.completed", completed: "status.completed", clean: "status.completed",
     passed: "status.passed", failed: "status.failed", skipped: "status.skipped", open: "status.open",
     "in progress": "status.inProgress", "awaiting deploy": "status.awaitingDeploy", running: "status.running", configured: "status.active",
-    "not configured": "status.notSet", resolved: "status.resolved", reopened: "status.reopened", synced: "status.synced",
+    "not configured": "status.notConfigured", setup: "status.notConfigured", resolved: "status.resolved", reopened: "status.reopened", synced: "status.synced",
     ignored: "status.ignored", blocked: "status.blocked", pending: "status.pending", active: "status.active",
     "pr open": "status.prOpen", "not started": "status.notStarted", "dev done": "status.devDone",
     approved: "status.approved", ready: "status.ready", draft: "status.draft", done: "status.done", clarifying: "status.clarifying", changed: "status.changed"
@@ -2630,29 +2651,34 @@ function AgentTeamBoard({ agents, workflows, t, onNavigate }: { agents: AgentSet
     const person = identity(agent, profile);
     return <button type="button" className="agent-team-identity" aria-label={`${t("action.configureAgent")}: ${person.name}`} onClick={() => onNavigate("settings")}>
       <AgentAvatar agentId={agent?.id || person.id} displayName={person.name} size="card" />
-      <span><span className="overview-kicker">{profile.feature}</span><strong>{person.name}</strong><small>{person.title}</small></span>
+      <span><strong>{person.name}</strong><small>{person.title}</small></span>
     </button>;
   };
-  const renderFacts = (profile: RecordValue) => <div className="agent-team-facts"><span><b>{t("label.input")}</b>{profile.input}</span><span><b>{t("label.output")}</b>{profile.output}</span></div>;
+  const renderResponsibility = (profile: RecordValue) => <div className="agent-team-responsibility">
+    <p className="agent-team-mission">{profile.mission}</p>
+    <div className="agent-team-flow"><span>{profile.input}</span><ChevronRight size={13} aria-hidden="true" /><span>{profile.output}</span></div>
+  </div>;
+  const displayStatus = (agent: AgentSettings | undefined, workflow?: RecordValue) => {
+    const live = String(workflow?.status || "").toLowerCase();
+    return /running|progress|active|blocked|failed|awaiting/.test(live) ? (workflow?.status || state(agent)) : state(agent);
+  };
   return <div className="agent-team-board">
-    <div className="agent-team-entry"><span className="agent-team-entry-icon"><User size={17} /></span><span><span className="overview-kicker">{t("label.entryPoint")}</span><strong>{t("label.feishuEntry")}</strong><small>{t("context.activity.description")}</small></span></div>
+    <div className="agent-team-entry"><span className="agent-team-entry-icon"><img src="assets/feishu-mark.svg" alt="Feishu" /></span><span><span className="overview-kicker">{t("label.entryPoint")}</span><strong>{t("label.feishuEntry")}</strong><small>{t("context.activity.description")}</small></span></div>
     <span className="agent-team-connector" aria-hidden="true" />
-    <div className="agent-team-layer"><span className="agent-team-layer-label">{t("label.managerLayer")}</span><article className="agent-team-card agent-team-manager">
+    <div className="agent-team-layer"><article className="agent-team-card agent-team-manager">
       <div className="agent-team-card-heading">{renderIdentity(manager, managerProfileLocalized)}<Badge value={state(manager)} /></div>
-      <p className="agent-team-mission">{managerProfileLocalized.mission}</p>
-      {renderFacts(managerProfileLocalized)}
-      <footer className="agent-team-card-footer"><span>{t("label.role")}: {managerProfileLocalized.feature}</span><button type="button" className="text-button" onClick={() => onNavigate("settings")}>{t("action.configureAgent")} <ChevronRight size={13} /></button></footer>
+      {renderResponsibility(managerProfileLocalized)}
+      <footer className="agent-team-card-footer"><button type="button" className="text-button" onClick={() => onNavigate("settings")}>{t("action.configureAgent")} <ChevronRight size={13} /></button></footer>
     </article></div>
     <span className="agent-team-connector" aria-hidden="true" />
-    <div className="agent-team-capabilities"><div className="agent-team-capabilities-heading"><span className="agent-team-layer-label">{t("label.capabilityOwners")}</span><span className="muted">{t("label.businessReadyCapabilities")}</span></div><div className="agent-team-cards">
+    <div className="agent-team-capabilities"><div className="agent-team-cards">
       {workflows.map((workflow) => {
         const agent = findAgent(String(workflow.agent).toLowerCase(), workflow.workflow);
         const profile = workflow;
         return <article className="agent-team-card" key={workflow.workflow}>
-          <div className="agent-team-card-heading">{renderIdentity(agent, profile)}<span className="agent-team-statuses"><Badge value={state(agent)} /><Badge value={workflow.status} /></span></div>
-          <p className="agent-team-mission">{profile.mission}</p>
-          {renderFacts(profile)}
-          <footer className="agent-team-card-footer"><span>{t("label.role")}: {text(agent?.role, profile.feature)}</span><button type="button" className="button secondary" onClick={() => onNavigate(workflow.tab as Tab)}>{t("action.inspect", { feature: profile.feature })} <ChevronRight size={13} /></button></footer>
+          <div className="agent-team-card-heading">{renderIdentity(agent, profile)}<span className="agent-team-statuses"><Badge value={displayStatus(agent, workflow)} /></span></div>
+          {renderResponsibility(profile)}
+          <footer className="agent-team-card-footer"><button type="button" className="button secondary" onClick={() => onNavigate(workflow.tab as Tab)}>{t("action.inspect", { feature: profile.feature })} <ChevronRight size={13} /></button></footer>
         </article>;
       })}
     </div></div>
@@ -2676,7 +2702,7 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
   const activeWorkflows = workflows.filter((workflow) => /running|progress|active/i.test(String(workflow.status))).length;
   const stateLabel = (state: string) => state === "setup" ? "not configured" : state;
   return <div className="manager-overview">
-    <PageIntro title={t("heading.managerOverview")} description={`${project || t("common.currentProject")} · ${t("context.overview.description")}`} action={<button className="button secondary" onClick={() => onNavigate("settings")}><Settings2 size={14} />{t("action.openSettings")}</button>} />
+    <PageIntro title={t("heading.managerOverview")} description={`${project || t("common.currentProject")} · ${t("context.overview.description")}`} />
     <div className="metrics">
       <Metric label={t("label.agentsReady")} value={`${readyAgents}/${agents.length}`} />
       <Metric label={t("label.workflowsActive")} value={activeWorkflows} />
@@ -3496,13 +3522,17 @@ function ModelField({ label, value, onChange, markDirty }: { label: string; valu
   const { t } = useI18n();
   const normalizedValue = trimmedModelValue(value);
   const isPreset = cursorModelOptions.some((model) => model.value === normalizedValue);
+  const customModelLabel = normalizedValue || t("customModel.option");
   const [customOpen, setCustomOpen] = useState(false);
   const openCustom = () => setCustomOpen(true);
   return <Field label={label} help={t("customModel.help")}>
-    <select value={isPreset ? normalizedValue : customModelOption} onChange={(event) => { if (event.target.value === customModelOption) openCustom(); else { onChange(event.target.value); markDirty(); } }}>
-      {cursorModelOptions.map((model) => <option value={model.value} key={model.value}>{model.label}</option>)}
-      <option value={customModelOption}>{t("customModel.option")}</option>
-    </select>
+    <div className={`model-select-row${isPreset ? "" : " is-custom"}`}>
+      <select title={!isPreset ? normalizedValue : undefined} value={isPreset ? normalizedValue : customModelOption} onChange={(event) => { if (event.target.value === customModelOption) openCustom(); else { onChange(event.target.value); markDirty(); } }}>
+        {cursorModelOptions.map((model) => <option value={model.value} key={model.value}>{model.label}</option>)}
+        <option value={customModelOption}>{customModelLabel}</option>
+      </select>
+      {!isPreset && <span className="custom-model-badge">{t("customModel.badge")}</span>}
+    </div>
     {!isPreset && <button type="button" className="custom-model-edit" onClick={openCustom}>{t("customModel.edit")}</button>}
     {customOpen && <CustomModelDialog label={label} value={value} onClose={() => setCustomOpen(false)} onConfirm={(model) => { onChange(model); markDirty(); setCustomOpen(false); }} />}
   </Field>;
@@ -3645,9 +3675,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const [deploymentProvider, setDeploymentProvider] = useState(String(workspace.deployment_tracking?.provider || "none"));
   const [deploymentPollInterval, setDeploymentPollInterval] = useState(String(workspace.deployment_tracking?.poll_interval_seconds || 30));
   const [deploymentTimeout, setDeploymentTimeout] = useState(String(workspace.deployment_tracking?.timeout_seconds || 3600));
-  const [deploymentFailurePolicy, setDeploymentFailurePolicy] = useState(String(workspace.deployment_tracking?.failure_policy || "dispatch_agent"));
   const [jenkinsJob, setJenkinsJob] = useState(String(workspace.deployment_tracking?.jenkins?.job || ""));
-  const [jenkinsTriggerMode, setJenkinsTriggerMode] = useState(String(workspace.deployment_tracking?.jenkins?.trigger_mode || "observe"));
   const [githubRepository, setGithubRepository] = useState(String(workspace.deployment_tracking?.github_actions?.repository || ""));
   const [githubWorkflow, setGithubWorkflow] = useState(String(workspace.deployment_tracking?.github_actions?.workflow || ""));
   const [agentsEnabled, setAgentsEnabled] = useState(Boolean(agentsPayload.enabled));
@@ -3801,9 +3829,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     setDeploymentProvider(String(config.provider || "none"));
     setDeploymentPollInterval(String(config.poll_interval_seconds || 30));
     setDeploymentTimeout(String(config.timeout_seconds || 3600));
-    setDeploymentFailurePolicy(String(config.failure_policy || "dispatch_agent"));
     setJenkinsJob(String(config.jenkins?.job || ""));
-    setJenkinsTriggerMode(String(config.jenkins?.trigger_mode || "observe"));
     setGithubRepository(String(config.github_actions?.repository || ""));
     setGithubWorkflow(String(config.github_actions?.workflow || ""));
   }, [deploymentConfigKey]);
@@ -3812,6 +3838,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const reveal = async (name: string) => { try { const result = await getSecret(name); setSecrets((current) => ({ ...current, [name]: result })); notify("Integration value revealed", "success"); } catch (err) { notify(err instanceof Error ? err.message : "Unable to reveal value", "error"); } };
   const copy = async (name: string) => { try { const result = await getSecret(name); await navigator.clipboard.writeText(result); notify("Integration value copied", "success"); } catch (err) { notify(err instanceof Error ? err.message : "Unable to copy value", "error"); } };
   const configured = workspace.configured_integrations || [];
+  const jenkinsCredentialsConfigured = configured.includes("JENKINS_URL") && configured.includes("JENKINS_AUTH");
   const statusOptions = Array.from(new Set(["To Do", "Backlog", "In Progress", "Done", "Block", ...workflowStatuses, ...eligibleStatuses, ...patchStatuses, inDevStatus, devDoneStatus, patchStartStatus, patchDoneStatus, patchBlockedStatus].filter(Boolean)));
   const configuredDeliveryStatuses = Array.isArray(schedules.delivery?.jira_statuses) ? schedules.delivery.jira_statuses.map(String) : String(schedules.delivery?.jira_status || "To Do,Backlog,In Progress").split(",").map((value) => value.trim()).filter(Boolean);
   const configuredPatchStatuses = Array.isArray(schedules.patch?.jira_statuses) ? schedules.patch.jira_statuses.map(String) : ["To Do"];
@@ -3825,8 +3852,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     provider: deploymentProvider,
     poll_interval_seconds: Number(deploymentPollInterval),
     timeout_seconds: Number(deploymentTimeout),
-    failure_policy: deploymentFailurePolicy,
-    jenkins: { job: jenkinsJob, trigger_mode: jenkinsTriggerMode },
+    jenkins: { job: jenkinsJob },
     github_actions: { repository: githubRepository, workflow: githubWorkflow },
   };
   const savedDeploymentConfig = workspace.deployment_tracking || {};
@@ -3835,8 +3861,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     provider: String(savedDeploymentConfig.provider || "none"),
     poll_interval_seconds: Number(savedDeploymentConfig.poll_interval_seconds || 30),
     timeout_seconds: Number(savedDeploymentConfig.timeout_seconds || 3600),
-    failure_policy: String(savedDeploymentConfig.failure_policy || "dispatch_agent"),
-    jenkins: { job: String(savedDeploymentConfig.jenkins?.job || ""), trigger_mode: String(savedDeploymentConfig.jenkins?.trigger_mode || "observe") },
+    jenkins: { job: String(savedDeploymentConfig.jenkins?.job || "") },
     github_actions: { repository: String(savedDeploymentConfig.github_actions?.repository || ""), workflow: String(savedDeploymentConfig.github_actions?.workflow || "") },
   });
   const agentsChanged = agentsEnabled !== agentsBaseline.enabled || JSON.stringify(agentDrafts) !== agentsBaseline.agents || JSON.stringify(accessDraft) !== agentsBaseline.access || JSON.stringify({
@@ -4038,15 +4063,15 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     <Panel title={t("heading.publishPolicy")}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.automationOutcome")}</h4><p>{t("settings.publishDescription")}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label={t("label.autoScan")}><select value={scanPublishMode} onChange={(event) => { setScanPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option></select></Field><Field label={t("label.autoDelivery")}><select value={deliveryPublishMode} onChange={(event) => { setDeliveryPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field><Field label={t("label.autoPatch")}><select value={patchPublishMode} onChange={(event) => { setPatchPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field></div></div></div></Panel>
     <Panel title={t("settings.deploymentTracking")}>
       <div className="settings-section">
-        <div className="settings-copy"><h4>{t("settings.deploymentTracking")}</h4><p>{t("settings.deploymentTrackingDescription")}</p><p className="schedule-note">{t("settings.deploymentTrackingNote")}</p></div>
-        <div className="settings-control wide">
+        <div className="settings-copy deployment-tracking-copy"><h4>{t("settings.deploymentTracking")}</h4><p>{t("settings.deploymentTrackingDescription")}</p><div className="deployment-policy-note"><span className="field-label">{t("settings.deploymentOwner")}</span><strong>{t("settings.deploymentOwnerValue")}</strong><p>{t("settings.deploymentFailureHandling")}</p></div></div>
+        <div className="settings-control wide deployment-settings-control">
           <div className="form-grid compact">
-            <Field label={t("settings.deploymentProvider")}><select value={deploymentProvider} onChange={(event) => { setDeploymentProvider(event.target.value); setDeploymentEnabled(event.target.value !== "none"); markDirty(); }}><option value="none">{t("settings.deploymentDisabled")}</option><option value="jenkins">{t("settings.jenkins")}</option><option value="github_actions">{t("settings.githubActions")}</option></select></Field>
-            <Field label={t("settings.failurePolicy")}><select value={deploymentFailurePolicy} onChange={(event) => { setDeploymentFailurePolicy(event.target.value); markDirty(); }}><option value="notify">{t("settings.notifyOnly")}</option><option value="dispatch_agent">{t("settings.dispatchAgent")}</option></select></Field>
+            <Field label={t("settings.deploymentProvider")} help={t("settings.deploymentProviderHelp")}><select value={deploymentProvider} onChange={(event) => { setDeploymentProvider(event.target.value); setDeploymentEnabled(event.target.value !== "none"); markDirty(); }}><option value="none">{t("settings.deploymentDisabled")}</option><option value="jenkins">{t("settings.jenkins")}</option><option value="github_actions">{t("settings.githubActions")}</option></select></Field>
+            <Field label={t("settings.deploymentOwner")} help={t("settings.deploymentOwnerHelp")}><div className="settings-static-value">{t("settings.deploymentOwnerValue")}</div></Field>
             <Field label={t("settings.pollInterval")}><input type="number" min="5" value={deploymentPollInterval} onChange={(event) => { setDeploymentPollInterval(event.target.value); markDirty(); }} /></Field>
             <Field label={t("settings.deploymentTimeout")}><input type="number" min="60" value={deploymentTimeout} onChange={(event) => { setDeploymentTimeout(event.target.value); markDirty(); }} /></Field>
-            {deploymentProvider === "jenkins" && <><Field label={t("settings.jenkinsJob")}><input value={jenkinsJob} placeholder="folder/job-name" onChange={(event) => { setJenkinsJob(event.target.value); markDirty(); }} /></Field><Field label={t("settings.triggerMode")}><select value={jenkinsTriggerMode} onChange={(event) => { setJenkinsTriggerMode(event.target.value); markDirty(); }}><option value="observe">{t("settings.observeRun")}</option><option value="cli">{t("settings.triggerWithCli")}</option></select></Field></>}
-            {deploymentProvider === "github_actions" && <><Field label={t("settings.githubRepository")}><input value={githubRepository} placeholder="owner/repository" onChange={(event) => { setGithubRepository(event.target.value); markDirty(); }} /></Field><Field label={t("settings.githubWorkflow")}><input value={githubWorkflow} placeholder="deploy.yml" onChange={(event) => { setGithubWorkflow(event.target.value); markDirty(); }} /></Field></>}
+            {deploymentProvider === "jenkins" && <><Field label={t("settings.jenkinsPipeline")} help={t("settings.jenkinsPipelineHelp")}><input value={jenkinsJob} placeholder="folder/job-name" onChange={(event) => { setJenkinsJob(event.target.value); markDirty(); }} /></Field><div className="deployment-credentials"><div><span className="field-label">{t("settings.credentials")}</span><span className={`integration-status${jenkinsCredentialsConfigured ? " is-configured" : ""}`}>{jenkinsCredentialsConfigured ? t("settings.configured") : t("settings.notConfigured")}</span></div><code>JENKINS_URL + JENKINS_AUTH</code><p>{t("settings.jenkinsCredentials")}</p></div></>}
+            {deploymentProvider === "github_actions" && <><Field label={t("settings.githubRepository")}><input value={githubRepository} placeholder="owner/repository" onChange={(event) => { setGithubRepository(event.target.value); markDirty(); }} /></Field><Field label={t("settings.githubWorkflow")}><input value={githubWorkflow} placeholder="deploy.yml" onChange={(event) => { setGithubWorkflow(event.target.value); markDirty(); }} /></Field><div className="deployment-credentials"><div><span className="field-label">{t("settings.credentials")}</span><span className="integration-status is-configured">{t("settings.localGhLogin")}</span></div><p>{t("settings.githubCredentials")}</p></div></>}
           </div>
         </div>
         <div className="settings-toggle"><ScheduleToggle enabled={deploymentEnabled && deploymentProvider !== "none"} onChange={(enabled) => { setDeploymentEnabled(enabled); markDirty(); }} /></div>

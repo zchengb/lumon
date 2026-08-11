@@ -774,18 +774,14 @@ def save_deployment_config(workspace: Path, body: dict[str, Any], *, include_pay
         "provider": provider,
         "poll_interval_seconds": poll_interval,
         "timeout_seconds": timeout,
-        "failure_policy": "notify" if body.get("failure_policy") == "notify" else "dispatch_agent",
         "jenkins": {
             "job": str(jenkins.get("job") or "").strip(),
-            "trigger_mode": "cli" if jenkins.get("trigger_mode") == "cli" else "observe",
             "url_env": str(jenkins.get("url_env") or "JENKINS_URL").strip() or "JENKINS_URL",
             "auth_env": str(jenkins.get("auth_env") or "JENKINS_AUTH").strip() or "JENKINS_AUTH",
-            "cli": str(jenkins.get("cli") or "jenkins-cli").strip() or "jenkins-cli",
         },
         "github_actions": {
             "repository": str(github.get("repository") or "").strip(),
             "workflow": str(github.get("workflow") or "").strip(),
-            "trigger_mode": "gh" if github.get("trigger_mode") == "gh" else "observe",
             "gh_bin": str(github.get("gh_bin") or "gh").strip() or "gh",
         },
     }

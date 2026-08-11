@@ -675,7 +675,7 @@ def main() -> int:
         feishu_result = _publish_workflow_feishu(
             event_type=event,
             workflow="auto_delivery",
-            owner_agent="mark",
+            owner_agent="milchick" if event in {"delivery.deployed", "delivery.deployment_failed"} else "mark",
             card=card,
             webhook=webhook,
             config=delivery_config if isinstance(delivery_config, dict) else {},
