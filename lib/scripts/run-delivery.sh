@@ -119,6 +119,17 @@ record_delivery_span() {
 
 archive_delivery() {
   [[ -f "${ARCHIVE_PY}" ]] || return 0
+  if [[ -f "${RESULT_FILE}" ]] && python3 - "${RESULT_FILE}" <<'PY'
+import json, sys
+try:
+    status = json.load(open(sys.argv[1], encoding="utf-8")).get("delivery_status")
+except Exception:
+    status = ""
+raise SystemExit(0 if status == "awaiting_deploy" else 1)
+PY
+  then
+    return 0
+  fi
   python3 "${ARCHIVE_PY}" \
     --workspace-root "${WORKSPACE_ROOT}" \
     --result "${RESULT_FILE}" \
@@ -626,6 +637,24 @@ print(sys.argv[2])' "${RESULT_FILE}" "Delivery finalization failed. See log: ${L
       printf 'Warning: delivery notification step failed. See log for details.\n' >&2
   fi
   sync_delivery_docs_metadata
+  local deployment_status
+  deployment_status="$(python3 - "${RESULT_FILE}" <<'PY'
+import json, sys
+try:
+    print(json.load(open(sys.argv[1], encoding="utf-8")).get("delivery_status", ""))
+except Exception:
+    print("")
+PY
+)"
+  if [[ "${deployment_status}" == "awaiting_deploy" ]]; then
+    progress_phase notify completed "Submitted deployment tracking update"
+    progress_phase deployment in_progress "Published; waiting for CI/CD deployment result"
+    finish_delivery_progress awaiting_deploy "Published; CI/CD deployment tracking is running"
+    record_delivery_span succeeded
+    cleanup_completed_worktrees
+    printf '\nLumen delivery submitted; deployment tracking continues in the background.\n'
+    return 0
+  fi
   progress_phase jira_done completed "JIRA sync attempted"
   progress_phase notify completed "Notifications sent"
   finish_delivery_progress completed "Delivery run finished"

@@ -215,14 +215,20 @@ def build_delivery_feishu_card(
 
     event_titles = {
         "delivery.started": "Delivery Started",
+        "delivery.submitted": "Deployment Tracking Started",
         "delivery.dev_done": "Delivery Completed",
+        "delivery.deployed": "Deployment Completed",
         "delivery.failed": "Delivery Needs Attention",
+        "delivery.deployment_failed": "Deployment Needs Attention",
         "delivery.blocked": "Delivery Blocked",
     }
     event_templates = {
         "delivery.started": "blue",
+        "delivery.submitted": "blue",
         "delivery.dev_done": "green",
+        "delivery.deployed": "green",
         "delivery.failed": "red",
+        "delivery.deployment_failed": "red",
         "delivery.blocked": "orange",
     }
     event_title = f"Lumen · {event_titles.get(event, 'Delivery Update')}"
@@ -230,6 +236,7 @@ def build_delivery_feishu_card(
 
     status_label = {
         "in_progress": "In progress",
+        "awaiting_deploy": "Awaiting deployment",
         "completed": "Completed",
         "ready_for_finalize": "Ready for finalization",
         "failed": "Failed",
@@ -261,9 +268,28 @@ def build_delivery_feishu_card(
                 "content": "**What happens next**\nLumen has prepared isolated feature worktrees and started the implementation agent.",
             }
         )
-    elif event == "delivery.failed":
+    elif event == "delivery.submitted":
+        deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}
+        provider = str(deployment.get("provider") or "CI/CD").replace("_", " ").title()
+        detail = str(deployment.get("detail") or "Deployment tracking is now running.").strip()
+        url = str(deployment.get("url") or "").strip()
+        content = f"**What happens next**\nChanges are published. Lumen is tracking the {provider} deployment before reporting completion.\n\n{detail}"
+        if url:
+            content += f"\n\n[Open deployment]({url})"
+        elements.append({"tag": "markdown", "content": content})
+    elif event == "delivery.deployed":
+        deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}
+        provider = str(deployment.get("provider") or "CI/CD").replace("_", " ").title()
+        detail = str(deployment.get("detail") or "Deployment completed successfully.").strip()
+        url = str(deployment.get("url") or "").strip()
+        content = f"**Deployment result**\n{provider} reports a successful deployment.\n\n{detail}"
+        if url:
+            content += f"\n\n[Open deployment]({url})"
+        elements.append({"tag": "markdown", "content": content})
+    elif event in {"delivery.deployment_failed", "delivery.failed"}:
         failed_labels = ", ".join(str(item.get("label") or "verification") for item in failed) or "Delivery verification"
-        failure_detail = "The full verification profile did not pass. No commit or pull request was created."
+        deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}
+        failure_detail = str(deployment.get("detail") or "The full verification profile did not pass. No commit or pull request was created.")
         if any("suitable driver class" in str(item.get("summary", "")).lower() for item in failed):
             failure_detail = "The full test suite could not initialise its test database configuration. No commit or pull request was created."
         elements.append(
@@ -490,7 +516,9 @@ def update_story_metadata(
 ) -> dict[str, Any]:
     metadata = read_json(metadata_path)
     status = str(delivery.get("delivery_status", "")).strip()
-    if status == "completed":
+    if status == "awaiting_deploy":
+        metadata["deliveryStatus"] = "deploying"
+    elif status == "completed":
         metadata["deliveryStatus"] = "pr_open" if pr_urls else "dev_done"
     elif status == "blocked":
         metadata["deliveryStatus"] = "blocked"
@@ -591,6 +619,23 @@ def main() -> int:
     delivery_config = read_json(delivery_config_path(workspace_root))
     delivery["model"] = _notification_model(delivery.get("model"), delivery_config)
     align_delivery_timing(delivery, workspace_root)
+    should_launch_deployment_tracking = False
+    if (
+        event == "delivery.dev_done"
+        and not dry_run
+        and os.environ.get("LUMEN_SKIP_DEPLOYMENT_TRACKING", "").strip().casefold() not in {"1", "true", "yes"}
+    ):
+        try:
+            from deployment_tracking import normalized_config, prepare_tracking
+
+            should_launch_deployment_tracking = bool(
+                prepare_tracking(result_path, normalized_config(delivery_config), "delivery")
+            )
+            if should_launch_deployment_tracking:
+                delivery = load_delivery_result(result_path)
+                event = "delivery.submitted"
+        except Exception as exc:
+            delivery["deployment_tracking_error"] = str(exc)[:500]
     story_path = delivery.get("story_path")
     if story_path:
         metadata_path = (docs_dir / str(story_path) / "metadata.json").resolve()
@@ -646,12 +691,29 @@ def main() -> int:
         update_notifications(workspace_root, jira_result, feishu_result)
         if event == "delivery.started":
             set_phase(workspace_root, "jira_start", "completed", str(jira_result.get("detail", "")))
-        elif event == "delivery.dev_done":
+        elif event == "delivery.submitted":
+            set_phase(workspace_root, "deployment", "in_progress", "CI/CD deployment tracking started")
+            set_phase(workspace_root, "notify", "completed", str(feishu_result.get("status", "")))
+        elif event == "delivery.deployed":
+            deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}
+            set_phase(workspace_root, "deployment", "completed", str(deployment.get("detail", "")))
             set_phase(workspace_root, "jira_done", "completed", str(jira_result.get("detail", "")))
+            set_phase(workspace_root, "notify", "completed", str(feishu_result.get("status", "")))
+        elif event == "delivery.deployment_failed":
+            deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}
+            set_phase(workspace_root, "deployment", "failed", str(deployment.get("detail", "")))
             set_phase(workspace_root, "notify", "completed", str(feishu_result.get("status", "")))
     except Exception:
         pass
     write_json(result_path, delivery)
+    if should_launch_deployment_tracking:
+        try:
+            from deployment_tracking import launch_tracker
+
+            launch_tracker(result_path, "delivery")
+        except Exception as exc:
+            delivery["deployment_tracking_error"] = str(exc)[:500]
+            write_json(result_path, delivery)
     print(json.dumps({"jira": jira_result, "feishu": feishu_result}, indent=2, ensure_ascii=False))
     return 0
 

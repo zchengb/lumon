@@ -29,6 +29,7 @@ PHASES = [
     ("finalize", "Commit, Push, And Pull Requests"),
     ("jira_done", "JIRA DEV DONE"),
     ("notify", "Notifications"),
+    ("deployment", "Deployment"),
 ]
 
 TERMINAL_DELIVERY_STATUSES = {"completed", "failed", "blocked"}
@@ -239,7 +240,8 @@ def finish_progress(workspace_root: Path, delivery_status: str, detail: str = ""
         messages.append({"at": utc_now(), "message": detail})
         payload["messages"] = messages[-50:]
     payload["delivery_status"] = delivery_status
-    payload["finished_at"] = utc_now()
+    if delivery_status in TERMINAL_DELIVERY_STATUSES:
+        payload["finished_at"] = utc_now()
     if delivery_status in TERMINAL_DELIVERY_STATUSES:
         payload["current_phase"] = ""
         payload["current_step"] = ""
@@ -255,20 +257,23 @@ def report_payload(workspace_root: Path, progress: dict[str, Any]) -> dict[str, 
     """
     result = read_json(delivery_result_path(workspace_root), {})
     status = str(result.get("delivery_status", "")).strip()
-    if status not in TERMINAL_DELIVERY_STATUSES:
+    if status not in TERMINAL_DELIVERY_STATUSES and status != "awaiting_deploy":
         return progress
 
     payload = dict(progress)
     payload["delivery_status"] = status
     payload["finished_at"] = result.get("finished_at") or payload.get("finished_at", "")
-    payload["current_phase"] = ""
-    payload["current_step"] = ""
+    if status in TERMINAL_DELIVERY_STATUSES:
+        payload["current_phase"] = ""
+        payload["current_step"] = ""
 
     for key in ("story_id", "jira_key", "branch", "started_at"):
         if result.get(key):
             payload[key] = result[key]
     if isinstance(result.get("verification_results"), list):
         payload["verification"] = result["verification_results"]
+    if isinstance(result.get("deployment"), dict):
+        payload["deployment"] = result["deployment"]
     return payload
 
 

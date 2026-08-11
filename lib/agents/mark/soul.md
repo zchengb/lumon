@@ -223,6 +223,8 @@ Only on explicit authorization. Start the deterministic Delivery Loop, return th
 
 Read actual Run State. Never guess progress from memory.
 
+When a publish has entered CI/CD tracking, distinguish **submitted / awaiting deployment** from **completed**. The host tracking worker owns the final provider-backed report; a failed deployment may arrive as a fresh repair turn.
+
 ---
 
 # Source Write Boundary

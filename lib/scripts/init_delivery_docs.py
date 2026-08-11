@@ -71,6 +71,12 @@ def init_docs(
     if target.exists() and any(target.iterdir()) and not force and not merge:
         raise FileExistsError(f"Target is not empty: {target}. Re-run with --force to merge/overwrite templates.")
     target.mkdir(parents=True, exist_ok=True)
+    runtime_dir = target / "lumon"
+    for legacy in (target / "lumen", target / ".lumen"):
+        if not runtime_dir.exists() and legacy.exists():
+            runtime_dir = legacy
+            break
+    runtime_dir_name = runtime_dir.name
 
     values = {
         "PROJECT_NAME": project_name,
@@ -85,17 +91,23 @@ def init_docs(
     for src in src_root.rglob("*"):
         if src.is_dir():
             continue
-        rel = render_text(str(src.relative_to(src_root)), values)
+        source_rel = src.relative_to(src_root)
+        if source_rel.parts and source_rel.parts[0] in {"lumen", "lumon"}:
+            source_rel = Path(runtime_dir_name) / Path(*source_rel.parts[1:])
+        rel = render_text(str(source_rel), values)
         if no_example and rel.startswith("stories/") and rel != "stories/.gitkeep":
             continue
         dest = target / rel
         copy_rendered(src, dest, values, force, merge)
 
-    delivery_template = src_root / "lumen" / "config" / "delivery.json"
+    template_workspace = src_root / "lumon"
+    if not template_workspace.is_dir():
+        template_workspace = src_root / "lumen"
+    delivery_template = template_workspace / "config" / "delivery.json"
     if delivery_template.is_file():
         copy_rendered(
             delivery_template,
-            target / "lumen" / "config" / "delivery.example.json",
+            runtime_dir / "config" / "delivery.example.json",
             values,
             force,
             merge,
@@ -105,10 +117,10 @@ def init_docs(
         target / "topics",
         target / "stories",
         target / "repos",
-        docs_root / "lumen" / "config",
-        docs_root / "lumen" / "worktrees",
-        docs_root / "lumen" / "results",
-        docs_root / "lumen" / "logs" / "delivery",
+        runtime_dir / "config",
+        runtime_dir / "worktrees",
+        runtime_dir / "results",
+        runtime_dir / "logs" / "delivery",
     ]:
         keep_dir.mkdir(parents=True, exist_ok=True)
         (keep_dir / ".gitkeep").touch()
@@ -116,7 +128,7 @@ def init_docs(
     print(f"✓ Initialized Lumen workspace: {target}")
     print(f"✓ Workspace root: {docs_root}")
     print(f"✓ Code repositories directory: {target / 'repos'}")
-    print(f"✓ Workspace config: {docs_root / 'lumen' / 'config' / 'workspace.json'}")
+    print(f"✓ Workspace config: {runtime_dir / 'config' / 'workspace.json'}")
     if not no_example:
         print(f"✓ Example story: stories/{story_slug(example_key)}/")
     print("Next:")

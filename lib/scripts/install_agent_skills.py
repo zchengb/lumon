@@ -15,8 +15,9 @@ def project_root(value: str) -> Path:
     path = Path(value).expanduser().resolve()
     if (path / "config" / "common.json").is_file():
         return path.parent
-    if (path / "lumen" / "config" / "common.json").is_file():
-        return path
+    for name in ("lumon", "lumen", ".lumen"):
+        if (path / name / "config" / "common.json").is_file():
+            return path
     raise ValueError(f"No Lumen workspace found at: {path}")
 
 
@@ -55,13 +56,17 @@ def adapter(skill: str, platform: str, canonical: Path) -> tuple[Path, str]:
 
 def install(workspace: str, platforms: list[str], force: bool) -> None:
     root = project_root(workspace)
+    runtime_dir = next(
+        (root / name for name in ("lumon", "lumen", ".lumen") if (root / name / "config" / "common.json").is_file()),
+        root / "lumon",
+    )
     source_root = Path(__file__).resolve().parents[1] / "templates" / "agent-skills"
     selected = ("claude", "codex") if "all" in platforms else tuple(dict.fromkeys(platforms))
     for skill in SKILLS:
-        canonical = root / "lumen" / "skills" / skill
+        canonical = runtime_dir / "skills" / skill
         copy_skill(source_root / skill, canonical, force)
         for platform in selected:
-            relative, text = adapter(skill, platform, Path("lumen") / "skills" / skill)
+            relative, text = adapter(skill, platform, runtime_dir.relative_to(root) / "skills" / skill)
             write(root / relative, text, force)
         if "all" in platforms:
             remove_managed(root / ".cursor" / "commands" / f"{skill}.md")

@@ -314,6 +314,28 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.runtimeIdentityHelp": "Runtime identity is managed by the Agent registry.",
     "settings.workflowOwnershipHelp": "Workflow ownership is managed by the Agent registry.",
     "settings.publishDescription": "Direct push uses the repository credentials already configured for Git; PR and Merge use GitHub CLI. Auto Scan keeps a PR review gate and does not support direct push.",
+    "settings.deploymentTracking": "Deployment tracking",
+    "settings.deploymentTrackingDescription": "After publish, follow the configured CI/CD run and report only the actual deployment result. Credentials stay in local environment variables.",
+    "settings.deploymentProvider": "Provider",
+    "settings.deploymentDisabled": "Disabled",
+    "settings.jenkins": "Jenkins",
+    "settings.githubActions": "GitHub Actions",
+    "settings.pollInterval": "Poll interval (seconds)",
+    "settings.deploymentTimeout": "Timeout (seconds)",
+    "settings.failurePolicy": "On deployment failure",
+    "settings.notifyOnly": "Report failure only",
+    "settings.dispatchAgent": "Hand back to Mark",
+    "settings.jenkinsJob": "Jenkins job",
+    "settings.githubRepository": "GitHub repository",
+    "settings.githubWorkflow": "Workflow (optional)",
+    "settings.triggerMode": "Trigger mode",
+    "settings.observeRun": "Observe push-triggered run",
+    "settings.triggerWithCli": "Trigger with local CLI",
+    "settings.deploymentTrackingNote": "Jenkins reads JENKINS_URL/JENKINS_AUTH; GitHub Actions reads the local gh login. The adapter never stores credential values in delivery.json.",
+    "label.deployment": "Deployment",
+    "label.provider": "Provider",
+    "label.lastChecked": "Last checked",
+    "action.openDeployment": "Open deployment",
     "editor.heading": "Heading",
     "editor.editLink": "Edit link URL",
     "editor.linkUrl": "Link URL",
@@ -337,6 +359,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "status.skipped": "Skipped",
     "status.open": "Open",
     "status.inProgress": "In progress",
+    "status.awaitingDeploy": "Awaiting deployment",
     "status.running": "Running",
     "status.active": "Active",
     "status.notSet": "Not set",
@@ -497,6 +520,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.agentActivity": "Agent activity",
     "heading.conversationRecords": "Conversation records",
     "heading.agentRoster": "Agent roster",
+    "heading.agentTeam": "Agent team & workflows",
     "heading.agentArchitecture": "Agent architecture",
     "heading.workflowControl": "Workflow control",
     "heading.questionsWaiting": "Questions waiting for you",
@@ -817,6 +841,28 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.runtimeIdentityHelp": "运行时身份由 Agent 注册表管理。",
     "settings.workflowOwnershipHelp": "工作流归属由 Agent 注册表管理。",
     "settings.publishDescription": "直接推送使用已配置的 Git 仓库凭证；PR 和合并使用 GitHub CLI。Auto Scan 保留 PR 审查门禁，不支持直接推送。",
+    "settings.deploymentTracking": "部署状态跟踪",
+    "settings.deploymentTrackingDescription": "发布后跟踪配置好的 CI/CD 运行，并只在部署真正完成后回报结果。凭证保留在本地环境变量中。",
+    "settings.deploymentProvider": "提供商",
+    "settings.deploymentDisabled": "未启用",
+    "settings.jenkins": "Jenkins",
+    "settings.githubActions": "GitHub Actions",
+    "settings.pollInterval": "轮询间隔（秒）",
+    "settings.deploymentTimeout": "超时（秒）",
+    "settings.failurePolicy": "部署失败时",
+    "settings.notifyOnly": "仅回报失败",
+    "settings.dispatchAgent": "交回 Mark 处理",
+    "settings.jenkinsJob": "Jenkins Job",
+    "settings.githubRepository": "GitHub 仓库",
+    "settings.githubWorkflow": "Workflow（可选）",
+    "settings.triggerMode": "触发模式",
+    "settings.observeRun": "观察推送触发的运行",
+    "settings.triggerWithCli": "使用本地 CLI 触发",
+    "settings.deploymentTrackingNote": "Jenkins 读取 JENKINS_URL/JENKINS_AUTH；GitHub Actions 使用本地 gh 登录状态。适配器不会把凭证写入 delivery.json。",
+    "label.deployment": "部署",
+    "label.provider": "提供商",
+    "label.lastChecked": "最近检查",
+    "action.openDeployment": "打开部署",
     "editor.heading": "标题",
     "editor.editLink": "编辑链接 URL",
     "editor.linkUrl": "链接 URL",
@@ -840,6 +886,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "status.skipped": "已跳过",
     "status.open": "开放",
     "status.inProgress": "进行中",
+    "status.awaitingDeploy": "等待部署",
     "status.running": "运行中",
     "status.active": "活跃",
     "status.notSet": "未设置",
@@ -1000,6 +1047,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.agentActivity": "Agent 活动",
     "heading.conversationRecords": "对话记录",
     "heading.agentRoster": "Agent 阵容",
+    "heading.agentTeam": "Agent 阵容与工作流",
     "heading.agentArchitecture": "Agent 架构",
     "heading.workflowControl": "工作流控制",
     "heading.questionsWaiting": "等待你的问题",
@@ -1320,6 +1368,28 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.runtimeIdentityHelp": "執行環境身分由 Agent 登錄表管理。",
     "settings.workflowOwnershipHelp": "工作流歸屬由 Agent 登錄表管理。",
     "settings.publishDescription": "直接推送使用已設定的 Git 儲存庫憑證；PR 和合併使用 GitHub CLI。Auto Scan 保留 PR 審查閘門，不支援直接推送。",
+    "settings.deploymentTracking": "部署狀態追蹤",
+    "settings.deploymentTrackingDescription": "發布後追蹤已設定的 CI/CD 執行，只有部署真正完成後才回報結果。憑證保留在本機環境變數中。",
+    "settings.deploymentProvider": "提供者",
+    "settings.deploymentDisabled": "未啟用",
+    "settings.jenkins": "Jenkins",
+    "settings.githubActions": "GitHub Actions",
+    "settings.pollInterval": "輪詢間隔（秒）",
+    "settings.deploymentTimeout": "逾時（秒）",
+    "settings.failurePolicy": "部署失敗時",
+    "settings.notifyOnly": "只回報失敗",
+    "settings.dispatchAgent": "交回 Mark 處理",
+    "settings.jenkinsJob": "Jenkins Job",
+    "settings.githubRepository": "GitHub 儲存庫",
+    "settings.githubWorkflow": "Workflow（可選）",
+    "settings.triggerMode": "觸發模式",
+    "settings.observeRun": "觀察推送觸發的執行",
+    "settings.triggerWithCli": "使用本機 CLI 觸發",
+    "settings.deploymentTrackingNote": "Jenkins 讀取 JENKINS_URL/JENKINS_AUTH；GitHub Actions 使用本機 gh 登入狀態。適配器不會把憑證寫入 delivery.json。",
+    "label.deployment": "部署",
+    "label.provider": "提供者",
+    "label.lastChecked": "上次檢查",
+    "action.openDeployment": "開啟部署",
     "editor.heading": "標題",
     "editor.editLink": "編輯連結 URL",
     "editor.linkUrl": "連結 URL",
@@ -1343,6 +1413,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "status.skipped": "已略過",
     "status.open": "開放",
     "status.inProgress": "進行中",
+    "status.awaitingDeploy": "等待部署",
     "status.running": "執行中",
     "status.active": "使用中",
     "status.notSet": "未設定",
@@ -1503,6 +1574,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "heading.agentActivity": "Agent 活動",
     "heading.conversationRecords": "對話記錄",
     "heading.agentRoster": "Agent 陣容",
+    "heading.agentTeam": "Agent 陣容與工作流",
     "heading.agentArchitecture": "Agent 架構",
     "heading.workflowControl": "工作流控制",
     "heading.questionsWaiting": "等待你的問題",
@@ -1828,7 +1900,7 @@ function statusTone(value: unknown) {
   const normalized = String(value || "unknown").toLowerCase().replaceAll("_", " ");
   if (normalized === "open" || normalized === "reopened" || /(failed|blocked)/.test(normalized)) return "danger";
   if (/(completed|succeeded|clean|passed|resolved|synced|configured|included|available|approved|ready|done|pr open)/.test(normalized)) return "success";
-  if (/(progress|running|active|partial|draft|not started)/.test(normalized)) return "info";
+  if (/(progress|running|active|partial|draft|not started|awaiting deployment)/.test(normalized)) return "info";
   return "neutral";
 }
 function titleStatus(value: unknown) {
@@ -1836,7 +1908,7 @@ function titleStatus(value: unknown) {
   const labels: Record<string, string> = {
     "completed with findings": "status.completed", completed: "status.completed", clean: "status.completed",
     passed: "status.passed", failed: "status.failed", skipped: "status.skipped", open: "status.open",
-    "in progress": "status.inProgress", running: "status.running", configured: "status.active",
+    "in progress": "status.inProgress", "awaiting deploy": "status.awaitingDeploy", running: "status.running", configured: "status.active",
     "not configured": "status.notSet", resolved: "status.resolved", reopened: "status.reopened", synced: "status.synced",
     ignored: "status.ignored", blocked: "status.blocked", pending: "status.pending", active: "status.active",
     "pr open": "status.prOpen", "not started": "status.notStarted", "dev done": "status.devDone",
@@ -2539,7 +2611,7 @@ function isDeliveryReadyStory(item: RecordValue) {
   return business === "ready" && technical === "approved" && ["", "not_started", "blocked"].includes(delivery);
 }
 
-function AgentArchitecture({ agents, t, onNavigate }: { agents: AgentSettings[]; t: Translate; onNavigate: (tab: Tab) => void }) {
+function AgentTeamBoard({ agents, workflows, t, onNavigate }: { agents: AgentSettings[]; workflows: Array<RecordValue>; t: Translate; onNavigate: (tab: Tab) => void }) {
   const titles: Record<string, string> = {
     dylan: "Engineering Risk Analyst",
     mark: "Delivery Lead",
@@ -2547,23 +2619,43 @@ function AgentArchitecture({ agents, t, onNavigate }: { agents: AgentSettings[];
     milchick: "Engineering Operations Manager",
   };
   const findAgent = (id: string, workflow?: string) => agents.find((agent) => agent.id === id) || (workflow ? agents.find((agent) => agent.workflow === workflow) : undefined);
-  const manager = findAgent("milchick");
   const state = (agent?: AgentSettings) => !agent ? "not configured" : !agent.app_id || !agent.app_secret_configured ? "setup" : !agent.conversation_enabled ? "paused" : "ready";
-  const node = (agent: AgentSettings | undefined, profile: typeof managerProfile, kind: "manager" | "worker") => {
-    const localized = localizedWorkflowProfile(profile, t);
-    const id = String(agent?.id || localized.agent).toLowerCase();
-    return <button type="button" className={`architecture-node architecture-node-${kind}`} onClick={() => onNavigate("settings")}>
-      <AgentAvatar agentId={agent?.id || id} displayName={agent?.display_name || localized.agent} size="card" />
-      <span className="architecture-node-copy"><span className="overview-kicker">{localized.feature}</span><strong>{text(agent?.display_name, localized.agent)}</strong><small>{text(agent?.title, titles[id])}</small><em>{localized.mission}</em></span>
-      <Badge value={state(agent)} />
+  const identity = (agent: AgentSettings | undefined, profile: RecordValue) => {
+    const id = String(agent?.id || profile.agent).toLowerCase();
+    return { id, name: text(agent?.display_name, profile.agent), title: text(agent?.title, titles[id]) };
+  };
+  const manager = findAgent("milchick");
+  const managerProfileLocalized = localizedWorkflowProfile(managerProfile, t);
+  const renderIdentity = (agent: AgentSettings | undefined, profile: RecordValue) => {
+    const person = identity(agent, profile);
+    return <button type="button" className="agent-team-identity" aria-label={`${t("action.configureAgent")}: ${person.name}`} onClick={() => onNavigate("settings")}>
+      <AgentAvatar agentId={agent?.id || person.id} displayName={person.name} size="card" />
+      <span><span className="overview-kicker">{profile.feature}</span><strong>{person.name}</strong><small>{person.title}</small></span>
     </button>;
   };
-  return <div className="agent-architecture">
-    <div className="architecture-entry"><span className="architecture-entry-icon"><User size={18} /></span><span><span className="overview-kicker">{t("label.entryPoint")}</span><strong>{t("label.feishuEntry")}</strong><small>{t("context.activity.description")}</small></span></div>
-    <span className="architecture-connector" aria-hidden="true" />
-    {node(manager, managerProfile, "manager")}
-    <span className="architecture-connector" aria-hidden="true" />
-    <div className="architecture-workers"><span className="architecture-layer-label">{t("label.capabilityOwners")}</span>{workflowProfiles.map((profile) => node(findAgent(profile.agent.toLowerCase(), profile.workflow), profile, "worker"))}</div>
+  const renderFacts = (profile: RecordValue) => <div className="agent-team-facts"><span><b>{t("label.input")}</b>{profile.input}</span><span><b>{t("label.output")}</b>{profile.output}</span></div>;
+  return <div className="agent-team-board">
+    <div className="agent-team-entry"><span className="agent-team-entry-icon"><User size={17} /></span><span><span className="overview-kicker">{t("label.entryPoint")}</span><strong>{t("label.feishuEntry")}</strong><small>{t("context.activity.description")}</small></span></div>
+    <span className="agent-team-connector" aria-hidden="true" />
+    <div className="agent-team-layer"><span className="agent-team-layer-label">{t("label.managerLayer")}</span><article className="agent-team-card agent-team-manager">
+      <div className="agent-team-card-heading">{renderIdentity(manager, managerProfileLocalized)}<Badge value={state(manager)} /></div>
+      <p className="agent-team-mission">{managerProfileLocalized.mission}</p>
+      {renderFacts(managerProfileLocalized)}
+      <footer className="agent-team-card-footer"><span>{t("label.role")}: {managerProfileLocalized.feature}</span><button type="button" className="text-button" onClick={() => onNavigate("settings")}>{t("action.configureAgent")} <ChevronRight size={13} /></button></footer>
+    </article></div>
+    <span className="agent-team-connector" aria-hidden="true" />
+    <div className="agent-team-capabilities"><div className="agent-team-capabilities-heading"><span className="agent-team-layer-label">{t("label.capabilityOwners")}</span><span className="muted">{t("label.businessReadyCapabilities")}</span></div><div className="agent-team-cards">
+      {workflows.map((workflow) => {
+        const agent = findAgent(String(workflow.agent).toLowerCase(), workflow.workflow);
+        const profile = workflow;
+        return <article className="agent-team-card" key={workflow.workflow}>
+          <div className="agent-team-card-heading">{renderIdentity(agent, profile)}<span className="agent-team-statuses"><Badge value={state(agent)} /><Badge value={workflow.status} /></span></div>
+          <p className="agent-team-mission">{profile.mission}</p>
+          {renderFacts(profile)}
+          <footer className="agent-team-card-footer"><span>{t("label.role")}: {text(agent?.role, profile.feature)}</span><button type="button" className="button secondary" onClick={() => onNavigate(workflow.tab as Tab)}>{t("action.inspect", { feature: profile.feature })} <ChevronRight size={13} /></button></footer>
+        </article>;
+      })}
+    </div></div>
   </div>;
 }
 
@@ -2591,18 +2683,8 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
       <Metric label={t("label.agentRoles")} value={agents.length} />
       <Metric label={t("label.gateway")} value={settings.enabled ? t("common.enabled") : t("common.paused")} />
     </div>
-    <Panel title={t("heading.agentArchitecture")} action={<button className="text-button" onClick={() => onNavigate("settings")}>{t("action.openSettings")} <ChevronRight size={13} /></button>}>
-      <AgentArchitecture agents={agents} t={t} onNavigate={onNavigate} />
-    </Panel>
-    <Panel title={t("heading.workflowControl")} action={<span className="muted">{t("label.businessReadyCapabilities")}</span>}>
-      <div className="workflow-roster">
-        {workflows.map((workflow) => <article className="workflow-card" key={workflow.workflow}>
-          <div className="workflow-card-heading"><div><span className="overview-kicker">{workflow.agent}</span><h4>{workflow.feature}</h4></div><Badge value={workflow.status} /></div>
-          <p>{workflow.mission}</p>
-          <div className="workflow-card-io"><span><b>{t("label.input")}</b>{workflow.input}</span><span><b>{t("label.output")}</b>{workflow.output}</span></div>
-          <button className="button secondary" onClick={() => onNavigate(workflow.tab)}>{t("action.inspect", { feature: workflow.feature })} <ChevronRight size={13} /></button>
-        </article>)}
-      </div>
+    <Panel title={t("heading.agentTeam")} action={<button className="text-button" onClick={() => onNavigate("settings")}>{t("action.openSettings")} <ChevronRight size={13} /></button>}>
+      <AgentTeamBoard agents={agents} workflows={workflows} t={t} onNavigate={onNavigate} />
     </Panel>
   </div>;
 }
@@ -2788,7 +2870,8 @@ function DeliveryView({ data, project, notify, reload }: { data: DashboardData; 
   const [deleteCandidate, setDeleteCandidate] = useState<RecordValue | null>(null);
   const [deletingHistoryId, setDeletingHistoryId] = useState("");
   const [now, setNow] = useState(Date.now());
-  const running = /in_progress|running/i.test(String(current.delivery_status || ""));
+  const running = /in_progress|running|awaiting_deploy/i.test(String(current.delivery_status || ""));
+  const deployment = current.deployment && typeof current.deployment === "object" ? current.deployment : null;
   const storyOptions = deliveryStoryOptions(availableStories, current);
   const loadDeliveryLog = useCallback(async (runId = current.run_id || "", refresh = false) => {
     if (!refresh) setLoadingLog(true);
@@ -2861,7 +2944,7 @@ function DeliveryView({ data, project, notify, reload }: { data: DashboardData; 
   const canRetry = /failed|blocked/i.test(String(current.delivery_status || ""));
   const canStart = !running && storyOptions.length > 0;
   return <>
-    <Panel title={t("heading.currentProgress")} className="delivery-summary" action={<span className="panel-actions">{canStart && <button className="button secondary" disabled={actionBusy} onClick={openStart}><Play size={14} />{t("common.start")}</button>}{running && <button className="button danger secondary" disabled={actionBusy} onClick={() => void stop()}>{t("common.stop")}</button>}{canRetry && <button className="button secondary" onClick={() => setRetryOpen(true)}><RotateCcw size={14} />{t("common.retry")}</button>}</span>}><div className="delivery-facts"><Fact label={t("label.currentStory")} value={<StoryReference jiraKey={current.jira_key || current.story_id} title={current.story_title} />} /><Fact label={t("label.status")} value={<Badge value={current.delivery_status || "not started"} />} /><Fact label={t("label.elapsed")} value={elapsed(current.started_at, current.finished_at || (running ? new Date(now).toISOString() : undefined))} /><Fact label={t("label.finished")} value={running ? t("status.running") : when(current.finished_at)} /></div>{actionError && <div className="status-note">{actionError}</div>}<DeliveryFlow stages={stages} deliveryStatus={String(current.delivery_status || "")} currentStep={String(current.current_step || "")} startedAt={current.started_at} finishedAt={current.finished_at} remediation={current.remediation} now={now} onStageClick={openStage} /></Panel>
+    <Panel title={t("heading.currentProgress")} className="delivery-summary" action={<span className="panel-actions">{canStart && <button className="button secondary" disabled={actionBusy} onClick={openStart}><Play size={14} />{t("common.start")}</button>}{running && <button className="button danger secondary" disabled={actionBusy} onClick={() => void stop()}>{t("common.stop")}</button>}{canRetry && <button className="button secondary" onClick={() => setRetryOpen(true)}><RotateCcw size={14} />{t("common.retry")}</button>}</span>}><div className="delivery-facts"><Fact label={t("label.currentStory")} value={<StoryReference jiraKey={current.jira_key || current.story_id} title={current.story_title} />} /><Fact label={t("label.status")} value={<Badge value={current.delivery_status || "not started"} />} /><Fact label={t("label.elapsed")} value={elapsed(current.started_at, current.finished_at || (running ? new Date(now).toISOString() : undefined))} /><Fact label={t("label.finished")} value={running ? t("status.running") : when(current.finished_at)} /></div>{deployment && <div className="deployment-tracking"><div><span>{t("label.deployment")}</span><strong><Badge value={deployment.status || "queued"} /></strong></div><div><span>{t("label.provider")}</span><strong>{text(String(deployment.provider || "").replaceAll("_", " "))}</strong></div><div><span>{t("label.lastChecked")}</span><strong>{when(deployment.last_checked_at)}</strong></div>{deployment.url && <a href={deployment.url} target="_blank" rel="noreferrer">{t("action.openDeployment")} <ExternalLink size={12} /></a>}<p>{text(deployment.detail, t("settings.deploymentTrackingDescription"))}</p></div>}{actionError && <div className="status-note">{actionError}</div>}<DeliveryFlow stages={stages} deliveryStatus={String(current.delivery_status || "")} currentStep={String(current.current_step || "")} startedAt={current.started_at} finishedAt={current.finished_at} remediation={current.remediation} now={now} onStageClick={openStage} /></Panel>
     <Panel title={t("heading.deliveryHistory")} className="history-panel" action={<span className="muted">{t("common.runs", { count: runs.length })}</span>}><div className="table-scroll"><table><thead><tr><th>{t("label.story")}</th><th>{t("label.finishedAt")}</th><th>{t("label.status")}</th><th>{t("label.pullRequests")}</th><th>{t("label.checks")}</th><th>{t("label.duration")}</th><th>{t("label.trace")}</th><th>{t("label.operation")}</th></tr></thead><tbody>{runs.length ? runs.map((run: RecordValue) => { const runChecks = run.verification || []; const failed = runChecks.filter((item: RecordValue) => item.status === "failed"); const canInspectStatus = failed.length || /failed|blocked/i.test(String(run.status)); return <tr key={run.run_id}><td><div className="history-story"><span className="history-story-line"><code>{text(run.jira_key || run.story || run.run_id)}</code>{run.story_title && <span className="history-story-title">{run.story_title}</span>}</span><small>{text(run.branch, "")}</small></div></td><td>{when(run.finished_at || run.started_at)}</td><td>{canInspectStatus ? <button className="status-badge-button" title={t("action.openLog")} onClick={() => void openStage({ label: "Delivery failure", duration: elapsed(run.started_at, run.finished_at), detail: failed.map((item: RecordValue) => item.summary || item.label).filter(Boolean).join(" · ") || "Open the delivery log for details." }, run.run_id)}><Badge value={run.status} /></button> : <Badge value={run.status} />}</td><td><PrLinks items={run.pull_requests || []} /></td><td><VerificationSummary checks={runChecks} onClick={() => setSelectedChecks(runChecks)} /></td><td>{elapsed(run.started_at, run.finished_at)}</td><td>{run.agent_trace && <button className="text-button" onClick={() => void openTrace(run.run_id)}>{t("common.viewTrace")}</button>}</td><td><IconButton label="Delete delivery record" danger disabled={deletingHistoryId === run.run_id} onClick={() => setDeleteCandidate(run)}><Trash2 size={15} /></IconButton></td></tr>; }) : <tr><td colSpan={8}><Empty label={t("common.noDeliveryHistory")} /></td></tr>}</tbody></table></div></Panel>
     <Panel title={t("heading.schedulerActivity")} action={<span className="panel-actions"><span className="muted">{t("common.recentEvents", { count: schedulerActivity.length })}</span>{delivery.scheduler_log_available && <button className="button secondary" onClick={() => void openSchedulerLog()}><Terminal size={14} />{t("action.viewRawLog")}</button>}</span>}><div className="scheduler-activity">{schedulerActivity.length ? schedulerActivity.map((event: RecordValue, index: number) => <article className="scheduler-event" key={`${event.at}-${index}`}><Badge value={event.outcome} /><div><strong>{text(event.story_id || event.jira_key, t("common.workspace"))}</strong><p>{text(event.message)}</p></div><time>{when(event.at)}</time></article>) : <Empty label={t("common.noDeliveryActivity")} />}</div></Panel>
     {selectedStage && <DeliveryLogDialog stage={selectedStage} content={logContent} error={logError} loading={loadingLog} live={selectedLogIsLive} onClose={() => setSelectedStage(null)} />}
@@ -3558,6 +3641,15 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const [deliveryPublishMode, setDeliveryPublishMode] = useState(String(workspace.publish?.delivery || "pr"));
   const [patchPublishMode, setPatchPublishMode] = useState(String(workspace.publish?.patch || "pr"));
   const [feishuEnabled, setFeishuEnabled] = useState(workspace.feishu_notifications_enabled !== false);
+  const [deploymentEnabled, setDeploymentEnabled] = useState(Boolean(workspace.deployment_tracking?.enabled));
+  const [deploymentProvider, setDeploymentProvider] = useState(String(workspace.deployment_tracking?.provider || "none"));
+  const [deploymentPollInterval, setDeploymentPollInterval] = useState(String(workspace.deployment_tracking?.poll_interval_seconds || 30));
+  const [deploymentTimeout, setDeploymentTimeout] = useState(String(workspace.deployment_tracking?.timeout_seconds || 3600));
+  const [deploymentFailurePolicy, setDeploymentFailurePolicy] = useState(String(workspace.deployment_tracking?.failure_policy || "dispatch_agent"));
+  const [jenkinsJob, setJenkinsJob] = useState(String(workspace.deployment_tracking?.jenkins?.job || ""));
+  const [jenkinsTriggerMode, setJenkinsTriggerMode] = useState(String(workspace.deployment_tracking?.jenkins?.trigger_mode || "observe"));
+  const [githubRepository, setGithubRepository] = useState(String(workspace.deployment_tracking?.github_actions?.repository || ""));
+  const [githubWorkflow, setGithubWorkflow] = useState(String(workspace.deployment_tracking?.github_actions?.workflow || ""));
   const [agentsEnabled, setAgentsEnabled] = useState(Boolean(agentsPayload.enabled));
   const [agentDrafts, setAgentDrafts] = useState<AgentSettings[]>(Array.isArray(agentsPayload.agents) ? agentsPayload.agents.map((agent) => ({ ...agent })) : []);
   const [accessDraft, setAccessDraft] = useState<AgentsAccessSettings>({
@@ -3702,6 +3794,19 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   }, [project]);
   useEffect(() => { setScanPublishMode(String(workspace.publish?.scan || "pr")); setDeliveryPublishMode(String(workspace.publish?.delivery || "pr")); setPatchPublishMode(String(workspace.publish?.patch || "pr")); }, [workspace.publish?.scan, workspace.publish?.delivery, workspace.publish?.patch]);
   useEffect(() => { setFeishuEnabled(workspace.feishu_notifications_enabled !== false); }, [workspace.feishu_notifications_enabled]);
+  const deploymentConfigKey = JSON.stringify(workspace.deployment_tracking || {});
+  useEffect(() => {
+    const config = workspace.deployment_tracking || {};
+    setDeploymentEnabled(Boolean(config.enabled));
+    setDeploymentProvider(String(config.provider || "none"));
+    setDeploymentPollInterval(String(config.poll_interval_seconds || 30));
+    setDeploymentTimeout(String(config.timeout_seconds || 3600));
+    setDeploymentFailurePolicy(String(config.failure_policy || "dispatch_agent"));
+    setJenkinsJob(String(config.jenkins?.job || ""));
+    setJenkinsTriggerMode(String(config.jenkins?.trigger_mode || "observe"));
+    setGithubRepository(String(config.github_actions?.repository || ""));
+    setGithubWorkflow(String(config.github_actions?.workflow || ""));
+  }, [deploymentConfigKey]);
   useEffect(() => { const warn = (event: BeforeUnloadEvent) => { if (!dirty) return; event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, [dirty]);
   const getSecret = async (name: string) => { const response = await request(`/api/integration?key=${encodeURIComponent(name)}`, project); return String(response.value); };
   const reveal = async (name: string) => { try { const result = await getSecret(name); setSecrets((current) => ({ ...current, [name]: result })); notify("Integration value revealed", "success"); } catch (err) { notify(err instanceof Error ? err.message : "Unable to reveal value", "error"); } };
@@ -3715,6 +3820,25 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const deliveryScheduleChanged = deliveryEnabled !== Boolean(schedules.delivery?.enabled) || (deliveryEnabled && (deliveryInterval !== String(Math.round((schedules.delivery?.interval_seconds || 300) / 60)) || !sameValues(eligibleStatuses, configuredDeliveryStatuses) || inDevStatus !== String(schedules.delivery?.in_dev_status || "") || devDoneStatus !== String(schedules.delivery?.dev_done_status || "") || blockedStatus !== String(schedules.delivery?.blocked_status || "Block")));
   const patchScheduleChanged = patchEnabled !== Boolean(schedules.patch?.enabled) || (patchEnabled && (patchInterval !== String(Math.round((schedules.patch?.interval_seconds || 300) / 60)) || !sameValues(patchStatuses, configuredPatchStatuses) || patchStartStatus !== String(schedules.patch?.in_progress_status || "In Progress") || patchDoneStatus !== String(schedules.patch?.done_status || "Done") || patchBlockedStatus !== String(schedules.patch?.blocked_status || "Block")));
   const publishPolicyChanged = scanPublishMode !== String(workspace.publish?.scan || "pr") || deliveryPublishMode !== String(workspace.publish?.delivery || "pr") || patchPublishMode !== String(workspace.publish?.patch || "pr");
+  const deploymentConfig = {
+    enabled: deploymentEnabled,
+    provider: deploymentProvider,
+    poll_interval_seconds: Number(deploymentPollInterval),
+    timeout_seconds: Number(deploymentTimeout),
+    failure_policy: deploymentFailurePolicy,
+    jenkins: { job: jenkinsJob, trigger_mode: jenkinsTriggerMode },
+    github_actions: { repository: githubRepository, workflow: githubWorkflow },
+  };
+  const savedDeploymentConfig = workspace.deployment_tracking || {};
+  const deploymentConfigChanged = JSON.stringify(deploymentConfig) !== JSON.stringify({
+    enabled: Boolean(savedDeploymentConfig.enabled),
+    provider: String(savedDeploymentConfig.provider || "none"),
+    poll_interval_seconds: Number(savedDeploymentConfig.poll_interval_seconds || 30),
+    timeout_seconds: Number(savedDeploymentConfig.timeout_seconds || 3600),
+    failure_policy: String(savedDeploymentConfig.failure_policy || "dispatch_agent"),
+    jenkins: { job: String(savedDeploymentConfig.jenkins?.job || ""), trigger_mode: String(savedDeploymentConfig.jenkins?.trigger_mode || "observe") },
+    github_actions: { repository: String(savedDeploymentConfig.github_actions?.repository || ""), workflow: String(savedDeploymentConfig.github_actions?.workflow || "") },
+  });
   const agentsChanged = agentsEnabled !== agentsBaseline.enabled || JSON.stringify(agentDrafts) !== agentsBaseline.agents || JSON.stringify(accessDraft) !== agentsBaseline.access || JSON.stringify({
     language: testCaseDraft.language || "zh-Hant",
     table_name: testCaseDraft.table_name || "Sheet1",
@@ -3747,6 +3871,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       if (deliveryScheduleChanged) saves.push(() => request("/api/schedule", project, { method: "POST", json: deliveryEnabled ? { kind: "delivery", action: "save", interval_minutes: Number(deliveryInterval), jira_statuses: eligibleStatuses, in_dev_status: inDevStatus, dev_done_status: devDoneStatus, blocked_status: blockedStatus } : { kind: "delivery", action: "remove" } }));
       if (patchScheduleChanged) saves.push(() => request("/api/schedule", project, { method: "POST", json: patchEnabled ? { kind: "patch", action: "save", interval_minutes: Number(patchInterval), jira_statuses: patchStatuses, issue_types: ["Task", "Bug"], in_progress_status: patchStartStatus, done_status: patchDoneStatus, blocked_status: patchBlockedStatus } : { kind: "patch", action: "remove" } }));
       if (publishPolicyChanged) saves.push(() => request("/api/publish-policy", project, { method: "POST", json: { scan_mode: scanPublishMode, delivery_mode: deliveryPublishMode, patch_mode: patchPublishMode } }));
+      if (deploymentConfigChanged) saves.push(() => request("/api/deployment-config", project, { method: "POST", json: deploymentConfig }));
       if (agentsChanged) {
         saves.push(async () => {
           const result = await request("/api/agents", project, {
@@ -3911,6 +4036,22 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       <div className="settings-cluster-heading"><div><span>{t("settings.operatingDetails")}</span><h2>{t("settings.runtime")}</h2><p>{t("settings.runtimeDescription")}</p></div><a href="#settings-automation">{t("settings.backAutomation")} <ChevronLeft size={13} /></a></div>
       <Panel title={t("heading.executionModels")}><div className="settings-section"><div className="settings-copy"><h4>{t("label.cursorModel")}</h4><p>{t("settings.executionDescription")}</p></div><div className="settings-control wide"><div className="form-grid compact"><ModelField label={`${t("label.autoScan")} model`} value={scanModel} onChange={setScanModel} markDirty={markDirty} /><ModelField label={`${t("label.autoDelivery")} model`} value={deliveryModel} onChange={setDeliveryModel} markDirty={markDirty} /><ModelField label={`${t("label.autoPatch")} model`} value={patchModel} onChange={setPatchModel} markDirty={markDirty} /></div></div></div></Panel>
     <Panel title={t("heading.publishPolicy")}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.automationOutcome")}</h4><p>{t("settings.publishDescription")}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label={t("label.autoScan")}><select value={scanPublishMode} onChange={(event) => { setScanPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option></select></Field><Field label={t("label.autoDelivery")}><select value={deliveryPublishMode} onChange={(event) => { setDeliveryPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field><Field label={t("label.autoPatch")}><select value={patchPublishMode} onChange={(event) => { setPatchPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field></div></div></div></Panel>
+    <Panel title={t("settings.deploymentTracking")}>
+      <div className="settings-section">
+        <div className="settings-copy"><h4>{t("settings.deploymentTracking")}</h4><p>{t("settings.deploymentTrackingDescription")}</p><p className="schedule-note">{t("settings.deploymentTrackingNote")}</p></div>
+        <div className="settings-control wide">
+          <div className="form-grid compact">
+            <Field label={t("settings.deploymentProvider")}><select value={deploymentProvider} onChange={(event) => { setDeploymentProvider(event.target.value); setDeploymentEnabled(event.target.value !== "none"); markDirty(); }}><option value="none">{t("settings.deploymentDisabled")}</option><option value="jenkins">{t("settings.jenkins")}</option><option value="github_actions">{t("settings.githubActions")}</option></select></Field>
+            <Field label={t("settings.failurePolicy")}><select value={deploymentFailurePolicy} onChange={(event) => { setDeploymentFailurePolicy(event.target.value); markDirty(); }}><option value="notify">{t("settings.notifyOnly")}</option><option value="dispatch_agent">{t("settings.dispatchAgent")}</option></select></Field>
+            <Field label={t("settings.pollInterval")}><input type="number" min="5" value={deploymentPollInterval} onChange={(event) => { setDeploymentPollInterval(event.target.value); markDirty(); }} /></Field>
+            <Field label={t("settings.deploymentTimeout")}><input type="number" min="60" value={deploymentTimeout} onChange={(event) => { setDeploymentTimeout(event.target.value); markDirty(); }} /></Field>
+            {deploymentProvider === "jenkins" && <><Field label={t("settings.jenkinsJob")}><input value={jenkinsJob} placeholder="folder/job-name" onChange={(event) => { setJenkinsJob(event.target.value); markDirty(); }} /></Field><Field label={t("settings.triggerMode")}><select value={jenkinsTriggerMode} onChange={(event) => { setJenkinsTriggerMode(event.target.value); markDirty(); }}><option value="observe">{t("settings.observeRun")}</option><option value="cli">{t("settings.triggerWithCli")}</option></select></Field></>}
+            {deploymentProvider === "github_actions" && <><Field label={t("settings.githubRepository")}><input value={githubRepository} placeholder="owner/repository" onChange={(event) => { setGithubRepository(event.target.value); markDirty(); }} /></Field><Field label={t("settings.githubWorkflow")}><input value={githubWorkflow} placeholder="deploy.yml" onChange={(event) => { setGithubWorkflow(event.target.value); markDirty(); }} /></Field></>}
+          </div>
+        </div>
+        <div className="settings-toggle"><ScheduleToggle enabled={deploymentEnabled && deploymentProvider !== "none"} onChange={(enabled) => { setDeploymentEnabled(enabled); markDirty(); }} /></div>
+      </div>
+    </Panel>
     <Panel title={t("heading.notifications")}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.feishuNotifications")}</h4><p>{t("settings.notificationsDescription")}</p></div><div className="settings-toggle"><ScheduleToggle enabled={feishuEnabled} onChange={(enabled) => { setFeishuEnabled(enabled); markDirty(); }} /></div></div></Panel>
     <Panel title={t("heading.variableKeys")} action={<span className="muted">{t("settings.storedWorkspace")}</span>}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.availableKeys")}</h4><p>{t("settings.availableKeysDescription")}</p></div><div className="settings-control wide"><div className="secret-list">{configured.length ? configured.map((name: string) => { const value = changedSecrets[name] ?? secrets[name] ?? ""; return <div className="secret-row" key={name}><code>{name}</code><input type={secrets[name] || changedSecrets[name] !== undefined ? "text" : "password"} value={value} placeholder={t("settings.revealReplacement")} aria-label={t("common.valueFor", { name })} onChange={(event) => { const next = event.target.value; setChangedSecrets((current) => ({ ...current, [name]: next })); markDirty(); }} /><div><IconButton label={t("common.revealValue")} onClick={() => void reveal(name)}>{secrets[name] ? <EyeOff size={15} /> : <Eye size={15} />}</IconButton><IconButton label={t("common.copyValue")} onClick={() => void copy(name)}><Copy size={15} /></IconButton></div></div>; }) : <Empty label={t("common.noIntegrationKeys")} />}</div></div></div></Panel>
       </section>

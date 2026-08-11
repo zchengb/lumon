@@ -11,6 +11,8 @@ LUMEN_HOME = Path(os.environ.get("LUMEN_HOME", Path.home() / ".lumon"))
 REGISTRY_PATH = LUMEN_HOME / "projects.json"
 CONFIG_PATH = LUMEN_HOME / "config.json"
 SCHEMA_VERSION = "1.0"
+WORKSPACE_DIR_NAME = "lumon"
+LEGACY_WORKSPACE_DIR_NAMES = ("lumen", ".lumen")
 
 
 def ensure_registry_dir() -> None:
@@ -75,7 +77,7 @@ def read_display_name(workspace: str) -> str:
     except Exception:
         pass
     base = Path(workspace).name
-    if base in {"lumen", ".lumen", ".auto-scan"}:
+    if base in {WORKSPACE_DIR_NAME, *LEGACY_WORKSPACE_DIR_NAMES, ".auto-scan"}:
         return Path(workspace).parent.name
     return base
 
@@ -111,13 +113,13 @@ def migrate_registry(registry: dict) -> None:
             project["id"] = new_project_id()
             changed = True
         workspace = Path(str(project.get("workspace", "")))
-        if workspace.name == ".lumen":
-            visible = workspace.parent / "lumen"
+        if workspace.name in LEGACY_WORKSPACE_DIR_NAMES:
+            visible = workspace.parent / WORKSPACE_DIR_NAME
             # A legacy directory may be recreated later by an old launchd job
             # solely for its log file. Treat it as legacy when it no longer has
             # a valid workspace configuration, so the registry still follows
             # the visible control plane.
-            if is_workspace(str(visible)) and not is_workspace(str(workspace)):
+            if is_workspace(str(visible)) and workspace.resolve() != visible.resolve():
                 project["workspace"] = str(visible.resolve())
                 changed = True
                 workspace = visible

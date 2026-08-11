@@ -70,8 +70,27 @@ lumen_version() {
   fi
 }
 
-LUMEN_DIR_NAME="lumen"
+LUMEN_DIR_NAME="lumon"
+LEGACY_VISIBLE_LUMEN_DIR_NAME="lumen"
 LEGACY_LUMEN_DIR_NAME=".lumen"
+
+workspace_dir_for_root() {
+  local root="$1"
+  local name
+  for name in "${LUMEN_DIR_NAME}" "${LEGACY_VISIBLE_LUMEN_DIR_NAME}" "${LEGACY_LUMEN_DIR_NAME}"; do
+    if [[ -d "${root}/${name}" ]]; then
+      printf '%s' "${root}/${name}"
+      return 0
+    fi
+  done
+  printf '%s' "${root}/${LUMEN_DIR_NAME}"
+}
+
+is_named_lumen_workspace_path() {
+  local base
+  base="$(basename "$1")"
+  [[ "${base}" == "${LUMEN_DIR_NAME}" || "${base}" == "${LEGACY_VISIBLE_LUMEN_DIR_NAME}" || "${base}" == "${LEGACY_LUMEN_DIR_NAME}" ]]
+}
 
 is_lumen_workspace() {
   [[ -f "$1/config/common.json" ]]
@@ -89,20 +108,20 @@ resolve_lumen_workspace_path() {
     printf '%s' "${input}"
     return 0
   fi
-  if is_lumen_workspace "${input}/${LUMEN_DIR_NAME}"; then
-    printf '%s' "$(cd "${input}/${LUMEN_DIR_NAME}" && pwd)"
-    return 0
-  fi
-  if is_lumen_workspace "${input}/${LEGACY_LUMEN_DIR_NAME}"; then
-    printf '%s' "$(cd "${input}/${LEGACY_LUMEN_DIR_NAME}" && pwd)"
-    return 0
-  fi
+  local name
+  for name in "${LUMEN_DIR_NAME}" "${LEGACY_VISIBLE_LUMEN_DIR_NAME}" "${LEGACY_LUMEN_DIR_NAME}"; do
+    if is_lumen_workspace "${input}/${name}"; then
+      printf '%s' "$(cd "${input}/${name}" && pwd)"
+      return 0
+    fi
+  done
   return 1
 }
 
 migrate_workspace_dir() {
   local workspace="$1" root target
-  [[ "$(basename "${workspace}")" == "${LEGACY_LUMEN_DIR_NAME}" ]] || { printf '%s' "${workspace}"; return 0; }
+  is_named_lumen_workspace_path "${workspace}" || { printf '%s' "${workspace}"; return 0; }
+  [[ "$(basename "${workspace}")" != "${LUMEN_DIR_NAME}" ]] || { printf '%s' "${workspace}"; return 0; }
   root="$(dirname "${workspace}")"
   target="${root}/${LUMEN_DIR_NAME}"
   if [[ -e "${target}" ]]; then
@@ -268,8 +287,10 @@ resolve_command_workspace() {
     return 0
   fi
 
-  if [[ -f "./${LUMEN_DIR_NAME}/config/common.json" ]]; then
-    RESOLVED_WORKSPACE="$(cd "./${LUMEN_DIR_NAME}" && pwd)"
+  local local_workspace
+  local_workspace="$(workspace_dir_for_root ".")"
+  if [[ -f "${local_workspace}/config/common.json" ]]; then
+    RESOLVED_WORKSPACE="$(cd "${local_workspace}" && pwd)"
     require_workspace_initialized "${RESOLVED_WORKSPACE}"
     return 0
   fi
@@ -663,8 +684,8 @@ sync_workspace_templates() {
   ensure_local_config_ignore "${workspace}/.gitignore" \
     "config/common.json" "config/delivery.json" "config/*.local.json"
   ensure_local_config_ignore "${docs_root}/.gitignore" \
-    "lumen/config/common.json" "lumen/config/delivery.json" "lumen/config/*.local.json" \
-    "!lumen/config/common.example.json" "!lumen/config/delivery.example.json"
+    "lumon/config/common.json" "lumon/config/delivery.json" "lumon/config/*.local.json" \
+    "!lumon/config/common.example.json" "!lumon/config/delivery.example.json"
 
   if git -C "${docs_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     local workspace_rel="${workspace#${docs_root}/}"
@@ -2099,7 +2120,7 @@ cmd_remove() {
   fi
 
   if [[ -n "${delete_workspace}" ]]; then
-    if [[ "$(basename "${workspace}")" != "${LUMEN_DIR_NAME}" && "$(basename "${workspace}")" != "${LEGACY_LUMEN_DIR_NAME}" ]]; then
+    if ! is_named_lumen_workspace_path "${workspace}"; then
       err "Refusing to delete a workspace not named ${LUMEN_DIR_NAME}: ${workspace}"
       exit 1
     fi
@@ -2768,7 +2789,7 @@ cmd_schedule() {
 delivery_docs_dir_for_project() {
   local slug="$1" workspace
   workspace="$(registry_cmd resolve-slug "${slug}" --workspace-only)" || return 1
-  if [[ "$(basename "${workspace}")" == "${LUMEN_DIR_NAME}" || "$(basename "${workspace}")" == "${LEGACY_LUMEN_DIR_NAME}" ]]; then
+  if is_named_lumen_workspace_path "${workspace}"; then
     dirname "${workspace}"
   else
     printf '%s' "${workspace}"
@@ -2792,8 +2813,7 @@ cmd_delivery_schedule_run() {
   fi
   local docs_dir workspace scheduler_py activity_file scheduler_log dry_flag=""
   docs_dir="$(delivery_docs_dir_for_project "${slug}")" || { err "Project not found: ${slug}"; exit 1; }
-  workspace="${docs_dir}/${LUMEN_DIR_NAME}"
-  [[ -d "${workspace}" ]] || workspace="${docs_dir}/${LEGACY_LUMEN_DIR_NAME}"
+  workspace="$(workspace_dir_for_root "${docs_dir}")"
   scheduler_log="${workspace}/logs/delivery-schedule.log"
   activity_file="${workspace}/state/delivery-scheduler-activity.jsonl"
   mkdir -p "$(dirname "${scheduler_log}")" "$(dirname "${activity_file}")"
@@ -2837,8 +2857,7 @@ cmd_delivery_schedule_add() {
 
   local docs_dir workspace lumen_bin log_file cron_path cron_env cron_line existing filtered updated
   docs_dir="$(delivery_docs_dir_for_project "${slug}")" || { err "Project not found: ${slug}"; exit 1; }
-  workspace="${docs_dir}/${LUMEN_DIR_NAME}"
-  [[ -d "${workspace}" ]] || workspace="${docs_dir}/${LEGACY_LUMEN_DIR_NAME}"
+  workspace="$(workspace_dir_for_root "${docs_dir}")"
   require_workspace_initialized "${workspace}"
   lumen_bin="$(command -v lumen || true)"
   lumen_bin="${lumen_bin:-${LUMEN_CLI_BIN}}"
@@ -3185,8 +3204,7 @@ cmd_delivery_verify() {
   local workspace_root workspace_dir
   workspace_root="$(delivery_workspace_root_from_docs "${DELIVERY_DOCS_DIR}")"
   local verify_py="${LUMEN_HOME}/lib/scripts/run_delivery_verification.py"
-  workspace_dir="${workspace_root}/${LUMEN_DIR_NAME}"
-  [[ -d "${workspace_dir}" ]] || workspace_dir="${workspace_root}/${LEGACY_LUMEN_DIR_NAME}"
+  workspace_dir="$(workspace_dir_for_root "${workspace_root}")"
   local result_file="${workspace_dir}/results/delivery-result.json"
   [[ -f "${verify_py}" ]] || { err "Delivery verification helper not found: ${verify_py}"; exit 1; }
   [[ -f "${result_file}" ]] || { err "No delivery result found. Run delivery start first."; exit 1; }
@@ -3219,8 +3237,7 @@ cmd_delivery_pr() {
   local workspace_root workspace_dir
   workspace_root="$(delivery_workspace_root_from_docs "${DELIVERY_DOCS_DIR}")"
   local finalize_py="${LUMEN_HOME}/lib/scripts/finalize_delivery.py"
-  workspace_dir="${workspace_root}/${LUMEN_DIR_NAME}"
-  [[ -d "${workspace_dir}" ]] || workspace_dir="${workspace_root}/${LEGACY_LUMEN_DIR_NAME}"
+  workspace_dir="$(workspace_dir_for_root "${workspace_root}")"
   local result_file="${workspace_dir}/results/delivery-result.json"
   [[ -f "${finalize_py}" ]] || { err "Delivery finalization helper not found: ${finalize_py}"; exit 1; }
   [[ -f "${result_file}" ]] || { err "No delivery result found. Run delivery start first."; exit 1; }
@@ -3382,7 +3399,7 @@ cmd_delivery_status() {
     local default_workspace
     default_workspace="$(registry_cmd get-default --workspace-only 2>/dev/null || true)"
     if [[ -n "${default_workspace}" ]]; then
-      if [[ "$(basename "${default_workspace}")" == "${LUMEN_DIR_NAME}" || "$(basename "${default_workspace}")" == "${LEGACY_LUMEN_DIR_NAME}" ]]; then
+      if is_named_lumen_workspace_path "${default_workspace}"; then
         workspace_root="$(dirname "${default_workspace}")"
       else
         workspace_root="${default_workspace}"
@@ -3433,8 +3450,8 @@ cmd_delivery_notify() {
   }
   case "${event}" in started|completed|failed|blocked) ;; *) err "Unsupported delivery notification event: ${event}"; exit 1 ;; esac
   docs_dir="$(cd "${docs_dir}" && pwd)"
-  local workspace_dir="${docs_dir}/${LUMEN_DIR_NAME}"
-  [[ -d "${workspace_dir}" ]] || workspace_dir="${docs_dir}/${LEGACY_LUMEN_DIR_NAME}"
+  local workspace_dir
+  workspace_dir="$(workspace_dir_for_root "${docs_dir}")"
   load_env_file_if_present "${workspace_dir}/.env.common"
   load_env_file_if_present "${workspace_dir}/.env.local"
   local preview_py="${LUMEN_HOME}/lib/scripts/preview_delivery_notification.py"
@@ -3473,8 +3490,8 @@ cmd_delivery_watch() {
   [[ -n "${workspace_root}" ]] || { err "Docs repository path or workspace root is required."; exit 1; }
 
   local progress_py="${LUMEN_HOME}/lib/scripts/delivery_progress.py"
-  local workspace_dir="${workspace_root}/${LUMEN_DIR_NAME}"
-  [[ -d "${workspace_dir}" ]] || workspace_dir="${workspace_root}/${LEGACY_LUMEN_DIR_NAME}"
+  local workspace_dir
+  workspace_dir="$(workspace_dir_for_root "${workspace_root}")"
   local progress_file="${workspace_dir}/results/delivery-progress.json"
   local log_dir="${workspace_dir}/logs/delivery"
   local latest_log

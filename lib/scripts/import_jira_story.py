@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from delivery_workspace import workspace_lumen_dir
 from jira_sync import parse_twg_json, run_twg, site_args, twg_ready, workspace_jira_config
 
 
@@ -173,7 +174,7 @@ def import_story(docs_dir: Path, jira_key: str) -> Path:
     story = story_markdown(key, title, url, description)
     if not previous:
         story_path.write_text(story, encoding="utf-8")
-    snapshot_path = docs_dir / "lumen" / "context" / story_dir.name / "jira-import.json"
+    snapshot_path = workspace_lumen_dir(docs_dir) / "context" / story_dir.name / "jira-import.json"
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot_path.write_text(json.dumps({"imported_at": now(), "jira_key": key, "workitem": item}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     metadata = {

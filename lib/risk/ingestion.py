@@ -33,7 +33,7 @@ def _project_slug(workspace: Path, common: dict) -> str:
     if name:
         return name.lower().replace(" ", "-")
     parent = workspace.name
-    if parent in {"lumen", ".lumen"}:
+    if parent in {"lumon", "lumen", ".lumen"}:
         return workspace.parent.name.lower()
     return parent.lower()
 

@@ -70,6 +70,10 @@ def execute_delivery_action(request: ActionRequest) -> dict[str, Any]:
             actor=request.actor_user_id,
             source_message_id=request.source_message_id,
             trace_id=request.trace_id,
+            chat_id=request.chat_id,
+            thread_id=request.thread_id,
+            project_slug=project,
+            user_message=str(args.get("user_message") or resource.get("user_message") or ""),
         )
 
     if action == "delivery.cancel":
@@ -91,6 +95,10 @@ def execute_delivery_action(request: ActionRequest) -> dict[str, Any]:
             actor=request.actor_user_id,
             source_message_id=request.source_message_id,
             trace_id=request.trace_id,
+            chat_id=request.chat_id,
+            thread_id=request.thread_id,
+            project_slug=project,
+            user_message=str(args.get("user_message") or resource.get("user_message") or ""),
         )
 
     raise CapabilityDenied(f"unsupported delivery action: {action}")

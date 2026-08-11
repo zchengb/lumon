@@ -11,6 +11,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
+from delivery_workspace import workspace_lumen_dir
+
 
 def _docs_dir(workspace: Path) -> Path:
     root = Path(workspace).expanduser().resolve()
@@ -57,7 +59,7 @@ def _find_story_dir(docs_dir: Path, story_ref: str) -> Optional[Path]:
 
 def _load_progress(workspace_root: Path) -> dict[str, Any]:
     for candidate in (
-        workspace_root / "lumen" / "results" / "delivery-progress.json",
+        workspace_lumen_dir(workspace_root) / "results" / "delivery-progress.json",
         workspace_root / "results" / "delivery-progress.json",
     ):
         if candidate.is_file():
@@ -71,7 +73,7 @@ def _load_progress(workspace_root: Path) -> dict[str, Any]:
 
 def _load_result(workspace_root: Path, run_id: str = "") -> dict[str, Any]:
     results_dirs = (
-        workspace_root / "lumen" / "results",
+        workspace_lumen_dir(workspace_root) / "results",
         workspace_root / "results",
     )
     for results in results_dirs:
@@ -102,7 +104,7 @@ def _quick_result_candidates(workspace_root: Path, run_id: str = "") -> list[Pat
         roots.append(roots[0].parent)
     paths: list[Path] = []
     for root in roots:
-        for state_dir in (root / "lumen", root / ".lumen", root):
+        for state_dir in (workspace_lumen_dir(root), root):
             result_dir = state_dir / "results" / "quick-changes"
             if run_id:
                 paths.append(result_dir / f"{run_id}.json")
@@ -139,7 +141,7 @@ def _load_active_quick_result(workspace_root: Path) -> dict[str, Any]:
 
 def _delivery_lock_candidates(workspace: Path) -> list[Path]:
     root = Path(workspace).expanduser().resolve()
-    return [root / "locks" / "delivery-run", root / "lumen" / "locks" / "delivery-run", root / ".lumen" / "locks" / "delivery-run"]
+    return [root / "locks" / "delivery-run", workspace_lumen_dir(root) / "locks" / "delivery-run"]
 
 
 def _terminate_process_tree(pid: int) -> None:
@@ -252,7 +254,7 @@ class DeliveryActionAdapter:
 
     def status(self, *, workspace: Path, story: str = "", run_id: str = "") -> dict[str, Any]:
         root = Path(workspace).expanduser().resolve()
-        workspace_root = root.parent if root.name in {"lumen", ".lumen"} else root
+        workspace_root = root.parent if root.name in {"lumon", "lumen", ".lumen"} else root
         progress = _load_progress(workspace_root)
         result = _load_result(workspace_root, run_id=run_id)
         quick_result = _load_quick_result(workspace_root, run_id=run_id)
@@ -270,7 +272,7 @@ class DeliveryActionAdapter:
 
     def result(self, *, workspace: Path, run_id: str = "") -> dict[str, Any]:
         root = Path(workspace).expanduser().resolve()
-        workspace_root = root.parent if root.name in {"lumen", ".lumen"} else root
+        workspace_root = root.parent if root.name in {"lumon", "lumen", ".lumen"} else root
         payload = _load_result(workspace_root, run_id=run_id)
         if not payload:
             payload = _load_quick_result(workspace_root, run_id=run_id)
@@ -286,6 +288,10 @@ class DeliveryActionAdapter:
         actor: str = "",
         source_message_id: str = "",
         trace_id: str = "",
+        chat_id: str = "",
+        thread_id: str = "",
+        project_slug: str = "",
+        user_message: str = "",
         dry_run: bool = False,
     ) -> dict[str, Any]:
         ready = self.readiness(workspace=workspace, story=story)
@@ -308,6 +314,10 @@ class DeliveryActionAdapter:
             env["LUMEN_DELIVERY_SOURCE_MESSAGE_ID"] = source_message_id
         if trace_id:
             env["LUMEN_DELIVERY_TRACE_ID"] = trace_id
+        env["LUMEN_DELIVERY_CHAT_ID"] = chat_id
+        env["LUMEN_DELIVERY_THREAD_ID"] = thread_id
+        env["LUMEN_DELIVERY_PROJECT"] = project_slug
+        env["LUMEN_DELIVERY_USER_MESSAGE"] = user_message
         env["LUMEN_DELIVERY_RUN_ID"] = run_id
         lumen_bin = env.get("LUMEN_CLI_BIN") or str(Path.home() / ".local" / "bin" / "lumen")
         cmd = [lumen_bin, "delivery", "run", "--story", story, str(docs)]
@@ -346,6 +356,10 @@ class DeliveryActionAdapter:
         actor: str = "",
         source_message_id: str = "",
         trace_id: str = "",
+        chat_id: str = "",
+        thread_id: str = "",
+        project_slug: str = "",
+        user_message: str = "",
         dry_run: bool = False,
     ) -> dict[str, Any]:
         repository = str(repository or "").strip()
@@ -374,6 +388,10 @@ class DeliveryActionAdapter:
                 "LUMEN_QUICK_CHANGE_ACTOR": actor,
                 "LUMEN_QUICK_CHANGE_SOURCE_MESSAGE_ID": source_message_id,
                 "LUMEN_QUICK_CHANGE_TRACE_ID": trace_id,
+                "LUMEN_QUICK_CHANGE_CHAT_ID": chat_id,
+                "LUMEN_QUICK_CHANGE_THREAD_ID": thread_id,
+                "LUMEN_QUICK_CHANGE_PROJECT": project_slug,
+                "LUMEN_QUICK_CHANGE_USER_MESSAGE": user_message or request,
             }
         )
         cmd = [
@@ -411,6 +429,9 @@ class DeliveryActionAdapter:
             "target_version": str(target_version or "").strip(),
             "change_type": str(change_type or "small_change").strip(),
             "workspace": str(docs),
+            "source_message_id": source_message_id,
+            "chat_id": chat_id,
+            "thread_id": thread_id,
             "next_poll_after_seconds": 3,
         }
 

@@ -17,7 +17,10 @@ def ensure_delivery_config(workspace_root: Path) -> Path:
     target = workspace_lumen_dir(workspace_root) / "config" / "delivery.json"
     if target.is_file():
         return target
-    template = Path(__file__).resolve().parents[1] / "templates" / "delivery-docs" / "lumen" / "config" / "delivery.json"
+    template_root = Path(__file__).resolve().parents[1] / "templates" / "delivery-docs"
+    template = template_root / "lumon" / "config" / "delivery.json"
+    if not template.is_file():
+        template = template_root / "lumen" / "config" / "delivery.json"
     if not template.is_file():
         raise FileNotFoundError(f"Delivery config template not found: {template}")
     target.parent.mkdir(parents=True, exist_ok=True)

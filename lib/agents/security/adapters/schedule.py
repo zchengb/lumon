@@ -9,6 +9,7 @@ from typing import Any
 
 from agents.security.actions import ActionRequest
 from agents.security.errors import CapabilityDenied, ResourceDenied
+from delivery_workspace import workspace_lumen_dir
 
 
 def _project_workspace(slug: str) -> Path | None:
@@ -71,9 +72,9 @@ def schedule_update(project: str, cron: str) -> dict[str, Any]:
     workspace = _project_workspace(slug)
     lumen_bin = shutil.which("lumen") or str(Path.home() / ".local/bin/lumen")
     lumen_home = os.environ.get("LUMEN_HOME", str(Path.home() / ".lumon"))
-    log_file = str((workspace or Path.home()) / "lumen" / "logs" / "scan-schedule.log")
+    log_dir = workspace_lumen_dir(workspace) / "logs" if workspace else Path.home() / "lumon" / "logs"
+    log_file = str(log_dir / "scan-schedule.log")
     if workspace:
-        log_dir = workspace / "lumen" / "logs" if (workspace / "lumen").is_dir() else workspace / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = str(log_dir / "scan-schedule.log")
     args = argparse.Namespace(

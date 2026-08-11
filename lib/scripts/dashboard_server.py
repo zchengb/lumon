@@ -43,6 +43,7 @@ from delivery_scheduler import DEFAULT_ELIGIBLE_JIRA_STATUSES, eligible_jira_sta
 from sync_delivery_docs import commit_dirty_config, commit_paths, commit_story_metadata, lumen_commit_subject
 from git_sync import force_push_conflict, read_conflict
 from patch_runtime import patch_candidate_options, patch_config, publish_mode as patch_publish_mode
+from deployment_tracking import normalized_config
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -297,6 +298,7 @@ def workspace_payload(workspace: Path) -> dict[str, Any]:
             "delivery": str((delivery_config.get("execution") or {}).get("model") or "cursor-grok-4.5-medium").strip(),
             "patch": str((delivery_config.get("execution") or {}).get("patch_model") or (delivery_config.get("execution") or {}).get("model") or "cursor-grok-4.5-medium").strip(),
         },
+        "deployment_tracking": normalized_config(delivery_config),
         "feishu_notifications_enabled": feishu_notifications_enabled(workspace),
         "git_sync_conflict": git_conflict,
     }
@@ -756,7 +758,46 @@ def save_feishu_notifications(workspace: Path, enabled: bool, *, push: bool = Tr
     return workspace_payload(workspace) if include_payload else {"saved_at": utc_now()}
 
 
-def delivery_stages(phases: object) -> list[dict[str, Any]]:
+def save_deployment_config(workspace: Path, body: dict[str, Any], *, include_payload: bool = True) -> dict[str, Any]:
+    provider = str(body.get("provider") or "none").strip().casefold()
+    if provider not in {"none", "jenkins", "github_actions"}:
+        raise ValueError("Deployment provider must be none, jenkins, or github_actions")
+    try:
+        poll_interval = max(5, min(3600, int(body.get("poll_interval_seconds") or 30)))
+        timeout = max(60, min(7 * 24 * 3600, int(body.get("timeout_seconds") or 3600)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Deployment polling values must be valid numbers") from exc
+    jenkins = body.get("jenkins") if isinstance(body.get("jenkins"), dict) else {}
+    github = body.get("github_actions") if isinstance(body.get("github_actions"), dict) else {}
+    deployment = {
+        "enabled": bool(body.get("enabled", False)) and provider != "none",
+        "provider": provider,
+        "poll_interval_seconds": poll_interval,
+        "timeout_seconds": timeout,
+        "failure_policy": "notify" if body.get("failure_policy") == "notify" else "dispatch_agent",
+        "jenkins": {
+            "job": str(jenkins.get("job") or "").strip(),
+            "trigger_mode": "cli" if jenkins.get("trigger_mode") == "cli" else "observe",
+            "url_env": str(jenkins.get("url_env") or "JENKINS_URL").strip() or "JENKINS_URL",
+            "auth_env": str(jenkins.get("auth_env") or "JENKINS_AUTH").strip() or "JENKINS_AUTH",
+            "cli": str(jenkins.get("cli") or "jenkins-cli").strip() or "jenkins-cli",
+        },
+        "github_actions": {
+            "repository": str(github.get("repository") or "").strip(),
+            "workflow": str(github.get("workflow") or "").strip(),
+            "trigger_mode": "gh" if github.get("trigger_mode") == "gh" else "observe",
+            "gh_bin": str(github.get("gh_bin") or "gh").strip() or "gh",
+        },
+    }
+    path = workspace / "config" / "delivery.json"
+    config = load_json(path, {})
+    config["deployment_tracking"] = deployment
+    write_json(path, config)
+    auto_commit_delivery_config(workspace, push=False)
+    return workspace_payload(workspace) if include_payload else {"saved_at": utc_now()}
+
+
+def delivery_stages(phases: object, deployment: object = None) -> list[dict[str, Any]]:
     source = [phase for phase in phases or [] if isinstance(phase, dict)]
     definitions = [
         ("preflight", "Preflight", {"preflight", "worktrees", "jira_start"}),
@@ -807,6 +848,34 @@ def delivery_stages(phases: object) -> list[dict[str, Any]]:
             "attempts": attempts,
             "detail": detail,
         })
+    if isinstance(deployment, dict) and deployment.get("provider"):
+        status = str(deployment.get("status") or "queued").lower()
+        if status in {"succeeded", "completed"}:
+            stage_status = "completed"
+        elif status in {"failed", "cancelled", "timeout"}:
+            stage_status = "failed"
+        else:
+            stage_status = "in_progress"
+        stages.append(
+            {
+                "id": "deployment",
+                "label": "Deployment",
+                "status": stage_status,
+                "started_at": deployment.get("started_at", ""),
+                "finished_at": deployment.get("finished_at", ""),
+                "duration": "—",
+                "duration_kind": "span",
+                "active_started_at": deployment.get("started_at", "") if stage_status == "in_progress" else "",
+                "attempts": [],
+                "detail": " · ".join(
+                    value for value in (
+                        str(deployment.get("provider") or "").replace("_", " ").title(),
+                        str(deployment.get("detail") or "").strip(),
+                    ) if value
+                ),
+                "url": deployment.get("url", ""),
+            }
+        )
     return stages
 
 
@@ -921,11 +990,12 @@ def delivery_payload(workspace: Path) -> dict[str, Any]:
                     "finished_at": progress.get("finished_at") or delivery.get("finished_at") or "",
                     "log_file": item.get("log_file") or progress.get("log_file") or "",
                     "agent_trace": delivery.get("agent_trace") or {},
+                    "deployment": delivery.get("deployment") or {},
                 }
             )
     progress = read_delivery_json(workspace / "results" / "delivery-progress.json", {})
     result = read_delivery_json(workspace / "results" / "delivery-result.json", {})
-    terminal_states = {"completed", "failed", "blocked", "dev_done", "pr_open"}
+    terminal_states = {"completed", "failed", "blocked", "dev_done", "pr_open", "awaiting_deploy"}
     progress_run_id = str(progress.get("run_id") or "").strip()
     result_run_id = str(result.get("run_id") or "").strip()
     result_matches_progress = not progress_run_id or result_run_id == progress_run_id
@@ -979,7 +1049,7 @@ def delivery_payload(workspace: Path) -> dict[str, Any]:
     if isinstance(result.get("agent_trace"), dict):
         current["agent_trace"] = result["agent_trace"]
     current["story_title"] = story_title(workspace, current, progress)
-    current["stages"] = delivery_stages(current.get("phases"))
+    current["stages"] = delivery_stages(current.get("phases"), current.get("deployment"))
     activity_path = workspace / "state" / "delivery-scheduler-activity.jsonl"
     activity: list[dict[str, Any]] = []
     if activity_path.is_file():
@@ -1083,7 +1153,7 @@ def story_assignee_name(docs_dir: Path, metadata: dict[str, Any], story_dir: Pat
     if snap:
         candidates.append(docs_dir / snap)
     if story_dir is not None:
-        candidates.append(docs_dir / "lumen" / "context" / story_dir.name / "jira-import.json")
+        candidates.append(workspace_lumen_dir(docs_dir) / "context" / story_dir.name / "jira-import.json")
     for path in candidates:
         resolved = path.resolve()
         try:
@@ -2019,6 +2089,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 else:
                     auto_commit_delivery_config(workspace, push=False)
                 return self.respond_json(HTTPStatus.OK, {"saved_at": utc_now()})
+            if parsed.path == "/api/deployment-config":
+                return self.respond_json(
+                    HTTPStatus.OK,
+                    {"workspace": save_deployment_config(workspace, body, include_payload=False)},
+                )
             if parsed.path == "/api/integration":
                 update_env_value(workspace, str(body.get("key", "")).strip(), str(body.get("value", "")))
                 return self.respond_json(HTTPStatus.OK, {"saved_at": utc_now()})

@@ -320,7 +320,7 @@ def visual_auth_env_name(repository: str, runtime: dict[str, Any]) -> str:
 
 def workspace_root_from(path: Path) -> Path:
     resolved = path.expanduser().resolve()
-    if resolved.name in {"lumen", ".lumen"}:
+    if resolved.name in {"lumon", "lumen", ".lumen"}:
         return resolved.parent
     return resolved
 
@@ -1076,7 +1076,7 @@ def main() -> int:
         print(json.dumps(results, indent=2, ensure_ascii=False))
         return 0 if all(item.get("status") in {"passed", "skipped"} for item in results) else 1
     root = Path(args.workspace_root).expanduser().resolve()
-    if root.name in {"lumen", ".lumen"}:
+    if root.name in {"lumon", "lumen", ".lumen"}:
         root = root.parent
     if args.command == "detect":
         print(json.dumps({"repositories": enrich_repositories(root)}, indent=2, ensure_ascii=False)); return 0

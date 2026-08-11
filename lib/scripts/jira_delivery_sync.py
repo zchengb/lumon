@@ -123,6 +123,15 @@ def completion_comment(delivery: dict) -> str:
         f"- Duration: {delivery_duration(delivery)}",
         f"- Verification: {passed} passed, {failed} failed, {skipped} skipped",
     ]
+    deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}
+    if deployment:
+        provider = str(deployment.get("provider") or "CI/CD").replace("_", " ").title()
+        lines.extend([
+            f"- Deployment: {provider} · {str(deployment.get('status') or 'unknown')}",
+            f"- Deployment detail: {str(deployment.get('detail') or 'n/a')}",
+        ])
+        if deployment.get("url"):
+            lines.append(f"- Deployment link: {deployment['url']}")
     pr_lines = delivery_pr_lines(delivery)
     if pr_lines:
         lines.extend(["", "Pull requests:", *pr_lines])
@@ -142,8 +151,8 @@ def attention_comment(delivery: dict) -> str:
         for item in delivery.get("repos_touched", [])
         if isinstance(item, dict) and item.get("name")
     ) or "n/a"
-    return "\n".join(
-        [
+    deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}
+    lines = [
             "Lumen Delivery · Needs attention",
             "",
             f"- Status: {status.title()}",
@@ -154,7 +163,12 @@ def attention_comment(delivery: dict) -> str:
             f"- Reason: {detail}",
             "- JIRA status moved to Block for follow-up.",
         ]
-    )
+    deployment_detail = str(deployment.get("detail") or "").strip()
+    if deployment_detail:
+        lines.append(f"- Deployment detail: {deployment_detail}")
+    if deployment.get("url"):
+        lines.append(f"- Deployment link: {deployment['url']}")
+    return "\n".join(lines)
 
 
 def started_comment(delivery: dict) -> str:
@@ -226,13 +240,13 @@ def sync_delivery_jira(
                 if url:
                     add_pr_link_to_jira(jira_key, url, config, registry_issue)
 
-        if event == "delivery.dev_done" or delivery_status in {"completed", "dev_done", "pr_open"}:
+        if event in {"delivery.deployed", "delivery.dev_done"} or delivery_status in {"completed", "dev_done", "pr_open"}:
             if dev_done_status:
                 transition_issue(jira_key, dev_done_status, config)
                 transitions.append(dev_done_status)
             add_delivery_comment(jira_key, completion_comment(delivery), config)
 
-        if event in {"delivery.failed", "delivery.blocked"} or delivery_status in {"failed", "blocked"}:
+        if event in {"delivery.deployment_failed", "delivery.failed", "delivery.blocked"} or delivery_status in {"failed", "blocked"}:
             if blocked_status:
                 transition_issue(jira_key, blocked_status, config)
                 transitions.append(blocked_status)

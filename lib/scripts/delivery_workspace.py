@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-WORKSPACE_DIR_NAME = "lumen"
+WORKSPACE_DIR_NAME = "lumon"
+LEGACY_VISIBLE_WORKSPACE_DIR_NAME = "lumen"
 LEGACY_WORKSPACE_DIR_NAME = ".lumen"
 
 
@@ -133,11 +134,11 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def workspace_lumen_dir(workspace_root: Path) -> Path:
-    visible = workspace_root / WORKSPACE_DIR_NAME
-    legacy = workspace_root / LEGACY_WORKSPACE_DIR_NAME
-    if visible.exists() or not legacy.exists():
-        return visible
-    return legacy
+    for name in (WORKSPACE_DIR_NAME, LEGACY_VISIBLE_WORKSPACE_DIR_NAME, LEGACY_WORKSPACE_DIR_NAME):
+        candidate = workspace_root / name
+        if candidate.exists():
+            return candidate
+    return workspace_root / WORKSPACE_DIR_NAME
 
 
 def delivery_results_dir(workspace_root: Path) -> Path:
@@ -298,6 +299,8 @@ def discover_git_repos(workspace_root: Path, workspace_config: Optional[dict[str
         return repos
 
     skip_names = {
+        "lumon",
+        "lumen",
         ".lumen",
         ".git",
         "stories",

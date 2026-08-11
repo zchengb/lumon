@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 
 SKIP_DIRS = {
+    "lumon",
+    "lumen",
     ".lumen",
     ".auto-scan",
     ".auto-scan-backup",

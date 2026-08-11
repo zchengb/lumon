@@ -21,7 +21,7 @@ def _workspace_root(project_slug: str) -> Path | None:
         return None
     workspace = Path(str(project["workspace"])).expanduser().resolve()
     parent = workspace.parent
-    if (parent / "stories").is_dir() or (parent / "lumen" / "config" / "common.json").is_file():
+    if (parent / "stories").is_dir() or any((parent / name / "config" / "common.json").is_file() for name in ("lumon", "lumen", ".lumen")):
         return parent
     if (workspace / "stories").is_dir() or (workspace / "config" / "common.json").is_file():
         return workspace

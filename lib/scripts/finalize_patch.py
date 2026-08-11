@@ -20,6 +20,7 @@ from git_publish import (
     run_git,
 )
 from patch_runtime import load_delivery_config, publish_mode, read_json, result_path, write_json
+from delivery_workspace import workspace_lumen_dir
 from sync_delivery_docs import lumen_commit_subject
 
 
@@ -68,7 +69,7 @@ def main() -> int:
     workspace = Path(args.workspace).expanduser().resolve()
     result_file = Path(args.result).expanduser().resolve() if args.result else result_path(workspace)
     result = read_json(result_file, {})
-    progress = read_json(workspace / "lumen" / "results" / "patch-progress.json", {})
+    progress = read_json(workspace_lumen_dir(workspace) / "results" / "patch-progress.json", {})
     if not result:
         print(f"Error: Auto Patch result not found: {result_file}", file=__import__("sys").stderr)
         return 1

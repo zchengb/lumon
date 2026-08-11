@@ -257,6 +257,12 @@ def run(args: argparse.Namespace) -> int:
         "workspace_root": str(workspace_root),
         "log_file": str(log_path),
         "started_at": utc_now(),
+        "actor": os.environ.get("LUMEN_QUICK_CHANGE_ACTOR", ""),
+        "source_message_id": os.environ.get("LUMEN_QUICK_CHANGE_SOURCE_MESSAGE_ID", ""),
+        "chat_id": os.environ.get("LUMEN_QUICK_CHANGE_CHAT_ID", ""),
+        "thread_id": os.environ.get("LUMEN_QUICK_CHANGE_THREAD_ID", ""),
+        "project_slug": os.environ.get("LUMEN_QUICK_CHANGE_PROJECT", ""),
+        "user_message": os.environ.get("LUMEN_QUICK_CHANGE_USER_MESSAGE", request),
     }
     lock = _lock_path(workspace_root)
     worktree: Path | None = None
@@ -365,6 +371,12 @@ def run(args: argparse.Namespace) -> int:
             publish_mode=mode,
             publish=publish_item,
         )
+        try:
+            from deployment_tracking import launch_tracker
+
+            launch_tracker(result_path, "quick_change")
+        except Exception as exc:
+            _set_result(result_path, result, deployment_tracking_error=str(exc)[:500])
         success = True
         return 0
     except Exception as exc:

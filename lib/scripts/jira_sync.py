@@ -29,7 +29,7 @@ def jira_config(common: dict) -> dict:
 
 def workspace_jira_config(workspace_root: Path) -> dict:
     """Load the one workspace-level Jira configuration shared by every loop."""
-    for relative in ("config/common.json", "lumen/config/common.json", ".lumen/config/common.json"):
+    for relative in ("config/common.json", "lumon/config/common.json", "lumen/config/common.json", ".lumen/config/common.json"):
         path = workspace_root / relative
         if not path.is_file():
             continue

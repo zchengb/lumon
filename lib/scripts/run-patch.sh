@@ -17,8 +17,9 @@ load_env_file() {
 
 load_env_file "${WORKSPACE_ROOT}/.env.common"
 load_env_file "${WORKSPACE_ROOT}/.env.local"
-WORKSPACE_LUMEN_DIR="${WORKSPACE_ROOT}/lumen"
-[[ -d "${WORKSPACE_ROOT}/.lumen" && ! -d "${WORKSPACE_ROOT}/lumen" ]] && WORKSPACE_LUMEN_DIR="${WORKSPACE_ROOT}/.lumen"
+WORKSPACE_LUMEN_DIR="${WORKSPACE_ROOT}/lumon"
+[[ -d "${WORKSPACE_ROOT}/lumen" && ! -d "${WORKSPACE_LUMEN_DIR}" ]] && WORKSPACE_LUMEN_DIR="${WORKSPACE_ROOT}/lumen"
+[[ -d "${WORKSPACE_ROOT}/.lumen" && ! -d "${WORKSPACE_LUMEN_DIR}" && ! -d "${WORKSPACE_ROOT}/lumen" ]] && WORKSPACE_LUMEN_DIR="${WORKSPACE_ROOT}/.lumen"
 load_env_file "${WORKSPACE_LUMEN_DIR}/.env.common"
 load_env_file "${WORKSPACE_LUMEN_DIR}/.env.local"
 
