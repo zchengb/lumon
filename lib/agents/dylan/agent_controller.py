@@ -57,7 +57,7 @@ class DylanAgentController:
         self.obs.emit(self.trace, "job.started")
         self.obs.upsert_trace(self.trace, state="planning")
         global_store = GlobalAgentStore()
-        risk_store = RiskStore(workspace) if workspace is not None else None
+        risk_store = None
         try:
             context = load_context(
                 global_store,
@@ -155,8 +155,10 @@ class DylanAgentController:
             self.trace.project_slug = project_slug
             if workspace is None and project_slug:
                 workspace = self._resolve_workspace(project_slug)
-                if workspace is not None and risk_store is None:
-                    risk_store = RiskStore(workspace)
+
+            needs_risk_store = any(task.intent.startswith("risk.") for task in plan.tasks)
+            if needs_risk_store and workspace is not None:
+                risk_store = RiskStore(workspace)
 
             # scan.run / cancel delegate
             for task in plan.tasks:

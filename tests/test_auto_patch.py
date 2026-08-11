@@ -191,7 +191,7 @@ class AutoPatchTests(unittest.TestCase):
             transition.assert_called_once_with(workspace, "DEMO-1", "DEV DONE")
             comment.assert_called_once()
             self.assertEqual("sent", progress["jira"]["comment"])
-            registry = json.loads((workspace / "lumen" / "state" / "patch-registry.json").read_text(encoding="utf-8"))
+            registry = json.loads((workspace / "lumon" / "state" / "patch-registry.json").read_text(encoding="utf-8"))
             self.assertEqual("skipped", registry["issues"]["DEMO-1"]["status"])
 
     def test_context_captures_jira_keys_mentioned_in_description(self) -> None:
@@ -216,7 +216,7 @@ class AutoPatchTests(unittest.TestCase):
 
     def test_patch_branch_and_worktree_are_deterministic(self) -> None:
         self.assertEqual("patch/DEMO-123-fix-login-timeout", patch_branch("DEMO-123", "Fix login timeout"))
-        self.assertEqual(Path("/tmp/lumen/patch/DEMO-123/service"), patch_worktree_path(Path("/tmp"), "DEMO-123", "service"))
+        self.assertEqual(Path("/tmp/lumon/patch/DEMO-123/service"), patch_worktree_path(Path("/tmp"), "DEMO-123", "service"))
 
     def test_launchd_interval_parser_is_strict(self) -> None:
         self.assertEqual(5, interval_minutes_from_cron("*/5 * * * *"))

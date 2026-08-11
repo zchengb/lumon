@@ -332,7 +332,8 @@ def handle_conversation(
                         common_data = loaded
                 except Exception:
                     pass
-            risk_store = RiskStore(workspace)
+            if router.intent.startswith("risk."):
+                risk_store = RiskStore(workspace)
 
         if router.intent in {"scan.run", "scan.cancel"}:
             return {

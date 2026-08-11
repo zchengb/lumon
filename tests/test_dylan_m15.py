@@ -216,7 +216,7 @@ class AlertRetryTests(unittest.TestCase):
                 store,
                 project_slug="demo",
                 events=[{"type": "new_finding", "finding_id": "FIND-H", "severity": "High"}],
-                config=RiskConfig(enabled=True, alert_chat_id="oc_test"),
+                config=RiskConfig(enabled=True, alert_chat_id="oc_test", overdue_days=30),
             )
             self.assertEqual(len(alerts), 1)
 

@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "lib"
@@ -72,13 +72,16 @@ class AgentOnlyPathTests(unittest.TestCase):
             os.environ["LUMEN_AGENTS_HOME"] = tmp
             try:
                 GlobalAgentStore(Path(tmp) / "agents.sqlite3").close()
-                result = handle_conversation(
-                    text="Do you know Mark? BTW any existing findings?",
-                    meta={"chat_id": "oc_test", "message_id": "om_1", "user_id": "ou_1"},
-                    common=_v3_common(),
-                    known_slugs={"mbpass"},
-                    model_client=client,
-                )
+                with patch("agents.dylan.conversation._resolve_workspace", return_value=None), patch(
+                    "agents.dylan.agent_controller.DylanAgentController._resolve_workspace", return_value=None
+                ):
+                    result = handle_conversation(
+                        text="Do you know Mark? BTW any existing findings?",
+                        meta={"chat_id": "oc_test", "message_id": "om_1", "user_id": "ou_1"},
+                        common=_v3_common(),
+                        known_slugs={"mbpass"},
+                        model_client=client,
+                    )
             finally:
                 os.environ.pop("LUMEN_AGENTS_HOME", None)
         self.assertEqual(result["status"], "ok")
