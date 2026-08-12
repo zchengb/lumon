@@ -66,7 +66,7 @@ class MarkM10Tests(unittest.TestCase):
         self.assertIn("Delivery Lead", prompt)
         self.assertIn("lumen delivery", prompt)
         self.assertIn("Never modify business source code", prompt)
-        self.assertIn("Lumen Grill protocol", prompt)
+        self.assertIn("Lumon Grill protocol", prompt)
         self.assertIn("Do not turn a bounded quick change into a Story", prompt)
         resume = build_resume_prompt(user_message="继续", project_slug="mbpass")
         self.assertIn("Remain Mark", resume)

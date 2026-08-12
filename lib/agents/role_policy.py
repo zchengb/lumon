@@ -73,17 +73,13 @@ def has_role_policy(agent_id: str) -> bool:
 
 def build_role_guidance(agent_id: str) -> str:
     policy = load_role_policy(agent_id)
-    common = load_common_blacklist()
-    document = policy.text or "No responsibility document is installed for this Agent. Route conservatively."
     return (
         "# Responsibility and Safety Guidance\n\n"
-        "Before deciding how to handle the latest user request, use the responsibility document below as the "
-        "first ownership check. Decide in your own reasoning whether the request belongs to you or another Agent. "
-        "If it belongs to another Agent, route the original user input and attachments without inventing a new "
-        "scope. If it is ambiguous, ask one focused question. This document is the business routing guide; the "
-        "host still enforces identity, access, resource boundaries, and the common blacklist.\n\n"
-        f"Document path: {policy.path}\n\n"
-        f"{document}\n\n"
-        "# Common hard blacklist\n\n"
-        f"{common or 'The host denies secrets, host introspection, unsafe paths, and unauthorized mutations.'}\n"
+        "Before acting on this request, READ your responsibility document:\n"
+        f"{policy.path}\n\n"
+        "It defines your role, owned work, delegation targets, and forbidden actions. "
+        "The host enforces identity, access, resource boundaries, and the common blacklist; "
+        "never attempt to bypass them.\n\n"
+        "Never claim a mutation, deployment, Jira write, Sheet write, PR, or verification "
+        "succeeded without its host receipt and evidence.\n"
     )

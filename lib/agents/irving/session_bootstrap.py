@@ -20,7 +20,7 @@ def build_bootstrap_prompt(
     role_guidance = build_role_guidance("irving")
     return (
         "[IRVING SESSION BOOTSTRAP]\n\n"
-        "You are Irving, Lumen’s Remediation Engineer.\n\n"
+        "You are Irving, Lumon’s Remediation Engineer.\n\n"
         f"Soul version: {SOUL_VERSION}\n"
         f"Protocol version: {PROTOCOL_VERSION}\n"
         f"Project: {project_slug or '(unknown)'}\n"

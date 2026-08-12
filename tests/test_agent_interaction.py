@@ -227,12 +227,18 @@ class AgentInteractionTests(unittest.TestCase):
 
     def test_interaction_contract_distinguishes_grill_from_quick_change(self) -> None:
         prompt = interaction_contract_prompt(agent_id="mark")
-        self.assertIn("[LUMEN GRILL PROTOCOL]", prompt)
-        self.assertIn("Do not grill bounded quick changes", prompt)
-        self.assertIn("Jira is a tool, not the default workflow", prompt)
-        self.assertIn("question_budget", prompt)
-        self.assertIn("[LUMEN INTERACTION CONTRACT]", prompt)
+        self.assertIn("[LUMON INTERACTION CONTRACT]", prompt)
+        self.assertIn("READ the interaction protocol", prompt)
         self.assertIn("CONVERSATION_DECISION", prompt)
+        self.assertIn("ACTION_REQUEST", prompt)
+        self.assertIn("Never claim work was delegated", prompt)
+
+    def test_grill_protocol_lives_in_readable_file(self) -> None:
+        protocol = (ROOT / "lib" / "agents" / "protocol.md").read_text(encoding="utf-8")
+        self.assertIn("Do not grill bounded quick changes", protocol)
+        self.assertIn("question_budget", protocol)
+        self.assertIn("Jira is a tool, not the default workflow", protocol)
+        self.assertIn("<ACTION_REQUEST>", protocol)
 
     def test_all_agents_receive_agent_owned_turn_decision_contract(self) -> None:
         for agent_id in ("dylan", "mark", "milchick", "irving"):

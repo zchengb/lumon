@@ -13,7 +13,13 @@ LIB = ROOT / "lib"
 if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
-from agents.role_policy import build_role_guidance, has_role_policy, load_role_policy
+from agents.role_policy import (
+    build_role_guidance,
+    has_role_policy,
+    load_common_blacklist,
+    load_role_policy,
+    responsibility_document,
+)
 from agents.security.actions import ActionRequest
 from agents.security.broker import CapabilityBroker
 from agents.security.policy import is_action_allowed_for_agent, is_action_known
@@ -43,8 +49,10 @@ class RolePolicyTests(unittest.TestCase):
     def test_unknown_actions_remain_unknown_and_guidance_includes_blacklist(self) -> None:
         self.assertFalse(is_action_known("filesystem.delete"))
         guidance = build_role_guidance("milchick")
-        self.assertIn("original user input and attachments", guidance)
-        self.assertIn("Delete, move, or overwrite files outside", guidance)
+        self.assertIn("responsibility document", guidance)
+        self.assertIn("never attempt to bypass them", guidance)
+        self.assertIn("Delete, move, or overwrite files outside", load_common_blacklist())
+        self.assertIn("original user", responsibility_document("milchick"))
 
     def test_broker_enforces_role_blacklist_before_executor(self) -> None:
         calls: list[str] = []
