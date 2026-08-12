@@ -88,9 +88,6 @@ DYLAN_ACTIONS = (
     "scan.schedule.read",
     "scan.schedule.update",
     "scan.verify.request",
-    "host.disk.summary",
-    "host.runtime.summary",
-    "host.applications.summary",
     *JIRA_ACTIONS,
 )
 
@@ -101,6 +98,8 @@ MARK_ACTIONS = (
     "delivery.start",
     "delivery.cancel",
     "delivery.quick_change",
+    "loop.business",
+    "loop.technical",
     "story.read",
     "technical_plan.read",
     *JIRA_ACTIONS,
@@ -121,8 +120,7 @@ MILCHICK_ACTIONS = (
     "schedule.status",
     "lumen.system.health",
     "lumen.agent.status",
-    "lumen.runner.status",
-    "host.runtime.summary",
+    "lumen.runner.status"
 )
 
 IRVING_ACTIONS = (
@@ -153,6 +151,8 @@ MUTATION_ACTIONS = frozenset(
         "delivery.start",
         "delivery.cancel",
         "delivery.quick_change",
+        "loop.business",
+        "loop.technical",
         "test_case.generate",
         "agent.job.create",
         "agent.job.cancel",

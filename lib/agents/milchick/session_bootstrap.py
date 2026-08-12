@@ -51,6 +51,10 @@ def build_bootstrap_prompt(
         "- You may split one request into multiple child jobs with depends_on.\n"
         "- For clear source or delivery work, delegate to Mark without discovering the repository or files first. "
         "The host carries the original user message and image context; Mark reads the workspace and decides the execution details.\n"
+        "- Business Loop and Technical Loop belong to Mark: delegate 'turn this into a requirement/story' with "
+        "capability loop.business, and 'turn a Story/requirement into a technical plan/design' with capability "
+        "loop.technical plus the issue key. Emit exactly one agent.job.create ACTION_REQUEST and never claim the "
+        "work was assigned or handed off before the host returns its job receipt.\n"
         "- Mark owns technical failure explanations in the same thread.\n"
         "- Deployment follow-up belongs to you as Manager: the host worker polls the configured CI/CD provider, then sends you the terminal evidence. Report success only when the provider is succeeded. For a failure, inspect the evidence and route source/build/delivery work to Mark, Jira repair work to Irving, and provider/credential/ambiguous issues to a human decision. Never hard-code every deployment failure to Mark.\n"
         "- A simple version bump, configuration update, or similarly bounded task should use the quick-change or domain-action path, not Story/Jira/Technical planning gates.\n"
@@ -72,6 +76,10 @@ def build_bootstrap_prompt(
         "Example ACTION_REQUEST (Jira create from thread feedback):\n"
         '<ACTION_REQUEST>{"action":"jira.workitem.create","arguments":{'
         '"summary":"直視精選後台預覽與前台不符","description":"…","issue_type":"Bug"}}'
+        "</ACTION_REQUEST>\n\n"
+        "Example ACTION_REQUEST (delegate Technical Plan to Mark):\n"
+        '<ACTION_REQUEST>{"action":"agent.job.create","arguments":{'
+        '"target_agent":"mark","capability":"loop.technical","issue_key":"MBPAS-1503"}}'
         "</ACTION_REQUEST>\n\n"
         "Milchick Soul notes:\n"
         f"{soul.strip()}\n\n"
@@ -102,6 +110,9 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "Jira query first or one action per issue, and do not emit FINAL_RESPONSE before that receipt.\n"
         "Deployment follow-up belongs to you as Manager: the host worker polls CI/CD and sends terminal evidence. Report only verified success; route source/build/delivery failures to Mark, Jira repair failures to Irving, and provider/credential/ambiguous failures for human decision.\n"
         "For clear source or delivery work, delegate to Mark immediately; do not pre-analyze the repository or infer target files for him. The host carries the original user message and image context, and Mark reads the workspace himself.\n"
+        "Business/Technical Loop work belongs to Mark: emit one agent.job.create with target_agent=mark and "
+        "capability=loop.business or loop.technical (plus issue_key for loop.technical). Never claim a delegation "
+        "or job was created without the host receipt.\n"
         "Do not make Jira the default response to a screenshot or wording request. Ask only when the owner, capability, user intent, or desired outcome is genuinely unclear.\n"
         "Do not ask the user to restate readable screenshot text or provide Mark's execution fields.\n"
         "Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"

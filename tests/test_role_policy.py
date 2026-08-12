@@ -33,6 +33,8 @@ class RolePolicyTests(unittest.TestCase):
         self.assertTrue(is_action_allowed_for_agent("milchick", "test_case.generate"))
         self.assertFalse(is_action_allowed_for_agent("milchick", "delivery.quick_change"))
         self.assertTrue(is_action_allowed_for_agent("mark", "delivery.quick_change"))
+        self.assertTrue(is_action_allowed_for_agent("mark", "loop.business"))
+        self.assertTrue(is_action_allowed_for_agent("mark", "loop.technical"))
         self.assertFalse(is_action_allowed_for_agent("mark", "test_case.generate"))
         self.assertTrue(is_action_allowed_for_agent("dylan", "jira.workitem.query"))
         self.assertTrue(is_action_allowed_for_agent("irving", "jira.workitem.update"))

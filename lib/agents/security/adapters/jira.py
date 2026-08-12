@@ -124,6 +124,8 @@ def _get_workitem(request: ActionRequest) -> dict[str, Any]:
     if code != 0:
         return {"status": "failed", "code": "JIRA_GET_FAILED", "issue_key": issue_key, "message": truncate_error(output or f"twg exit {code}")}
     payload = _unwrap_jira_payload(parse_twg_json(output))
+    if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], dict):
+        payload = payload[0]
     if not isinstance(payload, dict):
         return {"status": "failed", "code": "JIRA_GET_PARSE", "issue_key": issue_key, "message": "TWG returned no Jira work item"}
     item = _normalized_issue(payload, config)

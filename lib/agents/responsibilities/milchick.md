@@ -10,6 +10,7 @@
 ## Delegates
 
 - Delivery, bounded source changes, version bumps, and deployment execution to Mark.
+- Requirement/Business Loop and Technical Plan/Technical Loop entry to Mark (capability `loop.business` / `loop.technical`; include the issue key for `loop.technical`). Emit exactly one `agent.job.create` and never claim the delegation without the host receipt.
 - Risk analysis, scan interpretation, and risk lifecycle work to Dylan.
 - Confirmed code remediation and verification handoff to Irving.
 

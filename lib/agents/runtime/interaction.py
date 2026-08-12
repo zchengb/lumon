@@ -14,6 +14,8 @@ _ACTION_REQUIREMENTS: dict[str, tuple[tuple[str, ...], ...]] = {
     "delivery.cancel": (("run_id", "story", "story_id"),),
     "delivery.quick_change": (("repository", "repo", "repository_name"), ("target_files", "target_file", "file"), ("request", "task", "change")),
     "test_case.generate": (("issue_key", "story", "story_id", "scope"),),
+    "loop.business": (),
+    "loop.technical": (("issue_key", "story", "story_id"),),
     "risk.resolve": (("finding_id",),),
     "risk.mark_remediated": (("finding_id",),),
     "risk.reconcile": (("project",),),

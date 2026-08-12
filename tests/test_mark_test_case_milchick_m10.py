@@ -589,6 +589,50 @@ class MilchickJobTests(unittest.TestCase):
             self.assertEqual("1", kwargs["meta"]["_nested_handoff"])
             self.assertEqual("1", kwargs["meta"]["_new_agent_turn"])
 
+    def test_loop_handoff_preserves_original_turn(self) -> None:
+        for capability in ("loop.business", "loop.technical"):
+            with self.subTest(capability=capability):
+                with tempfile.TemporaryDirectory() as tmp:
+                    store = AgentJobStore(Path(tmp) / "jobs.sqlite3")
+                    broker = AgentJobBroker(store)
+                    parent = broker.create_parent(
+                        project="mbpass",
+                        requested_by="ou_owner",
+                        delegated_by="milchick",
+                        source_message_id="om1",
+                        chat_id="oc1",
+                        thread_id="",
+                        trace_id="tr1",
+                    )
+                    child = broker.create_child(
+                        parent=parent,
+                        target_agent="mark",
+                        capability=capability,
+                        input_data={
+                            "user_message": "把 MBPAS-1503 進行 Technical Plan",
+                            "image_keys": '["img_v3"]',
+                            "chat_type": "group",
+                        },
+                    )
+                    with mock.patch(
+                        "agents.bridge.handle_agent_message",
+                        return_value={"status": "ok", "text": "Mark started the loop."},
+                    ) as handoff, mock.patch(
+                        "feishu.messenger.FeishuMessenger.safe_reply_text",
+                        return_value={"message_id": "om2"},
+                    ):
+                        completed = broker.execute_ready_child(child)
+
+                    self.assertEqual("completed", completed.status)
+                    handoff.assert_called_once()
+                    kwargs = handoff.call_args.kwargs
+                    self.assertEqual("mark", kwargs["agent_id"])
+                    self.assertIn("[ORIGINAL USER INPUT]", kwargs["text"])
+                    self.assertIn(child.input["user_message"], kwargs["text"])
+                    expected_hint = "Business Loop" if capability == "loop.business" else "Technical Loop"
+                    self.assertIn(expected_hint, kwargs["text"])
+                    self.assertEqual("1", kwargs["meta"]["_nested_handoff"])
+
 
 if __name__ == "__main__":
     unittest.main()

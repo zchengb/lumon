@@ -896,7 +896,13 @@ def handle_autonomous_conversation(
                                 if nested.get("summary"):
                                     reply_text = f"{result_payload['handoff_text']}\n\n{nested['summary']}"
                         break
-                reply_text = prefer_action_summary(reply_text, action_receipts)
+            reply_text = prefer_action_summary(reply_text, action_receipts)
+            if clarification and not str(reply_text or "").strip():
+                reply_text = format_clarification_reply(
+                    str(clarification.get("question") or ""),
+                    clarification.get("choices"),
+                    str(clarification.get("current_version") or ""),
+                )
             return {
                 "status": "ok",
                 "action": "autonomous.clarification" if clarification else "autonomous.reply",

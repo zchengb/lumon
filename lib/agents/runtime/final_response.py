@@ -541,25 +541,19 @@ def format_action_receipts_summary(receipts: list[dict[str, Any]]) -> str:
 
 
 def _remove_unexecuted_job_claims(reply_text: str, receipts: list[dict[str, Any]]) -> str:
-    if not any(
+    """Strip claims that work was created/queued/delegated when no job.create succeeded."""
+    if any(
         str(receipt.get("action") or "").strip() == "agent.job.create"
-        and str(receipt.get("status") or "").strip() == "denied"
+        and str(receipt.get("status") or "").strip() == "succeeded"
         for receipt in receipts
     ):
         return reply_text
     claim_tokens = (
-        "已建立",
-        "已创建",
-        "已創建",
-        "建立了",
-        "创建了",
-        "創建了",
-        "已排队",
-        "已排隊",
-        "created",
-        "queued",
+        "已建立", "已创建", "已創建", "建立了", "创建了", "創建了",
+        "已排队", "已排隊", "已將", "已将", "已把", "已派", "已交給", "已交给", "已分配",
+        "派給", "派给", "created", "queued", "assigned", "delegated", "handed", "handing",
     )
-    job_tokens = ("job", "任务", "任務", "工作")
+    job_tokens = ("job", "任务", "任務", "工作", "mark", "irving", "dylan", "agent", "delegat", "assign", "hand")
     lines = [
         line
         for line in str(reply_text or "").splitlines()

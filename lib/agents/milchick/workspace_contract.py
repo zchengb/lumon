@@ -30,6 +30,8 @@ def _managed_block(project_slug: str) -> str:
         f"- A readable screenshot or bounded wording request is not a Jira request by default\n"
         f"- Route clear source or delivery work to Mark without pre-reading the repository or inferring files\n"
         f"- The host preserves the original message and image context; Mark reads the workspace himself\n"
+        f"- Requirement shaping → delegate loop.business to Mark; technical planning → delegate loop.technical to Mark with the issue key\n"
+        f"- Never claim a delegation or job was created without a host receipt\n"
         f"- Ask only when the owner, capability, user intent, or outcome is genuinely unclear\n\n"
         f"## Security Boundary\n"
         f"- Workspace-isolated; no host enumeration\n"

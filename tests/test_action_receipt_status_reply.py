@@ -19,6 +19,35 @@ def test_planning_reply_detects_status_placeholder() -> None:
     assert not is_planning_reply("**Job status**: completed\n- Mark failed on Bitable config")
 
 
+def test_unexecuted_delegation_claim_stripped_without_receipts() -> None:
+    claim = (
+        "已將 MBPAS-1503 的 Technical Plan 派給 Mark。"
+        "他會讀取 Jira 卡片與 workspace 內容並開始推進，後續進度我再回報。"
+    )
+    assert prefer_action_summary(claim, []) == ""
+
+
+def test_unexecuted_delegation_claim_strips_line_but_keeps_other_text() -> None:
+    text = "已將 MBPAS-1503 的 Technical Plan 派給 Mark。\n\n我會在進度更新後回報。"
+    result = prefer_action_summary(text, [])
+    assert "派給" not in result
+    assert "進度更新後回報" in result
+
+
+def test_successful_job_create_replaces_claim_with_host_summary() -> None:
+    claim = "已將 MBPAS-1503 的 Technical Plan 派給 Mark。"
+    receipts = [
+        {
+            "action": "agent.job.create",
+            "status": "succeeded",
+            "result": {"handoff_text": "Mark is running Technical Loop for MBPAS-1503."},
+        }
+    ]
+    text = prefer_action_summary(claim, receipts)
+    assert "Mark is running Technical Loop for MBPAS-1503." in text
+    assert "派給" not in text
+
+
 def test_job_list_receipt_becomes_status_reply() -> None:
     receipts = [
         {

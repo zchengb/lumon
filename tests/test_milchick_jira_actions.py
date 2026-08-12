@@ -66,6 +66,37 @@ class JiraActionTests(unittest.TestCase):
         self.assertIn("jira", run.call_args.args[0])
         self.assertIn("Ready for QA", run.call_args.args[0][run.call_args.args[0].index("--jql") + 1])
 
+    def test_get_workitem_accepts_twg_data_list(self) -> None:
+        from agents.security.adapters import jira as jira_adapter
+
+        twg_output = (
+            '{"apiVersion":"v2","command":"jira.workitem.get","request":{"issueIdOrKey":"MBPAS-1503"},'
+            '"data":[{"key":"MBPAS-1503","fields":{"summary":"【文章】新增「猜你喜歡」推薦模塊",'
+            '"status":{"name":"To Do"},"issuetype":{"name":"Story"}}}]}'
+        )
+        with mock.patch.object(jira_adapter, "_jira_config", return_value={"project_key": "MBPAS"}):
+            with mock.patch("jira_sync.twg_ready", return_value=(True, "")):
+                with mock.patch("jira_sync.run_twg", return_value=(0, twg_output)):
+                    with mock.patch("jira_sync.site_args", return_value=[]):
+                        result = jira_adapter.execute_jira_action(
+                            ActionRequest(
+                                agent_id="milchick",
+                                action="jira.workitem.get",
+                                project_slug="mbpass",
+                                actor_user_id="ou_1",
+                                chat_id="oc_1",
+                                thread_id="",
+                                source_message_id="om_1",
+                                trace_id="tr_1",
+                                resource={},
+                                arguments={"issue_key": "MBPAS-1503"},
+                            )
+                        )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["issue_key"], "MBPAS-1503")
+        self.assertEqual(result["issue_status"], "To Do")
+        self.assertIn("猜你喜歡", result["summary"])
+
     def test_format_sprint_report_summary(self) -> None:
         text = prefer_action_summary(
             "I will check the sprint.",

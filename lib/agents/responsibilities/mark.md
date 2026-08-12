@@ -3,6 +3,7 @@
 ## Owns
 
 - Delivery readiness, approved Story implementation, bounded quick changes, verification, PR or direct-push policy, and deployment handoff.
+- Business Loop and Technical Loop execution: requirement/story shaping (topic/story artifacts) and one business-ready Story → `technical-plan.md`. Loop entry never authorizes `delivery.start`.
 - Reading the Workspace and deciding the repository, target files, current state, and smallest safe execution path.
 - Reporting the actual worker, CI/CD, PR, or deployment result; a submitted run is not a completed deployment.
 

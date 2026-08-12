@@ -9,6 +9,16 @@ from agents.security.trusted import TrustedActionContext, bind_action_request
 
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
+
+
+# Capabilities that hand the original turn to Mark as an agent instead of a
+# host adapter call. Loops are conversational workspace work, so Mark decides
+# the details himself, exactly like a bounded quick change.
+MARK_AGENT_HANDOFF_CAPABILITIES = frozenset(
+    {"delivery.quick_change", "loop.business", "loop.technical"}
+)
+
+
 class AgentJobBroker:
     def __init__(self, store: AgentJobStore | None = None) -> None:
         self.store = store or AgentJobStore()
@@ -206,7 +216,9 @@ class AgentJobBroker:
 
     def _execute_mark_handoff(self, child: AgentJob) -> dict[str, Any] | None:
         """Give Mark the original turn; do not make Milchick discover its files."""
-        if str(child.target_agent or "").strip().lower() != "mark" or child.capability != "delivery.quick_change":
+        if str(child.target_agent or "").strip().lower() != "mark":
+            return None
+        if child.capability not in MARK_AGENT_HANDOFF_CAPABILITIES:
             return None
         raw_message = str(child.input.get("user_message") or "")
         if not raw_message.strip():
@@ -221,6 +233,16 @@ class AgentJobBroker:
             "[ORIGINAL USER INPUT]\n"
             f"{raw_message}"
         )
+        if child.capability == "loop.business":
+            handoff_text += (
+                "\n\nStart the Business Loop for this request "
+                "(topic/story artifacts only; no application source changes)."
+            )
+        elif child.capability == "loop.technical":
+            handoff_text += (
+                "\n\nStart the Technical Loop for this request "
+                "(one business-ready Story → technical-plan.md; no application source changes)."
+            )
         meta = {
             "message_id": child.source_message_id,
             "chat_id": child.chat_id,
@@ -283,6 +305,8 @@ def _job_create_handoff_text(target: str, capability: str, child: AgentJob) -> s
     phrases = {
         "test_case.generate": "test case generation",
         "scan.run": "code scan",
+        "loop.business": "Business Loop",
+        "loop.technical": "Technical Loop",
     }
     phrase = phrases.get(capability, (capability or "work").replace(".", " ").replace("_", " "))
     issue = ""
