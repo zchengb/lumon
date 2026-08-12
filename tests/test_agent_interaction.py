@@ -70,9 +70,26 @@ class AgentInteractionTests(unittest.TestCase):
         from agents.runtime.final_response import extract_action_requests
 
         parsed = extract_action_requests(
+            '<ACTION_REQUEST>{"action":"create_job","arguments":{"target_agent":"mark","capability":"loop.technical"}}</ACTION_REQUEST>'
+        )
+        self.assertEqual("agent.job.create", parsed[0]["action"])
+
+        legacy = extract_action_requests(
             '<ACTION_REQUEST>{"action":"jira.testcase.generate","arguments":{"scope":"ready_for_qa"}}</ACTION_REQUEST>'
         )
-        self.assertEqual("test_case.generate", parsed[0]["action"])
+        self.assertEqual("test_case.generate", legacy[0]["action"])
+
+    def test_action_catalog_is_referenced_instead_of_inlined(self) -> None:
+        from agents.runtime.interaction import interaction_contract_prompt
+        from agents.security.actions import ALL_ACTIONS
+
+        prompt = interaction_contract_prompt(agent_id="milchick")
+        self.assertIn("action-catalog.md", prompt)
+        self.assertIn("exact canonical action names", prompt)
+        catalog = (ROOT / "lib" / "agents" / "action-catalog.md").read_text(encoding="utf-8")
+        self.assertIn("`agent.job.create`", catalog)
+        self.assertIn("`create_job`", catalog)
+        self.assertTrue(all(f"`{action}`" in catalog for action in ALL_ACTIONS))
 
     def test_pending_clarification_survives_session_reload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

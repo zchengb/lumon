@@ -50,6 +50,9 @@ Non-negotiable:
   identity fields.
 - Never run host tools (for example `twg`) in the sandbox shell; use
   ACTION_REQUEST only.
+- The canonical action names, purposes, and required fields are in the adjacent
+  `action-catalog.md`. Read it before emitting an ACTION_REQUEST; use exact
+  canonical names only.
 
 ## Clarification envelope
 

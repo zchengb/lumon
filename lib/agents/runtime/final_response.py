@@ -48,6 +48,7 @@ _FORGED_IDENTITY_KEYS = frozenset(
 
 _ACTION_ALIASES = {
     "job.create": "agent.job.create",
+    "create_job": "agent.job.create",
     "job.list": "agent.job.list",
     "job.show": "agent.job.show",
     "job.cancel": "agent.job.cancel",

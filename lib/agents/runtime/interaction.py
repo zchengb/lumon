@@ -425,6 +425,7 @@ def normalize_conversation_decision(
 
 def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None = None) -> str:
     protocol_path = Path(__file__).resolve().parents[1] / "protocol.md"
+    action_catalog_path = Path(__file__).resolve().parents[1] / "action-catalog.md"
     lines = [
         "[LUMON INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumon conversation.",
@@ -438,6 +439,8 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":""}</CONVERSATION_DECISION>',
         '<ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>',
         '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
+        f"If this turn needs a host action, READ the canonical action catalog before emitting ACTION_REQUEST: {action_catalog_path}",
+        "Use only the exact canonical action names and required fields in that catalog; never invent or translate action names.",
         "A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true.",
     ]
     if pending:
