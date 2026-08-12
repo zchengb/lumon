@@ -24,6 +24,7 @@ PROMPT_FILE="${WORKSPACE_ROOT}/config/scan-prompt.md"
 COMPOSE_PROMPT_SCRIPT="${LUMEN_LIB_DIR}/compose_scan_prompt.py"
 COMMON_CONFIG="${WORKSPACE_ROOT}/config/common.json"
 SECURE_AGENT_PY="${LUMEN_LIB_DIR}/run-agent-secure.py"
+WORKFLOW_AGENT_PY="${LUMEN_LIB_DIR}/run-workflow-agent.py"
 
 model_from_config() {
   if [[ ! -f "${COMMON_CONFIG}" ]]; then
@@ -38,6 +39,20 @@ try:
 except Exception:
     pass" 2>/dev/null
   fi
+}
+
+provider_from_config() {
+  if [[ ! -f "${COMMON_CONFIG}" ]]; then
+    return 0
+  fi
+  python3 - "${COMMON_CONFIG}" <<'PY' 2>/dev/null
+import json, sys
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8")).get("execution", {}).get("provider", "")
+    print(value or "", end="")
+except Exception:
+    pass
+PY
 }
 
 project_name_from_config() {
@@ -62,7 +77,13 @@ notify_system() {
   fi
 }
 
-MODEL="${CURSOR_AGENT_MODEL:-$(model_from_config)}"
+PROVIDER="${LUMON_WORKFLOW_PROVIDER:-$(provider_from_config)}"
+PROVIDER="${PROVIDER:-cursor_cli}"
+if [[ "${PROVIDER}" == "cursor" || "${PROVIDER}" == "cursor_cli" ]]; then
+  MODEL="${CURSOR_AGENT_MODEL:-$(model_from_config)}"
+else
+  MODEL="$(model_from_config)"
+fi
 MODEL="${MODEL:-cursor-grok-4.5-medium}"
 export LUMEN_MODEL="${MODEL}"
 SANDBOX_MODE="${CURSOR_AGENT_SANDBOX:-enabled}"
@@ -270,13 +291,15 @@ refresh_twg_auth() {
 }
 
 run_real_scan() {
-  command -v agent >/dev/null 2>&1 || fail "Cursor CLI 'agent' was not found in PATH. Install it from https://cursor.com/cli before running a scan."
   [[ "${SANDBOX_MODE}" == "enabled" ]] || fail "Auto Scan requires CURSOR_AGENT_SANDBOX=enabled. Unsafe Cursor execution is disabled."
-  if [[ -z "${CURSOR_API_KEY:-}" ]] && ! agent status >/dev/null 2>&1; then
-    fail "Cursor agent is not authenticated for non-interactive runs. Add CURSOR_API_KEY to ${WORKSPACE_ROOT}/.env.local (Cursor Settings > API Keys), then re-run the scan."
-  fi
-  if [[ -z "${CURSOR_API_KEY:-}" && ! -t 0 ]]; then
-    fail "Scheduled scans require CURSOR_API_KEY in ${WORKSPACE_ROOT}/.env.local. Interactive 'agent login' tokens are not available to cron. Add the key from Cursor Settings > API Keys."
+  if [[ "${PROVIDER}" == "cursor_cli" || "${PROVIDER}" == "cursor" ]]; then
+    command -v agent >/dev/null 2>&1 || fail "Cursor CLI 'agent' was not found in PATH. Install it from https://cursor.com/cli before running a scan."
+    if [[ -z "${CURSOR_API_KEY:-}" ]] && ! agent status >/dev/null 2>&1; then
+      fail "Cursor agent is not authenticated for non-interactive runs. Add CURSOR_API_KEY to ${WORKSPACE_ROOT}/.env.local (Cursor Settings > API Keys), then re-run the scan."
+    fi
+    if [[ -z "${CURSOR_API_KEY:-}" && ! -t 0 ]]; then
+      fail "Scheduled scans require CURSOR_API_KEY in ${WORKSPACE_ROOT}/.env.local. Interactive 'agent login' tokens are not available to cron. Add the key from Cursor Settings > API Keys."
+    fi
   fi
   local scan_prompt
   scan_prompt="$(load_scan_prompt)" || fail "Scan prompt not found. Run 'lumen init' or 'lumen upgrade --project <slug>' in this workspace first."
@@ -293,7 +316,8 @@ run_real_scan() {
   else
     printf 'Prompt file: %s\n' "${PROMPT_FILE}"
   fi
-  printf 'Cursor model: %s\n' "${MODEL}"
+  printf 'AI provider: %s\n' "${PROVIDER}"
+  printf 'AI model: %s\n' "${MODEL}"
   printf 'Sandbox mode: %s\n' "${SANDBOX_MODE}"
   printf 'Output format: %s\n' "${OUTPUT_FORMAT}"
   printf 'Run log: %s\n' "${LOG_FILE}"
@@ -318,11 +342,13 @@ run_real_scan() {
 
   local agent_args=(
     --workspace "${WORKSPACE_ROOT}"
-    --sandbox "${SANDBOX_MODE}"
-    --trust
-    -p
-    --output-format "${OUTPUT_FORMAT}"
+    --workflow auto_scan
+    --agent-id dylan
+    --project "${PROJECT_NAME}"
+    --provider "${PROVIDER}"
     --model "${MODEL}"
+    --sandbox "${SANDBOX_MODE}"
+    --output-format "${OUTPUT_FORMAT}"
   )
 
   if [[ "${OUTPUT_FORMAT}" == "stream-json" && "${STREAM_PARTIAL}" == "1" ]]; then
@@ -331,9 +357,9 @@ run_real_scan() {
 
   set +e
   if [[ "${OUTPUT_FORMAT}" == "stream-json" ]] && command -v python3 >/dev/null 2>&1 && [[ -f "${LUMEN_LIB_DIR}/format_scan_log.py" ]]; then
-    run_secure_agent agent "${agent_args[@]}" "${scan_prompt}" 2>&1 | tee "${LOG_FILE}" | python3 "${LUMEN_LIB_DIR}/format_scan_log.py"
+    python3 "${WORKFLOW_AGENT_PY}" "${agent_args[@]}" "${scan_prompt}" 2>&1 | tee "${LOG_FILE}" | python3 "${LUMEN_LIB_DIR}/format_scan_log.py"
   else
-    run_secure_agent agent "${agent_args[@]}" "${scan_prompt}" 2>&1 | tee "${LOG_FILE}"
+    python3 "${WORKFLOW_AGENT_PY}" "${agent_args[@]}" "${scan_prompt}" 2>&1 | tee "${LOG_FILE}"
   fi
   local agent_exit=${PIPESTATUS[0]}
   set -e

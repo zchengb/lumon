@@ -47,12 +47,18 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual("new_request", parsed.conversation_decision["mode"])
         self.assertEqual("quick_change", parsed.conversation_decision["route"])
         decision = normalize_conversation_decision(
-            parsed.conversation_decision,
+            {
+                **parsed.conversation_decision,
+                "required_actions": ["delivery.quick_change"],
+                "completion_criteria": "a verified delivery result",
+            },
             pending={"action": "jira.sprint.untested.report"},
         )
         assert decision is not None
         self.assertTrue(decision["supersede_pending"])
         self.assertAlmostEqual(0.96, decision["confidence"])
+        self.assertEqual(["delivery.quick_change"], decision["required_actions"])
+        self.assertEqual("a verified delivery result", decision["completion_criteria"])
 
     def test_action_requirements_detect_missing_target(self) -> None:
         self.assertEqual(["story"], action_missing_fields("delivery.start", arguments={}))

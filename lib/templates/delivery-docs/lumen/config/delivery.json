@@ -1,8 +1,14 @@
 {
   "schema_version": "1.0",
   "execution": {
-    "model": "cursor-grok-4.5-medium",
-    "patch_model": "cursor-grok-4.5-medium",
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "base_url": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "patch_provider": "deepseek",
+    "patch_model": "deepseek-v4-flash",
+    "patch_base_url": "https://api.deepseek.com",
+    "patch_api_key_env": "DEEPSEEK_API_KEY",
     "sandbox": "disabled",
     "approve_mcps": false,
     "agent_timeout_seconds": 3600,

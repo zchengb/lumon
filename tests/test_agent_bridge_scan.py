@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import os
 import shutil
 import tempfile
 import unittest
@@ -247,7 +248,7 @@ class AgentBridgeScanTests(unittest.TestCase):
             profile=PROFILES["mark"],
         )
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("agents.dylan.reply_anchor.agents_home", return_value=Path(tmp)):
+            with patch.dict(os.environ, {"LUMEN_AGENTS_HOME": tmp}):
                 remember_outbound(
                     message_id="om_dylan_1",
                     text="Want me to verify?",

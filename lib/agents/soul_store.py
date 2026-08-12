@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +111,13 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
     app_secret_env = APP_SECRET_ENV.get(agent, "")
     app_id = read_lumen_env_var(app_id_env) if app_id_env else ""
     app_secret = read_lumen_env_var(app_secret_env) if app_secret_env else ""
+    provider_type = str(provider.get("type") or "cursor_cli").strip().casefold()
+    model_configured = True
+    if provider_type in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+        from agents.runtime.openai_compatible import default_api_key_env
+
+        model_key_env = str(provider.get("api_key_env") or default_api_key_env(provider_type)).strip()
+        model_configured = bool(os.environ.get(model_key_env, "").strip() or read_lumen_env_var(model_key_env))
     security = {
         "filesystem": "workspace_read",
         "mutations": "brokered",
@@ -173,6 +181,10 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
         "workflow": str(profile.get("workflow") or meta["workflow"]),
         "conversation_enabled": bool(v4.get("enabled", False)),
         "mode": str(v4.get("mode") or "autonomous_workspace"),
+        "provider": str(provider.get("type") or "cursor_cli"),
+        "base_url": str(provider.get("base_url") or ""),
+        "api_key_env": str(provider.get("api_key_env") or ""),
+        "model_configured": model_configured,
         "model": str(provider.get("model") or "cursor-grok-4.5-medium"),
         "soft_timeout_seconds": int(runtime.get("soft_timeout_seconds") or 90),
         "hard_timeout_seconds": int(runtime.get("hard_timeout_seconds") or 300),
@@ -427,9 +439,21 @@ def apply_agent_settings(payload: dict[str, Any]) -> dict[str, Any]:
         if "mode" in item and str(item.get("mode") or "").strip():
             v4["mode"] = str(item.get("mode")).strip()
         provider = _ensure_dict(v4, "provider")
-        provider.setdefault("type", "cursor_cli")
+        provider.setdefault("type", "deepseek")
         provider.setdefault("output_format", "stream-json")
         provider.setdefault("resume_sessions", True)
+        if "provider" in item:
+            provider_name = str(item.get("provider") or "").strip().casefold()
+            if provider_name not in {"cursor", "cursor_cli", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
+                raise ValueError(f"Unsupported model provider: {provider_name}")
+            provider["type"] = provider_name
+            if provider_name in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+                provider["output_format"] = "text"
+                provider["resume_sessions"] = False
+        if "base_url" in item:
+            provider["base_url"] = str(item.get("base_url") or "").strip()
+        if "api_key_env" in item:
+            provider["api_key_env"] = str(item.get("api_key_env") or "").strip()
         if "model" in item:
             model = str(item.get("model") or "").strip()
             if not model:

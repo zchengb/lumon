@@ -11,7 +11,10 @@
   },
   "execution": {
     "mode": "lightweight_review_only",
-    "model": "cursor-grok-4.5-medium",
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "base_url": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY",
     "scan_window_days": 7,
     "run_project_commands": false,
     "validation_policy": "skip_all_local_validation_commands",

@@ -88,6 +88,14 @@ class ConversationV4FlagsTests(unittest.TestCase):
         self.assertEqual(flags.model.model_name, "fake-model")
         self.assertEqual(flags.soft_timeout_seconds, 60)
 
+    def test_global_execution_model_overrides_agent_model(self) -> None:
+        common = _v4_common()
+        common["execution"] = {"provider": "deepseek", "model": "deepseek-v4-flash", "api_key_env": "DEEPSEEK_API_KEY"}
+        flags = ConversationFlags.from_common(common)
+        self.assertEqual("deepseek", flags.model.provider)
+        self.assertEqual("deepseek-v4-flash", flags.model.model_name)
+        self.assertEqual("DEEPSEEK_API_KEY", flags.model.api_key_env)
+
 
 class SessionStoreTests(unittest.TestCase):
     def test_create_resume_scope(self) -> None:
@@ -229,6 +237,21 @@ class UserFacingErrorTests(unittest.TestCase):
 
         text = _user_facing_agent_error("Failed to reach the Cursor API", "tr_x")
         self.assertIn("Cursor Agent service", text)
+
+    def test_model_quota_error_is_actionable(self) -> None:
+        from agents.dylan.autonomous import _user_facing_agent_error
+
+        text = _user_facing_agent_error("Cursor monthly usage limit reached", "tr_quota")
+        self.assertIn("usage quota", text)
+        self.assertIn("Nothing was sent to Jira", text)
+        self.assertNotIn("/new", text)
+
+    def test_missing_model_key_is_actionable(self) -> None:
+        from agents.dylan.autonomous import _user_facing_agent_error
+
+        text = _user_facing_agent_error("deepseek API key is not configured (DEEPSEEK_API_KEY)", "tr_key")
+        self.assertIn("DEEPSEEK_API_KEY", text)
+        self.assertIn("~/.lumon/.env.local", text)
 
 
 class ReplyAnchorTests(unittest.TestCase):

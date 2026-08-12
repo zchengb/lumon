@@ -72,9 +72,12 @@ def lock_path(workspace: Path) -> Path:
 
 
 def patch_model(workspace: Path) -> str:
-    execution = load_delivery_config(workspace).get("execution", {})
+    common = read_json(workspace_lumen_dir(workspace) / "config" / "common.json")
+    execution = common.get("execution", {}) if isinstance(common, dict) else {}
+    if not isinstance(execution, dict) or not execution.get("model"):
+        execution = load_delivery_config(workspace).get("execution", {})
     execution = execution if isinstance(execution, dict) else {}
-    return str(execution.get("patch_model") or execution.get("model") or os.environ.get("CURSOR_AGENT_MODEL") or "cursor-grok-4.5-medium").strip()
+    return str(execution.get("model") or execution.get("patch_model") or os.environ.get("CURSOR_AGENT_MODEL") or "cursor-grok-4.5-medium").strip()
 
 
 REPOSITORY_STOPWORDS = {
@@ -488,21 +491,14 @@ def skip(workspace: Path, progress: dict[str, Any], result: dict[str, Any]) -> i
 
 
 def run_agent(workspace: Path, prompt: str, log_file: Path) -> int:
-    model = patch_model(workspace)
     sandbox = os.environ.get("CURSOR_AGENT_SANDBOX", "enabled").strip().lower()
     if sandbox != "enabled":
         log_file.parent.mkdir(parents=True, exist_ok=True)
         log_file.write_text("Auto Patch requires CURSOR_AGENT_SANDBOX=enabled; unsafe Cursor execution is disabled.\n", encoding="utf-8")
         return 78
     output_format = os.environ.get("CURSOR_AGENT_OUTPUT_FORMAT", "stream-json")
-    args = ["agent", "--workspace", str(workspace), "--sandbox", sandbox, "--trust", "-p", "--output-format", output_format, "--model", model, prompt]
-    from agents.runner.runner_env import build_runner_env
-
-    env = build_runner_env(
-        agent_id="irving",
-        project=os.environ.get("LUMEN_PROJECT", ""),
-        source=os.environ,
-    )
+    args = [sys.executable, str(Path(__file__).with_name("run-workflow-agent.py")), "--workspace", str(workspace), "--workflow", "auto_patch", "--agent-id", "irving", "--project", os.environ.get("LUMON_PROJECT", ""), "--sandbox", sandbox, "--output-format", output_format, prompt]
+    env = os.environ.copy()
     env["CURSOR_AGENT_SANDBOX"] = "enabled"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     with log_file.open("w", encoding="utf-8") as handle:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -311,41 +312,44 @@ class TestCaseSkillTests(unittest.TestCase):
 
     def test_broker_test_case_action_uses_request_agent_identity(self) -> None:
         ensure_definitions_loaded()
-        for agent_id in ("mark", "milchick"):
-            definition = get_definition(agent_id)
-            assert definition is not None
-            self.assertIn("test_case.generate", definition.capabilities.actions)
+        mark = get_definition("mark")
+        milchick = get_definition("milchick")
+        assert mark is not None and milchick is not None
+        self.assertNotIn("test_case.generate", mark.capabilities.actions)
+        self.assertIn("test_case.generate", milchick.capabilities.actions)
         from unittest import mock
 
-        with mock.patch("skills.test_case.skill.generate_test_cases_for_issue") as gen:
-            gen.return_value = {"status": "completed", "summary": "ok", "created": 1, "generated": 1}
-            broker = CapabilityBroker(
-                config={
-                    "access": {
-                        "allowed_chat_ids": ["oc1"],
-                        "allowed_user_ids": ["ou_owner"],
-                        "mutation_allowed_user_ids": ["ou_owner"],
-                    }
-                }
-            )
-            for agent_id in ("mark", "milchick"):
-                receipt = broker.execute(
-                    ActionRequest(
-                        agent_id=agent_id,
-                        action="test_case.generate",
-                        project_slug="mbpass",
-                        actor_user_id="ou_owner",
-                        chat_id="oc1",
-                        thread_id="",
-                        source_message_id="om1",
-                        trace_id="tr1",
-                        resource={"issue_key": "MBPAS-1601"},
-                        arguments={"issue_key": "MBPAS-1601", "chat_type": "group"},
-                        explicit_authorization=True,
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"LUMEN_AGENTS_HOME": tmp}):
+                with mock.patch("skills.test_case.skill.generate_test_cases_for_issue") as gen:
+                    gen.return_value = {"status": "completed", "summary": "ok", "created": 1, "generated": 1}
+                    broker = CapabilityBroker(
+                        config={
+                            "access": {
+                                "allowed_chat_ids": ["oc1"],
+                                "allowed_user_ids": ["ou_owner"],
+                                "mutation_allowed_user_ids": ["ou_owner"],
+                            }
+                        }
                     )
-                )
-                self.assertEqual(receipt.status, "succeeded")
-                self.assertEqual(gen.call_args.kwargs["generated_by"], agent_id)
+                    for agent_id in ("milchick",):
+                        receipt = broker.execute(
+                            ActionRequest(
+                                agent_id=agent_id,
+                                action="test_case.generate",
+                                project_slug="mbpass",
+                                actor_user_id="ou_owner",
+                                chat_id="oc1",
+                                thread_id="",
+                                source_message_id="om1",
+                                trace_id="tr1",
+                                resource={"issue_key": "MBPAS-1601"},
+                                arguments={"issue_key": "MBPAS-1601", "chat_type": "group"},
+                                explicit_authorization=True,
+                            )
+                        )
+                        self.assertEqual(receipt.status, "succeeded")
+                        self.assertEqual(gen.call_args.kwargs["generated_by"], agent_id)
 
 
 class MilchickJobTests(unittest.TestCase):
@@ -379,7 +383,7 @@ class MilchickJobTests(unittest.TestCase):
             )
             second = broker.create_child(
                 parent=parent,
-                target_agent="mark",
+                target_agent="milchick",
                 capability="test_case.generate",
                 input_data={"issue_key": "MBPAS-1601"},
                 depends_on=[first.job_id],

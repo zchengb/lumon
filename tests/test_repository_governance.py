@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 LIB_DIR = Path(__file__).resolve().parents[1] / "lib" / "scripts"
 if str(LIB_DIR) not in sys.path:
     sys.path.insert(0, str(LIB_DIR))
 
-from dashboard_server import save_repositories, workspace_payload  # noqa: E402
+from dashboard_server import integration_value, save_repositories, update_env_value, workspace_payload  # noqa: E402
 from delivery_workspace import repository_delivery_disabled_reasons  # noqa: E402
 from auto_fix_sync import is_pr_candidate  # noqa: E402
 from patch_runner import select_repository  # noqa: E402
@@ -51,6 +53,30 @@ class RepositoryGovernanceTests(unittest.TestCase):
             self.assertIn("Gradle", repository["health"]["build_tools"])
             self.assertFalse(repository["automation"]["delivery"]["enabled"])
             self.assertFalse(repository["automation"]["patch"]["enabled"])
+
+    def test_payload_exposes_one_global_model_config_for_all_workflows(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace, _ = self.make_workspace(Path(directory))
+            (workspace / "config" / "common.json").write_text(json.dumps({"execution": {"provider": "deepseek", "model": "deepseek-v4-flash", "base_url": "https://api.deepseek.com", "api_key_env": "DEEPSEEK_API_KEY"}}), encoding="utf-8")
+            payload = workspace_payload(workspace)
+            self.assertEqual(payload["model_config"], payload["model_configs"]["scan"])
+            self.assertEqual(payload["model_config"], payload["model_configs"]["delivery"])
+            self.assertEqual(payload["model_config"], payload["model_configs"]["patch"])
+
+    def test_payload_exposes_and_updates_lumon_provider_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace, _ = self.make_workspace(Path(directory))
+            lumen_home = Path(directory) / "lumon-home"
+            lumen_home.mkdir()
+            (lumen_home / ".env.local").write_text("DEEPSEEK_API_KEY=old-secret\n", encoding="utf-8")
+            with patch.dict(os.environ, {"LUMON_HOME": str(lumen_home)}, clear=False):
+                payload = workspace_payload(workspace)
+                self.assertIn("DEEPSEEK_API_KEY", payload["configured_integrations"])
+                self.assertEqual("lumon_local", payload["integration_sources"]["DEEPSEEK_API_KEY"])
+                self.assertEqual("old-secret", integration_value(workspace, "DEEPSEEK_API_KEY"))
+                update_env_value(workspace, "DEEPSEEK_API_KEY", "new-secret")
+                self.assertEqual("new-secret", integration_value(workspace, "DEEPSEEK_API_KEY"))
+                self.assertFalse((workspace / ".env.local").is_file())
 
     def test_missing_patch_permission_defaults_to_enabled_without_scan_pr_permission(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

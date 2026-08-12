@@ -21,6 +21,7 @@ load_env_file() {
 RUNTIME_PY="${LUMEN_LIB_DIR}/delivery_runtime.py"
 [[ -f "${RUNTIME_PY}" ]] || { printf 'Error: delivery runtime helper not found: %s\n' "${RUNTIME_PY}" >&2; exit 1; }
 eval "$(python3 "${RUNTIME_PY}" "$@")"
+COMMON_CONFIG="${WORKSPACE_DIR}/config/common.json"
 RUN_ID="$(date -u '+%Y%m%d-%H%M%S')"
 DELIVERY_STARTED_NS="$(python3 -c 'import time; print(time.monotonic_ns())')"
 TRACE_DELIVERY_RECORDED="0"
@@ -32,6 +33,7 @@ PROGRESS_PY="${LUMEN_LIB_DIR}/delivery_progress.py"
 ARCHIVE_PY="${LUMEN_LIB_DIR}/archive_delivery_run.py"
 AGENT_TRACE_PY="${LUMEN_LIB_DIR}/agent_trace.py"
 SECURE_AGENT_PY="${LUMEN_LIB_DIR}/run-agent-secure.py"
+WORKFLOW_AGENT_PY="${LUMEN_LIB_DIR}/run-workflow-agent.py"
 WEB_SESSION_PY="${LUMEN_LIB_DIR}/web_session.py"
 WEB_SESSION_ROOT=""
 WEB_SESSION_STATUS="completed"
@@ -196,18 +198,38 @@ finish_delivery_progress() {
 }
 
 model_from_config() {
-  if [[ ! -f "${DELIVERY_CONFIG}" ]]; then
+  local config="${COMMON_CONFIG}"
+  [[ -f "${config}" ]] || config="${DELIVERY_CONFIG}"
+  if [[ ! -f "${config}" ]]; then
     return 0
   fi
   if command -v python3 >/dev/null 2>&1; then
-    python3 -c "import json
+    python3 - "${config}" <<'PY' 2>/dev/null
+import json, sys
 try:
-    with open('${DELIVERY_CONFIG}') as f:
+    with open(sys.argv[1], encoding='utf-8') as f:
         c = json.load(f)
     print(c.get('execution', {}).get('model', '') or '', end='')
 except Exception:
-    pass" 2>/dev/null
+    pass
+PY
   fi
+}
+
+provider_from_config() {
+  local config="${COMMON_CONFIG}"
+  [[ -f "${config}" ]] || config="${DELIVERY_CONFIG}"
+  if [[ ! -f "${config}" ]]; then
+    return 0
+  fi
+  python3 - "${config}" <<'PY' 2>/dev/null
+import json, sys
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8")).get("execution", {}).get("provider", "")
+    print(value or "", end="")
+except Exception:
+    pass
+PY
 }
 
 execution_seconds() {
@@ -226,7 +248,13 @@ except Exception:
 PY
 }
 
-MODEL="${CURSOR_AGENT_MODEL:-$(model_from_config)}"
+PROVIDER="${LUMON_WORKFLOW_PROVIDER:-$(provider_from_config)}"
+PROVIDER="${PROVIDER:-cursor_cli}"
+if [[ "${PROVIDER}" == "cursor" || "${PROVIDER}" == "cursor_cli" ]]; then
+  MODEL="${CURSOR_AGENT_MODEL:-$(model_from_config)}"
+else
+  MODEL="$(model_from_config)"
+fi
 MODEL="${MODEL:-cursor-grok-4.5-medium}"
 export LUMEN_MODEL="${MODEL}"
 SANDBOX_MODE="${CURSOR_AGENT_SANDBOX:-enabled}"
@@ -364,20 +392,21 @@ run_delivery_agent() {
   local attempt="$3"
   local stage_label="$4"
   [[ "${SANDBOX_MODE}" == "enabled" ]] || fail "Auto Delivery requires CURSOR_AGENT_SANDBOX=enabled. Unsafe Cursor execution is disabled."
-  local secure_agent=(python3 "${SECURE_AGENT_PY}" --agent-id mark --project "${STORY_REF}")
-  local agent_args=(
+  local workflow_agent=(python3 "${WORKFLOW_AGENT_PY}"
     --workspace "${WORKSPACE_ROOT}"
-    --sandbox "${SANDBOX_MODE}"
-    --trust
-    -p
-    --output-format "${OUTPUT_FORMAT}"
+    --workflow auto_delivery
+    --agent-id mark
+    --project "${STORY_REF}"
+    --provider "${PROVIDER}"
     --model "${MODEL}"
+    --sandbox "${SANDBOX_MODE}"
+    --output-format "${OUTPUT_FORMAT}"
   )
   if [[ "${OUTPUT_FORMAT}" == "stream-json" && "${STREAM_PARTIAL}" == "1" ]]; then
-    agent_args+=(--stream-partial-output)
+    workflow_agent+=(--stream-partial-output)
   fi
   if [[ "${prompt}" == *"Figma MCP access is explicitly approved for this delivery."* ]] && [[ "$(figma_mcp_approved)" == "1" ]]; then
-    agent_args+=(--approve-mcps)
+    workflow_agent+=(--approve-mcps)
   fi
 
   printf 'Starting %s at %s UTC...\n' "${stage_label}" "$(date -u '+%Y-%m-%d %H:%M:%S')"
@@ -385,20 +414,23 @@ run_delivery_agent() {
   if [[ -f "${AGENT_TRACE_PY}" ]]; then
     local lumen_version="" provider_version=""
     [[ -f "${LUMEN_LIB_DIR}/../../VERSION" ]] && lumen_version="$(tr -d '[:space:]' < "${LUMEN_LIB_DIR}/../../VERSION")"
-    provider_version="$("${secure_agent[@]}" -- agent --version 2>/dev/null || true)"
+    provider_version="${PROVIDER} API"
+    if [[ "${PROVIDER}" == "cursor_cli" ]]; then
+      provider_version="$(agent --version 2>/dev/null || true)"
+    fi
     python3 "${AGENT_TRACE_PY}" run \
       --workspace-root "${WORKSPACE_ROOT}" --docs-dir "${DOCS_DIR}" --story "${STORY_REF}" \
       --run-id "${RUN_ID}" --stage "${stage}" --attempt "${attempt}" \
-      --provider cursor-cli --model "${MODEL}" --output-format "${OUTPUT_FORMAT}" --sandbox "${SANDBOX_MODE}" \
+      --provider "${PROVIDER}" --model "${MODEL}" --output-format "${OUTPUT_FORMAT}" --sandbox "${SANDBOX_MODE}" \
       --lumen-version "${lumen_version}" --provider-version "${provider_version}" --timeout "${AGENT_TIMEOUT_SECONDS}" --idle-timeout "${AGENT_IDLE_TIMEOUT_SECONDS}" \
-      -- "${secure_agent[@]}" -- agent "${agent_args[@]}" \
+      -- "${workflow_agent[@]}" \
       < <(printf '%s' "${prompt}") > >(tee -a "${LOG_FILE}") 2> >(tee -a "${LOG_FILE}" >&2)
     local agent_exit=$?
   elif [[ "${OUTPUT_FORMAT}" == "stream-json" ]] && command -v python3 >/dev/null 2>&1 && [[ -f "${LUMEN_LIB_DIR}/format_scan_log.py" ]]; then
-    "${secure_agent[@]}" -- agent "${agent_args[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}" | python3 "${LUMEN_LIB_DIR}/format_scan_log.py"
+    "${workflow_agent[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}" | python3 "${LUMEN_LIB_DIR}/format_scan_log.py"
     local agent_exit=${PIPESTATUS[0]}
   else
-    "${secure_agent[@]}" -- agent "${agent_args[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}"
+    "${workflow_agent[@]}" "${prompt}" 2>&1 | tee -a "${LOG_FILE}"
     local agent_exit=${PIPESTATUS[0]}
   fi
   set -e
@@ -511,7 +543,9 @@ run_dry_delivery() {
 }
 
 run_real_delivery() {
-  command -v agent >/dev/null 2>&1 || fail "Cursor CLI 'agent' was not found in PATH."
+  if [[ "${PROVIDER}" == "cursor_cli" || "${PROVIDER}" == "cursor" ]]; then
+    command -v agent >/dev/null 2>&1 || fail "Cursor CLI 'agent' was not found in PATH."
+  fi
 
   local refresh_py="${LUMEN_LIB_DIR}/jira_sync.py"
   if [[ -f "${refresh_py}" ]] && command -v python3 >/dev/null 2>&1; then

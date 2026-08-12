@@ -180,6 +180,7 @@ def _write_cases_to_sheet(
     story_title: str,
     generated: list[Any],
     language: str,
+    generated_by: str,
 ) -> dict[str, Any]:
     spreadsheet_token = str(cfg.get("spreadsheet_token") or "").strip()
     tab_name = story_sheet_name(story_key, story_title)
@@ -196,7 +197,7 @@ def _write_cases_to_sheet(
     created, skipped = partition_new_cases(generated, existing)
     values = []
     for case in created:
-        case.generated_by = "mark"
+        case.generated_by = generated_by
         fields = case.to_sheet_fields(language)
         values.append([str(fields.get(col) or "") for col in headers])
     if values:
@@ -415,6 +416,7 @@ def generate_test_cases_for_issue(
                 story_title=story.summary,
                 generated=generated,
                 language=language,
+                generated_by=generated_by,
             )
             created_cases = written["created_cases"]
             skipped_cases = written["skipped_cases"]

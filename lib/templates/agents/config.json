@@ -65,10 +65,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "cursor_cli",
-        "model": "cursor-grok-4.5-medium",
-        "output_format": "stream-json",
-        "resume_sessions": true
+        "type": "deepseek",
+        "model": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "output_format": "text",
+        "resume_sessions": false
       },
       "session": {
         "scope": "thread_shared",
@@ -112,8 +114,10 @@
       "enabled": false,
       "routing_mode": "agent_only",
       "model": {
-        "provider": "cursor",
-        "model": "cursor-grok-4.5-medium",
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
         "planner_timeout_seconds": 45,
         "responder_timeout_seconds": 60,
         "max_planner_retries": 1,
@@ -151,7 +155,7 @@
         "llm_response_enabled": false,
         "grounding_guard_enabled": true,
         "model": {
-          "provider": "cursor",
+          "provider": "deepseek",
           "router_timeout_seconds": 8,
           "response_timeout_seconds": 25,
           "max_router_retries": 1,
@@ -184,10 +188,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "cursor_cli",
-        "model": "cursor-grok-4.5-medium",
-        "output_format": "stream-json",
-        "resume_sessions": true
+        "type": "deepseek",
+        "model": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "output_format": "text",
+        "resume_sessions": false
       },
       "session": {
         "scope": "thread_shared",
@@ -234,10 +240,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "cursor_cli",
-        "model": "cursor-grok-4.5-medium",
-        "output_format": "stream-json",
-        "resume_sessions": true
+        "type": "deepseek",
+        "model": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "output_format": "text",
+        "resume_sessions": false
       },
       "session": {
         "scope": "thread_shared",
@@ -284,10 +292,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "cursor_cli",
-        "model": "cursor-grok-4.5-medium",
-        "output_format": "stream-json",
-        "resume_sessions": true
+        "type": "deepseek",
+        "model": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "output_format": "text",
+        "resume_sessions": false
       },
       "session": {
         "scope": "thread_shared",

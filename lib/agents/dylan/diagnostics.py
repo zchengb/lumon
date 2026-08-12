@@ -26,6 +26,9 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         pass
     config = load_agents_config()
     flags = ConversationFlags.from_common(common or {}, config)
+    from agents.runtime.openai_compatible import default_api_key_env, is_api_provider
+
+    api_provider = is_api_provider(flags.model.provider)
     checks: list[dict[str, str]] = []
     checks.append(
         _check(
@@ -52,11 +55,20 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     checks.append(
         _check(
             "agent_cli",
-            "PASS" if agent_bin else ("WARN" if flags.model.provider == "fake" else "FAIL"),
+            "N/A" if api_provider else ("PASS" if agent_bin else ("WARN" if flags.model.provider == "fake" else "FAIL")),
             agent_bin or "not found",
         )
     )
-    if agent_bin and flags.model.provider in {"cursor", "cursor_cli"}:
+    if api_provider:
+        key_env = flags.model.api_key_env or default_api_key_env(flags.model.provider)
+        checks.append(
+            _check(
+                "model_auth",
+                "PASS" if os.environ.get(key_env, "").strip() else "FAIL",
+                key_env,
+            )
+        )
+    elif agent_bin and flags.model.provider in {"cursor", "cursor_cli"}:
         try:
             completed = subprocess.run(
                 [agent_bin, "status"],
@@ -82,7 +94,7 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     checks.append(
         _check(
             "model",
-            "PASS" if flags.model.provider in {"cursor", "fake"} else "WARN",
+            "PASS" if (flags.model.provider in {"cursor", "cursor_cli", "fake"} or (api_provider and os.environ.get(flags.model.api_key_env or default_api_key_env(flags.model.provider), "").strip())) else "FAIL",
             f"{flags.model.provider}/{flags.model.model_name} required={flags.model.required}",
         )
     )

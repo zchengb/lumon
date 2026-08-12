@@ -415,6 +415,8 @@ def normalize_conversation_decision(
         "active_loop": active_loop,
         "target_agent": str(payload.get("target_agent") or "").strip().lower()[:40],
         "assumptions": _safe_text_list(payload.get("assumptions"), limit=8),
+        "required_actions": _safe_text_list(payload.get("required_actions"), limit=8),
+        "completion_criteria": str(payload.get("completion_criteria") or "").strip()[:1000],
     }
 
 
@@ -423,9 +425,11 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         "[LUMEN INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumen conversation.",
         "Before the final answer, decide what this turn means from the latest user message and emit exactly one internal envelope:",
-        '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[]}</CONVERSATION_DECISION>',
+        '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":""}</CONVERSATION_DECISION>',
         "This is routing metadata, not user-facing text. A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true; otherwise choose normal or clarify. Keep the same conversation session unless the user explicitly asks for /new.",
         "Choose the route yourself from the evidence (ordinary answer, quick change, Business Loop, Technical Loop, Jira, risk, delivery, delegation, or another route). Do not wait for Lumon regex rules to tell you which interpretation is correct.",
+        "For a multi-step request, state what completion means in completion_criteria. Use required_actions only for distinct capabilities that must happen; for repeated per-item work, do not enumerate a batch—emit one ACTION_REQUEST, wait for its receipt, then choose the next item yourself. This is planning metadata, not authorization.",
+        "Treat a read or lookup as intermediate whenever the user's goal includes a follow-up action. Never finalize with the read result alone when your own completion criteria are still outstanding.",
         "The decision envelope never authorizes a mutation, supplies identity, or bypasses host permission checks. Use ACTION_REQUEST for host actions and let the host validate required fields and authorization.",
         "If a request is ambiguous or a required target is missing, ask one focused question before acting.",
         "For a structured clarification, emit exactly one JSON object inside:",

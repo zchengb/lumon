@@ -22,6 +22,8 @@ def _managed_block(project_slug: str) -> str:
         f"- project.status / workflow.status / schedule.status\n\n"
         f"## Test-case execution\n"
         f"- Milchick owns test_case.generate after a Jira query/report returns matching work items\n"
+        f"- Choose one unprocessed issue per turn, wait for its receipt, then choose the next; the host never fans out actions\n"
+        f"- The host action assembles the Jira card, workspace/story context, repository evidence, the installed test-case standard (`skills/test_case/prompts.py::DESIGN_SYSTEM_PROMPT`), and configured TWG/Feishu destination\n"
         f"- Never ask redundant confirmation before delegation\n"
         f"- Child jobs may set depends_on\n\n"
         f"## Natural-language routing\n"

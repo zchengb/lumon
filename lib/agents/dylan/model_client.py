@@ -265,6 +265,83 @@ class CursorDylanModelClient(DylanModelClient):
         raise RuntimeError(f"response model failed: {last_error}")
 
 
+class OpenAICompatibleDylanModelClient(DylanModelClient):
+    def __init__(self, config: Optional[ModelConfig] = None, workspace: Optional[Path] = None) -> None:
+        self.config = config or ModelConfig(provider="deepseek", model_name="deepseek-v4-flash")
+        self.workspace = Path(workspace).expanduser() if workspace else Path.home()
+        self.provider_name = self.config.provider
+
+    def _run_api(self, prompt: str, *, timeout: int) -> str:
+        from agents.runtime.openai_compatible import chat_completion
+
+        try:
+            text, _ = chat_completion(
+                provider=self.config.provider,
+                model=self.config.model_name,
+                prompt=prompt,
+                timeout=timeout,
+                base_url=self.config.base_url,
+                api_key_env=self.config.api_key_env,
+                json_mode=True,
+            )
+        except RuntimeError as exc:
+            if "response_format" not in str(exc).lower():
+                raise
+            text, _ = chat_completion(
+                provider=self.config.provider,
+                model=self.config.model_name,
+                prompt=prompt,
+                timeout=timeout,
+                base_url=self.config.base_url,
+                api_key_env=self.config.api_key_env,
+                json_mode=False,
+            )
+        return text
+
+    def classify(self, request: dict[str, Any]) -> RouterResult:
+        from agents.dylan.model_prompts import router_prompt
+
+        timeout = self.config.router_timeout_seconds
+        last_error = ""
+        for _ in range(max(self.config.max_router_retries, 0) + 1):
+            try:
+                return _parse_router_result(_extract_json_object(self._run_api(router_prompt(request), timeout=timeout)), source=f"llm:{self.provider_name}")
+            except Exception as exc:
+                last_error = _format_agent_error(exc, timeout=timeout)
+        raise RuntimeError(f"router model failed: {last_error}")
+
+    def plan(self, request: dict[str, Any]) -> AgentPlan:
+        from agents.dylan.model_prompts import planner_prompt
+
+        timeout = self.config.planner_timeout_seconds or self.config.router_timeout_seconds
+        last_error = ""
+        for _ in range(max(self.config.max_router_retries, 0) + 1):
+            try:
+                return _parse_agent_plan(_extract_json_object(self._run_api(planner_prompt(request), timeout=timeout)), source=f"llm:{self.provider_name}")
+            except Exception as exc:
+                last_error = _format_agent_error(exc, timeout=timeout)
+        raise RuntimeError(f"planner model failed: {last_error}")
+
+    def respond(self, request: dict[str, Any]) -> GeneratedResponse:
+        from agents.dylan.model_prompts import response_prompt
+
+        timeout = self.config.responder_timeout_seconds or self.config.response_timeout_seconds
+        last_error = ""
+        for _ in range(max(self.config.max_response_retries, 0) + 1):
+            try:
+                raw = self._run_api(response_prompt(request), timeout=timeout)
+                try:
+                    text = str(_extract_json_object(raw).get("text") or "").strip()
+                except Exception:
+                    text = raw.strip()
+                if text:
+                    return GeneratedResponse(text=text, mode="model", raw=raw)
+                last_error = "empty model output"
+            except Exception as exc:
+                last_error = _format_agent_error(exc, timeout=timeout)
+        raise RuntimeError(f"response model failed: {last_error}")
+
+
 class HeuristicDylanModelClient(DylanModelClient):
     provider_name = "heuristic"
 
@@ -409,7 +486,10 @@ def get_model_client(
         if require_real:
             raise RuntimeError("Agent CLI/model unavailable (heuristic blocked)")
         return HeuristicDylanModelClient()
-    if flags_model.provider == "cursor" and shutil.which("agent"):
+    provider = str(flags_model.provider or "").casefold()
+    if provider in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+        return OpenAICompatibleDylanModelClient(flags_model, workspace=workspace)
+    if provider in {"cursor", "cursor_cli"} and shutil.which("agent"):
         return CursorDylanModelClient(flags_model, workspace=workspace)
     if require_real:
         raise RuntimeError("Agent CLI/model unavailable")

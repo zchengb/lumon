@@ -16,7 +16,7 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from agents.milchick.definition import MILCHICK_DEFINITION
-from agents.runtime.autonomous import handle_autonomous_conversation
+from agents.runtime.autonomous import _serialize_repeated_actions, handle_autonomous_conversation
 from agents.runtime.cursor_runtime import AgentRunResult, CursorAgentRuntime
 from agents.security.actions import ActionReceipt
 
@@ -69,6 +69,14 @@ def _common() -> dict:
 
 
 class MilchickTestCaseFlowTests(unittest.TestCase):
+    def test_repeated_test_case_actions_are_serialized(self) -> None:
+        requests = [
+            {"action": "test_case.generate", "arguments": {"issue_key": "MBPAS-1"}},
+            {"action": "test_case.generate", "arguments": {"issue_key": "MBPAS-2"}},
+            {"action": "test_case.generate", "arguments": {"issue_key": "MBPAS-3"}},
+        ]
+        self.assertEqual([requests[0]], _serialize_repeated_actions(requests))
+
     def test_jira_results_return_to_milchick_for_per_item_generation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -90,14 +98,25 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                 )
                 for item in items
             ]
-            second_turn = "<FINAL_RESPONSE>已为 4 张 Story 生成测试用例。</FINAL_RESPONSE>"
+            action_turns = []
             for item in items:
-                second_turn += "<ACTION_REQUEST>"
-                second_turn += json.dumps(
-                    {"action": "test_case.generate", "arguments": {"issue_key": item["issue_key"]}},
-                    ensure_ascii=False,
+                action_turns.append(
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"normal","route":"test_case_generation",'
+                            '"completion_criteria":"one terminal result per eligible issue"}</CONVERSATION_DECISION>'
+                            f'<FINAL_RESPONSE>正在处理 {item["issue_key"]}。</FINAL_RESPONSE>'
+                            "<ACTION_REQUEST>"
+                            + json.dumps(
+                                {"action": "test_case.generate", "arguments": {"issue_key": item["issue_key"]}},
+                                ensure_ascii=False,
+                            )
+                            + "</ACTION_REQUEST>"
+                        ),
+                        provider_session_id="sess-milchick",
+                        status="succeeded",
+                    )
                 )
-                second_turn += "</ACTION_REQUEST>"
             runtime = FakeRuntime(
                 [
                     AgentRunResult(
@@ -111,8 +130,13 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                         provider_session_id="sess-milchick",
                         status="succeeded",
                     ),
+                    *action_turns,
                     AgentRunResult(
-                        text=second_turn,
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"normal","route":"test_case_generation",'
+                            '"completion_criteria":"one terminal result per eligible issue"}</CONVERSATION_DECISION>'
+                            "<FINAL_RESPONSE>已为 4 张 Story 逐张生成测试用例。</FINAL_RESPONSE>"
+                        ),
                         provider_session_id="sess-milchick",
                         status="succeeded",
                     ),
@@ -123,7 +147,7 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                 resolve_workspace=lambda project_slug, chat_id: ("mbpass", workspace),
                 ensure_workspace_contract=lambda **kwargs: workspace,
             )
-            calls = [[query], generated]
+            calls = [[query], *[[item] for item in generated]]
             try:
                 with mock.patch(
                     "agents.runtime.autonomous.resolve_project",
@@ -163,16 +187,103 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                     os.environ["LUMEN_AGENTS_HOME"] = previous_home
 
             self.assertEqual("ok", result["status"])
-            self.assertEqual(2, execute.call_count)
-            self.assertEqual(2, len(runtime.calls))
+            self.assertEqual(5, execute.call_count)
+            self.assertEqual(6, len(runtime.calls))
             self.assertIn("[LUMEN HOST ACTION RESULTS]", str(runtime.calls[1]["prompt"]))
-            requests = execute.call_args_list[1].kwargs["requests"]
-            self.assertEqual(
-                [item["issue_key"] for item in items],
-                [request["arguments"]["issue_key"] for request in requests],
-            )
+            for index, item in enumerate(items, start=1):
+                requests = execute.call_args_list[index].kwargs["requests"]
+                self.assertEqual(1, len(requests))
+                self.assertEqual(item["issue_key"], requests[0]["arguments"]["issue_key"])
             self.assertIn("MBPAS-1497", result["text"])
             self.assertIn("Generated test cases for MBPAS-1491", result["text"])
+
+    def test_agent_final_response_does_not_trigger_host_side_fanout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "stories").mkdir()
+            previous_home = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            items = [
+                {"issue_key": key, "summary": f"Story {key}", "status": "Ready for QA"}
+                for key in ("MBPAS-1276", "MBPAS-1491", "MBPAS-1497", "MBPAS-1550")
+            ]
+            query = _receipt(
+                "jira.workitem.query",
+                {"status": "completed", "count": 4, "items": items},
+            )
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"normal","route":"test_case_generation",'
+                            '"required_actions":["test_case.generate"]}</CONVERSATION_DECISION>'
+                            '<ACTION_REQUEST>{"action":"jira.workitem.query",'
+                            '"arguments":{"jql":"project = MBPAS"}}</ACTION_REQUEST>'
+                        ),
+                        provider_session_id="sess-milchick",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"normal","route":"test_case_generation"}'
+                            '</CONVERSATION_DECISION><FINAL_RESPONSE>'
+                            "Jira query returned 4 work item(s)."
+                            "</FINAL_RESPONSE>"
+                        ),
+                        provider_session_id="sess-milchick",
+                        status="succeeded",
+                    ),
+                ]
+            )
+            definition = replace(
+                MILCHICK_DEFINITION,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", workspace),
+                ensure_workspace_contract=lambda **kwargs: workspace,
+            )
+            try:
+                with mock.patch(
+                    "agents.runtime.autonomous.resolve_project",
+                    return_value={"slug": "mbpass", "workspace": str(workspace)},
+                ):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            with mock.patch(
+                                "agents.runtime.autonomous.execute_trusted_actions",
+                                side_effect=[[query]],
+                            ) as execute:
+                                result = handle_autonomous_conversation(
+                                    definition=definition,
+                                    text="把 Jira 板子的 Ready For QA 对应的 Story 卡都生成测试用例",
+                                    meta={
+                                        "chat_id": "oc1",
+                                        "chat_type": "group",
+                                        "thread_id": "omt1",
+                                        "user_id": "ou_owner",
+                                        "message_id": "om1",
+                                    },
+                                    common=_common(),
+                                    agents_config={
+                                        "access": {
+                                            "default_policy": "legacy_allow",
+                                            "allowed_chat_ids": ["oc1"],
+                                            "allowed_user_ids": ["ou_owner"],
+                                            "mutation_allowed_user_ids": ["ou_owner"],
+                                        }
+                                    },
+                                    runtime=runtime,
+                                )
+            finally:
+                if previous_home is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous_home
+
+            self.assertEqual("ok", result["status"])
+            self.assertEqual(1, execute.call_count)
+            self.assertEqual(2, len(runtime.calls))
+            self.assertNotIn("REQUIRED EXECUTION CHECKPOINT", str(runtime.calls[1]["prompt"]))
+            self.assertEqual("jira.workitem.query", execute.call_args_list[0].kwargs["requests"][0]["action"])
+            self.assertIn("Jira query returned 4 work item(s).", result["text"])
 
 
 if __name__ == "__main__":

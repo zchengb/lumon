@@ -49,6 +49,7 @@ from deployment_tracking import normalized_config
 SCRIPT_DIR = Path(__file__).resolve().parent
 LIB_DIR = SCRIPT_DIR.parent
 WORKSPACE_STATIC_DIRECTORIES = {"assets", "dashboard-app", "reports", "logs", "results"}
+LUMON_PROVIDER_KEYS = {"DEEPSEEK_API_KEY", "OPENAI_API_KEY"}
 
 if str(LIB_DIR) not in sys.path:
     sys.path.insert(0, str(LIB_DIR))
@@ -240,17 +241,39 @@ def capture_schedule_status(func: Any, project: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def workflow_model_config(execution: object, prefix: str = "") -> dict[str, str]:
+    values = execution if isinstance(execution, dict) else {}
+    provider = str(values.get(f"{prefix}provider") or values.get("provider") or "cursor_cli").strip()
+    model = str(values.get(f"{prefix}model") or values.get("model") or "cursor-grok-4.5-medium").strip()
+    base_url = str(values.get(f"{prefix}base_url") or values.get("base_url") or "").strip()
+    api_key_env = str(values.get(f"{prefix}api_key_env") or values.get("api_key_env") or "").strip()
+    return {"provider": provider, "model": model, "base_url": base_url, "api_key_env": api_key_env}
+
+
 def workspace_payload(workspace: Path) -> dict[str, Any]:
     common = load_json(workspace / "config" / "common.json", {})
     env_local = workspace / ".env.local"
     configured_keys: list[str] = []
+    integration_sources: dict[str, str] = {}
     if env_local.is_file():
         for line in env_local.read_text(encoding="utf-8", errors="replace").splitlines():
             if "=" not in line or line.lstrip().startswith("#"):
                 continue
             key, value = line.split("=", 1)
             if value.strip().strip('"').strip("'"):
-                configured_keys.append(key.strip())
+                name = key.strip()
+                configured_keys.append(name)
+                integration_sources[name] = "workspace"
+    lumen_env_local = Path(os.environ.get("LUMON_HOME", Path.home() / ".lumon")).expanduser() / ".env.local"
+    if lumen_env_local.is_file():
+        for line in lumen_env_local.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "=" not in line or line.lstrip().startswith("#"):
+                continue
+            key, value = line.split("=", 1)
+            name = key.strip()
+            if name in LUMON_PROVIDER_KEYS and value.strip().strip('"').strip("'"):
+                configured_keys.append(name)
+                integration_sources[name] = "lumon_local"
     repos_config = load_json(workspace / "config" / "repos.json", {"repositories": []})
     profiles = load_json(workspace / "config" / "runtime-profiles.json", {})
     delivery_config = load_json(workspace / "config" / "delivery.json", {})
@@ -283,7 +306,8 @@ def workspace_payload(workspace: Path) -> dict[str, Any]:
     return {
         "path": str(workspace),
         "scan_window_days": (common.get("execution") or {}).get("scan_window_days", 7),
-        "configured_integrations": sorted(key for key in configured_keys if key),
+        "configured_integrations": sorted(set(key for key in configured_keys if key)),
+        "integration_sources": integration_sources,
         "repositories": enriched_repositories,
         "runtime_profiles": profiles,
         "publish": {
@@ -293,10 +317,18 @@ def workspace_payload(workspace: Path) -> dict[str, Any]:
             # function receives its visible `lumen/` directory.
             "patch": patch_publish_mode(workspace.parent),
         },
+        "model_config": workflow_model_config(common.get("execution")),
+        # Keep the old per-workflow shape for existing dashboard clients. The
+        # values intentionally all come from the one workspace-level config.
         "models": {
-            "scan": str((common.get("execution") or {}).get("model") or "cursor-grok-4.5-medium").strip(),
-            "delivery": str((delivery_config.get("execution") or {}).get("model") or "cursor-grok-4.5-medium").strip(),
-            "patch": str((delivery_config.get("execution") or {}).get("patch_model") or (delivery_config.get("execution") or {}).get("model") or "cursor-grok-4.5-medium").strip(),
+            "scan": workflow_model_config(common.get("execution")).get("model", ""),
+            "delivery": workflow_model_config(common.get("execution")).get("model", ""),
+            "patch": workflow_model_config(common.get("execution")).get("model", ""),
+        },
+        "model_configs": {
+            "scan": workflow_model_config(common.get("execution")),
+            "delivery": workflow_model_config(common.get("execution")),
+            "patch": workflow_model_config(common.get("execution")),
         },
         "deployment_tracking": normalized_config(delivery_config),
         "feishu_notifications_enabled": feishu_notifications_enabled(workspace),
@@ -620,26 +652,33 @@ def save_publish_policy(workspace: Path, scan_mode: object, delivery_mode: objec
 def integration_value(workspace: Path, key: str) -> str:
     if not key or not key.replace("_", "").isalnum() or key.upper() != key:
         raise ValueError("Integration key must use uppercase letters, numbers, and underscores")
-    path = workspace / ".env.local"
-    if not path.is_file():
-        raise ValueError("No local integration values are configured")
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if line.lstrip().startswith("#") or "=" not in line:
+    paths = [workspace / ".env.local"]
+    if key in LUMON_PROVIDER_KEYS:
+        paths.insert(0, Path(os.environ.get("LUMON_HOME", Path.home() / ".lumon")).expanduser() / ".env.local")
+    for path in paths:
+        if not path.is_file():
             continue
-        candidate, value = line.split("=", 1)
-        if candidate.strip() == key:
-            try:
-                parsed = shlex.split(value, posix=True)
-            except ValueError:
-                return value
-            return parsed[0] if len(parsed) == 1 else value
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.lstrip().startswith("#") or "=" not in line:
+                continue
+            candidate, value = line.split("=", 1)
+            if candidate.strip() == key:
+                try:
+                    parsed = shlex.split(value, posix=True)
+                except ValueError:
+                    return value
+                return parsed[0] if len(parsed) == 1 else value
     raise ValueError(f"Integration key is not configured: {key}")
 
 
 def update_env_value(workspace: Path, key: str, value: str) -> None:
     if not key or not key.replace("_", "").isalnum() or key.upper() != key:
         raise ValueError("Integration key must use uppercase letters, numbers, and underscores")
-    path = workspace / ".env.local"
+    path = (
+        Path(os.environ.get("LUMON_HOME", Path.home() / ".lumon")).expanduser() / ".env.local"
+        if key in LUMON_PROVIDER_KEYS
+        else workspace / ".env.local"
+    )
     lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
     serialized = value if value and not re.search(r"[\s#'\"\\]", value) else shlex.quote(value)
     entry = f"{key}={serialized}"
@@ -2063,22 +2102,54 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 if not isinstance(execution, dict):
                     raise ValueError("Invalid workspace execution configuration")
                 execution["scan_window_days"] = days
-                scan_model = str(body.get("scan_model") or "").strip()
-                if scan_model:
-                    execution["model"] = scan_model
+                workflow_providers = {"cursor_cli", "cursor", "deepseek", "deepseek_api", "openai", "openai_compatible"}
+
+                def apply_model_config(target: dict[str, Any], body_prefix: str, file_prefix: str = "") -> None:
+                    provider = str(body.get(f"{body_prefix}provider") or "").strip()
+                    model = str(body.get(f"{body_prefix}model") or "").strip()
+                    if provider:
+                        if provider not in workflow_providers:
+                            raise ValueError(f"Unsupported workflow AI provider: {provider}")
+                        target[f"{file_prefix}provider"] = "cursor_cli" if provider == "cursor" else "deepseek" if provider == "deepseek_api" else provider
+                    if model:
+                        target[f"{file_prefix}model"] = model
+                    for suffix in ("base_url", "api_key_env"):
+                        key = f"{body_prefix}{suffix}"
+                        if key in body:
+                            target[f"{file_prefix}{suffix}"] = str(body.get(key) or "").strip()
+
+                global_model_keys = ("ai_provider", "ai_model", "ai_base_url", "ai_api_key_env")
+                has_global_model = any(key in body for key in global_model_keys)
+                if has_global_model:
+                    apply_model_config(execution, "ai_")
+                else:
+                    # Compatibility for clients released before the global
+                    # model center. New clients only send ai_* fields.
+                    apply_model_config(execution, "scan_")
+                    if "scan_model" in body:
+                        execution["model"] = str(body.get("scan_model") or "").strip()
                 write_json(path, config)
                 delivery_model = str(body.get("delivery_model") or "").strip()
                 patch_model = str(body.get("patch_model") or "").strip()
-                if delivery_model or patch_model:
+                has_legacy_delivery_model = delivery_model or patch_model or any(key in body for key in ("delivery_provider", "delivery_base_url", "delivery_api_key_env", "patch_provider", "patch_base_url", "patch_api_key_env"))
+                if has_global_model or has_legacy_delivery_model:
                     delivery_path = workspace / "config" / "delivery.json"
                     delivery = load_json(delivery_path, {})
                     delivery_execution = delivery.setdefault("execution", {})
                     if not isinstance(delivery_execution, dict):
                         raise ValueError("Invalid delivery execution configuration")
-                    if delivery_model:
-                        delivery_execution["model"] = delivery_model
-                    if patch_model:
-                        delivery_execution["patch_model"] = patch_model
+                    if has_global_model:
+                        for key in ("provider", "model", "base_url", "api_key_env"):
+                            if key in execution:
+                                delivery_execution[key] = execution[key]
+                                delivery_execution[f"patch_{key}"] = execution[key]
+                    else:
+                        apply_model_config(delivery_execution, "delivery_")
+                        apply_model_config(delivery_execution, "patch_", "patch_")
+                        if delivery_model:
+                            delivery_execution["model"] = delivery_model
+                        if patch_model:
+                            delivery_execution["patch_model"] = patch_model
                     write_json(delivery_path, delivery)
                 if "feishu_notifications_enabled" in body:
                     save_feishu_notifications(workspace, bool(body.get("feishu_notifications_enabled")), push=False, include_payload=False)

@@ -103,7 +103,6 @@ MARK_ACTIONS = (
     "delivery.quick_change",
     "story.read",
     "technical_plan.read",
-    "test_case.generate",
     *JIRA_ACTIONS,
 )
 

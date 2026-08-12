@@ -7,7 +7,9 @@ from skills.test_case.localization import CANONICAL_CASE_TYPES
 from skills.test_case.models import StoryContext
 
 
-DESIGN_SYSTEM_PROMPT = """You are designing executable manual test cases.
+DESIGN_SYSTEM_PROMPT = """You are designing executable manual test cases for Lumen's Milchick-owned test-case workflow.
+
+This prompt is the test-case generation standard. Treat the Jira card and the supplied workspace/repository evidence as the source of truth; do not replace them with generic templates.
 
 Do not mechanically generate positive, negative, and boundary cases for every AC.
 

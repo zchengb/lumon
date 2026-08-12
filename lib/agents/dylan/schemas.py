@@ -48,6 +48,8 @@ class AgentPlan:
 @dataclass
 class ModelConfig:
     provider: str = "cursor"
+    base_url: str = ""
+    api_key_env: str = ""
     router_timeout_seconds: int = 8
     response_timeout_seconds: int = 25
     max_router_retries: int = 1
@@ -142,7 +144,13 @@ class ConversationFlags:
             if not conv:
                 cfg_risk = cfg_dylan.get("risk_analyst") if isinstance(cfg_dylan.get("risk_analyst"), dict) else {}
                 conv = cfg_risk.get("conversation_v2") if isinstance(cfg_risk.get("conversation_v2"), dict) else {}
-        provider_src = v4.get("provider") if isinstance(v4.get("provider"), dict) else {}
+        execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
+        global_model_src = {
+            key: execution.get(key)
+            for key in ("provider", "model", "base_url", "api_key_env")
+            if execution.get(key)
+        }
+        provider_src = global_model_src or (v4.get("provider") if isinstance(v4.get("provider"), dict) else {})
         model_src = (
             provider_src
             if provider_src
@@ -165,6 +173,8 @@ class ConversationFlags:
         v4_enabled = bool(v4.get("enabled", False))
         model = ModelConfig(
             provider=str(model_src.get("type") or model_src.get("provider") or "cursor"),
+            base_url=str(model_src.get("base_url") or ""),
+            api_key_env=str(model_src.get("api_key_env") or ""),
             router_timeout_seconds=int(model_src.get("router_timeout_seconds") or model_src.get("planner_timeout_seconds") or 45),
             response_timeout_seconds=int(model_src.get("response_timeout_seconds") or model_src.get("responder_timeout_seconds") or 60),
             max_router_retries=int(model_src.get("max_router_retries") or model_src.get("max_planner_retries") or 1),

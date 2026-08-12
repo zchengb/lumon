@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -26,6 +27,10 @@ class AgentRunResult:
 
 
 class CursorAgentRuntime:
+    supports_stateless = False
+    supports_resume = True
+    uses_isolated_env = True
+
     def __init__(
         self,
         *,
@@ -115,12 +120,13 @@ class CursorAgentRuntime:
         soft_emitted = False
         lines: list[str] = []
         stderr_chunks: list[str] = []
+        run_env = self._env()
         process = subprocess.Popen(
             args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env=self._env(),
+            env=run_env,
             cwd=str(workspace),
             bufsize=1,
         )
@@ -218,6 +224,10 @@ class CursorAgentRuntime:
             )
 
         combined_err = f"{stderr}\n{stdout}".lower()
+        provider_error = _recent_cursor_provider_error(run_env, started)
+        if provider_error:
+            parsed.status = "failed"
+            parsed.error = provider_error
         if any(
             token in combined_err
             for token in (
@@ -240,7 +250,7 @@ class CursorAgentRuntime:
 
         code = process.returncode if process.returncode is not None else 1
         if code != 0 and parsed.status != "succeeded":
-            err = stderr or (stdout or "agent failed")[:500]
+            err = parsed.error or stderr or (stdout or "agent failed")[:500]
             parsed.status = "failed"
             parsed.error = parsed.error or err
         elif parsed.status != "succeeded" and not parsed.text:
@@ -306,3 +316,82 @@ class CursorAgentRuntime:
             )
         elif etype == "result":
             obs.emit(trace, "agent.final_response", subtype=subtype)
+
+
+def _recent_cursor_provider_error(env: dict[str, str], started: float) -> str:
+    """Read only the provider's recent error marker; never expose the log body."""
+    tmpdir = str(env.get("TMPDIR") or os.environ.get("TMPDIR") or "").strip()
+    if not tmpdir:
+        return ""
+    root = Path(tmpdir).expanduser()
+    try:
+        candidates = sorted(
+            (path for path in root.glob("cursor-agent-logs-*/session-*.log") if path.is_file()),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )[:5]
+    except OSError:
+        return ""
+    for path in candidates:
+        try:
+            if path.stat().st_mtime + 2 < started:
+                continue
+            body = path.read_text(encoding="utf-8", errors="replace")[-400_000:].lower()
+        except OSError:
+            continue
+        if any(
+            token in body
+            for token in (
+                "monthly usage limit",
+                "request higher limits",
+                "resource_exhausted",
+                "error_rate_limited",
+                "error_code=upgrade",
+                'error_code":"upgrade',
+            )
+        ):
+            return "Cursor monthly usage limit reached"
+    return ""
+
+
+def create_agent_runtime(
+    *,
+    provider: str,
+    model: str,
+    base_url: str = "",
+    api_key_env: str = "",
+    soft_timeout_seconds: int = 90,
+    hard_timeout_seconds: int = 300,
+    sandbox: str = "enabled",
+    force: bool = False,
+    trust: bool = True,
+    agent_id: str = "",
+    project: str = "",
+) -> Any:
+    normalized = str(provider or "cursor").strip().casefold()
+    if normalized in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+        from agents.runtime.openai_compatible import OpenAICompatibleAgentRuntime
+
+        return OpenAICompatibleAgentRuntime(
+            provider=normalized,
+            model=model,
+            base_url=base_url,
+            api_key_env=api_key_env,
+            soft_timeout_seconds=soft_timeout_seconds,
+            hard_timeout_seconds=hard_timeout_seconds,
+            sandbox=sandbox,
+            force=force,
+            trust=trust,
+            agent_id=agent_id,
+            project=project,
+        )
+    return CursorAgentRuntime(
+        model=model,
+        soft_timeout_seconds=soft_timeout_seconds,
+        hard_timeout_seconds=hard_timeout_seconds,
+        sandbox=sandbox,
+        force=force,
+        trust=trust,
+        agent_id=agent_id,
+        project=project,
+    )

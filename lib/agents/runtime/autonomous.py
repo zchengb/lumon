@@ -12,7 +12,7 @@ from agents.definitions import AgentDefinition
 from agents.dylan.schemas import ConversationFlags
 from agents.project_resolver import known_project_slugs, load_chat_project_map, resolve_project
 from agents.runner import default_runner
-from agents.runtime.cursor_runtime import CursorAgentRuntime
+from agents.runtime.cursor_runtime import CursorAgentRuntime, create_agent_runtime
 from agents.runtime.final_response import extract_final_response, prefer_action_summary
 from agents.runtime.interaction import (
     action_missing_fields,
@@ -51,9 +51,37 @@ _RESUME_RETRY_TOKENS = (
     "empty stream",
 )
 
+_QUOTA_ERROR_TOKENS = (
+    "monthly usage limit",
+    "usage limit",
+    "resource_exhausted",
+    "error_rate_limited",
+    "request higher limits",
+    "quota exceeded",
+    "insufficient quota",
+    "insufficient balance",
+    "rate limit",
+)
+
 
 def _user_facing_agent_error(error: str, trace_id: str) -> str:
     lower = (error or "").lower()
+    if "api key is not configured" in lower:
+        env_match = re.search(r"\(([A-Z][A-Z0-9_]+)\)", error or "")
+        env_hint = f" (`{env_match.group(1)}`)" if env_match else ""
+        return (
+            f"The selected model provider is not configured yet{env_hint}. Add its API key to `~/.lumon/.env.local`, "
+            "then restart the Agent gateway. No Jira action or workspace change was made.\n"
+            f"Trace ID: {trace_id}"
+        )
+    if any(tok in lower for tok in _QUOTA_ERROR_TOKENS):
+        provider = "Cursor" if "cursor" in lower else "configured model provider"
+        return (
+            f"{provider} has reached its usage quota, so I couldn't finish this turn. "
+            "Nothing was sent to Jira and no workspace change was made. "
+            "Switch the configured model provider/model or wait for the quota to reset.\n"
+            f"Trace ID: {trace_id}"
+        )
     if "sandbox_unavailable" in lower or "security_error" in lower:
         return (
             "I can't run that turn because the secure Cursor sandbox is unavailable. "
@@ -178,14 +206,24 @@ _ACTION_RESULT_CONTINUATION_ACTIONS = frozenset(
     {
         "jira.workitem.query",
         "jira.sprint.untested.report",
+        "test_case.generate",
     }
 )
 
+# A multi-card request is allowed to take several Agent turns. The ceiling is
+# only a runaway guard; which card comes next remains the Agent's decision.
+_MAX_ACTION_RESULT_CONTINUATIONS = 24
+
 
 def _action_results_need_continuation(receipts: list[dict[str, Any]]) -> bool:
-    """Return whether an Agent needs its own decision turn after a read."""
+    """Return whether an Agent needs another decision turn after a host action."""
     for receipt in receipts:
-        if str(receipt.get("action") or "").strip() not in _ACTION_RESULT_CONTINUATION_ACTIONS:
+        action = str(receipt.get("action") or "").strip()
+        if action not in _ACTION_RESULT_CONTINUATION_ACTIONS:
+            continue
+        if action == "test_case.generate":
+            if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
+                return True
             continue
         if str(receipt.get("status") or "").strip() != "succeeded":
             continue
@@ -209,6 +247,28 @@ def _action_results_for_agent(receipts: list[dict[str, Any]]) -> str:
         if isinstance(item, dict)
     ]
     return json.dumps(payload, ensure_ascii=False, default=str)[:30000]
+
+
+def _serialize_repeated_actions(action_requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep repeated per-item work one card per Agent turn.
+
+    The Agent chooses the card and emits the action. If a model sends a batch
+    anyway, execute only its first test-case action and return the receipt so
+    the next card is chosen from the updated evidence on the next turn.
+    """
+    repeated = [
+        request
+        for request in action_requests
+        if str(request.get("action") or "").strip() == "test_case.generate"
+    ]
+    if len(repeated) <= 1:
+        return action_requests
+    first = repeated[0]
+    return [
+        request
+        for request in action_requests
+        if str(request.get("action") or "").strip() != "test_case.generate"
+    ] + [first]
 
 
 def handle_autonomous_conversation(
@@ -318,7 +378,7 @@ def handle_autonomous_conversation(
             thread_id=thread_id,
             user_id=user_id,
             project_slug=slug,
-            provider="cursor_cli",
+            provider=flags.model.provider,
             model=flags.model.model_name,
             agent_id=agent_id,
             role=definition.role,
@@ -326,7 +386,7 @@ def handle_autonomous_conversation(
         )
     else:
         trace.project_slug = slug
-        trace.provider = "cursor_cli"
+        trace.provider = flags.model.provider
         trace.model = flags.model.model_name
         trace.agent_id = agent_id
         trace.role = definition.role
@@ -339,7 +399,7 @@ def handle_autonomous_conversation(
     lock = store.lock_for(scope)
     loop_permissions_enabled = False
     attachment_dir: Path | None = None
-    cursor_for_cleanup: CursorAgentRuntime | None = None
+    cursor_for_cleanup: Any | None = None
     original_additional_dirs: list[Path] | None = None
     with lock:
         try:
@@ -463,8 +523,11 @@ def handle_autonomous_conversation(
                 prompt = _prompt_with_contract(prompt, pending)
                 provider_session_id = session.get("provider_session_id") or None
 
-            cursor = runtime or CursorAgentRuntime(
+            cursor = runtime or create_agent_runtime(
+                provider=flags.model.provider,
                 model=flags.model.model_name,
+                base_url=flags.model.base_url,
+                api_key_env=flags.model.api_key_env,
                 soft_timeout_seconds=flags.soft_timeout_seconds,
                 hard_timeout_seconds=flags.hard_timeout_seconds,
                 sandbox="enabled",
@@ -474,6 +537,9 @@ def handle_autonomous_conversation(
                 project=slug,
             )
             cursor_for_cleanup = cursor
+            supports_stateless = bool(getattr(cursor, "supports_stateless", False))
+            if not bool(getattr(cursor, "supports_resume", True)):
+                provider_session_id = None
             if attachment_dir is not None and isinstance(cursor, CursorAgentRuntime):
                 original_additional_dirs = list(cursor.additional_dirs)
                 cursor.additional_dirs = [attachment_dir, *original_additional_dirs]
@@ -649,7 +715,18 @@ def handle_autonomous_conversation(
                     agent_id=agent_id,
                     source_message_id=message_id,
                 ) if parsed.clarification_request else None
-                action_requests = list(parsed.action_requests)
+                raw_action_requests = list(parsed.action_requests)
+                action_requests = _serialize_repeated_actions(raw_action_requests)
+                if len(action_requests) < len(raw_action_requests):
+                    obs.emit(
+                        trace,
+                        "agent.action_requests.serialized",
+                        original_count=len(raw_action_requests),
+                        executed_count=len(action_requests),
+                        dropped_count=len(raw_action_requests) - len(action_requests),
+                        reason="repeated_test_case_actions_are_agent_sequential",
+                        level="WARNING",
+                    )
                 if clarification is None and action_requests:
                     for request in action_requests:
                         missing = action_missing_fields(
@@ -702,10 +779,13 @@ def handle_autonomous_conversation(
                     statuses=[r.get("status") for r in new_action_receipts],
                 )
 
-                if not _action_results_need_continuation(new_action_receipts) or continuation_count >= 3:
+                if (
+                    not _action_results_need_continuation(new_action_receipts)
+                    or continuation_count >= _MAX_ACTION_RESULT_CONTINUATIONS
+                ):
                     break
                 provider_id = result.provider_session_id or provider_session_id
-                if not provider_id:
+                if not provider_id and not supports_stateless:
                     break
                 continuation_count += 1
                 continuation_prompt = _prompt_with_contract(
@@ -714,8 +794,10 @@ def handle_autonomous_conversation(
                             "[LUMEN HOST ACTION RESULTS]\n"
                             "The host has executed your previous ACTION_REQUEST(s). These results are authoritative. "
                             "Continue the same latest user request from the results below. Do not repeat completed reads. "
-                            "Decide yourself whether more work is required; if the user's goal is not complete, emit the "
-                            "next ACTION_REQUEST(s) before giving the final answer.\n\n"
+                            "Decide yourself whether more work is required. For repeated per-item work, choose the "
+                            "next unprocessed item and emit exactly one ACTION_REQUEST for it; wait for its receipt "
+                            "before choosing another. Do not emit a batch of repeated actions. Only give the final "
+                            "answer when your own completion criteria are satisfied.\n\n"
                             f"Original user request:\n{text}\n\n"
                             f"Executed results:\n{_action_results_for_agent(action_receipts)}"
                         ),
@@ -729,7 +811,10 @@ def handle_autonomous_conversation(
                     continuation=continuation_count,
                     action_count=len(action_receipts),
                 )
-                next_result = _run_agent_turn(continuation_prompt, provider_id)
+                next_result = _run_agent_turn(
+                    continuation_prompt,
+                    None if supports_stateless else provider_id,
+                )
                 if next_result.status != "succeeded" or not str(next_result.text or "").strip():
                     continuation_error = next_result.error or next_result.status or "agent continuation failed"
                     obs.emit(

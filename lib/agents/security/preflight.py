@@ -55,13 +55,27 @@ def run_security_check(
     agent = str(agent_id or "dylan").strip().lower()
     cfg = config if isinstance(config, dict) else load_agents_config()
     flags = security_flags(cfg)
+    from agents.dylan.model_client import _load_lumen_dotenv
+    from agents.dylan.schemas import ConversationFlags
+    from agents.runtime.openai_compatible import default_api_key_env, is_api_provider
+
+    _load_lumen_dotenv()
+    model_flags = ConversationFlags.from_common({}, cfg, agent_id=agent)
+    api_provider = is_api_provider(model_flags.model.provider)
     checks: dict[str, Any] = {}
     warnings: list[str] = []
     critical_fail = False
 
-    checks["cursor_cli"] = "pass" if _cursor_available() else "fail"
-    if checks["cursor_cli"] == "fail":
-        critical_fail = True
+    if api_provider:
+        checks["cursor_cli"] = "not_required"
+        key_env = model_flags.model.api_key_env or default_api_key_env(model_flags.model.provider)
+        checks["model_api"] = "pass" if os.environ.get(key_env, "").strip() else f"missing:{key_env}"
+        if checks["model_api"] != "pass":
+            critical_fail = True
+    else:
+        checks["cursor_cli"] = "pass" if _cursor_available() else "fail"
+        if checks["cursor_cli"] == "fail":
+            critical_fail = True
 
     checks["sandbox"] = _sandbox_defaults_ok()
     if not checks["sandbox"]:

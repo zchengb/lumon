@@ -278,10 +278,25 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.generationLanguage": "Generation language",
     "settings.generationDescription": "Controls the language Mark writes into the Feishu Spreadsheet for this project. Traditional Chinese is the default for mbpass.",
     "settings.afterGeneration": "After changing language or sheet, ask Milchick/Mark to re-generate the story so new rows use the selected sheet.",
-    "settings.executionDescription": "Choose a preset or enter a custom Cursor model ID. Custom values must be supported by Cursor; Lumon does not validate model availability.",
+    "settings.executionDescription": "Choose a provider and model ID. Lumon sends API requests through the selected provider and does not validate model availability.",
+    "settings.modelCenter": "Model center",
+    "settings.modelCenterDescription": "Configure every conversational Agent and automation model in one place.",
+    "settings.globalModelConfig": "Global AI configuration",
+    "settings.globalModelScope": "Applied to all four conversational Agents and all three automation workflows.",
+    "settings.inheritsGlobalModel": "Inherits global configuration",
+    "settings.conversationModels": "Conversational Agents",
+    "settings.conversationModelsDescription": "Every Feishu Agent uses the global provider and model above.",
+    "settings.workflowModels": "Automation workflows",
+    "settings.workflowModelsDescription": "Auto Scan, Auto Delivery, and Auto Patch use the same global provider and model.",
+    "settings.workflowRuntimeLabel": "Applied to every Agent and workflow",
+    "settings.deepSeekCredential": "DeepSeek API key",
+    "settings.deepSeekCredentialConfigured": "Configured in ~/.lumon/.env.local",
+    "settings.deepSeekCredentialMissing": "Not configured",
     "settings.automationOutcome": "Automation outcome",
     "settings.notificationsDescription": "Control whether Scan and Delivery post cards to the configured Feishu webhook. The webhook URL still lives under Variable Keys.",
-    "settings.storedWorkspace": "Stored only in this workspace",
+    "settings.storedWorkspace": "Stored in this workspace",
+    "settings.storedWorkspaceOrLumon": "Workspace + Lumon local",
+    "settings.storedLumon": "Stored in Lumon local",
     "settings.availableKeys": "Available keys",
     "settings.availableKeysDescription": "Reveal a value to inspect it, or enter a replacement directly. Values are saved without display quotes.",
     "settings.revealReplacement": "Reveal or enter a replacement value",
@@ -351,14 +366,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "editor.code": "Code",
     "prompt.original": "Original Markdown",
     "prompt.preview": "Preview",
-    "customModel.enter": "Enter a custom Cursor model",
-    "customModel.id": "Cursor model ID",
-    "customModel.placeholder": "e.g. cursor-grok-4.5-medium",
+    "customModel.enter": "Enter a custom model",
+    "customModel.id": "Model ID",
+    "customModel.placeholder": "e.g. deepseek-v4-flash",
     "customModel.copy": "Lumon does not validate model availability. The value will be used on the next run.",
     "customModel.edit": "Edit custom model",
-    "customModel.option": "Custom Cursor model ID…",
+    "customModel.option": "Custom model ID…",
     "customModel.badge": "Custom",
-    "customModel.help": "Use a model ID supported by Cursor.",
+    "customModel.help": "Use a model ID supported by the selected provider.",
     "status.completed": "Completed",
     "status.passed": "Passed",
     "status.failed": "Failed",
@@ -470,7 +485,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.languageGeneration": "Generation language",
     "label.spreadsheetTab": "Spreadsheet tab name",
     "label.spreadsheetToken": "Spreadsheet token / URL",
-    "label.cursorModel": "Cursor model",
+    "label.cursorModel": "Execution model",
+    "label.modelProvider": "Model provider",
+    "label.apiBaseUrl": "API base URL",
+    "label.apiKeyEnv": "API key environment variable",
     "label.softTimeout": "Soft timeout, seconds",
     "label.hardTimeout": "Hard timeout, seconds",
     "label.maxJobs": "Max concurrent jobs",
@@ -812,10 +830,25 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.generationLanguage": "生成语言",
     "settings.generationDescription": "控制 Mark 为此项目写入飞书电子表格的语言。mbpass 默认使用繁体中文。",
     "settings.afterGeneration": "修改语言或表格后，请让 Milchick/Mark 重新生成 Story，使新行使用选定的表格。",
-    "settings.executionDescription": "选择预设模型，或输入自定义 Cursor 模型 ID。自定义值必须受 Cursor 支持；Lumon 不会验证模型是否可用。",
+    "settings.executionDescription": "选择提供商和模型 ID。Lumon 会通过所选提供商发送 API 请求，不会验证模型是否可用。",
+    "settings.modelCenter": "模型中心",
+    "settings.modelCenterDescription": "在一个地方配置所有对话 Agent 和自动化模型。",
+    "settings.globalModelConfig": "全局 AI 配置",
+    "settings.globalModelScope": "应用于四个对话 Agent 和三个自动化工作流。",
+    "settings.inheritsGlobalModel": "继承全局配置",
+    "settings.conversationModels": "对话 Agent",
+    "settings.conversationModelsDescription": "所有飞书 Agent 都使用上方的全局提供商和模型。",
+    "settings.workflowModels": "自动化工作流",
+    "settings.workflowModelsDescription": "自动扫描、自动交付和自动修复使用同一组全局提供商和模型。",
+    "settings.workflowRuntimeLabel": "应用于所有 Agent 和工作流",
+    "settings.deepSeekCredential": "DeepSeek API 密钥",
+    "settings.deepSeekCredentialConfigured": "已配置于 ~/.lumon/.env.local",
+    "settings.deepSeekCredentialMissing": "未配置",
     "settings.automationOutcome": "自动化结果",
     "settings.notificationsDescription": "控制 Scan 和 Delivery 是否向已配置的飞书 Webhook 发布卡片。Webhook URL 仍位于变量密钥中。",
-    "settings.storedWorkspace": "仅存储在此工作区",
+    "settings.storedWorkspace": "存储在此工作区",
+    "settings.storedWorkspaceOrLumon": "工作区 + Lumon 本地",
+    "settings.storedLumon": "存储在 Lumon 本地",
     "settings.availableKeys": "可用密钥",
     "settings.availableKeysDescription": "显示值以检查，或直接输入替换值。保存时不会包含显示引号。",
     "settings.revealReplacement": "显示或输入替换值",
@@ -885,14 +918,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "editor.code": "代码",
     "prompt.original": "原始 Markdown",
     "prompt.preview": "预览",
-    "customModel.enter": "输入自定义 Cursor 模型",
-    "customModel.id": "Cursor 模型 ID",
-    "customModel.placeholder": "例如：cursor-grok-4.5-medium",
+    "customModel.enter": "输入自定义模型",
+    "customModel.id": "模型 ID",
+    "customModel.placeholder": "例如：deepseek-v4-flash",
     "customModel.copy": "Lumon 不会验证模型是否可用，该值将在下一次运行时使用。",
     "customModel.edit": "编辑自定义模型",
-    "customModel.option": "自定义 Cursor 模型 ID…",
+    "customModel.option": "自定义模型 ID…",
     "customModel.badge": "自定义",
-    "customModel.help": "使用 Cursor 支持的模型 ID。",
+    "customModel.help": "使用所选提供商支持的模型 ID。",
     "status.completed": "已完成",
     "status.passed": "通过",
     "status.failed": "失败",
@@ -1004,7 +1037,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.languageGeneration": "生成语言",
     "label.spreadsheetTab": "表格页签名称",
     "label.spreadsheetToken": "表格 Token / URL",
-    "label.cursorModel": "Cursor 模型",
+    "label.cursorModel": "执行模型",
+    "label.modelProvider": "模型提供商",
+    "label.apiBaseUrl": "API 基础 URL",
+    "label.apiKeyEnv": "API Key 环境变量",
     "label.softTimeout": "软超时（秒）",
     "label.hardTimeout": "硬超时（秒）",
     "label.maxJobs": "最大并发任务数",
@@ -1346,10 +1382,25 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.generationLanguage": "生成語言",
     "settings.generationDescription": "控制 Mark 為此專案寫入飛書試算表的語言。mbpass 預設使用繁體中文。",
     "settings.afterGeneration": "修改語言或試算表後，請讓 Milchick/Mark 重新生成 Story，使新列使用選定的試算表。",
-    "settings.executionDescription": "選擇預設模型，或輸入自訂 Cursor 模型 ID。自訂值必須受 Cursor 支援；Lumon 不會驗證模型是否可用。",
+    "settings.executionDescription": "選擇提供者和模型 ID。Lumon 會透過所選提供者發送 API 請求，不會驗證模型是否可用。",
+    "settings.modelCenter": "模型中心",
+    "settings.modelCenterDescription": "在同一個地方配置所有對話 Agent 與自動化模型。",
+    "settings.globalModelConfig": "全域 AI 設定",
+    "settings.globalModelScope": "套用於四個對話 Agent 與三個自動化工作流。",
+    "settings.inheritsGlobalModel": "繼承全域設定",
+    "settings.conversationModels": "對話 Agent",
+    "settings.conversationModelsDescription": "所有飛書 Agent 都使用上方的全域提供者與模型。",
+    "settings.workflowModels": "自動化工作流",
+    "settings.workflowModelsDescription": "自動掃描、自動交付和自動修復使用同一組全域提供者與模型。",
+    "settings.workflowRuntimeLabel": "套用於所有 Agent 與工作流",
+    "settings.deepSeekCredential": "DeepSeek API 金鑰",
+    "settings.deepSeekCredentialConfigured": "已設定於 ~/.lumon/.env.local",
+    "settings.deepSeekCredentialMissing": "未設定",
     "settings.automationOutcome": "自動化結果",
     "settings.notificationsDescription": "控制 Scan 和 Delivery 是否向已設定的飛書 Webhook 發布卡片。Webhook URL 仍位於變數金鑰中。",
-    "settings.storedWorkspace": "僅儲存在此工作區",
+    "settings.storedWorkspace": "儲存在此工作區",
+    "settings.storedWorkspaceOrLumon": "工作區 + Lumon 本機",
+    "settings.storedLumon": "儲存在 Lumon 本機",
     "settings.availableKeys": "可用金鑰",
     "settings.availableKeysDescription": "顯示值以檢查，或直接輸入替換值。儲存時不會包含顯示引號。",
     "settings.revealReplacement": "顯示或輸入替換值",
@@ -1419,14 +1470,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "editor.code": "程式碼",
     "prompt.original": "原始 Markdown",
     "prompt.preview": "預覽",
-    "customModel.enter": "輸入自訂 Cursor 模型",
-    "customModel.id": "Cursor 模型 ID",
-    "customModel.placeholder": "例如：cursor-grok-4.5-medium",
+    "customModel.enter": "輸入自訂模型",
+    "customModel.id": "模型 ID",
+    "customModel.placeholder": "例如：deepseek-v4-flash",
     "customModel.copy": "Lumon 不會驗證模型是否可用，該值將在下一次執行時使用。",
     "customModel.edit": "編輯自訂模型",
-    "customModel.option": "自訂 Cursor 模型 ID…",
+    "customModel.option": "自訂模型 ID…",
     "customModel.badge": "自訂",
-    "customModel.help": "使用 Cursor 支援的模型 ID。",
+    "customModel.help": "使用所選提供者支援的模型 ID。",
     "status.completed": "已完成",
     "status.passed": "通過",
     "status.failed": "失敗",
@@ -1538,7 +1589,10 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.languageGeneration": "生成語言",
     "label.spreadsheetTab": "試算表分頁名稱",
     "label.spreadsheetToken": "試算表 Token / URL",
-    "label.cursorModel": "Cursor 模型",
+    "label.cursorModel": "執行模型",
+    "label.modelProvider": "模型提供者",
+    "label.apiBaseUrl": "API 基礎 URL",
+    "label.apiKeyEnv": "API Key 環境變數",
     "label.softTimeout": "軟逾時（秒）",
     "label.hardTimeout": "硬逾時（秒）",
     "label.maxJobs": "最大並行工作數",
@@ -1687,6 +1741,10 @@ interface AgentSettings {
   workflow: string;
   conversation_enabled: boolean;
   mode: string;
+  provider: string;
+  base_url?: string;
+  api_key_env?: string;
+  model_configured?: boolean;
   model: string;
   soft_timeout_seconds: number;
   hard_timeout_seconds: number;
@@ -1885,12 +1943,28 @@ const cursorModelOptions = [
   { label: "Sonnet 4.5", value: "sonnet-4.5" },
   { label: "GPT-5.1 Codex", value: "gpt-5.1-codex" }
 ];
+const deepSeekModelOptions = [
+  { label: "DeepSeek V4 Flash", value: "deepseek-v4-flash" },
+  { label: "DeepSeek V4 Pro", value: "deepseek-v4-pro" }
+];
 const customModelOption = "__custom__";
 
 function text(value: unknown, fallback = "—") { return value === undefined || value === null || value === "" ? fallback : String(value); }
 function modelValue(value: unknown, fallback = "cursor-grok-4.5-medium") {
   const normalized = String(value ?? "").trim();
   return normalized || fallback;
+}
+function workflowModelConfig(workspace: RecordValue, key: string, fallback = "cursor-grok-4.5-medium") {
+  const configs = workspace.model_configs && typeof workspace.model_configs === "object" ? workspace.model_configs : {};
+  const globalConfig = workspace.model_config && typeof workspace.model_config === "object" ? workspace.model_config : {};
+  const legacyConfig = configs[key] && typeof configs[key] === "object" ? configs[key] : {};
+  const config = globalConfig.provider || globalConfig.model ? globalConfig : legacyConfig;
+  return {
+    provider: String(config.provider || "cursor_cli"),
+    model: modelValue(config.model || workspace.models?.[key], fallback),
+    base_url: String(config.base_url || ""),
+    api_key_env: String(config.api_key_env || ""),
+  };
 }
 function trimmedModelValue(value: unknown) { return String(value ?? "").trim(); }
 function when(value: unknown) {
@@ -2640,7 +2714,7 @@ function AgentTeamBoard({ agents, workflows, t, onNavigate }: { agents: AgentSet
     milchick: "Engineering Operations Manager",
   };
   const findAgent = (id: string, workflow?: string) => agents.find((agent) => agent.id === id) || (workflow ? agents.find((agent) => agent.workflow === workflow) : undefined);
-  const state = (agent?: AgentSettings) => !agent ? "not configured" : !agent.app_id || !agent.app_secret_configured ? "setup" : !agent.conversation_enabled ? "paused" : "ready";
+  const state = (agent?: AgentSettings) => !agent ? "not configured" : !agent.app_id || !agent.app_secret_configured || agent.model_configured === false ? "setup" : !agent.conversation_enabled ? "paused" : "ready";
   const identity = (agent: AgentSettings | undefined, profile: RecordValue) => {
     const id = String(agent?.id || profile.agent).toLowerCase();
     return { id, name: text(agent?.display_name, profile.agent), title: text(agent?.title, titles[id]) };
@@ -2694,7 +2768,7 @@ function OverviewView({ data, project, onNavigate }: { data: DashboardData; proj
     status: profile.workflow === "auto_scan" ? data.runs?.[0]?.status || "not started" : profile.workflow === "auto_delivery" ? data.delivery?.current?.delivery_status || "not started" : data.patch?.current?.patch_status || "not started",
   }));
   const agentState = (agent: AgentSettings) => {
-    if (!agent.app_id || !agent.app_secret_configured) return "setup";
+    if (!agent.app_id || !agent.app_secret_configured || agent.model_configured === false) return "setup";
     if (!agent.conversation_enabled) return "paused";
     return "ready";
   };
@@ -3518,24 +3592,42 @@ function StatusMultiSelect({ options, value, onChange, markDirty }: { options: s
   </div>;
 }
 
-function ModelField({ label, value, onChange, markDirty }: { label: string; value: string; onChange: (value: string) => void; markDirty: () => void }) {
+function ModelField({ label, value, provider = "cursor_cli", onChange, markDirty }: { label: string; value: string; provider?: string; onChange: (value: string) => void; markDirty: () => void }) {
   const { t } = useI18n();
   const normalizedValue = trimmedModelValue(value);
-  const isPreset = cursorModelOptions.some((model) => model.value === normalizedValue);
+  const options = provider === "deepseek" || provider === "deepseek_api" ? deepSeekModelOptions : cursorModelOptions;
+  const isPreset = options.some((model) => model.value === normalizedValue);
   const customModelLabel = normalizedValue || t("customModel.option");
   const [customOpen, setCustomOpen] = useState(false);
   const openCustom = () => setCustomOpen(true);
   return <Field label={label} help={t("customModel.help")}>
     <div className={`model-select-row${isPreset ? "" : " is-custom"}`}>
       <select title={!isPreset ? normalizedValue : undefined} value={isPreset ? normalizedValue : customModelOption} onChange={(event) => { if (event.target.value === customModelOption) openCustom(); else { onChange(event.target.value); markDirty(); } }}>
-        {cursorModelOptions.map((model) => <option value={model.value} key={model.value}>{model.label}</option>)}
-        <option value={customModelOption}>{customModelLabel}</option>
+        {options.map((model) => <option value={model.value} key={model.value}>{model.label}</option>)}
+        <option value={customModelOption}>{isPreset ? t("customModel.option") : customModelLabel}</option>
       </select>
       {!isPreset && <span className="custom-model-badge">{t("customModel.badge")}</span>}
     </div>
     {!isPreset && <button type="button" className="custom-model-edit" onClick={openCustom}>{t("customModel.edit")}</button>}
     {customOpen && <CustomModelDialog label={label} value={value} onClose={() => setCustomOpen(false)} onConfirm={(model) => { onChange(model); markDirty(); setCustomOpen(false); }} />}
   </Field>;
+}
+
+function WorkflowModelField({ label, provider, model, baseUrl, apiKeyEnv, onProviderChange, onModelChange, onBaseUrlChange, onApiKeyEnvChange, markDirty }: { label: string; provider: string; model: string; baseUrl: string; apiKeyEnv: string; onProviderChange: (value: string) => void; onModelChange: (value: string) => void; onBaseUrlChange: (value: string) => void; onApiKeyEnvChange: (value: string) => void; markDirty: () => void }) {
+  const { t } = useI18n();
+  const selectProvider = (value: string) => {
+    onProviderChange(value);
+    onModelChange(value === "deepseek" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
+    markDirty();
+  };
+  return <div className="workflow-model-editor">
+    <div className="workflow-model-editor-heading"><strong>{label}</strong><span>{t("settings.workflowRuntimeLabel")}</span></div>
+    <div className="form-grid compact workflow-model-editor-fields">
+      <Field label={t("label.modelProvider")}><select value={provider} onChange={(event) => selectProvider(event.target.value)}><option value="deepseek">DeepSeek API</option><option value="cursor_cli">Cursor CLI</option><option value="openai_compatible">OpenAI-compatible API</option></select></Field>
+      <ModelField label={t("label.cursorModel")} provider={provider} value={model} onChange={onModelChange} markDirty={markDirty} />
+      {(provider === "openai_compatible" || provider === "openai") && <><Field label={t("label.apiBaseUrl")}><input value={baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => { onBaseUrlChange(event.target.value); markDirty(); }} /></Field><Field label={t("label.apiKeyEnv")}><input value={apiKeyEnv} placeholder="OPENAI_API_KEY" onChange={(event) => { onApiKeyEnvChange(event.target.value); markDirty(); }} /></Field></>}
+    </div>
+  </div>;
 }
 
 function CustomModelDialog({ label, value, onClose, onConfirm }: { label: string; value: string; onClose: () => void; onConfirm: (value: string) => void }) {
@@ -3661,9 +3753,11 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const [patchDoneStatus, setPatchDoneStatus] = useState(String(schedules.patch?.done_status || "Done"));
   const [patchBlockedStatus, setPatchBlockedStatus] = useState(String(schedules.patch?.blocked_status || "Block"));
   const [patchEnabled, setPatchEnabled] = useState(Boolean(schedules.patch?.enabled));
-  const [scanModel, setScanModel] = useState(modelValue(workspace.models?.scan));
-  const [deliveryModel, setDeliveryModel] = useState(modelValue(workspace.models?.delivery));
-  const [patchModel, setPatchModel] = useState(modelValue(workspace.models?.patch));
+  const globalWorkflow = workflowModelConfig(workspace, "scan");
+  const [globalProvider, setGlobalProvider] = useState(globalWorkflow.provider);
+  const [globalModel, setGlobalModel] = useState(globalWorkflow.model);
+  const [globalBaseUrl, setGlobalBaseUrl] = useState(globalWorkflow.base_url);
+  const [globalApiKeyEnv, setGlobalApiKeyEnv] = useState(globalWorkflow.api_key_env);
   const [workflowStatuses, setWorkflowStatuses] = useState<string[]>([]);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [changedSecrets, setChangedSecrets] = useState<Record<string, string>>({});
@@ -3765,7 +3859,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const configuredPeople = accessPeopleGroups.filter((group) => group.ids.some((id) => configuredUserIds.includes(id)));
   const syncAgents = (payload: AgentsSettingsPayload) => {
     const nextAgents = Array.isArray(payload.agents)
-      ? payload.agents.map((agent) => ({ ...agent, app_secret: "" }))
+      ? payload.agents.map((agent) => ({ ...agent, provider: agent.provider || "deepseek", app_secret: "" }))
       : [];
     const nextAccess = {
       allowed_chat_ids: payload.access?.allowed_chat_ids || [],
@@ -3816,7 +3910,8 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     return () => { cancelled = true; };
   }, [project]);
   useEffect(() => {
-    setScanWindow(String(workspace.scan_window_days || 7)); setScanCron(String(schedules.scan?.cron || "0 12 * * 1-5")); setScanEnabled(Boolean(schedules.scan)); setDeliveryInterval(String(Math.round((schedules.delivery?.interval_seconds || 300) / 60))); setEligibleStatuses(Array.isArray(schedules.delivery?.jira_statuses) ? schedules.delivery.jira_statuses.map(String) : String(schedules.delivery?.jira_status || "To Do,Backlog,In Progress").split(",").map((value) => value.trim()).filter(Boolean)); setInDevStatus(String(schedules.delivery?.in_dev_status || "")); setDevDoneStatus(String(schedules.delivery?.dev_done_status || "")); setBlockedStatus(String(schedules.delivery?.blocked_status || "Block")); setDeliveryEnabled(Boolean(schedules.delivery?.enabled)); setPatchInterval(String(Math.round((schedules.patch?.interval_seconds || 300) / 60))); setPatchStatuses(Array.isArray(schedules.patch?.jira_statuses) ? schedules.patch.jira_statuses.map(String) : ["To Do"]); setPatchStartStatus(String(schedules.patch?.in_progress_status || "In Progress")); setPatchDoneStatus(String(schedules.patch?.done_status || "Done")); setPatchBlockedStatus(String(schedules.patch?.blocked_status || "Block")); setPatchEnabled(Boolean(schedules.patch?.enabled)); setScanModel(modelValue(workspace.models?.scan)); setDeliveryModel(modelValue(workspace.models?.delivery)); setPatchModel(modelValue(workspace.models?.patch)); setFeishuEnabled(workspace.feishu_notifications_enabled !== false); setSecrets({}); setChangedSecrets({});
+    const global = workflowModelConfig(workspace, "scan");
+    setScanWindow(String(workspace.scan_window_days || 7)); setScanCron(String(schedules.scan?.cron || "0 12 * * 1-5")); setScanEnabled(Boolean(schedules.scan)); setDeliveryInterval(String(Math.round((schedules.delivery?.interval_seconds || 300) / 60))); setEligibleStatuses(Array.isArray(schedules.delivery?.jira_statuses) ? schedules.delivery.jira_statuses.map(String) : String(schedules.delivery?.jira_status || "To Do,Backlog,In Progress").split(",").map((value) => value.trim()).filter(Boolean)); setInDevStatus(String(schedules.delivery?.in_dev_status || "")); setDevDoneStatus(String(schedules.delivery?.dev_done_status || "")); setBlockedStatus(String(schedules.delivery?.blocked_status || "Block")); setDeliveryEnabled(Boolean(schedules.delivery?.enabled)); setPatchInterval(String(Math.round((schedules.patch?.interval_seconds || 300) / 60))); setPatchStatuses(Array.isArray(schedules.patch?.jira_statuses) ? schedules.patch.jira_statuses.map(String) : ["To Do"]); setPatchStartStatus(String(schedules.patch?.in_progress_status || "In Progress")); setPatchDoneStatus(String(schedules.patch?.done_status || "Done")); setPatchBlockedStatus(String(schedules.patch?.blocked_status || "Block")); setPatchEnabled(Boolean(schedules.patch?.enabled)); setGlobalProvider(global.provider); setGlobalModel(global.model); setGlobalBaseUrl(global.base_url); setGlobalApiKeyEnv(global.api_key_env); setFeishuEnabled(workspace.feishu_notifications_enabled !== false); setSecrets({}); setChangedSecrets({});
     if (data.interactive?.agents) syncAgents(data.interactive.agents);
     setDirty(false); onDirtyChange(false);
   }, [project]);
@@ -3838,6 +3933,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const reveal = async (name: string) => { try { const result = await getSecret(name); setSecrets((current) => ({ ...current, [name]: result })); notify("Integration value revealed", "success"); } catch (err) { notify(err instanceof Error ? err.message : "Unable to reveal value", "error"); } };
   const copy = async (name: string) => { try { const result = await getSecret(name); await navigator.clipboard.writeText(result); notify("Integration value copied", "success"); } catch (err) { notify(err instanceof Error ? err.message : "Unable to copy value", "error"); } };
   const configured = workspace.configured_integrations || [];
+  const integrationSources = (workspace.integration_sources || {}) as Record<string, string>;
   const jenkinsCredentialsConfigured = configured.includes("JENKINS_URL") && configured.includes("JENKINS_AUTH");
   const statusOptions = Array.from(new Set(["To Do", "Backlog", "In Progress", "Done", "Block", ...workflowStatuses, ...eligibleStatuses, ...patchStatuses, inDevStatus, devDoneStatus, patchStartStatus, patchDoneStatus, patchBlockedStatus].filter(Boolean)));
   const configuredDeliveryStatuses = Array.isArray(schedules.delivery?.jira_statuses) ? schedules.delivery.jira_statuses.map(String) : String(schedules.delivery?.jira_status || "To Do,Backlog,In Progress").split(",").map((value) => value.trim()).filter(Boolean);
@@ -3884,12 +3980,9 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     if (saving) return;
     setSaving(true);
     try {
-      if (!scanModel.trim() || !deliveryModel.trim() || !patchModel.trim()) throw new Error("Choose a preset or enter a Cursor-supported model ID for all workflows.");
-      for (const agent of agentDrafts) {
-        if (!String(agent.model || "").trim()) throw new Error(`${agent.display_name || agent.id} needs a Cursor model.`);
-      }
+      if (!globalModel.trim()) throw new Error("Choose a preset or enter a supported global model ID.");
       const saves = [
-        () => request("/api/workspace", project, { method: "POST", json: { scan_window_days: Number(scanWindow), scan_model: scanModel.trim(), delivery_model: deliveryModel.trim(), patch_model: patchModel.trim(), feishu_notifications_enabled: feishuEnabled } }),
+        () => request("/api/workspace", project, { method: "POST", json: { scan_window_days: Number(scanWindow), ai_provider: globalProvider, ai_model: globalModel.trim(), ai_base_url: globalBaseUrl.trim(), ai_api_key_env: globalApiKeyEnv.trim(), feishu_notifications_enabled: feishuEnabled } }),
         ...Object.entries(changedSecrets).map(([key, value]) => () => request("/api/integration", project, { method: "POST", json: { key, value } }))
       ];
       if (scanScheduleChanged) saves.push(() => request("/api/schedule", project, { method: "POST", json: scanEnabled ? { kind: "scan", action: "save", cron: scanCron } : { kind: "scan", action: "remove" } }));
@@ -3918,7 +4011,6 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
                   workflow: agent.workflow,
                   conversation_enabled: agent.conversation_enabled,
                   mode: agent.mode,
-                  model: agent.model,
                   soft_timeout_seconds: Number(agent.soft_timeout_seconds),
                   hard_timeout_seconds: Number(agent.hard_timeout_seconds),
                   reaction_enabled: agent.reaction_enabled,
@@ -3984,20 +4076,14 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
         </div>
       </div>
       {agentDrafts.map((agent) => {
-        const profile = localizedWorkflowProfile(workflowProfile(agent.workflow) || managerProfile, t);
         return <div className="settings-section divider agent-role-section" key={agent.id}>
           <div className="settings-copy">
-            <div className="settings-heading"><div className="settings-title-stack"><div className="agent-settings-identity"><AgentAvatar agentId={agent.id} displayName={agent.display_name} size="guide" /><span><h4>{agent.display_name}</h4><small>{agent.title}</small></span></div></div><Badge value={agent.conversation_enabled ? t("common.enabled") : t("common.paused")} /></div>
-            <p>{profile.mission}</p>
-            <div className="agent-settings-responsibility"><span>{t("settings.responsibility")}</span><strong>{profile.feature}</strong><span>{t("label.role")}</span><strong>{agent.role}</strong><span>{t("label.workflow")}</span><strong>{agent.workflow}</strong></div>
-            <p className="schedule-note">{t("settings.agentCoreDescription")} Credentials live in {text(agent.credentials_path, "~/.lumon/.env.local")}.</p>
+            <div className="settings-heading"><div className="settings-title-stack"><div className="agent-settings-identity"><AgentAvatar agentId={agent.id} displayName={agent.display_name} size="guide" /><span><h4>{agent.display_name}</h4><small>{agent.title}</small></span></div></div></div>
           </div>
           <div className="settings-control wide"><div className="form-grid compact agent-core-fields">
             <Field label={t("label.feishuAppId")}><input value={agent.app_id || ""} placeholder={agent.app_id_masked || "cli_…"} onChange={(event) => updateAgent(agent.id, { app_id: event.target.value })} /></Field>
             <Field label={t("label.feishuAppSecret")} help={agent.app_secret_configured ? `Configured (${agent.app_secret_masked || "set"}). Leave blank to keep.` : t("settings.appSecretRequired")}><input type="password" value={agent.app_secret || ""} placeholder={agent.app_secret_configured ? t("settings.keepSecret") : t("settings.enterSecret")} onChange={(event) => updateAgent(agent.id, { app_secret: event.target.value })} autoComplete="new-password" /></Field>
-            <Field label={t("label.conversation")}><select value={agent.conversation_enabled ? "on" : "off"} onChange={(event) => updateAgent(agent.id, { conversation_enabled: event.target.value === "on" })}><option value="on">{t("common.enabled")}</option><option value="off">{t("common.paused")}</option></select></Field>
-            <ModelField label={t("label.cursorModel")} value={agent.model} onChange={(value) => updateAgent(agent.id, { model: value })} markDirty={markDirty} />
-          </div></div>
+          </div></div><div className="agent-conversation-toggle"><ScheduleToggle label={t("label.conversation")} enabled={agent.conversation_enabled} onChange={(enabled) => updateAgent(agent.id, { conversation_enabled: enabled })} /></div>
         </div>;
       })}
       {agentDrafts.length === 0 && <div className="settings-section divider"><Empty label={t("common.noAgentRolesSettings")} /></div>}
@@ -4059,7 +4145,22 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     </section>
     <section className="settings-cluster" id="settings-runtime">
       <div className="settings-cluster-heading"><div><span>{t("settings.operatingDetails")}</span><h2>{t("settings.runtime")}</h2><p>{t("settings.runtimeDescription")}</p></div><a href="#settings-automation">{t("settings.backAutomation")} <ChevronLeft size={13} /></a></div>
-      <Panel title={t("heading.executionModels")}><div className="settings-section"><div className="settings-copy"><h4>{t("label.cursorModel")}</h4><p>{t("settings.executionDescription")}</p></div><div className="settings-control wide"><div className="form-grid compact"><ModelField label={`${t("label.autoScan")} model`} value={scanModel} onChange={setScanModel} markDirty={markDirty} /><ModelField label={`${t("label.autoDelivery")} model`} value={deliveryModel} onChange={setDeliveryModel} markDirty={markDirty} /><ModelField label={`${t("label.autoPatch")} model`} value={patchModel} onChange={setPatchModel} markDirty={markDirty} /></div></div></div></Panel>
+      <Panel title={t("heading.executionModels")} action={<span className="muted">{t("settings.modelCenter")}</span>}>
+        <div className="settings-section model-center-section">
+          <div className="settings-copy">
+            <h4>{t("settings.modelCenter")}</h4>
+            <p>{t("settings.modelCenterDescription")}</p>
+          </div>
+          <div className="settings-control wide">
+            <div className="model-center">
+              <section className="model-center-block model-center-global">
+                <div className="model-center-heading"><strong>{t("settings.globalModelConfig")}</strong><span>{t("settings.globalModelScope")}</span></div>
+                <WorkflowModelField label={t("settings.globalModelConfig")} provider={globalProvider} model={globalModel} baseUrl={globalBaseUrl} apiKeyEnv={globalApiKeyEnv} onProviderChange={setGlobalProvider} onModelChange={(value) => { setGlobalModel(value); markDirty(); }} onBaseUrlChange={(value) => { setGlobalBaseUrl(value); markDirty(); }} onApiKeyEnvChange={(value) => { setGlobalApiKeyEnv(value); markDirty(); }} markDirty={markDirty} />
+              </section>
+            </div>
+          </div>
+        </div>
+      </Panel>
     <Panel title={t("heading.publishPolicy")}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.automationOutcome")}</h4><p>{t("settings.publishDescription")}</p></div><div className="settings-control wide"><div className="form-grid compact"><Field label={t("label.autoScan")}><select value={scanPublishMode} onChange={(event) => { setScanPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option></select></Field><Field label={t("label.autoDelivery")}><select value={deliveryPublishMode} onChange={(event) => { setDeliveryPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="merge">{t("settings.mergeAfterPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field><Field label={t("label.autoPatch")}><select value={patchPublishMode} onChange={(event) => { setPatchPublishMode(event.target.value); markDirty(); }}><option value="pr">{t("settings.openPullRequest")}</option><option value="direct">{t("settings.pushDirectly")}</option></select></Field></div></div></div></Panel>
     <Panel title={t("settings.deploymentTracking")}>
       <div className="settings-section">
@@ -4078,12 +4179,12 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       </div>
     </Panel>
     <Panel title={t("heading.notifications")}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.feishuNotifications")}</h4><p>{t("settings.notificationsDescription")}</p></div><div className="settings-toggle"><ScheduleToggle enabled={feishuEnabled} onChange={(enabled) => { setFeishuEnabled(enabled); markDirty(); }} /></div></div></Panel>
-    <Panel title={t("heading.variableKeys")} action={<span className="muted">{t("settings.storedWorkspace")}</span>}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.availableKeys")}</h4><p>{t("settings.availableKeysDescription")}</p></div><div className="settings-control wide"><div className="secret-list">{configured.length ? configured.map((name: string) => { const value = changedSecrets[name] ?? secrets[name] ?? ""; return <div className="secret-row" key={name}><code>{name}</code><input type={secrets[name] || changedSecrets[name] !== undefined ? "text" : "password"} value={value} placeholder={t("settings.revealReplacement")} aria-label={t("common.valueFor", { name })} onChange={(event) => { const next = event.target.value; setChangedSecrets((current) => ({ ...current, [name]: next })); markDirty(); }} /><div><IconButton label={t("common.revealValue")} onClick={() => void reveal(name)}>{secrets[name] ? <EyeOff size={15} /> : <Eye size={15} />}</IconButton><IconButton label={t("common.copyValue")} onClick={() => void copy(name)}><Copy size={15} /></IconButton></div></div>; }) : <Empty label={t("common.noIntegrationKeys")} />}</div></div></div></Panel>
+    <Panel title={t("heading.variableKeys")} action={<span className="muted">{t("settings.storedWorkspaceOrLumon")}</span>}><div className="settings-section"><div className="settings-copy"><h4>{t("settings.availableKeys")}</h4><p>{t("settings.availableKeysDescription")}</p></div><div className="settings-control wide"><div className="secret-list">{configured.length ? configured.map((name: string) => { const value = changedSecrets[name] ?? secrets[name] ?? ""; const source = integrationSources[name] === "lumon_local" ? t("settings.storedLumon") : t("settings.storedWorkspace"); return <div className="secret-row" key={name}><span className="secret-name"><code>{name}</code><small>{source}</small></span><input type={secrets[name] || changedSecrets[name] !== undefined ? "text" : "password"} value={value} placeholder={t("settings.revealReplacement")} aria-label={t("common.valueFor", { name })} onChange={(event) => { const next = event.target.value; setChangedSecrets((current) => ({ ...current, [name]: next })); markDirty(); }} /><div><IconButton label={t("common.revealValue")} onClick={() => void reveal(name)}>{secrets[name] ? <EyeOff size={15} /> : <Eye size={15} />}</IconButton><IconButton label={t("common.copyValue")} onClick={() => void copy(name)}><Copy size={15} /></IconButton></div></div>; }) : <Empty label={t("common.noIntegrationKeys")} />}</div></div></div></Panel>
       </section>
     <footer className="settings-save-bar"><span className={dirty ? "settings-save-status unsaved" : "settings-save-status"}>{saving ? t("common.saving") : dirty ? t("settings.unsavedChanges") : t("settings.allSaved")}</span><button className={`button primary${saving ? " is-busy" : ""}`} disabled={!dirty || saving} onClick={() => void saveAll()}>{saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{saving ? t("common.saving") : t("action.saveChanges")}</button></footer>
   </div>;
 }
 
-function ScheduleToggle({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) { const { t } = useI18n(); return <label className="schedule-toggle"><input type="checkbox" checked={enabled} onChange={(event) => onChange(event.target.checked)} /><span aria-hidden="true" /><em>{enabled ? t("common.enabled") : t("common.paused")}</em></label>; }
+function ScheduleToggle({ enabled, onChange, label }: { enabled: boolean; onChange: (enabled: boolean) => void; label?: string }) { const { t } = useI18n(); return <label className="schedule-toggle"><input type="checkbox" aria-label={label} checked={enabled} onChange={(event) => onChange(event.target.checked)} /><span aria-hidden="true" /><em>{enabled ? t("common.enabled") : t("common.paused")}</em></label>; }
 
 createRoot(document.getElementById("root")!).render(<DashboardI18nProvider><App /></DashboardI18nProvider>);

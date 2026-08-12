@@ -7,6 +7,7 @@ from typing import Optional
 SECRET_ENV_DENY_KEYS = frozenset(
     {
         "CURSOR_API_KEY",
+        "DEEPSEEK_API_KEY",
         "FEISHU_DYLAN_APP_ID",
         "FEISHU_DYLAN_APP_SECRET",
         "FEISHU_MARK_APP_ID",
@@ -42,6 +43,7 @@ SECRET_ENV_DENY_PREFIXES = (
     "SSH_",
     "NPM_TOKEN",
     "DOCKER_",
+    "DEEPSEEK_",
 )
 
 _ALLOW_KEYS = (
@@ -83,7 +85,7 @@ def build_agent_env(
         value = base.get(key)
         if value:
             env[key] = value
-    # Cursor provider credential reference only — never copy host secret dumps.
+    # CLI provider credential reference only — never copy host secret dumps.
     cursor_key = base.get("CURSOR_API_KEY", "").strip()
     if cursor_key:
         env["CURSOR_API_KEY"] = cursor_key
