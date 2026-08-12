@@ -179,6 +179,53 @@ LOGIN_DESIGN = {
 
 
 class TestCaseSkillTests(unittest.TestCase):
+    def test_workspace_layout_merges_global_ai_and_agent_sheet_config(self) -> None:
+        fake = FakeSheets()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "lumon" / "config").mkdir(parents=True)
+            (root / "lumon" / "config" / "common.json").write_text(
+                json.dumps({"execution": {"provider": "deepseek", "model": "deepseek-v4-flash"}}),
+                encoding="utf-8",
+            )
+            agents_home = root / "agents"
+            agents_home.mkdir()
+            (agents_home / "config.json").write_text(
+                json.dumps(
+                    {
+                        "projects": {
+                            "mbpass": {
+                                "test_case": {
+                                    "destination": "sheet",
+                                    "spreadsheet_token": "OG4Js7cIlh7d0QtHOEnc1kDfnvf",
+                                    "sheet_name": "Sheet1",
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"LUMEN_AGENTS_HOME": str(agents_home)}):
+                result = generate_test_cases_for_issue(
+                    project="mbpass",
+                    issue_key="MBPAS-1601",
+                    workspace=root,
+                    config=None,
+                    sheets_client=fake,
+                    story_reader=lambda key: StoryContext(
+                        key=key,
+                        type="Story",
+                        summary="Login flow",
+                        description="",
+                        acceptance_criteria=["User can log in"],
+                    ),
+                    designer_runner=_mock_design_runner(LOGIN_DESIGN),
+                )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertGreaterEqual(result["created"], 3)
+
     def test_designer_uses_global_deepseek_provider(self) -> None:
         from skills.test_case.designer import design_test_cases
 

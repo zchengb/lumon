@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from feishu.bitable import FeishuBitable
+from feishu.config import load_agents_config
 from feishu.sheets import FeishuSheets, column_letter, parse_spreadsheet_token
 from skills.test_case.config import REQUIRED_FIELDS, SHEET_HEADER_COLUMNS, load_test_case_config
 from skills.test_case.dedupe import partition_new_cases
@@ -33,17 +34,19 @@ def _workspace_ai_config(
     config: Optional[dict[str, Any]],
 ) -> dict[str, Any]:
     """Use the workspace-wide AI provider for every test-case design call."""
-    data = dict(config) if isinstance(config, dict) else {}
+    data = load_agents_config() if config is None else dict(config) if isinstance(config, dict) else {}
     if workspace is None:
         return data
-    common_path = Path(workspace).expanduser() / "config" / "common.json"
-    try:
-        common = json.loads(common_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return data
-    execution = common.get("execution") if isinstance(common, dict) else None
-    if isinstance(execution, dict) and (execution.get("provider") or execution.get("model")):
-        data["execution"] = dict(execution)
+    root = Path(workspace).expanduser()
+    for common_path in (root / "config" / "common.json", root / "lumon" / "config" / "common.json"):
+        try:
+            common = json.loads(common_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        execution = common.get("execution") if isinstance(common, dict) else None
+        if isinstance(execution, dict) and (execution.get("provider") or execution.get("model")):
+            data["execution"] = dict(execution)
+            break
     return data
 
 
