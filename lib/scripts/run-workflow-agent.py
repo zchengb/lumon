@@ -22,7 +22,10 @@ from agents.runner.runner_env import build_runner_env
 
 DEFAULT_MODEL = "cursor-grok-4.5-medium"
 PROVIDERS = {"cursor_cli", "deepseek", "deepseek_api", "openai", "openai_compatible"}
-MAX_TOOL_LOOPS = 24
+# Auto Scan may inspect many repositories before it can write its result. Keep
+# a bounded budget, but leave enough turns for the configured workspace rather
+# than failing halfway through normal evidence collection.
+MAX_TOOL_LOOPS = 72
 MAX_TOOL_OUTPUT = 20000
 
 
@@ -203,11 +206,22 @@ def shutil_which(command: str) -> str | None:
 
 def run_api(config: dict[str, str], args: argparse.Namespace) -> int:
     roots = allowed_roots(args.workspace)
+    workflow = str(getattr(args, "workflow", "") or "")
+    workflow_hint = {
+        "auto_scan": (
+            "For Auto Scan, batch related reads in one bounded command, do not reread evidence, "
+            "and write the required scan-result.json as soon as the evidence is sufficient."
+        ),
+        "auto_delivery": "For Auto Delivery, inspect only the requested Story and its mapped repository scope.",
+        "auto_patch": "For Auto Patch, inspect only the requested Jira card and its mapped repository scope.",
+    }.get(workflow, "")
     messages: list[dict[str, Any]] = [{
         "role": "system",
         "content": (
             "You are the hands-on Lumon workflow agent. Work on the user's task directly: inspect the repositories, make the required changes, run focused checks, and report the concrete result. "
             "Do not stop at a plan or ask the user to create another request. Use the provided tools whenever repository evidence or changes are needed. "
+            "Work efficiently within the bounded interaction budget: batch related reads, avoid repeating a successful tool call, and finish once the workflow output contract is satisfied. "
+            f"{workflow_hint} "
             f"Allowed roots: {', '.join(str(root) for root in roots)}. Never read or write outside them."
         ),
     }, {"role": "user", "content": args.prompt}]
@@ -253,7 +267,7 @@ def run_api(config: dict[str, str], args: argparse.Namespace) -> int:
                 result = {"ok": False, "error": redact(exc)}
             emit({"type": "tool_call", "subtype": "completed", "tool_call_id": call_id, "tool_call": {"workflowToolCall": {"args": {"name": name}, "result": trace_tool_result(result)}}}, args.output_format)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_OUTPUT]})
-    result = "Workflow agent stopped after reaching the tool-call limit."
+    result = f"Workflow agent reached the bounded interaction budget ({MAX_TOOL_LOOPS} rounds) before producing a final answer."
     emit({"type": "result", "subtype": "error", "is_error": True, "result": result, "duration_ms": int((time.monotonic() - started) * 1000)}, args.output_format)
     return 1
 

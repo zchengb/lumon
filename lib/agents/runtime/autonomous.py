@@ -63,6 +63,13 @@ _QUOTA_ERROR_TOKENS = (
     "rate limit",
 )
 
+_WORKFLOW_BUDGET_ERROR_TOKENS = (
+    "tool-call limit",
+    "tool call limit",
+    "interaction budget",
+    "bounded interaction",
+)
+
 
 def _user_facing_agent_error(error: str, trace_id: str) -> str:
     lower = (error or "").lower()
@@ -80,6 +87,12 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
             f"{provider} has reached its usage quota, so I couldn't finish this turn. "
             "Nothing was sent to Jira and no workspace change was made. "
             "Switch the configured model provider/model or wait for the quota to reset.\n"
+            f"Trace ID: {trace_id}"
+        )
+    if any(tok in lower for tok in _WORKFLOW_BUDGET_ERROR_TOKENS):
+        return (
+            "This workflow reached its bounded interaction budget before it could finish. "
+            "The run is incomplete; please retry, and do not treat partial output as a completed result.\n"
             f"Trace ID: {trace_id}"
         )
     if "sandbox_unavailable" in lower or "security_error" in lower:

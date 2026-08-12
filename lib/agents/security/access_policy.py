@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from agents.security.actions import MUTATION_ACTIONS
-from agents.security.policy import ROLE_ACTIONS, load_access_config
+from agents.security.policy import load_access_config
 from feishu.config import load_agents_config
 
-POLICY_VERSION = "m0.3.4"
+POLICY_VERSION = "m0.4.0"
 
 TrustZone = Literal["PRIVATE", "RESTRICTED", "SHARED", "DENY"]
 HostReadMode = Literal["deny", "selected", "system_only"]
@@ -259,7 +259,7 @@ def _role_actions(agent_id: str) -> frozenset[str]:
 
         return agent_allowed_actions(agent_id)
     except Exception:
-        return frozenset(ROLE_ACTIONS.get(agent_id, ()))
+        return frozenset()
 
 
 def _zone_capabilities(
@@ -271,6 +271,10 @@ def _zone_capabilities(
 ) -> frozenset[str]:
     role = set(_role_actions(agent_id))
     host_caps = set(policy.host_read_capabilities)
+    # Host capabilities are an independent resource grant.  Do not let the
+    # role action vocabulary (or a future role document) accidentally turn a
+    # host adapter into a general-purpose machine inspection interface.
+    role -= {action for action in role if action.startswith("host.") or action.startswith("lumen.")}
     if zone == "PRIVATE":
         allowed = set(role)
         if policy.host_read_mode in {"selected", "system_only"}:

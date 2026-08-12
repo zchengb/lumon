@@ -4,6 +4,7 @@ from typing import Any
 
 from agents.dylan.session_store import PROTOCOL_VERSION, SOUL_VERSION
 from agents.dylan.soul_loader import load_soul
+from agents.role_policy import build_role_guidance
 
 
 def _default_commands(project_slug: str) -> list[str]:
@@ -42,6 +43,7 @@ def build_bootstrap_prompt(
     known_commands: list[str] | None = None,
 ) -> str:
     soul = load_soul()
+    role_guidance = build_role_guidance("dylan")
     commands = known_commands or _default_commands(project_slug)
     cmd_block = "\n".join(f"- {c}" for c in commands)
     return (
@@ -86,6 +88,7 @@ def build_bootstrap_prompt(
         f"{cmd_block}\n\n"
         "Dylan Soul notes:\n"
         f"{soul.strip()}\n\n"
+        f"{role_guidance}\n\n"
         "You may autonomously use tools available inside this Workspace.\n\n"
         "[LUMEN MESSAGE]\n"
         f"User message:\n{user_message}\n\n"
@@ -97,6 +100,7 @@ def build_bootstrap_prompt(
 
 
 def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint: dict[str, Any] | None = None) -> str:
+    role_guidance = build_role_guidance("dylan")
     extra = ""
     if checkpoint:
         topic = checkpoint.get("last_topic") or ""
@@ -114,6 +118,7 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "Ordinary explicit resolve: execute resolve, say Resolved, do not ask for Verification.\n"
         "Primary status vocabulary: Open / Resolved / Reopened / Ignored. Prefer Jira keys.\n"
         "Check verification-status before claiming verification is available.\n"
+        f"{role_guidance}\n\n"
         "Never pass or infer --observed. Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         "Classify fix talk as progress / explicit resolve / resolve-and-verify / conflicting evidence.\n"
         "If [FEISHU REPLY ANCHOR] is present, follow that prior message's suggestion — not a later topic.\n"

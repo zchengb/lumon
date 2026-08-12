@@ -67,6 +67,48 @@ class WorkflowAgentTests(unittest.TestCase):
             self.assertIn('"subtype": "started"', output.getvalue())
             self.assertIn("Finished the change.", output.getvalue())
 
+    def test_api_runtime_reports_bounded_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "lumon"
+            workspace.mkdir(parents=True)
+            response = {
+                "id": "req-loop",
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [{
+                            "id": "call-loop",
+                            "type": "function",
+                            "function": {
+                                "name": "list_directory",
+                                "arguments": json.dumps({"path": "."}),
+                            },
+                        }],
+                    }
+                }],
+            }
+            args = SimpleNamespace(
+                workspace=workspace,
+                agent_id="dylan",
+                project="test",
+                prompt="scan",
+                output_format="stream-json",
+                timeout=5,
+                workflow="auto_scan",
+            )
+            output = io.StringIO()
+            with mock.patch.object(workflow_agent, "MAX_TOOL_LOOPS", 1), mock.patch.object(
+                workflow_agent, "chat_completion_messages", return_value=(response, "req-loop")
+            ), contextlib.redirect_stdout(output):
+                self.assertEqual(
+                    1,
+                    workflow_agent.run_api(
+                        {"provider": "deepseek", "model": "deepseek-v4-flash", "base_url": "", "api_key_env": ""},
+                        args,
+                    ),
+                )
+            self.assertIn("bounded interaction budget (1 rounds)", output.getvalue())
+
     def test_provider_aliases_are_normalized(self) -> None:
         self.assertEqual("cursor_cli", workflow_agent.normalize_provider("cursor"))
         self.assertEqual("deepseek", workflow_agent.normalize_provider("deepseek_api"))

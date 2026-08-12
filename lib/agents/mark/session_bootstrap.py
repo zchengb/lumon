@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from agents.mark.soul_loader import load_soul
+from agents.role_policy import build_role_guidance
 
 PROTOCOL_VERSION = "4"
 SOUL_VERSION = "3"
@@ -37,6 +38,7 @@ def build_bootstrap_prompt(
     known_commands: list[str] | None = None,
 ) -> str:
     soul = load_soul()
+    role_guidance = build_role_guidance("mark")
     commands = known_commands or _default_commands(project_slug)
     cmd_block = "\n".join(f"- {c}" for c in commands)
     return (
@@ -84,6 +86,7 @@ def build_bootstrap_prompt(
         f"{cmd_block}\n\n"
         "Mark Soul notes:\n"
         f"{soul.strip()}\n\n"
+        f"{role_guidance}\n\n"
         "[LUMEN MESSAGE]\n"
         f"User message:\n{user_message}\n\n"
         "Respond after any necessary Workspace investigation.\n"
@@ -94,6 +97,7 @@ def build_bootstrap_prompt(
 
 
 def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint: dict[str, Any] | None = None) -> str:
+    role_guidance = build_role_guidance("mark")
     extra = ""
     if checkpoint:
         topic = checkpoint.get("last_topic") or ""
@@ -110,6 +114,7 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "do not rely on a repository or file analysis from the previous agent.\n"
         "Do not modify business source in the conversational workspace; quick changes run in an isolated host worker. "
         "Use the internal host execution channel when a mutation is needed; the user never needs to see ACTION_REQUEST. "
+        f"{role_guidance}\n\n"
         "If the host says deployment tracking is running, report submission and the expected follow-up, never completion. "
         "Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         f"User message:\n{user_message}\n"

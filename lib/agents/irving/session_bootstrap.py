@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from agents.irving.soul_loader import load_soul
+from agents.role_policy import build_role_guidance
 
 PROTOCOL_VERSION = "1"
 SOUL_VERSION = "1"
@@ -16,6 +17,7 @@ def build_bootstrap_prompt(
     known_commands: list[str] | None = None,
 ) -> str:
     soul = load_soul()
+    role_guidance = build_role_guidance("irving")
     return (
         "[IRVING SESSION BOOTSTRAP]\n\n"
         "You are Irving, Lumen’s Remediation Engineer.\n\n"
@@ -35,6 +37,7 @@ def build_bootstrap_prompt(
         "- Wrap Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n\n"
         "Irving Soul notes:\n"
         f"{soul.strip()}\n\n"
+        f"{role_guidance}\n\n"
         "[LUMEN MESSAGE]\n"
         f"User message:\n{user_message}\n\n"
         "Respond after any necessary Workspace investigation.\n"
@@ -43,6 +46,7 @@ def build_bootstrap_prompt(
 
 
 def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint: dict[str, Any] | None = None) -> str:
+    role_guidance = build_role_guidance("irving")
     extra = ""
     if checkpoint:
         topic = checkpoint.get("last_topic") or ""
@@ -52,6 +56,7 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "[LUMEN MESSAGE]\n\n"
         f"Project: {project_slug or '(same as session)'}\n"
         "Remain Irving. Investigate carefully. Prefer bounded remediation.\n"
+        f"{role_guidance}\n\n"
         "Put the Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
         f"User message:\n{user_message}\n"
         f"{extra}\n"

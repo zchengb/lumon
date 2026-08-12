@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-POLICY_VERSION = "m0.3.4"
+POLICY_VERSION = "m0.4.0"
 
 
 def new_receipt_id() -> str:
@@ -129,6 +129,18 @@ IRVING_ACTIONS = (
     "risk.read",
     "risk.mark_remediated",
     *JIRA_ACTIONS,
+)
+
+# This is the executor registry's action vocabulary, not a list of what each
+# Agent owns.  Ownership is documented in agents/responsibilities/*.md and
+# enforced as a negative responsibility blacklist by security.policy.
+ALL_ACTIONS = frozenset(
+    {
+        *DYLAN_ACTIONS,
+        *MARK_ACTIONS,
+        *MILCHICK_ACTIONS,
+        *IRVING_ACTIONS,
+    }
 )
 
 MUTATION_ACTIONS = frozenset(

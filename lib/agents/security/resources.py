@@ -41,6 +41,7 @@ FORBIDDEN_HOST_ROOTS = (
     ".aws",
     ".config",
     ".lumen",
+    ".lumon",
     "Library",
     "Desktop",
     "Documents",

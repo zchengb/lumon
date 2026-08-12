@@ -13,7 +13,7 @@ from agents.security.actions import (
 )
 from agents.security.audit import emit_security_event, write_receipt
 from agents.security.errors import AuthorizationDenied, CapabilityDenied, SecurityError
-from agents.security.policy import is_action_allowed_for_agent
+from agents.security.policy import is_action_allowed_for_agent, is_action_known
 from feishu.config import load_agents_config
 
 Executor = Callable[[ActionRequest], dict[str, Any]]
@@ -42,16 +42,28 @@ class CapabilityBroker:
         try:
             if not action:
                 raise CapabilityDenied("action is required")
-            if not is_action_allowed_for_agent(agent_id, action):
+            if not is_action_known(action):
                 emit_security_event(
-                    "security.capability.denied",
+                    "security.action.unknown",
                     agent_id=agent_id,
                     action=action,
                     actor_user_id=request.actor_user_id,
                     chat_id=request.chat_id,
                     trace_id=request.trace_id,
                 )
-                raise CapabilityDenied(f"action {action} not allowed for agent {agent_id}")
+                raise CapabilityDenied(f"unknown action {action}")
+            if not is_action_allowed_for_agent(agent_id, action):
+                emit_security_event(
+                    "security.responsibility.denied",
+                    agent_id=agent_id,
+                    action=action,
+                    actor_user_id=request.actor_user_id,
+                    chat_id=request.chat_id,
+                    trace_id=request.trace_id,
+                )
+                raise CapabilityDenied(
+                    f"action {action} is forbidden by the {agent_id} responsibility document"
+                )
             chat_type = ""
             if isinstance(request.arguments, dict):
                 chat_type = str(request.arguments.get("chat_type") or "").strip()

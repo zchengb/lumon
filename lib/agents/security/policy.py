@@ -2,16 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from agents.security.actions import DYLAN_ACTIONS, IRVING_ACTIONS, MARK_ACTIONS, MILCHICK_ACTIONS
+from agents.role_policy import has_role_policy, is_action_forbidden_for_agent
+from agents.security.actions import ALL_ACTIONS
 from feishu.config import load_agents_config
-
-
-ROLE_ACTIONS: dict[str, tuple[str, ...]] = {
-    "dylan": DYLAN_ACTIONS,
-    "mark": MARK_ACTIONS,
-    "milchick": MILCHICK_ACTIONS,
-    "irving": IRVING_ACTIONS,
-}
 
 
 def load_access_config(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
@@ -35,18 +28,23 @@ def load_access_config(config: Optional[dict[str, Any]] = None) -> dict[str, Any
 
 
 def agent_allowed_actions(agent_id: str) -> frozenset[str]:
-    key = str(agent_id or "").strip().lower()
-    try:
-        from agents.definitions import ensure_definitions_loaded, get_definition
+    """Return registered actions minus the role document's explicit blacklist.
 
-        ensure_definitions_loaded()
-        definition = get_definition(key)
-        if definition is not None and definition.capabilities.actions:
-            return frozenset(definition.capabilities.actions)
-    except Exception:
-        pass
-    return frozenset(ROLE_ACTIONS.get(key, ()))
+    The old implementation used four positive capability lists as business
+    routing policy.  Keep this compatibility interface for access-zone and
+    dashboard callers, but make the responsibility documents the source of
+    role-specific decisions.
+    """
+    key = str(agent_id or "").strip().lower()
+    if not has_role_policy(key):
+        return frozenset()
+    return frozenset(action for action in ALL_ACTIONS if not is_action_forbidden_for_agent(key, action))
+
+
+def is_action_known(action: str) -> bool:
+    return str(action or "").strip().lower() in ALL_ACTIONS
 
 
 def is_action_allowed_for_agent(agent_id: str, action: str) -> bool:
-    return str(action or "").strip() in agent_allowed_actions(agent_id)
+    value = str(action or "").strip().lower()
+    return is_action_known(value) and value in agent_allowed_actions(agent_id)

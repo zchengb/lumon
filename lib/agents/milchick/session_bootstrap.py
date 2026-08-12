@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from agents.milchick.soul_loader import load_soul
+from agents.role_policy import build_role_guidance
 
 PROTOCOL_VERSION = "4"
 SOUL_VERSION = "1"
@@ -17,6 +18,7 @@ def build_bootstrap_prompt(
     known_commands: list[str] | None = None,
 ) -> str:
     soul = load_soul()
+    role_guidance = build_role_guidance("milchick")
     return (
         "[MILCHICK SESSION BOOTSTRAP]\n\n"
         "You are Milchick, Lumen’s Engineering Operations Manager.\n\n"
@@ -73,6 +75,7 @@ def build_bootstrap_prompt(
         "</ACTION_REQUEST>\n\n"
         "Milchick Soul notes:\n"
         f"{soul.strip()}\n\n"
+        f"{role_guidance}\n\n"
         "[LUMEN MESSAGE]\n"
         f"User message:\n{user_message}\n\n"
         "Respond after creating any necessary jobs.\n"
@@ -81,6 +84,7 @@ def build_bootstrap_prompt(
 
 
 def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint: dict[str, Any] | None = None) -> str:
+    role_guidance = build_role_guidance("milchick")
     extra = ""
     if checkpoint:
         topic = checkpoint.get("last_topic") or ""
@@ -90,6 +94,7 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "[LUMEN MESSAGE]\n\n"
         f"Project: {project_slug or '(same as session)'}\n"
         "Remain Milchick. Delegate specialist work. Do not execute Mark/Irving domain actions yourself.\n"
+        f"{role_guidance}\n\n"
         "Jira reads/report and test-case generation are yours via ACTION_REQUEST; Jira create/update is yours via ACTION_REQUEST.\n"
         "When a Jira query/report returns work items, continue the same request and generate the requested test cases for each item before finalizing.\n"
         "For test-case generation, keep route=test_case_generation and describe completion as one terminal result "
