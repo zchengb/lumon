@@ -179,6 +179,36 @@ LOGIN_DESIGN = {
 
 
 class TestCaseSkillTests(unittest.TestCase):
+    def test_designer_uses_global_deepseek_provider(self) -> None:
+        from skills.test_case.designer import design_test_cases
+
+        story = StoryContext(
+            key="MBPAS-1601",
+            type="Story",
+            summary="Login flow",
+            description="desc",
+            acceptance_criteria=["User can log in with email"],
+        )
+        with mock.patch(
+            "agents.runtime.openai_compatible.chat_completion",
+            return_value=(json.dumps(LOGIN_DESIGN, ensure_ascii=False), "req-test-case"),
+        ) as completion:
+            drafts = design_test_cases(
+                story,
+                agents_config={
+                    "execution": {
+                        "provider": "deepseek",
+                        "model": "deepseek-v4-flash",
+                        "api_key_env": "DEEPSEEK_API_KEY",
+                    }
+                },
+            )
+
+        self.assertEqual(3, len(drafts))
+        self.assertEqual("deepseek", completion.call_args.kwargs["provider"])
+        self.assertEqual("deepseek-v4-flash", completion.call_args.kwargs["model"])
+        self.assertTrue(completion.call_args.kwargs["json_mode"])
+
     def test_generator_covers_ac_types(self) -> None:
         story = StoryContext(
             key="MBPAS-1601",
@@ -392,6 +422,34 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertEqual(1, result["failed"])
         self.assertEqual(["MBPAS-1", "MBPAS-2"], [item["issue_key"] for item in result["items"]])
         self.assertEqual(2, generate.call_count)
+
+    def test_scoped_query_is_story_only(self) -> None:
+        from agents.security.adapters.test_case import execute_test_case_action
+
+        request = ActionRequest(
+            agent_id="milchick",
+            action="test_case.generate",
+            project_slug="mbpass",
+            actor_user_id="ou_owner",
+            chat_id="oc1",
+            thread_id="omt1",
+            source_message_id="om1",
+            trace_id="tr1",
+            arguments={"scope": "ready_for_qa"},
+        )
+        with mock.patch(
+            "agents.security.adapters.test_case._docs_root",
+            return_value=Path("/tmp/workspace"),
+        ), mock.patch(
+            "agents.security.adapters.jira._action_jira_config",
+            return_value={"project_key": "MBPAS"},
+        ), mock.patch(
+            "agents.security.adapters.jira._query_workitems",
+            return_value={"status": "completed", "items": []},
+        ) as query:
+            execute_test_case_action(request)
+
+        self.assertIn('issuetype = "Story"', query.call_args.kwargs["jql"])
 
 
 class MilchickJobTests(unittest.TestCase):

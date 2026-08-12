@@ -18,6 +18,15 @@ RESET="$(printf '\033[0m')"
 
 echo "${BOLD}Installing Lumon...${RESET}"
 
+GATEWAY_WAS_RUNNING=0
+if [[ -f "${LUMON_HOME}/agents/gateway.pid" ]]; then
+  gateway_pid="$(tr -d '[:space:]' < "${LUMON_HOME}/agents/gateway.pid" 2>/dev/null || true)"
+  if [[ "${gateway_pid}" =~ ^[0-9]+$ ]] && kill -0 "${gateway_pid}" 2>/dev/null; then
+    GATEWAY_WAS_RUNNING=1
+    "${BIN_DIR}/lumon" agents stop >/dev/null 2>&1 || true
+  fi
+fi
+
 mkdir -p "${LUMEN_HOME}/lib"
 mkdir -p "${BIN_DIR}"
 
@@ -93,3 +102,11 @@ echo "  4. Run: lumon list          (see registered projects and IDs)"
 echo "  5. Run: lumon doctor"
 echo "  6. Run: lumon scan --project <slug>   (see slugs with: lumon list)"
 echo "  7. Run: lumon dashboard --project <slug>   (opens the local interactive dashboard)"
+
+if [[ "${GATEWAY_WAS_RUNNING}" -eq 1 ]]; then
+  if "${BIN_DIR}/lumon" agents start >/dev/null 2>&1; then
+    echo "${GREEN}✓${RESET} Restarted Agent Gateway with the newly installed code"
+  else
+    echo "${YELLOW}!${RESET} Agent Gateway was running before install but could not be restarted; run: lumon agents start"
+  fi
+fi

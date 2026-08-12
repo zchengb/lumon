@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -25,6 +26,25 @@ SHEET_COLUMN_WIDTHS = (
 )
 
 DesignRunner = Callable[[str], str]
+
+
+def _workspace_ai_config(
+    workspace: Path | None,
+    config: Optional[dict[str, Any]],
+) -> dict[str, Any]:
+    """Use the workspace-wide AI provider for every test-case design call."""
+    data = dict(config) if isinstance(config, dict) else {}
+    if workspace is None:
+        return data
+    common_path = Path(workspace).expanduser() / "config" / "common.json"
+    try:
+        common = json.loads(common_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return data
+    execution = common.get("execution") if isinstance(common, dict) else None
+    if isinstance(execution, dict) and (execution.get("provider") or execution.get("model")):
+        data["execution"] = dict(execution)
+    return data
 
 
 def story_sheet_name(story_key: str, story_title: str) -> str:
@@ -331,6 +351,7 @@ def generate_test_cases_for_issue(
     story_reader=None,
     designer_runner: DesignRunner | None = None,
 ) -> dict[str, Any]:
+    config = _workspace_ai_config(workspace, config)
     cfg = load_test_case_config(project, config=config)
     generated_by = str(generated_by or "mark").strip() or "mark"
     destination = str(cfg.get("destination") or "bitable")

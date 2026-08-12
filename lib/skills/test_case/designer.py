@@ -71,11 +71,59 @@ def _load_lumen_dotenv() -> None:
 
 
 def _default_model_name(agents_config: dict[str, Any] | None = None) -> str:
+    return str(_model_config(agents_config).get("model") or "cursor-grok-4.5-medium").strip() or "cursor-grok-4.5-medium"
+
+
+def _model_config(agents_config: dict[str, Any] | None = None) -> dict[str, str]:
     data = agents_config if isinstance(agents_config, dict) else {}
-    mark = data.get("mark") if isinstance(data.get("mark"), dict) else {}
-    conversation = mark.get("conversation_v4") if isinstance(mark.get("conversation_v4"), dict) else {}
-    provider = conversation.get("provider") if isinstance(conversation.get("provider"), dict) else {}
-    return str(provider.get("model") or "cursor-grok-4.5-medium").strip() or "cursor-grok-4.5-medium"
+    execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
+    if execution.get("provider") or execution.get("model"):
+        return {
+            "provider": str(execution.get("provider") or execution.get("type") or "").strip().casefold(),
+            "model": str(execution.get("model") or execution.get("name") or "").strip(),
+            "base_url": str(execution.get("base_url") or "").strip(),
+            "api_key_env": str(execution.get("api_key_env") or "").strip(),
+        }
+    for agent_id in ("milchick", "mark", "dylan", "irving"):
+        agent = data.get(agent_id) if isinstance(data.get(agent_id), dict) else {}
+        conversation = agent.get("conversation_v4") if isinstance(agent.get("conversation_v4"), dict) else {}
+        provider = conversation.get("provider") if isinstance(conversation.get("provider"), dict) else {}
+        if provider.get("provider") or provider.get("type") or provider.get("model"):
+            return {
+                "provider": str(provider.get("provider") or provider.get("type") or "").strip().casefold(),
+                "model": str(provider.get("model") or provider.get("name") or "").strip(),
+                "base_url": str(provider.get("base_url") or "").strip(),
+                "api_key_env": str(provider.get("api_key_env") or "").strip(),
+            }
+    return {}
+
+
+def _run_api_agent(
+    prompt: str,
+    *,
+    provider: str,
+    model: str,
+    base_url: str = "",
+    api_key_env: str = "",
+    timeout: int = 240,
+) -> str:
+    from agents.runtime.openai_compatible import chat_completion
+
+    try:
+        output, _request_id = chat_completion(
+            provider=provider,
+            model=model,
+            prompt=prompt,
+            timeout=timeout,
+            base_url=base_url,
+            api_key_env=api_key_env,
+            json_mode=True,
+        )
+    except Exception as exc:
+        raise TestCaseDesignUnavailable(f"{provider} test-case designer failed: {str(exc)[:400]}") from exc
+    if not str(output or "").strip():
+        raise TestCaseDesignUnavailable(f"{provider} test-case designer returned empty output")
+    return output
 
 
 def _run_cursor_agent(prompt: str, *, model: str, workspace: Path, timeout: int = 240) -> str:
@@ -167,11 +215,24 @@ def design_test_cases(
         if runner is not None:
             raw = runner(prompt)
         else:
-            raw = _run_cursor_agent(
-                prompt,
-                model=str(model or _default_model_name(agents_config)).strip(),
-                workspace=(Path(workspace).expanduser() if workspace else Path.home()),
-            )
+            configured = _model_config(agents_config)
+            provider = str(configured.get("provider") or "").strip().casefold()
+            selected_model = str(model or configured.get("model") or "").strip()
+            if provider in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+                default_model = "deepseek-v4-flash" if provider in {"deepseek", "deepseek_api"} else "gpt-4o-mini"
+                raw = _run_api_agent(
+                    prompt,
+                    provider=provider,
+                    model=selected_model or default_model,
+                    base_url=configured.get("base_url", ""),
+                    api_key_env=configured.get("api_key_env", ""),
+                )
+            else:
+                raw = _run_cursor_agent(
+                    prompt,
+                    model=selected_model or "cursor-grok-4.5-medium",
+                    workspace=(Path(workspace).expanduser() if workspace else Path.home()),
+                )
         data = _extract_json_object(raw)
         return drafts_from_payload(data)
     except TestCaseDesignUnavailable:

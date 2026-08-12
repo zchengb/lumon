@@ -46,6 +46,16 @@ _FORGED_IDENTITY_KEYS = frozenset(
     }
 )
 
+_ACTION_ALIASES = {
+    "job.create": "agent.job.create",
+    "job.list": "agent.job.list",
+    "job.show": "agent.job.show",
+    "job.cancel": "agent.job.cancel",
+    "job.retry": "agent.job.retry",
+    "jira.testcase.generate": "test_case.generate",
+    "testcase.generate": "test_case.generate",
+}
+
 
 @dataclass
 class FinalResponseParse:
@@ -104,11 +114,11 @@ def extract_action_requests(raw: str) -> list[dict[str, Any]]:
             continue
         if not isinstance(payload, dict):
             continue
-        action = str(payload.get("action") or "").strip()
+        action = str(payload.get("action") or "").strip().lower()
         if not action:
             continue
         cleaned = _strip_forged_identity(payload)
-        cleaned["action"] = action
+        cleaned["action"] = _ACTION_ALIASES.get(action, action)
         if "resource" not in cleaned or not isinstance(cleaned.get("resource"), dict):
             cleaned["resource"] = {}
         if "arguments" not in cleaned or not isinstance(cleaned.get("arguments"), dict):

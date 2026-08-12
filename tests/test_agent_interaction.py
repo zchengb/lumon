@@ -66,6 +66,14 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual(["target_agent", "capability"], action_missing_fields("agent.job.create", arguments={}))
         self.assertEqual([], action_missing_fields("test_case.generate", arguments={"scope": "ready_for_qa"}))
 
+    def test_legacy_action_alias_is_canonicalized(self) -> None:
+        from agents.runtime.final_response import extract_action_requests
+
+        parsed = extract_action_requests(
+            '<ACTION_REQUEST>{"action":"jira.testcase.generate","arguments":{"scope":"ready_for_qa"}}</ACTION_REQUEST>'
+        )
+        self.assertEqual("test_case.generate", parsed[0]["action"])
+
     def test_pending_clarification_survives_session_reload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             previous = os.environ.get("LUMEN_AGENTS_HOME")

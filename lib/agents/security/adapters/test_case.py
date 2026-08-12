@@ -58,7 +58,7 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
         status_clause = "status in (" + ", ".join(_jql_quote(str(item).strip()) for item in statuses if str(item).strip()) + ")"
         discovery = _query_workitems(
             request,
-            jql=f"project = {project_key} AND {status_clause} ORDER BY updated DESC",
+            jql=f'project = {project_key} AND issuetype = "Story" AND {status_clause} ORDER BY updated DESC',
         )
         if discovery.get("status") != "completed":
             return discovery
