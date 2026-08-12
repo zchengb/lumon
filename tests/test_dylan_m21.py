@@ -249,6 +249,33 @@ class DashboardOverlayTests(unittest.TestCase):
 
             self.assertEqual(["scan-result-20260810-040000"], [run["id"] for run in payload["runs"]])
 
+    def test_build_payload_includes_current_scan_result_in_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "config").mkdir()
+            (workspace / "config" / "common.json").write_text("{}\n", encoding="utf-8")
+            (workspace / "config" / "repos.json").write_text('{"repositories":[]}\n', encoding="utf-8")
+            for name in ("results", "reports", "logs", "state"):
+                (workspace / name).mkdir()
+            (workspace / "results" / "scan-result.json").write_text(
+                json.dumps({
+                    "started_at": "2026-08-12T05:52:00Z",
+                    "finished_at": "2026-08-12T06:03:20Z",
+                    "scan_status": "completed",
+                    "repositories_scanned": 13,
+                    "findings": [{"severity": "Medium"}],
+                }),
+                encoding="utf-8",
+            )
+            path = ROOT / "lib" / "scripts" / "render-dashboard.py"
+            spec = importlib.util.spec_from_file_location("render_dashboard_current_test", path)
+            assert spec is not None and spec.loader is not None
+            renderer = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(renderer)
+            payload = renderer.build_payload(workspace)
+            self.assertEqual("scan-result", payload["runs"][0]["id"])
+            self.assertEqual("scan-result", payload["latest_run"]["id"])
+
 
 class ReconcileTests(unittest.TestCase):
     def test_dry_run_and_repair(self) -> None:

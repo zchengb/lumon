@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "5"
+MANAGED_VERSION = "6"
 _MANAGED_START = f"<!-- LUMEN MILCHICK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MILCHICK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MILCHICK MANAGED START"
@@ -21,8 +21,8 @@ def _managed_block(project_slug: str) -> str:
         f"- jira.workitem.create / jira.workitem.update (via host TWG; Agent-selected structured action)\n"
         f"- project.status / workflow.status / schedule.status\n\n"
         f"## Test-case execution\n"
-        f"- Milchick owns test_case.generate after a Jira query/report returns matching work items\n"
-        f"- Choose one unprocessed issue per turn, wait for its receipt, then choose the next; the host never fans out actions\n"
+        f"- Milchick owns test_case.generate; for all Ready for QA Stories emit one action with scope=ready_for_qa\n"
+        f"- That single execution discovers Jira items, processes each item sequentially, and returns an aggregate receipt\n"
         f"- The host action assembles the Jira card, workspace/story context, repository evidence, the installed test-case standard (`skills/test_case/prompts.py::DESIGN_SYSTEM_PROMPT`), and configured TWG/Feishu destination\n"
         f"- Never ask redundant confirmation before delegation\n"
         f"- Child jobs may set depends_on\n\n"

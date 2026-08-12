@@ -235,6 +235,9 @@ def _action_results_need_continuation(receipts: list[dict[str, Any]]) -> bool:
         if action not in _ACTION_RESULT_CONTINUATION_ACTIONS:
             continue
         if action == "test_case.generate":
+            result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+            if result.get("batch") or str(result.get("scope") or "").strip():
+                continue
             if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
                 return True
             continue
@@ -263,7 +266,7 @@ def _action_results_for_agent(receipts: list[dict[str, Any]]) -> str:
 
 
 def _serialize_repeated_actions(action_requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep repeated per-item work one card per Agent turn.
+    """Keep legacy per-item requests bounded; scoped work uses one action.
 
     The Agent chooses the card and emits the action. If a model sends a batch
     anyway, execute only its first test-case action and return the receipt so
@@ -807,10 +810,11 @@ def handle_autonomous_conversation(
                             "[LUMEN HOST ACTION RESULTS]\n"
                             "The host has executed your previous ACTION_REQUEST(s). These results are authoritative. "
                             "Continue the same latest user request from the results below. Do not repeat completed reads. "
-                            "Decide yourself whether more work is required. For repeated per-item work, choose the "
-                            "next unprocessed item and emit exactly one ACTION_REQUEST for it; wait for its receipt "
-                            "before choosing another. Do not emit a batch of repeated actions. Only give the final "
-                            "answer when your own completion criteria are satisfied.\n\n"
+                            "For a test-case request covering Ready for QA Stories, emit one "
+                            "test_case.generate ACTION_REQUEST with scope=ready_for_qa; that action performs the "
+                            "full per-Story workflow and returns an aggregate result. Do not stop after a Jira "
+                            "discovery result. Only give the final answer when your own completion criteria are "
+                            "satisfied.\n\n"
                             f"Original user request:\n{text}\n\n"
                             f"Executed results:\n{_action_results_for_agent(action_receipts)}"
                         ),
@@ -872,6 +876,13 @@ def handle_autonomous_conversation(
             if action_receipts:
                 for receipt in action_receipts:
                     result_payload = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+                    if (
+                        receipt.get("action") == "test_case.generate"
+                        and result_payload.get("batch")
+                        and result_payload.get("summary")
+                    ):
+                        reply_text = str(result_payload["summary"])
+                        break
                     if receipt.get("status") == "succeeded" and result_payload.get("summary"):
                         if not parsed.valid:
                             reply_text = str(result_payload["summary"])

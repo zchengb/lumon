@@ -64,6 +64,7 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual(["story"], action_missing_fields("delivery.start", arguments={}))
         self.assertEqual([], action_missing_fields("delivery.start", resource={"story": "MBPAS-1"}))
         self.assertEqual(["target_agent", "capability"], action_missing_fields("agent.job.create", arguments={}))
+        self.assertEqual([], action_missing_fields("test_case.generate", arguments={"scope": "ready_for_qa"}))
 
     def test_pending_clarification_survives_session_reload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

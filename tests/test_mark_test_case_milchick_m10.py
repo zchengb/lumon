@@ -351,6 +351,48 @@ class TestCaseSkillTests(unittest.TestCase):
                         self.assertEqual(receipt.status, "succeeded")
                         self.assertEqual(gen.call_args.kwargs["generated_by"], agent_id)
 
+    def test_scoped_test_case_action_queries_and_processes_each_story(self) -> None:
+        from agents.security.adapters.test_case import execute_test_case_action
+
+        request = ActionRequest(
+            agent_id="milchick",
+            action="test_case.generate",
+            project_slug="mbpass",
+            actor_user_id="ou_owner",
+            chat_id="oc1",
+            thread_id="omt1",
+            source_message_id="om1",
+            trace_id="tr1",
+            arguments={"scope": "ready_for_qa"},
+        )
+        with mock.patch(
+            "agents.security.adapters.jira._action_jira_config",
+            return_value={"project_key": "MBPAS"},
+        ), mock.patch(
+            "agents.security.adapters.jira._query_workitems",
+            return_value={
+                "status": "completed",
+                "items": [
+                    {"issue_key": "MBPAS-1", "summary": "First"},
+                    {"issue_key": "MBPAS-2", "summary": "Second"},
+                ],
+            },
+        ), mock.patch(
+            "skills.test_case.skill.generate_test_cases_for_issue",
+            side_effect=[
+                {"status": "completed", "generated": 2, "created": 2, "sheet_url": "https://sheet/1"},
+                {"status": "failed", "code": "TEST_CASE_CONFIG_MISSING", "message": "missing sheet"},
+            ],
+        ) as generate:
+            result = execute_test_case_action(request)
+
+        self.assertEqual("partial", result["status"])
+        self.assertEqual(2, result["count"])
+        self.assertEqual(1, result["completed"])
+        self.assertEqual(1, result["failed"])
+        self.assertEqual(["MBPAS-1", "MBPAS-2"], [item["issue_key"] for item in result["items"]])
+        self.assertEqual(2, generate.call_count)
+
 
 class MilchickJobTests(unittest.TestCase):
     def test_milchick_definition_registered(self) -> None:

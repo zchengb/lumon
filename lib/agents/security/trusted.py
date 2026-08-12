@@ -87,6 +87,10 @@ def execute_trusted_actions(
             continue
         resource = dict(item.get("resource") if isinstance(item.get("resource"), dict) else {})
         arguments = dict(item.get("arguments") if isinstance(item.get("arguments"), dict) else {})
+        if action == "test_case.generate":
+            issue_key = str(arguments.get("issue_key") or arguments.get("story") or "").strip()
+            if issue_key:
+                resource.setdefault("issue_key", issue_key)
         for key in (
             "actor_user_id",
             "actor",

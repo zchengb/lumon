@@ -494,6 +494,31 @@ def trend_points(runs: list, limit: int = 10) -> list:
     return list(reversed(points))
 
 
+def scan_run_payload(root: Path, reports_dir: Path, path: Path, data: dict) -> dict:
+    counts = severity_counts(data.get("findings", []))
+    html_path, pdf_path, report_status = resolve_report_artifacts(root, reports_dir, path, data)
+    return {
+        "id": path.stem,
+        "started_at": data.get("started_at", ""),
+        "finished_at": data.get("finished_at", ""),
+        "status": data.get("scan_status", ""),
+        "repos": data.get("repositories_scanned", 0),
+        "high": counts["High"],
+        "medium": counts["Medium"],
+        "low": counts["Low"],
+        "prs": len(data.get("prs", [])),
+        "html": html_path,
+        "pdf": pdf_path,
+        "report_status": report_status,
+        "json": rel(root, path),
+        "feishu": data.get("feishu", {}).get("status", ""),
+        "jira": data.get("jira", {}).get("status", ""),
+        "failures": len(data.get("failures", [])),
+        "duration": duration_between(data.get("started_at", ""), data.get("finished_at", "")),
+        "findings": data.get("findings", []),
+    }
+
+
 def build_payload(root: Path) -> dict:
     common = load_json(root / "config" / "common.json", {})
     repos = load_json(root / "config" / "repos.json", {"repositories": []})
@@ -508,44 +533,23 @@ def build_payload(root: Path) -> dict:
     runs = []
     scan_results: list[dict] = []
     latest_run = None
+    seen_run_ids: set[str] = set()
     latest_path = results_dir / "scan-result.json"
     latest_data = load_json(latest_path, {})
     if is_renderable_scan_result(latest_data):
         scan_results.append(latest_data)
-        latest_run = {
-            "id": latest_path.stem,
-            "finished_at": latest_data.get("finished_at", ""),
-            "status": latest_data.get("scan_status", ""),
-            "findings": latest_data.get("findings", []),
-        }
+        latest_run = scan_run_payload(root, reports_dir, latest_path, latest_data)
+        runs.append(latest_run)
+        seen_run_ids.add(latest_path.stem)
 
     for path in sorted(results_dir.glob("scan-result-*.json"), reverse=True):
+        if path.stem in seen_run_ids:
+            continue
         data = load_json(path, {})
         if not is_renderable_scan_result(data):
             continue
         scan_results.append(data)
-        counts = severity_counts(data.get("findings", []))
-        html_path, pdf_path, report_status = resolve_report_artifacts(root, reports_dir, path, data)
-        run = {
-            "id": path.stem,
-            "started_at": data.get("started_at", ""),
-            "finished_at": data.get("finished_at", ""),
-            "status": data.get("scan_status", ""),
-            "repos": data.get("repositories_scanned", 0),
-            "high": counts["High"],
-            "medium": counts["Medium"],
-            "low": counts["Low"],
-            "prs": len(data.get("prs", [])),
-            "html": html_path,
-            "pdf": pdf_path,
-            "report_status": report_status,
-            "json": rel(root, path),
-            "feishu": data.get("feishu", {}).get("status", ""),
-            "jira": data.get("jira", {}).get("status", ""),
-            "failures": len(data.get("failures", [])),
-            "duration": duration_between(data.get("started_at", ""), data.get("finished_at", "")),
-            "findings": data.get("findings", []),
-        }
+        run = scan_run_payload(root, reports_dir, path, data)
         runs.append(run)
         if latest_run is None:
             latest_run = {

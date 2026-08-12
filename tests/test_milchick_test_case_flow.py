@@ -38,14 +38,14 @@ class FakeRuntime(CursorAgentRuntime):
         return self.results.pop(0)
 
 
-def _receipt(action: str, result: dict) -> ActionReceipt:
+def _receipt(action: str, result: dict, *, resource: dict | None = None) -> ActionReceipt:
     return ActionReceipt(
         receipt_id=f"act-{action.replace('.', '-')}",
         status="succeeded",
         action=action,
         agent_id="milchick",
         actor="ou_owner",
-        resource={},
+        resource=dict(resource or {}),
         trace_id="tr_flow",
         executed_at="2026-08-11T00:00:00Z",
         result=result,
@@ -95,6 +95,7 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                 _receipt(
                     "test_case.generate",
                     {"status": "completed", "summary": f"Generated test cases for {item['issue_key']}"},
+                    resource={"issue_key": item["issue_key"]},
                 )
                 for item in items
             ]
@@ -197,7 +198,7 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
             self.assertIn("MBPAS-1497", result["text"])
             self.assertIn("Generated test cases for MBPAS-1491", result["text"])
 
-    def test_agent_final_response_does_not_trigger_host_side_fanout(self) -> None:
+    def test_scoped_request_is_terminal_after_one_batch_action(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             (workspace / "stories").mkdir()
@@ -205,11 +206,17 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
             os.environ["LUMEN_AGENTS_HOME"] = tmp
             items = [
                 {"issue_key": key, "summary": f"Story {key}", "status": "Ready for QA"}
-                for key in ("MBPAS-1276", "MBPAS-1491", "MBPAS-1497", "MBPAS-1550")
+                for key in ("MBPAS-1276",)
             ]
-            query = _receipt(
-                "jira.workitem.query",
-                {"status": "completed", "count": 4, "items": items},
+            generated = _receipt(
+                "test_case.generate",
+                {
+                    "status": "completed",
+                    "scope": "ready_for_qa",
+                    "batch": True,
+                    "summary": "Generated test cases for 1/1 Ready for QA Stories.\n- MBPAS-1276: completed",
+                    "items": [{"issue_key": "MBPAS-1276", "status": "completed"}],
+                },
             )
             runtime = FakeRuntime(
                 [
@@ -217,18 +224,9 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                         text=(
                             '<CONVERSATION_DECISION>{"mode":"normal","route":"test_case_generation",'
                             '"required_actions":["test_case.generate"]}</CONVERSATION_DECISION>'
-                            '<ACTION_REQUEST>{"action":"jira.workitem.query",'
-                            '"arguments":{"jql":"project = MBPAS"}}</ACTION_REQUEST>'
-                        ),
-                        provider_session_id="sess-milchick",
-                        status="succeeded",
-                    ),
-                    AgentRunResult(
-                        text=(
-                            '<CONVERSATION_DECISION>{"mode":"normal","route":"test_case_generation"}'
-                            '</CONVERSATION_DECISION><FINAL_RESPONSE>'
-                            "Jira query returned 4 work item(s)."
-                            "</FINAL_RESPONSE>"
+                            '<ACTION_REQUEST>'
+                            '{"action":"test_case.generate","arguments":{"scope":"ready_for_qa"}}'
+                            '</ACTION_REQUEST>'
                         ),
                         provider_session_id="sess-milchick",
                         status="succeeded",
@@ -249,7 +247,7 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                         with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
                             with mock.patch(
                                 "agents.runtime.autonomous.execute_trusted_actions",
-                                side_effect=[[query]],
+                                side_effect=[[generated]],
                             ) as execute:
                                 result = handle_autonomous_conversation(
                                     definition=definition,
@@ -280,10 +278,11 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
 
             self.assertEqual("ok", result["status"])
             self.assertEqual(1, execute.call_count)
-            self.assertEqual(2, len(runtime.calls))
-            self.assertNotIn("REQUIRED EXECUTION CHECKPOINT", str(runtime.calls[1]["prompt"]))
-            self.assertEqual("jira.workitem.query", execute.call_args_list[0].kwargs["requests"][0]["action"])
-            self.assertIn("Jira query returned 4 work item(s).", result["text"])
+            self.assertEqual(1, len(runtime.calls))
+            request = execute.call_args_list[0].kwargs["requests"][0]
+            self.assertEqual("test_case.generate", request["action"])
+            self.assertEqual("ready_for_qa", request["arguments"]["scope"])
+            self.assertIn("Generated test cases for 1/1", result["text"])
 
 
 if __name__ == "__main__":
