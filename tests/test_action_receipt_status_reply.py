@@ -8,7 +8,13 @@ LIB = ROOT / "lib"
 if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
-from agents.runtime.final_response import format_action_receipts_summary, is_planning_reply, prefer_action_summary
+from agents.runtime.final_response import (
+    format_action_receipts_summary,
+    has_unbacked_delegation_claim,
+    is_planning_reply,
+    job_create_succeeded,
+    prefer_action_summary,
+)
 
 
 def test_planning_reply_detects_status_placeholder() -> None:
@@ -32,6 +38,29 @@ def test_unexecuted_delegation_claim_strips_line_but_keeps_other_text() -> None:
     result = prefer_action_summary(text, [])
     assert "派給" not in result
     assert "進度更新後回報" in result
+
+
+def test_execution_claim_detected_without_receipts() -> None:
+    claim = "好的，MBPAS-1503 的 Technical Plan 已由 Mark 執行中。他會讀取 Jira 卡片與 workspace 內容後繼續推進。"
+    assert has_unbacked_delegation_claim(claim)
+
+
+def test_unbacked_delegation_claim_skips_questions() -> None:
+    assert not has_unbacked_delegation_claim("要把這個交給 Mark 處理嗎？")
+    assert not has_unbacked_delegation_claim("Should I hand this to Mark?")
+
+
+def test_delegation_claim_ignored_after_successful_job_create() -> None:
+    receipts = [
+        {
+            "action": "agent.job.create",
+            "status": "succeeded",
+            "result": {"handoff_text": "Mark is running Technical Loop for MBPAS-1503."},
+        }
+    ]
+    assert job_create_succeeded(receipts)
+    text = prefer_action_summary("已由 Mark 執行中。", receipts)
+    assert "Mark is running Technical Loop for MBPAS-1503." in text
 
 
 def test_successful_job_create_replaces_claim_with_host_summary() -> None:

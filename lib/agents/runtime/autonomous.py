@@ -13,7 +13,12 @@ from agents.dylan.schemas import ConversationFlags
 from agents.project_resolver import known_project_slugs, load_chat_project_map, resolve_project
 from agents.runner import default_runner
 from agents.runtime.cursor_runtime import CursorAgentRuntime, create_agent_runtime
-from agents.runtime.final_response import extract_final_response, prefer_action_summary
+from agents.runtime.final_response import (
+    extract_final_response,
+    has_unbacked_delegation_claim,
+    job_create_succeeded,
+    prefer_action_summary,
+)
 from agents.runtime.interaction import (
     action_missing_fields,
     clarification_choice_hint,
@@ -896,6 +901,7 @@ def handle_autonomous_conversation(
                                 if nested.get("summary"):
                                     reply_text = f"{result_payload['handoff_text']}\n\n{nested['summary']}"
                         break
+            unbacked_original = reply_text
             reply_text = prefer_action_summary(reply_text, action_receipts)
             if clarification and not str(reply_text or "").strip():
                 reply_text = format_clarification_reply(
@@ -903,6 +909,15 @@ def handle_autonomous_conversation(
                     clarification.get("choices"),
                     str(clarification.get("current_version") or ""),
                 )
+            if not job_create_succeeded(action_receipts):
+                if has_unbacked_delegation_claim(reply_text) or (
+                    not str(reply_text or "").strip()
+                    and has_unbacked_delegation_claim(unbacked_original)
+                ):
+                    reply_text = (
+                        "還沒有真正開始：這次沒有產生委派回執，工作並未交給 Mark。"
+                        "請再發一次需求，或直接 @Mark。"
+                    )
             return {
                 "status": "ok",
                 "action": "autonomous.clarification" if clarification else "autonomous.reply",

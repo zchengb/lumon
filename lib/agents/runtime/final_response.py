@@ -540,13 +540,33 @@ def format_action_receipts_summary(receipts: list[dict[str, Any]]) -> str:
     return "Action results:\n" + "\n".join(lines)
 
 
-def _remove_unexecuted_job_claims(reply_text: str, receipts: list[dict[str, Any]]) -> str:
-    """Strip claims that work was created/queued/delegated when no job.create succeeded."""
-    if any(
+def job_create_succeeded(receipts: list[dict[str, Any]]) -> bool:
+    return any(
         str(receipt.get("action") or "").strip() == "agent.job.create"
         and str(receipt.get("status") or "").strip() == "succeeded"
         for receipt in receipts
-    ):
+    )
+
+
+def has_unbacked_delegation_claim(reply_text: str) -> bool:
+    """Detect a declarative claim that another agent is executing work."""
+    text = str(reply_text or "").strip()
+    if not text or any(marker in text for marker in ("?", "？", "嗎", "吗")):
+        return False
+    lowered = text.lower()
+    if not any(name in lowered for name in ("mark", "irving", "dylan")):
+        return False
+    verbs = (
+        "已派", "已委", "已交給", "已交给", "派給", "派给", "已由", "執行", "执行",
+        "進行", "进行", "推進", "推进", "處理", "处理", "接管", "接手", "安排",
+        "assigned", "delegated", "handed", "handing", "running", "working", "progress",
+    )
+    return any(verb in text for verb in verbs)
+
+
+def _remove_unexecuted_job_claims(reply_text: str, receipts: list[dict[str, Any]]) -> str:
+    """Strip claims that work was created/queued/delegated when no job.create succeeded."""
+    if job_create_succeeded(receipts):
         return reply_text
     claim_tokens = (
         "已建立", "已创建", "已創建", "建立了", "创建了", "創建了",
