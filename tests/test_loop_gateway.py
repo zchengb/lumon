@@ -253,6 +253,68 @@ class LoopGatewayTests(unittest.TestCase):
                 else:
                     os.environ["LUMEN_AGENTS_HOME"] = previous
 
+    def test_nested_mark_handoff_preserves_clarification_without_parent_receipt(self) -> None:
+        ensure_definitions_loaded()
+        mark = get_definition("mark")
+        assert mark is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            (docs / "stories").mkdir()
+            previous = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"clarify",'
+                            '"route":"technical_loop","active_loop":"technical"}</CONVERSATION_DECISION>'
+                            '<CLARIFICATION_REQUEST>{"action":"loop.technical",'
+                            '"question":"請確認交付邊界。","missing":["scope"],'
+                            '"choices":[{"value":"app","label":"由 App 團隊處理"},'
+                            '{"value":"api","label":"拆分 API Story"}]}</CLARIFICATION_REQUEST>'
+                        ),
+                        provider_session_id="provider-mark",
+                        status="succeeded",
+                    )
+                ]
+            )
+            definition = replace(
+                mark,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", docs.resolve()),
+                ensure_workspace_contract=lambda **kwargs: docs,
+            )
+            meta = {
+                "chat_id": "oc1",
+                "chat_type": "group",
+                "thread_id": "omt1",
+                "user_id": "ou1",
+                "message_id": "om1",
+                "_project_slug": "mbpass",
+                "_loop_capability": "loop.technical",
+                "_nested_handoff": "1",
+                "_suppress_reply": "1",
+            }
+            try:
+                with mock.patch("agents.runtime.autonomous.resolve_project", return_value={"slug": "mbpass", "workspace": str(docs)}):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            result = handle_autonomous_conversation(
+                                definition=definition,
+                                text="MBPAS-1503 進行 Technical Plan",
+                                meta=meta,
+                                common=_common(),
+                                runtime=runtime,
+                            )
+                self.assertEqual("autonomous.clarification", result["action"])
+                self.assertIn("請確認交付邊界", result["text"])
+                self.assertNotIn("沒有產生委派回執", result["text"])
+                self.assertEqual("scope", result["pending_clarification"]["missing"][0])
+            finally:
+                if previous is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous
+
 
 if __name__ == "__main__":
     unittest.main()

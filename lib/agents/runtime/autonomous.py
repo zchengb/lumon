@@ -980,7 +980,11 @@ def handle_autonomous_conversation(
                     clarification.get("choices"),
                     str(clarification.get("current_version") or ""),
                 )
-            if not job_create_succeeded(action_receipts):
+            if (
+                not job_create_succeeded(action_receipts)
+                and not clarification
+                and str(meta.get("_nested_handoff") or "") != "1"
+            ):
                 if has_unbacked_delegation_claim(reply_text) or (
                     not str(reply_text or "").strip()
                     and has_unbacked_delegation_claim(unbacked_original)
