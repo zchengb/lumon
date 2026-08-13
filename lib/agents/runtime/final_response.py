@@ -339,6 +339,8 @@ def _format_one_job(job: dict[str, Any]) -> str:
         head = f"{subject[:1].upper() + subject[1:]} is queued" + (f" with {who}." if who else ".")
     elif status in {"running", "in_progress"}:
         head = f"{subject[:1].upper() + subject[1:]} is running" + (f" with {who}." if who else ".")
+    elif status == "waiting_user":
+        head = f"{subject[:1].upper() + subject[1:]} is waiting for your answer" + (f" ({who})." if who else ".")
     else:
         head = f"{subject[:1].upper() + subject[1:]} is {status}" + (f" ({who})." if who else ".")
     if not outcome:
@@ -586,7 +588,12 @@ def _remove_unexecuted_job_claims(reply_text: str, receipts: list[dict[str, Any]
     return "\n".join(lines).strip()
 
 
-def prefer_action_summary(reply_text: str, receipts: list[dict[str, Any]]) -> str:
+def prefer_action_summary(
+    reply_text: str,
+    receipts: list[dict[str, Any]],
+    *,
+    preserve_substantive: bool = False,
+) -> str:
     reply_text = _remove_unexecuted_job_claims(reply_text, receipts)
     summary = format_action_receipts_summary(receipts)
     denials = [r for r in receipts if str(r.get("status") or "") == "denied"]
@@ -616,7 +623,7 @@ def prefer_action_summary(reply_text: str, receipts: list[dict[str, Any]]) -> st
         str(r.get("action") or "").strip() in _STATUS_READ_ACTIONS and r.get("status") == "succeeded"
         for r in receipts
     )
-    if has_status_read and summary:
+    if has_status_read and summary and not (preserve_substantive and reply_text and not is_planning_reply(reply_text)):
         notices = "\n\n".join(item for item in (denial_text, failure_text) if item)
         return f"{summary}\n\n{notices}" if notices else summary
     notices = "\n\n".join(item for item in (denial_text, failure_text) if item)

@@ -172,6 +172,67 @@ def _terminate_process_tree(pid: int) -> None:
 
 
 class DeliveryActionAdapter:
+    def loop_state(self, *, workspace: Path, story: str, capability: str) -> dict[str, Any]:
+        """Return the small artifact contract used to close a planning Loop."""
+        docs = _docs_dir(workspace)
+        story_dir = _find_story_dir(docs, story)
+        loop = str(capability or "").strip().lower()
+        if story_dir is None:
+            return {
+                "status": "missing",
+                "loop": loop,
+                "story": story,
+                "story_dir": "",
+                "complete": False,
+                "reason": "story_not_found",
+            }
+
+        metadata_path = story_dir / "metadata.json"
+        story_path = story_dir / "story.md"
+        metadata: dict[str, Any] = {}
+        if metadata_path.is_file():
+            try:
+                payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+                metadata = payload if isinstance(payload, dict) else {}
+            except (OSError, json.JSONDecodeError):
+                metadata = {}
+
+        if loop == "loop.business":
+            business_ready = str(metadata.get("businessStatus") or "").strip().lower() == "ready"
+            return {
+                "status": "ready" if business_ready else "draft",
+                "loop": loop,
+                "story": story,
+                "story_dir": str(story_dir),
+                "story_exists": story_path.is_file(),
+                "business_status": metadata.get("businessStatus") or "",
+                "complete": bool(story_path.is_file() and business_ready),
+                "reason": "business_ready" if business_ready else "business_status_not_ready",
+            }
+
+        plan_path = story_dir / str(metadata.get("technicalPlanFile") or "technical-plan.md")
+        try:
+            plan_text = plan_path.read_text(encoding="utf-8") if plan_path.is_file() else ""
+        except OSError:
+            plan_text = ""
+        technical_status = str(metadata.get("technicalStatus") or "").strip().lower()
+        complete = bool(story_path.is_file() and plan_text.strip() and technical_status == "approved")
+        return {
+            "status": "approved" if complete else ("draft" if plan_text.strip() else "missing"),
+            "loop": loop or "loop.technical",
+            "story": story,
+            "story_dir": str(story_dir),
+            "story_exists": story_path.is_file(),
+            "technical_plan": str(plan_path),
+            "technical_plan_exists": plan_path.is_file(),
+            "technical_plan_nonempty": bool(plan_text.strip()),
+            "technical_status": technical_status,
+            "complete": complete,
+            "reason": "technical_plan_approved" if complete else (
+                "technical_plan_draft" if plan_text.strip() else "technical_plan_missing"
+            ),
+        }
+
     def readiness(self, *, workspace: Path, story: str) -> dict[str, Any]:
         docs = _docs_dir(workspace)
         story_dir = _find_story_dir(docs, story)

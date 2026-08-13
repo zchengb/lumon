@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -46,7 +47,8 @@ class AgentJob:
 class AgentJobStore:
     def __init__(self, path: Path | None = None) -> None:
         if path is None:
-            home = Path.home() / ".lumon" / "agents"
+            configured_home = os.environ.get("LUMEN_AGENTS_HOME", "").strip()
+            home = Path(configured_home).expanduser() if configured_home else Path.home() / ".lumon" / "agents"
             home.mkdir(parents=True, exist_ok=True)
             path = home / "agent_jobs.sqlite3"
         self.path = Path(path)
@@ -179,3 +181,52 @@ class AgentJobStore:
 
     def children(self, parent_job_id: str) -> list[AgentJob]:
         return self.list_jobs(parent_job_id=parent_job_id, limit=200)
+
+    def find_waiting_loop(
+        self,
+        *,
+        agent_id: str,
+        chat_id: str,
+        thread_id: str = "",
+        parent_id: str = "",
+        root_id: str = "",
+    ) -> Optional[AgentJob]:
+        """Find the active Loop whose Feishu question this message answers."""
+        candidates = self.conn.execute(
+            """
+            SELECT * FROM agent_job
+            WHERE status = 'waiting_user'
+              AND target_agent = ?
+              AND chat_id = ?
+              AND capability IN ('loop.business', 'loop.technical')
+            ORDER BY updated_at DESC
+            LIMIT 50
+            """,
+            (str(agent_id or "").strip().lower(), str(chat_id or "").strip()),
+        ).fetchall()
+        reply_ids = {
+            str(value or "").strip()
+            for value in (parent_id, root_id)
+            if str(value or "").strip()
+        }
+        thread = str(thread_id or "").strip()
+        for row in candidates:
+            job = self._row_to_job(row)
+            result = job.result if isinstance(job.result, dict) else {}
+            nested = result.get("result") if isinstance(result.get("result"), dict) else {}
+            question_ids = {
+                str(value or "").strip()
+                for value in (
+                    job.source_message_id,
+                    result.get("question_message_id"),
+                    result.get("outbound_message_id"),
+                    nested.get("question_message_id"),
+                    nested.get("outbound_message_id"),
+                )
+                if str(value or "").strip()
+            }
+            if reply_ids.intersection(question_ids):
+                return job
+            if thread and thread == job.thread_id:
+                return job
+        return None

@@ -50,6 +50,11 @@ def execute_delivery_action(request: ActionRequest) -> dict[str, Any]:
             "metadata": meta.read_text(encoding="utf-8")[:2000] if meta.is_file() else "",
         }
 
+    if action in {"loop.business", "loop.technical"}:
+        if not story:
+            raise ResourceDenied("story required")
+        return adapter.loop_state(workspace=docs, story=story, capability=action)
+
     if action == "delivery.readiness":
         if not story:
             raise ResourceDenied("story required")

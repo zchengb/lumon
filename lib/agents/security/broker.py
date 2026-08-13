@@ -246,6 +246,8 @@ def default_executors() -> dict[str, Executor]:
         "delivery.quick_change",
         "story.read",
         "technical_plan.read",
+        "loop.business",
+        "loop.technical",
     ):
         mapping[action] = execute_delivery_action
     from agents.security.adapters.test_case import execute_test_case_action

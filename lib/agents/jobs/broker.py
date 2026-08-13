@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
 from agents.jobs.store import AgentJob, AgentJobStore, new_job_id
@@ -130,6 +131,8 @@ class AgentJobBroker:
                 overall = "completed"
             elif any(c.status == "blocked" for c in children):
                 overall = "blocked"
+            elif any(c.status == "waiting_user" for c in children):
+                overall = "waiting_user"
             else:
                 overall = "running"
             if parent.status != overall:
@@ -137,7 +140,7 @@ class AgentJobBroker:
                 self.store.save(parent)
         next_dep = ""
         for child in children:
-            if child.status in {"queued", "blocked", "ready", "running"}:
+            if child.status in {"queued", "blocked", "ready", "running", "waiting_user"}:
                 next_dep = child.capability or child.target_agent
                 break
         return {
@@ -145,6 +148,7 @@ class AgentJobBroker:
             "overall_state": overall,
             "completed": by_status.get("completed", []),
             "running": by_status.get("running", []) + by_status.get("ready", []),
+            "waiting_user": by_status.get("waiting_user", []),
             "blocked": by_status.get("blocked", []) + by_status.get("queued", []),
             "failed": by_status.get("failed", []),
             "next_dependency": next_dep,
@@ -201,8 +205,24 @@ class AgentJobBroker:
             )
         current.result = receipt_payload
         if succeeded:
-            current.status = "completed"
             current.error = ""
+            loop_incomplete = False
+            if current.capability in {"loop.business", "loop.technical"}:
+                loop_complete, loop_state = self._loop_complete(current)
+                current.result["loop_state"] = loop_state
+                loop_incomplete = not loop_complete
+                if loop_incomplete:
+                    current.result["result_delivered"] = False
+                    nested = current.result.get("result") if isinstance(current.result.get("result"), dict) else {}
+                    if self._is_waiting_user_loop(current, receipt_payload):
+                        nested.setdefault("question", str(nested.get("summary") or "").strip())
+                    else:
+                        nested["question"] = self._loop_question(current, loop_state)
+                    current.result["result"] = nested
+            if self._is_waiting_user_loop(current, receipt_payload) or loop_incomplete:
+                current.status = "waiting_user"
+            else:
+                current.status = "completed"
             self._handoff_reply(current, receipt_payload)
         else:
             current.status = "failed"
@@ -213,6 +233,57 @@ class AgentJobBroker:
             self.refresh_dependencies(current.parent_job_id)
             self.summarize(current.parent_job_id)
         return current
+
+    @staticmethod
+    def _is_waiting_user_loop(child: AgentJob, receipt: dict[str, Any]) -> bool:
+        if child.capability not in {"loop.business", "loop.technical"}:
+            return False
+        result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+        agent_result = result.get("agent_result") if isinstance(result.get("agent_result"), dict) else {}
+        return bool(agent_result.get("pending_clarification")) or agent_result.get("action") == "autonomous.clarification"
+
+    @staticmethod
+    def _loop_complete(child: AgentJob) -> tuple[bool, dict[str, Any]]:
+        if child.capability not in {"loop.business", "loop.technical"}:
+            return True, {}
+        receipt = child.result if isinstance(child.result, dict) else {}
+        latest = receipt.get("resume_result") if isinstance(receipt.get("resume_result"), dict) else receipt
+        result = latest.get("result") if isinstance(latest.get("result"), dict) else latest
+        agent_result = result.get("agent_result") if isinstance(result.get("agent_result"), dict) else {}
+        workspace = str(
+            child.input.get("workspace")
+            or agent_result.get("workspace")
+            or latest.get("workspace")
+            or ""
+        ).strip()
+        story = str(child.input.get("issue_key") or child.input.get("story") or "").strip()
+        if not workspace or not story:
+            return False, {"complete": False, "reason": "loop_context_missing"}
+        from agents.mark.delivery_adapter import DeliveryActionAdapter
+
+        state = DeliveryActionAdapter().loop_state(
+            workspace=Path(workspace),
+            story=story,
+            capability=child.capability,
+        )
+        return bool(state.get("complete")), state
+
+    @staticmethod
+    def _loop_question(child: AgentJob, state: dict[str, Any]) -> str:
+        reason = str(state.get("reason") or "").strip()
+        story = str(child.input.get("issue_key") or child.input.get("story") or "").strip()
+        if reason == "story_not_found":
+            return (
+                f"{story} 目前沒有對應的本地 Story artifact。要先匯入 Jira Story 並進入 Business Loop 嗎？\n"
+                "請回覆：1. 先匯入並進入 Business Loop  2. 我提供本地 Story 路徑"
+            )
+        if reason == "business_status_not_ready":
+            return f"{story} 的 Business Loop 尚未達到 ready，Technical Loop 不能繼續。請先完成 Business Loop 的需求澄清。"
+        if reason == "technical_plan_missing":
+            return f"{story} 尚未產出 technical-plan.md。Technical Loop 仍在進行中；請回覆「繼續調查」，我會在這個 thread 繼續。"
+        if reason == "technical_plan_draft":
+            return f"{story} 的 technical-plan.md 仍是 draft，尚未達到 approved。請確認剩餘技術決策後，我再繼續收斂方案。"
+        return f"{story} 的 Loop 尚未完成。請提供缺少的決策或回覆「繼續調查」，我會在這個 thread 繼續。"
 
     def _execute_mark_handoff(self, child: AgentJob) -> dict[str, Any] | None:
         """Give Mark the original turn; do not make Milchick discover its files."""
@@ -254,6 +325,8 @@ class AgentJobBroker:
             "_nested_handoff": "1",
             "_suppress_reply": "1",
             "_new_agent_turn": "1",
+            "_loop_job_id": child.job_id,
+            "_loop_capability": child.capability,
         }
         try:
             result = handle_agent_message(agent_id="mark", text=handoff_text, meta=meta)
@@ -274,6 +347,11 @@ class AgentJobBroker:
             "action": "agent.handoff",
             "result": {"summary": summary, "agent_result": result},
         }
+        pending = result.get("pending_clarification") if isinstance(result, dict) else None
+        if isinstance(pending, dict):
+            payload["result"]["question"] = summary
+            payload["result"]["question_message_id"] = child.source_message_id
+            payload["result"]["question_id"] = str(pending.get("question_id") or "")
         if not succeeded:
             payload["error"] = str(result.get("detail") or status or "agent_handoff_failed")
         return payload
@@ -282,7 +360,9 @@ class AgentJobBroker:
         if not child.source_message_id or not child.target_agent:
             return
         result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
-        text = str(result.get("summary") or "").strip()
+        question = str(result.get("question") or "").strip()
+        summary = str(result.get("summary") or "").strip()
+        text = question or summary
         if failed:
             text = text or f"{child.target_agent.title()} could not finish `{child.capability}`: {child.error}"
         if not text:
@@ -290,12 +370,28 @@ class AgentJobBroker:
         try:
             from feishu.messenger import FeishuMessenger
 
-            FeishuMessenger(child.target_agent).safe_reply_text(
+            sent = FeishuMessenger(child.target_agent).safe_reply_text(
                 child.source_message_id,
                 text,
                 reply_in_thread=bool(child.thread_id)
                 or str(child.chat_id or "").startswith("oc_"),
             )
+            if sent:
+                from agents.runtime.reply_anchor import remember_outbound
+                from feishu.messenger import extract_message_id
+
+                outbound_id = extract_message_id(sent)
+                remember_outbound(
+                    message_id=outbound_id,
+                    text=text,
+                    chat_id=child.chat_id,
+                    agent_id=child.target_agent,
+                    reply_to=child.source_message_id,
+                    thread_id=child.thread_id,
+                )
+                result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+                result["outbound_message_id"] = outbound_id
+                receipt["result"] = result
         except Exception:
             pass
 
@@ -316,6 +412,14 @@ def _job_create_handoff_text(target: str, capability: str, child: AgentJob) -> s
     status = str(child.status or "").strip().lower()
     if status == "completed":
         return f"{who} finished {subject}."
+    if status == "waiting_user":
+        result = child.result if isinstance(child.result, dict) else {}
+        nested = result.get("result") if isinstance(result.get("result"), dict) else {}
+        question = str(nested.get("question") or nested.get("summary") or "").strip()
+        head = f"{subject[:1].upper() + subject[1:]} is waiting for your answer."
+        if nested.get("outbound_message_id"):
+            return f"{head} {who} has posted the question in this thread."
+        return f"{head}\n{question}" if question else head
     if status == "failed":
         return f"{who} failed {subject}."
     if status in {"queued", "blocked", "pending"}:

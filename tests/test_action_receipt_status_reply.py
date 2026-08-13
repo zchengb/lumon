@@ -306,6 +306,24 @@ def test_job_create_handoff_text_for_completed_child() -> None:
     assert "queued with Mark" in _job_create_handoff_text("mark", "test_case.generate", child)
 
 
+def test_loop_handoff_text_does_not_claim_waiting_user_is_complete() -> None:
+    from agents.jobs.broker import _job_create_handoff_text
+    from agents.jobs.store import AgentJob
+
+    child = AgentJob(
+        job_id="job_technical_1",
+        type="child",
+        status="waiting_user",
+        target_agent="mark",
+        capability="loop.technical",
+        input={"issue_key": "MBPAS-1503"},
+        result={"result": {"question": "Which repository should be used?"}},
+    )
+    text = _job_create_handoff_text("mark", "loop.technical", child)
+    assert "waiting for your answer" in text
+    assert "finished" not in text
+
+
 if __name__ == "__main__":
     test_planning_reply_detects_status_placeholder()
     test_job_list_receipt_becomes_status_reply()

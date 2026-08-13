@@ -37,6 +37,85 @@ def _audit_text(value: Any, maximum: int = 4000) -> str:
     return str(value or "").strip()[:maximum]
 
 
+def _resume_waiting_loop(*, agent: str, meta: dict[str, str]) -> tuple[Any, dict[str, str]]:
+    if agent != "mark" or not str(meta.get("chat_id") or "").strip():
+        return None, meta
+    from agents.jobs.store import AgentJobStore
+
+    store = AgentJobStore()
+    try:
+        job = store.find_waiting_loop(
+            agent_id=agent,
+            chat_id=str(meta.get("chat_id") or ""),
+            thread_id=str(meta.get("thread_id") or ""),
+            parent_id=str(meta.get("parent_id") or ""),
+            root_id=str(meta.get("root_id") or ""),
+        )
+        if job is None:
+            return None, meta
+        job.status = "running"
+        job.result["last_user_message_id"] = str(meta.get("message_id") or "")
+        store.save(job)
+        updated = dict(meta)
+        updated["_project_slug"] = job.project
+        updated["_loop_job_id"] = job.job_id
+        updated["_loop_capability"] = job.capability
+        # Group replies do not always contain root_id. Use the original request
+        # as the stable session scope so the pending provider session resumes.
+        if not updated.get("root_id"):
+            updated["root_id"] = job.source_message_id
+        if not updated.get("thread_id") and job.thread_id:
+            updated["thread_id"] = job.thread_id
+        return job, updated
+    finally:
+        store.close()
+
+
+def _finish_waiting_loop(job: Any, result: dict[str, Any]) -> None:
+    if job is None:
+        return
+    from agents.jobs.broker import AgentJobBroker
+    from agents.jobs.store import AgentJobStore
+
+    store = AgentJobStore()
+    try:
+        current = store.get(job.job_id) or job
+        broker = AgentJobBroker(store)
+        current.result["resume_result"] = result
+        if str(result.get("status") or "").strip().lower() not in {"ok", "delegate"}:
+            current.status = "failed"
+            current.error = str(result.get("detail") or result.get("text") or "loop_resume_failed")[:500]
+        elif result.get("pending_clarification"):
+            current.status = "waiting_user"
+            current.error = ""
+            outbound_id = str(result.get("outbound_message_id") or "").strip()
+            if outbound_id:
+                current.result["question_message_id"] = outbound_id
+        else:
+            complete, state = broker._loop_complete(current)
+            current.result["loop_state"] = state
+            current.status = "completed" if complete else "waiting_user"
+            current.error = "" if complete else "loop_artifact_not_complete"
+            if not complete:
+                question = broker._loop_question(current, state)
+                nested = current.result.get("result") if isinstance(current.result.get("result"), dict) else {}
+                nested["question"] = question
+                outbound_id = str(result.get("outbound_message_id") or "").strip()
+                if not outbound_id:
+                    question_receipt = {"result": {"question": nested["question"]}}
+                    broker._handoff_reply(current, question_receipt)
+                    outbound_id = str(question_receipt.get("result", {}).get("outbound_message_id") or "").strip()
+                if outbound_id:
+                    nested["outbound_message_id"] = outbound_id
+                    current.result["question_message_id"] = outbound_id
+                current.result["result"] = nested
+        store.save(current)
+        if current.parent_job_id:
+            broker.summarize(current.parent_job_id)
+    finally:
+        store.close()
+
+
 def _persist_agent_run(run: dict[str, Any], *, meta: dict[str, str], slug: str, action: str, agent_id: str) -> None:
     try:
         from risk.store import GlobalAgentStore
@@ -191,14 +270,16 @@ def _run_autonomous_worker(
                         obs.upsert_trace(trace, reply_status="failed", state="failed", error_code="reply_failed")
                         raise RuntimeError("final reply failed")
                     try:
+                        outbound_id = extract_message_id(sent)
                         remember_outbound(
-                            message_id=extract_message_id(sent),
+                            message_id=outbound_id,
                             text=reply_text,
                             chat_id=chat_id,
                             agent_id=agent,
                             reply_to=message_id,
                             thread_id=str(meta.get("thread_id") or ""),
                         )
+                        result["outbound_message_id"] = outbound_id
                     except Exception:
                         pass
                 obs.emit(trace, "reply.succeeded")
@@ -291,6 +372,9 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
             messenger.safe_reply_text(message_id, reply, reply_in_thread=should_reply_in_thread(meta))
         return {"status": "denied", "detail": detail, "trust_zone": decision.trust_zone}
     meta = dict(meta)
+    waiting_job, meta = _resume_waiting_loop(agent=agent, meta=meta)
+    if waiting_job is not None:
+        meta["_loop_capability"] = waiting_job.capability
     meta["_trust_zone"] = str(decision.trust_zone or "")
     meta["_exposure_mode"] = str(decision.exposure_mode or "")
     meta["_policy_version"] = str(decision.policy_version or "")
@@ -312,18 +396,26 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
 
     if _conversation_enabled(config, probe_common, agent):
         if flags.autonomous or (agent == "dylan" and flags.agent_only):
-            result = _run_autonomous_worker(
-                agent=agent,
-                definition=definition,
-                text=text,
-                meta=meta,
-                probe_common=probe_common,
-                config=config,
-                flags=flags,
-                messenger=messenger,
-                message_id=message_id,
-                chat_id=chat_id,
-            )
+            try:
+                result = _run_autonomous_worker(
+                    agent=agent,
+                    definition=definition,
+                    text=text,
+                    meta=meta,
+                    probe_common=probe_common,
+                    config=config,
+                    flags=flags,
+                    messenger=messenger,
+                    message_id=message_id,
+                    chat_id=chat_id,
+                )
+            except Exception as exc:
+                if waiting_job is not None:
+                    _finish_waiting_loop(
+                        waiting_job,
+                        {"status": "error", "detail": str(exc)[:500]},
+                    )
+                raise
             if result.get("status") == "delegate" and agent == "dylan":
                 action_name = str(result.get("action") or "")
                 params = result.get("params") if isinstance(result.get("params"), dict) else {}
@@ -341,6 +433,8 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
 
                 action = ParsedAction(name="scan.run", confidence=0.9, source="conversation_v3", params=params)
             else:
+                if waiting_job is not None:
+                    _finish_waiting_loop(waiting_job, result)
                 return result
         elif agent == "dylan":
             from agents.dylan.conversation import handle_conversation
@@ -400,9 +494,15 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
                     messenger.safe_reply_text(message_id, str(result.get("text") or "暂无数据。"), reply_in_thread=in_thread)
                 return result
         else:
-            return {"status": "ignored", "detail": f"conversation disabled for {agent}"}
+            result = {"status": "ignored", "detail": f"conversation disabled for {agent}"}
+            if waiting_job is not None:
+                _finish_waiting_loop(waiting_job, result)
+            return result
     elif agent != "dylan":
-        return {"status": "ignored", "detail": f"conversation disabled for {agent}"}
+        result = {"status": "ignored", "detail": f"conversation disabled for {agent}"}
+        if waiting_job is not None:
+            _finish_waiting_loop(waiting_job, result)
+        return result
     else:
         action = parse_dylan_text(text, known)
 

@@ -21,6 +21,7 @@ from agents.runtime.cursor_runtime import AgentRunResult, CursorAgentRuntime
 from agents.runtime.loop_intent import classify_loop_intent, loop_gateway_prompt
 from agents.dylan.permission_policy import LOOP_PERMISSIONS
 from agents.profiles import PROFILES
+from agents.security.actions import ActionReceipt
 from feishu.client_registry import FeishuClientConfig
 from feishu.handlers import should_handle
 
@@ -164,6 +165,88 @@ class LoopGatewayTests(unittest.TestCase):
                 profile = json.loads((docs / ".cursor" / "cli.json").read_text(encoding="utf-8"))
                 self.assertIn("Write(**)", profile["permissions"]["deny"])
                 self.assertNotIn("Write(stories/**)", profile["permissions"]["allow"])
+            finally:
+                if previous is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous
+
+    def test_managed_technical_loop_continues_after_jira_read(self) -> None:
+        ensure_definitions_loaded()
+        mark = get_definition("mark")
+        assert mark is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            (docs / "stories").mkdir()
+            previous = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"normal","route":"technical_loop",'
+                            '"active_loop":"technical"}</CONVERSATION_DECISION>'
+                            '<FINAL_RESPONSE>我先讀取 Jira 證據。</FINAL_RESPONSE>'
+                            '<ACTION_REQUEST>{"action":"jira.workitem.get",'
+                            '"arguments":{"issue_key":"MBPAS-1503"}}</ACTION_REQUEST>'
+                        ),
+                        provider_session_id="provider-mark",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"continue_pending",'
+                            '"route":"technical_loop","active_loop":"technical"}</CONVERSATION_DECISION>'
+                            '<FINAL_RESPONSE>Jira 已確認；現在需要確認 repository，這會影響變更範圍。</FINAL_RESPONSE>'
+                        ),
+                        provider_session_id="provider-mark",
+                        status="succeeded",
+                    ),
+                ]
+            )
+            receipt = ActionReceipt(
+                receipt_id="act-jira-read",
+                status="succeeded",
+                action="jira.workitem.get",
+                agent_id="mark",
+                actor="ou1",
+                resource={},
+                trace_id="tr1",
+                executed_at="2026-08-13T00:00:00Z",
+                result={"issue_key": "MBPAS-1503", "summary": "Recommendations"},
+            )
+            definition = replace(
+                mark,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", docs.resolve()),
+                ensure_workspace_contract=lambda **kwargs: docs,
+            )
+            meta = {
+                "chat_id": "oc1",
+                "chat_type": "group",
+                "thread_id": "omt1",
+                "user_id": "ou1",
+                "message_id": "om1",
+                "_project_slug": "mbpass",
+                "_loop_capability": "loop.technical",
+            }
+            try:
+                with mock.patch("agents.runtime.autonomous.resolve_project", return_value={"slug": "mbpass", "workspace": str(docs)}):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            with mock.patch("agents.runtime.autonomous.execute_trusted_actions", return_value=[receipt]):
+                                result = handle_autonomous_conversation(
+                                    definition=definition,
+                                    text="MBPAS-1503 進行 Technical Plan",
+                                    meta=meta,
+                                    common=_common(),
+                                    runtime=runtime,
+                                )
+                self.assertEqual("ok", result["status"])
+                self.assertIn("repository", result["text"])
+                self.assertEqual(2, len(runtime.calls))
+                self.assertEqual("provider-mark", runtime.calls[1]["provider_session_id"])
+                self.assertIn("LUMEN HOST ACTION RESULTS", runtime.calls[1]["prompt"])
+                self.assertIn("Never finish with only a Jira title/status", runtime.calls[1]["prompt"])
             finally:
                 if previous is None:
                     os.environ.pop("LUMEN_AGENTS_HOME", None)

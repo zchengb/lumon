@@ -236,15 +236,36 @@ _ACTION_RESULT_CONTINUATION_ACTIONS = frozenset(
     }
 )
 
+_LOOP_READ_CONTINUATION_ACTIONS = frozenset(
+    {
+        "jira.workitem.get",
+        "story.read",
+        "technical_plan.read",
+        "delivery.readiness",
+        "delivery.status",
+        "delivery.result",
+    }
+)
+
 # A multi-card request is allowed to take several Agent turns. The ceiling is
 # only a runaway guard; which card comes next remains the Agent's decision.
 _MAX_ACTION_RESULT_CONTINUATIONS = 24
 
 
-def _action_results_need_continuation(receipts: list[dict[str, Any]]) -> bool:
+def _action_results_need_continuation(
+    receipts: list[dict[str, Any]],
+    *,
+    continue_loop_reads: bool = False,
+) -> bool:
     """Return whether an Agent needs another decision turn after a host action."""
     for receipt in receipts:
         action = str(receipt.get("action") or "").strip()
+        if action in _LOOP_READ_CONTINUATION_ACTIONS:
+            if not continue_loop_reads:
+                continue
+            if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
+                return True
+            continue
         if action not in _ACTION_RESULT_CONTINUATION_ACTIONS:
             continue
         if action == "test_case.generate":
@@ -532,10 +553,24 @@ def handle_autonomous_conversation(
                 write_loop_permission_profile(workspace, force=True)
 
             def _prompt_with_contract(base: str, current_pending: dict[str, Any] | None = None) -> str:
+                managed_loop = ""
+                loop_capability = str(meta.get("_loop_capability") or "").strip().lower()
+                if agent_id == "mark" and loop_capability in {"loop.business", "loop.technical"}:
+                    loop_name = "Business Loop" if loop_capability == "loop.business" else "Technical Loop"
+                    managed_loop = (
+                        "[LUMEN MANAGED LOOP]\n"
+                        f"You are executing {loop_name} under a host-tracked Loop job.\n"
+                        "A read action is intermediate; after the host returns its receipt, continue investigating. "
+                        "Never finish with only a Jira title/status.\n"
+                        "Every turn must report: current stage, evidence completed, blocker or question, and next step.\n"
+                        "If a decision or prerequisite is missing, emit CLARIFICATION_REQUEST and ask the user in this Feishu thread.\n"
+                        "Only finish when the Loop artifact contract is satisfied; the host verifies the artifact before marking the job completed.\n"
+                    )
                 return "\n\n".join(
                     part
                     for part in (
                         base,
+                        managed_loop,
                         security_block,
                         interaction_contract_prompt(
                             agent_id=agent_id,
@@ -830,7 +865,10 @@ def handle_autonomous_conversation(
                 )
 
                 if (
-                    not _action_results_need_continuation(new_action_receipts)
+                    not _action_results_need_continuation(
+                        new_action_receipts,
+                        continue_loop_reads=agent_id == "mark" and bool(meta.get("_loop_capability")),
+                    )
                     or continuation_count >= _MAX_ACTION_RESULT_CONTINUATIONS
                 ):
                     break
@@ -927,11 +965,15 @@ def handle_autonomous_conversation(
                             child = result_payload.get("child") if isinstance(result_payload.get("child"), dict) else {}
                             if child.get("result") and isinstance(child.get("result"), dict):
                                 nested = child["result"].get("result") if isinstance(child["result"].get("result"), dict) else {}
-                                if nested.get("summary"):
+                                if nested.get("summary") and not nested.get("outbound_message_id"):
                                     reply_text = f"{result_payload['handoff_text']}\n\n{nested['summary']}"
                         break
             unbacked_original = reply_text
-            reply_text = prefer_action_summary(reply_text, action_receipts)
+            reply_text = prefer_action_summary(
+                reply_text,
+                action_receipts,
+                preserve_substantive=bool(meta.get("_loop_capability")) and agent_id == "mark",
+            )
             if clarification and not str(reply_text or "").strip():
                 reply_text = format_clarification_reply(
                     str(clarification.get("question") or ""),

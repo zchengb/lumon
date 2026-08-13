@@ -498,6 +498,64 @@ class TestCaseSkillTests(unittest.TestCase):
 
 
 class MilchickJobTests(unittest.TestCase):
+    def test_technical_loop_waits_for_artifact_instead_of_claiming_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp) / "docs"
+            story = docs / "stories" / "MBPAS-1503-recommendations"
+            story.mkdir(parents=True)
+            (story / "story.md").write_text("# MBPAS-1503\n", encoding="utf-8")
+            (story / "metadata.json").write_text(
+                json.dumps({"jiraKey": "MBPAS-1503", "businessStatus": "ready", "technicalStatus": "draft"}),
+                encoding="utf-8",
+            )
+            from agents.mark.delivery_adapter import DeliveryActionAdapter
+
+            state = DeliveryActionAdapter().loop_state(
+                workspace=docs,
+                story="MBPAS-1503",
+                capability="loop.technical",
+            )
+            self.assertFalse(state["complete"])
+            self.assertEqual("technical_plan_missing", state["reason"])
+
+    def test_waiting_user_loop_is_visible_in_parent_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentJobStore(Path(tmp) / "jobs.sqlite3")
+            broker = AgentJobBroker(store)
+            parent = broker.create_parent(
+                project="mbpass", requested_by="ou_owner", delegated_by="milchick",
+                source_message_id="om1", chat_id="oc1", thread_id="omt1", trace_id="tr1",
+            )
+            child = broker.create_child(
+                parent=parent, target_agent="mark", capability="loop.technical",
+                input_data={"issue_key": "MBPAS-1503"},
+            )
+            child.status = "waiting_user"
+            child.result = {"result": {"question": "Which repository should be used?"}}
+            store.save(child)
+            summary = broker.summarize(parent.job_id)
+            self.assertEqual("waiting_user", summary["overall_state"])
+            self.assertIn(child.job_id, summary["waiting_user"])
+
+    def test_waiting_loop_matches_mark_question_reply_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentJobStore(Path(tmp) / "jobs.sqlite3")
+            parent = AgentJobBroker(store).create_parent(
+                project="mbpass", requested_by="ou_owner", delegated_by="milchick",
+                source_message_id="om-root", chat_id="oc1", thread_id="", trace_id="tr1",
+            )
+            child = AgentJobBroker(store).create_child(
+                parent=parent, target_agent="mark", capability="loop.technical",
+                input_data={"issue_key": "MBPAS-1503"},
+            )
+            child.status = "waiting_user"
+            child.result = {"question_message_id": "om-question"}
+            store.save(child)
+            found = store.find_waiting_loop(
+                agent_id="mark", chat_id="oc1", parent_id="om-question",
+            )
+            self.assertIsNotNone(found)
+            self.assertEqual(child.job_id, found.job_id)
     def test_milchick_definition_registered(self) -> None:
         ensure_definitions_loaded()
         milchick = get_definition("milchick")
@@ -621,7 +679,7 @@ class MilchickJobTests(unittest.TestCase):
                     ):
                         completed = broker.execute_ready_child(child)
 
-                    self.assertEqual("completed", completed.status)
+                    self.assertEqual("waiting_user", completed.status)
                     handoff.assert_called_once()
                     kwargs = handoff.call_args.kwargs
                     self.assertEqual("mark", kwargs["agent_id"])
