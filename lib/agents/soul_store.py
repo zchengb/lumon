@@ -113,10 +113,10 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
     app_secret = read_lumen_env_var(app_secret_env) if app_secret_env else ""
     provider_type = str(provider.get("type") or "cursor_cli").strip().casefold()
     model_configured = True
-    if provider_type in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+    if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
         from agents.runtime.openai_compatible import default_api_key_env
 
-        model_key_env = str(provider.get("api_key_env") or default_api_key_env(provider_type)).strip()
+        model_key_env = str(provider.get("api_key_env") or ("DEEPSEEK_API_KEY" if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"} else default_api_key_env(provider_type))).strip()
         model_configured = bool(os.environ.get(model_key_env, "").strip() or read_lumen_env_var(model_key_env))
     security = {
         "filesystem": "workspace_read",
@@ -439,15 +439,19 @@ def apply_agent_settings(payload: dict[str, Any]) -> dict[str, Any]:
         if "mode" in item and str(item.get("mode") or "").strip():
             v4["mode"] = str(item.get("mode")).strip()
         provider = _ensure_dict(v4, "provider")
-        provider.setdefault("type", "deepseek")
+        provider.setdefault("type", "opencode")
         provider.setdefault("output_format", "stream-json")
         provider.setdefault("resume_sessions", True)
         if "provider" in item:
             provider_name = str(item.get("provider") or "").strip().casefold()
-            if provider_name not in {"cursor", "cursor_cli", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
+            if provider_name not in {"cursor", "cursor_cli", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
                 raise ValueError(f"Unsupported model provider: {provider_name}")
             provider["type"] = provider_name
-            if provider_name in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+            if provider_name in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
+                provider["type"] = "opencode"
+                provider["output_format"] = "json"
+                provider["resume_sessions"] = True
+            elif provider_name in {"openai", "openai_compatible"}:
                 provider["output_format"] = "text"
                 provider["resume_sessions"] = False
         if "base_url" in item:

@@ -289,6 +289,16 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModels": "Automation workflows",
     "settings.workflowModelsDescription": "Auto Scan, Auto Delivery, and Auto Patch use the same global provider and model.",
     "settings.workflowRuntimeLabel": "Applied to every Agent and workflow",
+    "settings.openCodeHarness": "OpenCode Harness",
+    "settings.openCodeHarnessDescription": "DeepSeek is reached through OpenCode, which owns workspace tools and persistent sessions.",
+    "settings.openCodeRuntime": "Agent runtime",
+    "settings.openCodeRuntimeDescription": "This is the live Harness status used by conversational Agents and automation workflows.",
+    "settings.harness": "Harness",
+    "settings.runtimeModel": "Model",
+    "settings.cliVersion": "CLI version",
+    "settings.sessionMode": "Session",
+    "settings.permissionProfile": "Permissions",
+    "settings.actionCatalog": "Action catalog",
     "settings.deepSeekCredential": "DeepSeek API key",
     "settings.deepSeekCredentialConfigured": "Configured in ~/.lumon/.env.local",
     "settings.deepSeekCredentialMissing": "Not configured",
@@ -841,6 +851,16 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModels": "自动化工作流",
     "settings.workflowModelsDescription": "自动扫描、自动交付和自动修复使用同一组全局提供商和模型。",
     "settings.workflowRuntimeLabel": "应用于所有 Agent 和工作流",
+    "settings.openCodeHarness": "OpenCode Harness",
+    "settings.openCodeHarnessDescription": "通过 OpenCode 调用 DeepSeek，由 OpenCode 管理工作区工具和持久会话。",
+    "settings.openCodeRuntime": "Agent 运行时",
+    "settings.openCodeRuntimeDescription": "这里显示对话 Agent 和自动化工作流实际使用的 Harness 状态。",
+    "settings.harness": "Harness",
+    "settings.runtimeModel": "模型",
+    "settings.cliVersion": "CLI 版本",
+    "settings.sessionMode": "会话",
+    "settings.permissionProfile": "权限",
+    "settings.actionCatalog": "Action 清单",
     "settings.deepSeekCredential": "DeepSeek API 密钥",
     "settings.deepSeekCredentialConfigured": "已配置于 ~/.lumon/.env.local",
     "settings.deepSeekCredentialMissing": "未配置",
@@ -1393,6 +1413,16 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModels": "自動化工作流",
     "settings.workflowModelsDescription": "自動掃描、自動交付和自動修復使用同一組全域提供者與模型。",
     "settings.workflowRuntimeLabel": "套用於所有 Agent 與工作流",
+    "settings.openCodeHarness": "OpenCode Harness",
+    "settings.openCodeHarnessDescription": "透過 OpenCode 呼叫 DeepSeek，由 OpenCode 管理工作區工具與持久會話。",
+    "settings.openCodeRuntime": "Agent 執行環境",
+    "settings.openCodeRuntimeDescription": "這裡顯示對話 Agent 與自動化工作流實際使用的 Harness 狀態。",
+    "settings.harness": "Harness",
+    "settings.runtimeModel": "模型",
+    "settings.cliVersion": "CLI 版本",
+    "settings.sessionMode": "會話",
+    "settings.permissionProfile": "權限",
+    "settings.actionCatalog": "Action 清單",
     "settings.deepSeekCredential": "DeepSeek API 金鑰",
     "settings.deepSeekCredentialConfigured": "已設定於 ~/.lumon/.env.local",
     "settings.deepSeekCredentialMissing": "未設定",
@@ -1960,7 +1990,7 @@ function workflowModelConfig(workspace: RecordValue, key: string, fallback = "cu
   const legacyConfig = configs[key] && typeof configs[key] === "object" ? configs[key] : {};
   const config = globalConfig.provider || globalConfig.model ? globalConfig : legacyConfig;
   return {
-    provider: String(config.provider || "cursor_cli"),
+    provider: String(config.provider || "cursor_cli") === "deepseek" || String(config.provider || "cursor_cli") === "deepseek_api" ? "opencode" : String(config.provider || "cursor_cli"),
     model: modelValue(config.model || workspace.models?.[key], fallback),
     base_url: String(config.base_url || ""),
     api_key_env: String(config.api_key_env || ""),
@@ -3595,7 +3625,7 @@ function StatusMultiSelect({ options, value, onChange, markDirty }: { options: s
 function ModelField({ label, value, provider = "cursor_cli", onChange, markDirty }: { label: string; value: string; provider?: string; onChange: (value: string) => void; markDirty: () => void }) {
   const { t } = useI18n();
   const normalizedValue = trimmedModelValue(value);
-  const options = provider === "deepseek" || provider === "deepseek_api" ? deepSeekModelOptions : cursorModelOptions;
+  const options = provider === "opencode" || provider === "deepseek" || provider === "deepseek_api" ? deepSeekModelOptions : cursorModelOptions;
   const isPreset = options.some((model) => model.value === normalizedValue);
   const customModelLabel = normalizedValue || t("customModel.option");
   const [customOpen, setCustomOpen] = useState(false);
@@ -3617,15 +3647,16 @@ function WorkflowModelField({ label, provider, model, baseUrl, apiKeyEnv, onProv
   const { t } = useI18n();
   const selectProvider = (value: string) => {
     onProviderChange(value);
-    onModelChange(value === "deepseek" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
+    onModelChange(value === "opencode" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
     markDirty();
   };
   return <div className="workflow-model-editor">
     <div className="workflow-model-editor-heading"><strong>{label}</strong><span>{t("settings.workflowRuntimeLabel")}</span></div>
     <div className="form-grid compact workflow-model-editor-fields">
-      <Field label={t("label.modelProvider")}><select value={provider} onChange={(event) => selectProvider(event.target.value)}><option value="deepseek">DeepSeek API</option><option value="cursor_cli">Cursor CLI</option><option value="openai_compatible">OpenAI-compatible API</option></select></Field>
+      <Field label={t("label.modelProvider")}><select value={provider} onChange={(event) => selectProvider(event.target.value)}><option value="opencode">OpenCode + DeepSeek</option><option value="cursor_cli">Cursor CLI</option><option value="openai_compatible">OpenAI-compatible API</option></select></Field>
       <ModelField label={t("label.cursorModel")} provider={provider} value={model} onChange={onModelChange} markDirty={markDirty} />
       {(provider === "openai_compatible" || provider === "openai") && <><Field label={t("label.apiBaseUrl")}><input value={baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => { onBaseUrlChange(event.target.value); markDirty(); }} /></Field><Field label={t("label.apiKeyEnv")}><input value={apiKeyEnv} placeholder="OPENAI_API_KEY" onChange={(event) => { onApiKeyEnvChange(event.target.value); markDirty(); }} /></Field></>}
+      {provider === "opencode" && <div className="workflow-harness-note"><strong>{t("settings.openCodeHarness")}</strong><span>{t("settings.openCodeHarnessDescription")}</span><code>{apiKeyEnv || "DEEPSEEK_API_KEY"}</code></div>}
     </div>
   </div>;
 }
@@ -3738,6 +3769,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const workspace = data.interactive?.workspace || {};
   const schedules = data.interactive?.schedules || {};
   const agentsPayload = data.interactive?.agents || {};
+  const runtimeStatus = workspace.runtime && typeof workspace.runtime === "object" ? workspace.runtime : {};
   const [scanWindow, setScanWindow] = useState(String(workspace.scan_window_days || 7));
   const [scanCron, setScanCron] = useState(String(schedules.scan?.cron || "0 12 * * 1-5"));
   const [scanEnabled, setScanEnabled] = useState(Boolean(schedules.scan));
@@ -4157,6 +4189,25 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
                 <div className="model-center-heading"><strong>{t("settings.globalModelConfig")}</strong><span>{t("settings.globalModelScope")}</span></div>
                 <WorkflowModelField label={t("settings.globalModelConfig")} provider={globalProvider} model={globalModel} baseUrl={globalBaseUrl} apiKeyEnv={globalApiKeyEnv} onProviderChange={setGlobalProvider} onModelChange={(value) => { setGlobalModel(value); markDirty(); }} onBaseUrlChange={(value) => { setGlobalBaseUrl(value); markDirty(); }} onApiKeyEnvChange={(value) => { setGlobalApiKeyEnv(value); markDirty(); }} markDirty={markDirty} />
               </section>
+            </div>
+          </div>
+        </div>
+      </Panel>
+      <Panel title={t("settings.openCodeRuntime")} action={<Badge value={runtimeStatus.installed && runtimeStatus.api_key_configured ? "ready" : "setup"} />}>
+        <div className="settings-section">
+          <div className="settings-copy">
+            <h4>{t("settings.openCodeRuntime")}</h4>
+            <p>{t("settings.openCodeRuntimeDescription")}</p>
+          </div>
+          <div className="settings-control wide">
+            <div className="runtime-status-grid">
+              <div><span>{t("settings.harness")}</span><strong>{text(runtimeStatus.harness, "OpenCode")}</strong></div>
+              <div><span>{t("settings.runtimeModel")}</span><code>{text(runtimeStatus.model, globalModel)}</code></div>
+              <div><span>{t("settings.cliVersion")}</span><strong>{text(runtimeStatus.version, runtimeStatus.installed ? "installed" : "not installed")}</strong></div>
+              <div><span>{t("settings.deepSeekCredential")}</span><strong className={runtimeStatus.api_key_configured ? "runtime-ok" : "runtime-warning"}>{text(runtimeStatus.api_key_env, "DEEPSEEK_API_KEY")} · {runtimeStatus.api_key_configured ? t("settings.configured") : t("settings.notConfigured")}</strong></div>
+              <div><span>{t("settings.sessionMode")}</span><strong>{text(runtimeStatus.session_mode)}</strong></div>
+              <div><span>{t("settings.permissionProfile")}</span><strong>{text(runtimeStatus.permission_profile)}</strong></div>
+              <div className="runtime-status-wide"><span>{t("settings.actionCatalog")}</span><code>{text(runtimeStatus.action_catalog)}</code></div>
             </div>
           </div>
         </div>

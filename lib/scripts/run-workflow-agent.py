@@ -16,12 +16,13 @@ LIB_DIR = Path(__file__).resolve().parent.parent
 if str(LIB_DIR) not in sys.path:
     sys.path.insert(0, str(LIB_DIR))
 
+from agents.runtime.opencode_runtime import OpenCodeAgentRuntime
 from agents.runtime.openai_compatible import chat_completion_messages, is_api_provider
 from agents.runner.runner_env import build_runner_env
 
 
 DEFAULT_MODEL = "cursor-grok-4.5-medium"
-PROVIDERS = {"cursor_cli", "deepseek", "deepseek_api", "openai", "openai_compatible"}
+PROVIDERS = {"cursor_cli", "deepseek", "deepseek_api", "opencode", "opencode_deepseek", "openai", "openai_compatible"}
 # Auto Scan may inspect many repositories before it can write its result. Keep
 # a bounded budget, but leave enough turns for the configured workspace rather
 # than failing halfway through normal evidence collection.
@@ -41,8 +42,8 @@ def normalize_provider(value: str) -> str:
     provider = str(value or "cursor_cli").strip().casefold()
     if provider in {"cursor", "cursor-cli", "cursor_cli"}:
         return "cursor_cli"
-    if provider in {"deepseek", "deepseek_api"}:
-        return "deepseek"
+    if provider in {"deepseek", "deepseek_api", "opencode", "opencode_deepseek"}:
+        return "opencode"
     if provider in {"openai", "openai_compatible", "openai-compatible"}:
         return "openai_compatible"
     raise ValueError(f"Unsupported workflow AI provider: {provider}")
@@ -70,8 +71,8 @@ def resolve_config(
         selected_model = (
             os.environ.get("CURSOR_AGENT_MODEL")
             if normalized == "cursor_cli"
-            else "deepseek-chat"
-            if normalized == "deepseek"
+            else "deepseek-v4-flash"
+            if normalized == "opencode"
             else "gpt-4o-mini"
         )
     selected_base_url = base_url or execution.get(f"{prefix}base_url") or execution.get("base_url") or ""
@@ -272,6 +273,28 @@ def run_api(config: dict[str, str], args: argparse.Namespace) -> int:
     return 1
 
 
+def run_opencode(config: dict[str, str], args: argparse.Namespace) -> int:
+    roots = allowed_roots(args.workspace)
+    runtime = OpenCodeAgentRuntime(
+        model=config["model"],
+        base_url=config["base_url"],
+        api_key_env=config["api_key_env"],
+        hard_timeout_seconds=args.timeout,
+        sandbox=args.sandbox,
+        agent_id=args.agent_id,
+        project=args.project,
+        workflow_mode=True,
+    )
+    runtime.additional_directories = list(roots)
+    result = runtime.run(workspace=args.workspace, prompt=args.prompt)
+    if result.status != "succeeded" or not result.text.strip():
+        emit({"type": "result", "subtype": "error", "is_error": True, "result": redact(result.error or result.status)}, args.output_format)
+        return 1
+    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": redact(result.text)}]}}, args.output_format)
+    emit({"type": "result", "subtype": "success", "request_id": result.request_id, "session_id": result.provider_session_id, "result": redact(result.text), "duration_ms": result.duration_ms}, args.output_format)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
@@ -292,6 +315,8 @@ def main(argv: list[str] | None = None) -> int:
     args.workspace = args.workspace.expanduser().resolve()
     try:
         config = resolve_config(args.workspace, args.workflow, args.provider, args.model, args.base_url, args.api_key_env)
+        if config["provider"] == "opencode":
+            return run_opencode(config, args)
         if is_api_provider(config["provider"]):
             return run_api(config, args)
         return run_cursor(config, args)

@@ -51,6 +51,55 @@ LIB_DIR = SCRIPT_DIR.parent
 WORKSPACE_STATIC_DIRECTORIES = {"assets", "dashboard-app", "reports", "logs", "results"}
 LUMON_PROVIDER_KEYS = {"DEEPSEEK_API_KEY", "OPENAI_API_KEY"}
 
+
+def dashboard_provider(value: object) -> str:
+    provider = str(value or "cursor_cli").strip().casefold()
+    if provider in {"deepseek", "deepseek_api", "opencode_deepseek"}:
+        return "opencode"
+    if provider == "cursor":
+        return "cursor_cli"
+    return provider
+
+
+def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_keys: list[str]) -> dict[str, Any]:
+    provider = dashboard_provider(model.get("provider"))
+    if provider == "opencode":
+        try:
+            from agents.runtime.opencode_runtime import find_opencode_bin
+
+            command = find_opencode_bin()
+        except Exception:
+            command = shutil.which("opencode") or ""
+    elif provider == "cursor_cli":
+        command = shutil.which("agent") or shutil.which("cursor-agent") or ""
+    else:
+        command = ""
+    version = ""
+    if command:
+        try:
+            version = subprocess.run([command, "--version"], capture_output=True, text=True, timeout=5, check=False).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            version = ""
+    defaults = {
+        "opencode": "DEEPSEEK_API_KEY",
+        "cursor_cli": "CURSOR_API_KEY",
+        "openai_compatible": "OPENAI_API_KEY",
+    }
+    key_env = model.get("api_key_env") or defaults.get(provider, "")
+    return {
+        "harness": {"opencode": "OpenCode", "cursor_cli": "Cursor CLI"}.get(provider, "OpenAI-compatible API"),
+        "provider": provider,
+        "model": model.get("model", ""),
+        "command": command,
+        "version": version,
+        "installed": bool(command) if provider in {"opencode", "cursor_cli"} else True,
+        "api_key_env": key_env,
+        "api_key_configured": key_env in configured_keys,
+        "session_mode": "persistent provider session" if provider == "opencode" else "provider managed",
+        "action_catalog": str((workspace / ".lumon" / "action-catalog.md").resolve()),
+        "permission_profile": "workspace OpenCode permission policy" if provider == "opencode" else "provider sandbox policy",
+    }
+
 if str(LIB_DIR) not in sys.path:
     sys.path.insert(0, str(LIB_DIR))
 
@@ -243,7 +292,7 @@ def capture_schedule_status(func: Any, project: str) -> dict[str, Any] | None:
 
 def workflow_model_config(execution: object, prefix: str = "") -> dict[str, str]:
     values = execution if isinstance(execution, dict) else {}
-    provider = str(values.get(f"{prefix}provider") or values.get("provider") or "cursor_cli").strip()
+    provider = dashboard_provider(values.get(f"{prefix}provider") or values.get("provider") or "cursor_cli")
     model = str(values.get(f"{prefix}model") or values.get("model") or "cursor-grok-4.5-medium").strip()
     base_url = str(values.get(f"{prefix}base_url") or values.get("base_url") or "").strip()
     api_key_env = str(values.get(f"{prefix}api_key_env") or values.get("api_key_env") or "").strip()
@@ -318,6 +367,7 @@ def workspace_payload(workspace: Path) -> dict[str, Any]:
             "patch": patch_publish_mode(workspace.parent),
         },
         "model_config": workflow_model_config(common.get("execution")),
+        "runtime": opencode_runtime_status(workspace, workflow_model_config(common.get("execution")), sorted(set(configured_keys))),
         # Keep the old per-workflow shape for existing dashboard clients. The
         # values intentionally all come from the one workspace-level config.
         "models": {
@@ -2102,7 +2152,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 if not isinstance(execution, dict):
                     raise ValueError("Invalid workspace execution configuration")
                 execution["scan_window_days"] = days
-                workflow_providers = {"cursor_cli", "cursor", "deepseek", "deepseek_api", "openai", "openai_compatible"}
+                workflow_providers = {"cursor_cli", "cursor", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}
 
                 def apply_model_config(target: dict[str, Any], body_prefix: str, file_prefix: str = "") -> None:
                     provider = str(body.get(f"{body_prefix}provider") or "").strip()
@@ -2110,7 +2160,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     if provider:
                         if provider not in workflow_providers:
                             raise ValueError(f"Unsupported workflow AI provider: {provider}")
-                        target[f"{file_prefix}provider"] = "cursor_cli" if provider == "cursor" else "deepseek" if provider == "deepseek_api" else provider
+                        target[f"{file_prefix}provider"] = dashboard_provider(provider)
                     if model:
                         target[f"{file_prefix}model"] = model
                     for suffix in ("base_url", "api_key_env"):

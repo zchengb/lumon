@@ -226,7 +226,7 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertGreaterEqual(result["created"], 3)
 
-    def test_designer_uses_global_deepseek_provider(self) -> None:
+    def test_designer_uses_global_opencode_provider(self) -> None:
         from skills.test_case.designer import design_test_cases
 
         story = StoryContext(
@@ -237,14 +237,14 @@ class TestCaseSkillTests(unittest.TestCase):
             acceptance_criteria=["User can log in with email"],
         )
         with mock.patch(
-            "agents.runtime.openai_compatible.chat_completion",
-            return_value=(json.dumps(LOGIN_DESIGN, ensure_ascii=False), "req-test-case"),
+            "skills.test_case.designer._run_opencode_agent",
+            return_value=json.dumps(LOGIN_DESIGN, ensure_ascii=False),
         ) as completion:
             drafts = design_test_cases(
                 story,
                 agents_config={
                     "execution": {
-                        "provider": "deepseek",
+                        "provider": "opencode",
                         "model": "deepseek-v4-flash",
                         "api_key_env": "DEEPSEEK_API_KEY",
                     }
@@ -252,9 +252,7 @@ class TestCaseSkillTests(unittest.TestCase):
             )
 
         self.assertEqual(3, len(drafts))
-        self.assertEqual("deepseek", completion.call_args.kwargs["provider"])
         self.assertEqual("deepseek-v4-flash", completion.call_args.kwargs["model"])
-        self.assertTrue(completion.call_args.kwargs["json_mode"])
 
     def test_generator_covers_ac_types(self) -> None:
         story = StoryContext(

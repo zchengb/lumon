@@ -12,7 +12,7 @@ from agents.definitions import AgentDefinition
 from agents.dylan.schemas import ConversationFlags
 from agents.project_resolver import known_project_slugs, load_chat_project_map, resolve_project
 from agents.runner import default_runner
-from agents.runtime.cursor_runtime import CursorAgentRuntime, create_agent_runtime
+from agents.runtime.cursor_runtime import CursorAgentRuntime, canonical_agent_provider, create_agent_runtime
 from agents.runtime.final_response import (
     extract_final_response,
     has_unbacked_delegation_claim,
@@ -53,6 +53,8 @@ _RESUME_RETRY_TOKENS = (
     "stream-json",
     "failed to reach",
     "cursor api",
+    "opencode",
+    "provider",
     "empty stream",
 )
 
@@ -102,8 +104,14 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
         )
     if "sandbox_unavailable" in lower or "security_error" in lower:
         return (
-            "I can't run that turn because the secure Cursor sandbox is unavailable. "
+            "I can't run that turn because the secure Agent sandbox is unavailable. "
             "Conversation agents stay offline until security-check passes.\n"
+            f"Trace ID: {trace_id}"
+        )
+    if "opencode" in lower or "deepseek" in lower:
+        return (
+            "I couldn't finish this turn through the configured OpenCode/DeepSeek runtime. "
+            "Check the OpenCode installation and DeepSeek key, then retry.\n"
             f"Trace ID: {trace_id}"
         )
     if any(tok in lower for tok in ("failed to reach", "cursor api", "proxy", "https_proxy")):
@@ -483,7 +491,20 @@ def handle_autonomous_conversation(
                     user_id=user_id,
                     soul_version=definition.soul_version,
                     protocol_version=definition.protocol_version,
+                    provider=canonical_agent_provider(flags.model.provider),
                 )
+                is_new = True
+            expected_provider = canonical_agent_provider(flags.model.provider)
+            if session is not None and str(session.get("provider") or "cursor_cli").strip().casefold() != expected_provider:
+                obs.emit(
+                    trace,
+                    "agent.session.provider_mismatch",
+                    previous_provider=session.get("provider"),
+                    expected_provider=expected_provider,
+                )
+                store.close_session(session["session_id"])
+                session = None
+                checkpoint = None
                 is_new = True
             if session is not None and not is_new:
                 pending = store.get_pending(session)
@@ -497,6 +518,7 @@ def handle_autonomous_conversation(
                     user_id=user_id,
                     soul_version=definition.soul_version,
                     protocol_version=definition.protocol_version,
+                    provider=canonical_agent_provider(flags.model.provider),
                 )
 
             active_loop = str((checkpoint or {}).get("active_loop") or "").strip().lower()
@@ -515,7 +537,11 @@ def handle_autonomous_conversation(
                     for part in (
                         base,
                         security_block,
-                        interaction_contract_prompt(agent_id=agent_id, pending=current_pending),
+                        interaction_contract_prompt(
+                            agent_id=agent_id,
+                            pending=current_pending,
+                            workspace_path=workspace,
+                        ),
                     )
                     if part
                 )
@@ -564,6 +590,8 @@ def handle_autonomous_conversation(
             if attachment_dir is not None and isinstance(cursor, CursorAgentRuntime):
                 original_additional_dirs = list(cursor.additional_dirs)
                 cursor.additional_dirs = [attachment_dir, *original_additional_dirs]
+            elif attachment_dir is not None and hasattr(cursor, "additional_files"):
+                cursor.additional_files = sorted(attachment_dir.iterdir())
             runner = (
                 default_runner(runtime=cursor)
                 if workspace_isolation_v2_enabled() and runtime is None
@@ -618,6 +646,7 @@ def handle_autonomous_conversation(
                     user_id=user_id,
                     soul_version=definition.soul_version,
                     protocol_version=definition.protocol_version,
+                    provider=canonical_agent_provider(flags.model.provider),
                 )
                 prompt = definition.build_bootstrap_prompt(
                     project_slug=slug,

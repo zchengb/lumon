@@ -1,13 +1,13 @@
 {
   "schema_version": "1.0",
   "execution": {
-    "provider": "deepseek",
+    "provider": "opencode",
     "model": "deepseek-v4-flash",
-    "base_url": "https://api.deepseek.com",
+    "base_url": "",
     "api_key_env": "DEEPSEEK_API_KEY",
-    "patch_provider": "deepseek",
+    "patch_provider": "opencode",
     "patch_model": "deepseek-v4-flash",
-    "patch_base_url": "https://api.deepseek.com",
+    "patch_base_url": "",
     "patch_api_key_env": "DEEPSEEK_API_KEY",
     "sandbox": "disabled",
     "approve_mcps": false,

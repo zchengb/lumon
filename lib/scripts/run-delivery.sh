@@ -75,6 +75,7 @@ load_env_file "${DOCS_DIR}/${WORKSPACE_DIR_NAME}/.env.common"
 load_env_file "${DOCS_DIR}/${WORKSPACE_DIR_NAME}/.env.local"
 load_env_file "${DOCS_DIR}/.env.common"
 load_env_file "${DOCS_DIR}/.env.local"
+load_env_file "${LUMEN_HOME:-$HOME/.lumon}/.env.local"
 
 if [[ -n "${CURSOR_API_KEY:-}" ]] || [[ ! -t 0 ]]; then
   export AGENT_CLI_CREDENTIAL_STORE=file
@@ -391,7 +392,7 @@ run_delivery_agent() {
   local stage="$2"
   local attempt="$3"
   local stage_label="$4"
-  [[ "${SANDBOX_MODE}" == "enabled" ]] || fail "Auto Delivery requires CURSOR_AGENT_SANDBOX=enabled. Unsafe Cursor execution is disabled."
+  [[ "${SANDBOX_MODE}" == "enabled" ]] || fail "Auto Delivery requires the secure Agent sandbox to be enabled."
   local workflow_agent=(python3 "${WORKFLOW_AGENT_PY}"
     --workspace "${WORKSPACE_ROOT}"
     --workflow auto_delivery

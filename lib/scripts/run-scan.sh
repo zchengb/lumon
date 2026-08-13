@@ -291,7 +291,7 @@ refresh_twg_auth() {
 }
 
 run_real_scan() {
-  [[ "${SANDBOX_MODE}" == "enabled" ]] || fail "Auto Scan requires CURSOR_AGENT_SANDBOX=enabled. Unsafe Cursor execution is disabled."
+  [[ "${SANDBOX_MODE}" == "enabled" ]] || fail "Auto Scan requires the secure Agent sandbox to be enabled."
   if [[ "${PROVIDER}" == "cursor_cli" || "${PROVIDER}" == "cursor" ]]; then
     command -v agent >/dev/null 2>&1 || fail "Cursor CLI 'agent' was not found in PATH. Install it from https://cursor.com/cli before running a scan."
     if [[ -z "${CURSOR_API_KEY:-}" ]] && ! agent status >/dev/null 2>&1; then
@@ -397,6 +397,7 @@ date -u '+%Y-%m-%dT%H:%M:%SZ' > "${LOCK_DIR}/started_at"
 
 load_env_file "${WORKSPACE_ROOT}/.env.common"
 load_env_file "${WORKSPACE_ROOT}/.env.local"
+load_env_file "${LUMEN_HOME}/.env.local"
 
 if [[ -n "${CURSOR_API_KEY:-}" ]] || [[ ! -t 0 ]]; then
   export AGENT_CLI_CREDENTIAL_STORE=file

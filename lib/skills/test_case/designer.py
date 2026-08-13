@@ -126,6 +126,21 @@ def _run_api_agent(
     return output
 
 
+def _run_opencode_agent(prompt: str, *, model: str, workspace: Path, timeout: int = 240) -> str:
+    from agents.runtime.opencode_runtime import OpenCodeAgentRuntime
+
+    runtime = OpenCodeAgentRuntime(
+        model=model,
+        hard_timeout_seconds=timeout,
+        agent_id="mark",
+        project="test-case",
+    )
+    result = runtime.run(workspace=workspace, prompt=prompt)
+    if result.status != "succeeded" or not result.text.strip():
+        raise TestCaseDesignUnavailable(f"OpenCode test-case designer failed: {result.error or result.status}")
+    return result.text
+
+
 def _run_cursor_agent(prompt: str, *, model: str, workspace: Path, timeout: int = 240) -> str:
     _load_lumen_dotenv()
     agent_bin = shutil.which("agent") or shutil.which("cursor-agent")
@@ -218,8 +233,14 @@ def design_test_cases(
             configured = _model_config(agents_config)
             provider = str(configured.get("provider") or "").strip().casefold()
             selected_model = str(model or configured.get("model") or "").strip()
-            if provider in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
-                default_model = "deepseek-v4-flash" if provider in {"deepseek", "deepseek_api"} else "gpt-4o-mini"
+            if provider in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
+                raw = _run_opencode_agent(
+                    prompt,
+                    model=selected_model or "deepseek-v4-flash",
+                    workspace=(Path(workspace).expanduser() if workspace else Path.home()),
+                )
+            elif provider in {"openai", "openai_compatible"}:
+                default_model = "gpt-4o-mini"
                 raw = _run_api_agent(
                     prompt,
                     provider=provider,

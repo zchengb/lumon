@@ -58,6 +58,9 @@ cp "${SCRIPT_DIR}/VERSION" "${LUMEN_HOME}/VERSION"
 chmod +x "${LUMEN_HOME}/lib/scripts/"*.sh 2>/dev/null || true
 chmod +x "${LUMEN_HOME}/lib/scripts/"*.py 2>/dev/null || true
 
+# Migrate the installed Agent registry without touching unrelated workspace data.
+LUMON_HOME="${LUMEN_HOME}" python3 "${LUMEN_HOME}/lib/scripts/migrate_agent_runtime.py" "${LUMEN_HOME}/agents/config.json" --migrate-workspaces
+
 install -m 0755 "${SCRIPT_DIR}/bin/lumen" "${BIN_DIR}/lumen" 2>/dev/null \
   || { cp "${SCRIPT_DIR}/bin/lumen" "${BIN_DIR}/lumen" && chmod +x "${BIN_DIR}/lumen"; }
 install -m 0755 "${SCRIPT_DIR}/bin/lumon" "${BIN_DIR}/lumon" 2>/dev/null \

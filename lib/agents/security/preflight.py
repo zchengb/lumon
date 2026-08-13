@@ -26,6 +26,12 @@ def _cursor_available() -> bool:
     return bool(shutil.which("agent") or shutil.which("cursor-agent"))
 
 
+def _opencode_available() -> bool:
+    from agents.runtime.opencode_runtime import find_opencode_bin
+
+    return bool(find_opencode_bin())
+
+
 def _sandbox_defaults_ok() -> bool:
     from agents.runtime.cursor_runtime import CursorAgentRuntime
 
@@ -58,15 +64,23 @@ def run_security_check(
     from agents.dylan.model_client import _load_lumen_dotenv
     from agents.dylan.schemas import ConversationFlags
     from agents.runtime.openai_compatible import default_api_key_env, is_api_provider
+    from agents.runtime.cursor_runtime import canonical_agent_provider
 
     _load_lumen_dotenv()
     model_flags = ConversationFlags.from_common({}, cfg, agent_id=agent)
+    runtime_provider = canonical_agent_provider(model_flags.model.provider)
     api_provider = is_api_provider(model_flags.model.provider)
     checks: dict[str, Any] = {}
     warnings: list[str] = []
     critical_fail = False
 
-    if api_provider:
+    if runtime_provider == "opencode":
+        checks["cursor_cli"] = "not_required"
+        checks["opencode_cli"] = "pass" if _opencode_available() else "fail"
+        checks["model_api"] = "pass" if os.environ.get(model_flags.model.api_key_env or "DEEPSEEK_API_KEY", "").strip() else "missing:DEEPSEEK_API_KEY"
+        if checks["opencode_cli"] != "pass" or checks["model_api"] != "pass":
+            critical_fail = True
+    elif api_provider:
         checks["cursor_cli"] = "not_required"
         key_env = model_flags.model.api_key_env or default_api_key_env(model_flags.model.provider)
         checks["model_api"] = "pass" if os.environ.get(key_env, "").strip() else f"missing:{key_env}"

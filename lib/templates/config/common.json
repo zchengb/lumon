@@ -11,9 +11,9 @@
   },
   "execution": {
     "mode": "lightweight_review_only",
-    "provider": "deepseek",
+    "provider": "opencode",
     "model": "deepseek-v4-flash",
-    "base_url": "https://api.deepseek.com",
+    "base_url": "",
     "api_key_env": "DEEPSEEK_API_KEY",
     "scan_window_days": 7,
     "run_project_commands": false,

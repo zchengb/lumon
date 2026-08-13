@@ -423,9 +423,18 @@ def normalize_conversation_decision(
     }
 
 
-def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None = None) -> str:
+def interaction_contract_prompt(
+    *,
+    agent_id: str,
+    pending: dict[str, Any] | None = None,
+    workspace_path: Path | None = None,
+) -> str:
     protocol_path = Path(__file__).resolve().parents[1] / "protocol.md"
     action_catalog_path = Path(__file__).resolve().parents[1] / "action-catalog.md"
+    if workspace_path is not None:
+        workspace = Path(workspace_path).expanduser().resolve()
+        protocol_path = workspace / ".lumon" / "protocol.md"
+        action_catalog_path = workspace / ".lumon" / "action-catalog.md"
     lines = [
         "[LUMON INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumon conversation.",

@@ -15,7 +15,7 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from agents.runtime.cursor_runtime import _recent_cursor_provider_error
-from agents.dylan.model_client import OpenAICompatibleDylanModelClient, get_model_client
+from agents.dylan.model_client import OpenCodeDylanModelClient, OpenAICompatibleDylanModelClient, get_model_client
 from agents.dylan.schemas import ModelConfig
 from agents.runtime.openai_compatible import OpenAICompatibleAgentRuntime, chat_completion
 
@@ -35,21 +35,21 @@ class _Response:
 
 
 class OpenAICompatibleTests(unittest.TestCase):
-    def test_deepseek_chat_completion_uses_openai_shape(self) -> None:
-        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "secret"}, clear=True), mock.patch(
+    def test_openai_chat_completion_uses_openai_shape(self) -> None:
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "secret"}, clear=True), mock.patch(
             "urllib.request.urlopen",
             return_value=_Response({"id": "req-1", "choices": [{"message": {"content": json.dumps({"ok": True})}}]}),
         ) as urlopen:
             text, request_id = chat_completion(
-                provider="deepseek",
-                model="deepseek-v4-flash",
+                provider="openai_compatible",
+                model="gpt-4o-mini",
                 prompt="return JSON",
                 timeout=5,
                 json_mode=True,
             )
         request = urlopen.call_args.args[0]
         payload = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(request.full_url, "https://api.deepseek.com/chat/completions")
+        self.assertEqual(request.full_url, "https://api.openai.com/v1/chat/completions")
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual(text, json.dumps({"ok": True}))
@@ -60,15 +60,19 @@ class OpenAICompatibleTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"LUMON_HOME": tmp}, clear=True), mock.patch(
                 "agents.runtime.openai_compatible._load_dotenv"
             ):
-                with self.assertRaisesRegex(RuntimeError, "DEEPSEEK_API_KEY"):
-                    chat_completion(provider="deepseek", model="deepseek-v4-flash", prompt="hi", timeout=5)
+                with self.assertRaisesRegex(RuntimeError, "OPENAI_API_KEY"):
+                    chat_completion(provider="openai_compatible", model="gpt-4o-mini", prompt="hi", timeout=5)
 
     def test_runtime_is_stateless(self) -> None:
         self.assertTrue(OpenAICompatibleAgentRuntime().supports_stateless)
         self.assertFalse(OpenAICompatibleAgentRuntime().supports_resume)
 
-    def test_model_client_factory_accepts_deepseek(self) -> None:
+    def test_model_client_factory_routes_deepseek_to_opencode(self) -> None:
         client = get_model_client(ModelConfig(provider="deepseek", model_name="deepseek-v4-flash"), require_real=True)
+        self.assertIsInstance(client, OpenCodeDylanModelClient)
+
+    def test_model_client_factory_keeps_openai_compatibility(self) -> None:
+        client = get_model_client(ModelConfig(provider="openai_compatible", model_name="gpt-4o-mini"), require_real=True)
         self.assertIsInstance(client, OpenAICompatibleDylanModelClient)
 
     def test_cursor_quota_marker_is_normalized_without_log_leak(self) -> None:

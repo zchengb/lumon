@@ -32,9 +32,9 @@ class WorkflowAgentTests(unittest.TestCase):
             (workspace / "config").mkdir()
             (workspace / "config" / "common.json").write_text(json.dumps({"execution": {"provider": "deepseek", "model": "deepseek-v4-flash"}}), encoding="utf-8")
             (workspace / "config" / "delivery.json").write_text(json.dumps({"execution": {"provider": "deepseek", "model": "deepseek-v4-pro", "patch_provider": "openai_compatible", "patch_model": "gpt-test"}}), encoding="utf-8")
-            self.assertEqual("deepseek", workflow_agent.resolve_config(workspace, "auto_scan")["provider"])
+            self.assertEqual("opencode", workflow_agent.resolve_config(workspace, "auto_scan")["provider"])
             self.assertEqual("deepseek-v4-flash", workflow_agent.resolve_config(workspace, "auto_delivery")["model"])
-            self.assertEqual("deepseek", workflow_agent.resolve_config(workspace, "auto_patch")["provider"])
+            self.assertEqual("opencode", workflow_agent.resolve_config(workspace, "auto_patch")["provider"])
             self.assertEqual("deepseek-v4-flash", workflow_agent.resolve_config(workspace, "auto_patch")["model"])
 
     def test_resolve_config_keeps_legacy_delivery_fallback(self) -> None:
@@ -111,7 +111,7 @@ class WorkflowAgentTests(unittest.TestCase):
 
     def test_provider_aliases_are_normalized(self) -> None:
         self.assertEqual("cursor_cli", workflow_agent.normalize_provider("cursor"))
-        self.assertEqual("deepseek", workflow_agent.normalize_provider("deepseek_api"))
+        self.assertEqual("opencode", workflow_agent.normalize_provider("deepseek_api"))
         self.assertEqual("openai_compatible", workflow_agent.normalize_provider("openai"))
 
 

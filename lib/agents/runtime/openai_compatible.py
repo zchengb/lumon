@@ -10,7 +10,7 @@ from typing import Any
 from agents.runtime.cursor_runtime import AgentRunResult
 
 
-API_PROVIDERS = frozenset({"deepseek", "deepseek_api", "openai", "openai_compatible"})
+API_PROVIDERS = frozenset({"openai", "openai_compatible"})
 
 
 def is_api_provider(provider: str) -> bool:
@@ -18,11 +18,11 @@ def is_api_provider(provider: str) -> bool:
 
 
 def default_base_url(provider: str) -> str:
-    return "https://api.deepseek.com" if str(provider or "").strip().casefold() in {"deepseek", "deepseek_api"} else "https://api.openai.com/v1"
+    return "https://api.openai.com/v1"
 
 
 def default_api_key_env(provider: str) -> str:
-    return "DEEPSEEK_API_KEY" if str(provider or "").strip().casefold() in {"deepseek", "deepseek_api"} else "OPENAI_API_KEY"
+    return "OPENAI_API_KEY"
 
 
 def _load_dotenv() -> None:
@@ -132,8 +132,8 @@ class OpenAICompatibleAgentRuntime:
     def __init__(
         self,
         *,
-        provider: str = "deepseek",
-        model: str = "deepseek-v4-flash",
+        provider: str = "openai_compatible",
+        model: str = "gpt-4o-mini",
         base_url: str = "",
         api_key_env: str = "",
         soft_timeout_seconds: int = 90,

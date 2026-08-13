@@ -267,7 +267,7 @@ class CursorDylanModelClient(DylanModelClient):
 
 class OpenAICompatibleDylanModelClient(DylanModelClient):
     def __init__(self, config: Optional[ModelConfig] = None, workspace: Optional[Path] = None) -> None:
-        self.config = config or ModelConfig(provider="deepseek", model_name="deepseek-v4-flash")
+        self.config = config or ModelConfig(provider="openai_compatible", model_name="gpt-4o-mini")
         self.workspace = Path(workspace).expanduser() if workspace else Path.home()
         self.provider_name = self.config.provider
 
@@ -340,6 +340,28 @@ class OpenAICompatibleDylanModelClient(DylanModelClient):
             except Exception as exc:
                 last_error = _format_agent_error(exc, timeout=timeout)
         raise RuntimeError(f"response model failed: {last_error}")
+
+
+class OpenCodeDylanModelClient(OpenAICompatibleDylanModelClient):
+    """Use OpenCode as the tool-capable harness for the legacy Dylan contract."""
+
+    provider_name = "opencode"
+
+    def _run_api(self, prompt: str, *, timeout: int) -> str:
+        from agents.runtime.opencode_runtime import OpenCodeAgentRuntime
+
+        runtime = OpenCodeAgentRuntime(
+            model=self.config.model_name,
+            base_url=self.config.base_url,
+            api_key_env=self.config.api_key_env,
+            hard_timeout_seconds=timeout,
+            agent_id="dylan",
+            project=self.workspace.name,
+        )
+        result = runtime.run(workspace=self.workspace, prompt=prompt)
+        if result.status != "succeeded" or not result.text.strip():
+            raise RuntimeError(result.error or "OpenCode returned no usable response")
+        return result.text
 
 
 class HeuristicDylanModelClient(DylanModelClient):
@@ -487,7 +509,9 @@ def get_model_client(
             raise RuntimeError("Agent CLI/model unavailable (heuristic blocked)")
         return HeuristicDylanModelClient()
     provider = str(flags_model.provider or "").casefold()
-    if provider in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+    if provider in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
+        return OpenCodeDylanModelClient(flags_model, workspace=workspace)
+    if provider in {"openai", "openai_compatible"}:
         return OpenAICompatibleDylanModelClient(flags_model, workspace=workspace)
     if provider in {"cursor", "cursor_cli"} and shutil.which("agent"):
         return CursorDylanModelClient(flags_model, workspace=workspace)

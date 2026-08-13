@@ -368,8 +368,23 @@ def create_agent_runtime(
     agent_id: str = "",
     project: str = "",
 ) -> Any:
-    normalized = str(provider or "cursor").strip().casefold()
-    if normalized in {"deepseek", "deepseek_api", "openai", "openai_compatible"}:
+    normalized = canonical_agent_provider(provider)
+    if normalized in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
+        from agents.runtime.opencode_runtime import OpenCodeAgentRuntime
+
+        return OpenCodeAgentRuntime(
+            model=model,
+            base_url=base_url,
+            api_key_env=api_key_env,
+            soft_timeout_seconds=soft_timeout_seconds,
+            hard_timeout_seconds=hard_timeout_seconds,
+            sandbox=sandbox,
+            force=force,
+            trust=trust,
+            agent_id=agent_id,
+            project=project,
+        )
+    if normalized in {"openai", "openai_compatible"}:
         from agents.runtime.openai_compatible import OpenAICompatibleAgentRuntime
 
         return OpenAICompatibleAgentRuntime(
@@ -395,3 +410,12 @@ def create_agent_runtime(
         agent_id=agent_id,
         project=project,
     )
+
+
+def canonical_agent_provider(provider: str) -> str:
+    normalized = str(provider or "cursor").strip().casefold()
+    if normalized in {"deepseek", "deepseek_api", "opencode_deepseek"}:
+        return "opencode"
+    if normalized in {"cursor", "cursor-cli"}:
+        return "cursor_cli"
+    return normalized

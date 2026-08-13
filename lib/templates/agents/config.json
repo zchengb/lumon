@@ -65,12 +65,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "deepseek",
+        "type": "opencode",
         "model": "deepseek-v4-flash",
-        "base_url": "https://api.deepseek.com",
+        "base_url": "",
         "api_key_env": "DEEPSEEK_API_KEY",
-        "output_format": "text",
-        "resume_sessions": false
+        "output_format": "json",
+        "resume_sessions": true
       },
       "session": {
         "scope": "thread_shared",
@@ -114,9 +114,9 @@
       "enabled": false,
       "routing_mode": "agent_only",
       "model": {
-        "provider": "deepseek",
+        "provider": "opencode",
         "model": "deepseek-v4-flash",
-        "base_url": "https://api.deepseek.com",
+        "base_url": "",
         "api_key_env": "DEEPSEEK_API_KEY",
         "planner_timeout_seconds": 45,
         "responder_timeout_seconds": 60,
@@ -155,7 +155,7 @@
         "llm_response_enabled": false,
         "grounding_guard_enabled": true,
         "model": {
-          "provider": "deepseek",
+          "provider": "opencode",
           "router_timeout_seconds": 8,
           "response_timeout_seconds": 25,
           "max_router_retries": 1,
@@ -188,12 +188,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "deepseek",
+        "type": "opencode",
         "model": "deepseek-v4-flash",
-        "base_url": "https://api.deepseek.com",
+        "base_url": "",
         "api_key_env": "DEEPSEEK_API_KEY",
-        "output_format": "text",
-        "resume_sessions": false
+        "output_format": "json",
+        "resume_sessions": true
       },
       "session": {
         "scope": "thread_shared",
@@ -240,12 +240,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "deepseek",
+        "type": "opencode",
         "model": "deepseek-v4-flash",
-        "base_url": "https://api.deepseek.com",
+        "base_url": "",
         "api_key_env": "DEEPSEEK_API_KEY",
-        "output_format": "text",
-        "resume_sessions": false
+        "output_format": "json",
+        "resume_sessions": true
       },
       "session": {
         "scope": "thread_shared",
@@ -292,12 +292,12 @@
       "enabled": false,
       "mode": "autonomous_workspace",
       "provider": {
-        "type": "deepseek",
+        "type": "opencode",
         "model": "deepseek-v4-flash",
-        "base_url": "https://api.deepseek.com",
+        "base_url": "",
         "api_key_env": "DEEPSEEK_API_KEY",
-        "output_format": "text",
-        "resume_sessions": false
+        "output_format": "json",
+        "resume_sessions": true
       },
       "session": {
         "scope": "thread_shared",

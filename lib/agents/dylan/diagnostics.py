@@ -27,8 +27,10 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     config = load_agents_config()
     flags = ConversationFlags.from_common(common or {}, config)
     from agents.runtime.openai_compatible import default_api_key_env, is_api_provider
+    from agents.runtime.cursor_runtime import canonical_agent_provider
 
     api_provider = is_api_provider(flags.model.provider)
+    harness_provider = canonical_agent_provider(flags.model.provider) == "opencode"
     checks: list[dict[str, str]] = []
     checks.append(
         _check(
@@ -52,13 +54,20 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         )
     )
     agent_bin = shutil.which("agent") or shutil.which("cursor-agent")
+    from agents.runtime.opencode_runtime import find_opencode_bin
+
+    opencode_bin = find_opencode_bin()
     checks.append(
         _check(
             "agent_cli",
-            "N/A" if api_provider else ("PASS" if agent_bin else ("WARN" if flags.model.provider == "fake" else "FAIL")),
-            agent_bin or "not found",
+            "N/A" if api_provider or harness_provider else ("PASS" if agent_bin else ("WARN" if flags.model.provider == "fake" else "FAIL")),
+            opencode_bin if harness_provider else (agent_bin or "not found"),
         )
     )
+    if harness_provider:
+        checks.append(_check("opencode_cli", "PASS" if opencode_bin else "FAIL", opencode_bin or "not found"))
+        key_env = flags.model.api_key_env or "DEEPSEEK_API_KEY"
+        checks.append(_check("opencode_auth", "PASS" if os.environ.get(key_env, "").strip() else "FAIL", key_env))
     if api_provider:
         key_env = flags.model.api_key_env or default_api_key_env(flags.model.provider)
         checks.append(
@@ -94,7 +103,7 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     checks.append(
         _check(
             "model",
-            "PASS" if (flags.model.provider in {"cursor", "cursor_cli", "fake"} or (api_provider and os.environ.get(flags.model.api_key_env or default_api_key_env(flags.model.provider), "").strip())) else "FAIL",
+            "PASS" if (flags.model.provider in {"cursor", "cursor_cli", "fake"} or harness_provider and os.environ.get(flags.model.api_key_env or "DEEPSEEK_API_KEY", "").strip() or (api_provider and os.environ.get(flags.model.api_key_env or default_api_key_env(flags.model.provider), "").strip())) else "FAIL",
             f"{flags.model.provider}/{flags.model.model_name} required={flags.model.required}",
         )
     )
