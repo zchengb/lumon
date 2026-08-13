@@ -86,9 +86,13 @@ class AgentInteractionTests(unittest.TestCase):
         prompt = interaction_contract_prompt(agent_id="milchick")
         self.assertIn("action-catalog.md", prompt)
         self.assertIn("exact canonical action names", prompt)
+        self.assertIn("arguments shape", prompt)
         catalog = (ROOT / "lib" / "agents" / "action-catalog.md").read_text(encoding="utf-8")
         self.assertIn("`agent.job.create`", catalog)
         self.assertIn("`create_job`", catalog)
+        self.assertIn('"target_agent":"mark"', catalog)
+        self.assertIn("Put every model-selected input in `arguments`", catalog)
+        self.assertIn("`target_files` is a JSON array", catalog)
         self.assertTrue(all(f"`{action}`" in catalog for action in ALL_ACTIONS))
 
     def test_pending_clarification_survives_session_reload(self) -> None:

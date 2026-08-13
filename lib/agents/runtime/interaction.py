@@ -440,7 +440,8 @@ def interaction_contract_prompt(*, agent_id: str, pending: dict[str, Any] | None
         '<ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>',
         '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
         f"If this turn needs a host action, READ the canonical action catalog before emitting ACTION_REQUEST: {action_catalog_path}",
-        "Use only the exact canonical action names and required fields in that catalog; never invent or translate action names.",
+        "Copy the action-specific arguments shape from that catalog; put model-selected fields in arguments and leave resource empty unless its recipe says otherwise.",
+        "Use only the exact canonical action names and field names in that catalog; never invent, translate, or alias action names.",
         "A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true.",
     ]
     if pending:

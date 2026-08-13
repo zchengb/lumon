@@ -6,18 +6,44 @@ name column. Do not invent names, translate names, or use compatibility aliases
 in a new request. The host still enforces role ownership, authorization, and
 resource boundaries.
 
-Required fields below are the minimum fields checked before execution. Other
-fields may be required by the owning adapter or the current workflow.
+## Request envelope and parameter rules
+
+Every host action must use this envelope:
+
+```text
+<ACTION_REQUEST>{"action":"canonical.action","arguments":{...},"resource":{}}</ACTION_REQUEST>
+```
+
+- `action` is copied exactly from the **Canonical action** column. Never use a
+  display name, translation, guessed name, or compatibility alias.
+- Put every model-selected input in `arguments`. Use the exact field names and
+  JSON types shown below; keep `resource` as `{}` unless an action recipe
+  explicitly says otherwise.
+- `resource` is host scope/context, not a second place to invent parameters.
+  Moving a missing field there does not make an invalid request valid.
+- `one of A, B` means provide exactly one of those fields. Prefer the first
+  field listed; the remaining names are compatibility inputs accepted by the
+  host.
+- `required` means the field must be present before execution. Adapter config
+  such as the project workspace or Jira site may still be supplied by the host.
+- Do not send identity fields such as `actor`, `agent_id`, `chat_id`,
+  `thread_id`, or `trace_id`; the host fills them.
+- If a required value is absent, emit a `CLARIFICATION_REQUEST` instead of
+  inventing a field or value.
+
+The JSON inside the envelope is parsed as JSON, not as a shell command. Lists
+must be JSON arrays and booleans must be JSON booleans. The examples below are
+copyable request shapes; replace only the business values.
 
 ## Delegation and jobs — Milchick
 
-| Canonical action | Purpose | Required fields |
+| Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `agent.job.create` | Delegate work to another Agent; use `target_agent=mark` and `capability=loop.technical` for a Technical Plan. | `target_agent`, `capability` |
-| `agent.job.list` | List jobs for the current project. | none; optional `limit` |
-| `agent.job.show` | Show one job and its parent summary. | `job_id` |
-| `agent.job.cancel` | Cancel an existing job. | `job_id` |
-| `agent.job.retry` | Retry an existing child job. | `job_id` |
+| `agent.job.create` | Delegate work to another Agent; Technical Plan uses `target_agent="mark"`, `capability="loop.technical"`. | required: `target_agent`, `capability`; optional: `issue_key`, `story`, `depends_on` (array), `execute` (boolean) |
+| `agent.job.list` | List jobs for the current project. | optional: `limit` (number) |
+| `agent.job.show` | Show one job and its parent summary. | required: `job_id` |
+| `agent.job.cancel` | Cancel an existing job. | required: `job_id` |
+| `agent.job.retry` | Retry an existing child job. | required: `job_id` |
 | `agent.list` | List registered Agents. | none |
 | `agent.health` | Read registered Agent health/status. | none |
 
@@ -26,19 +52,19 @@ receipt before claiming that work was assigned or started.
 
 ## Jira — available through the host adapter
 
-| Canonical action | Purpose | Required fields |
+| Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `jira.workitem.get` | Read one Jira work item. | one of `issue_key`, `id`, `key` |
-| `jira.workitem.query` | Query Jira work items. | `jql` |
-| `jira.sprint.untested.report` | Read the untested Story report. | none |
-| `jira.workitem.create` | Create a Jira work item after the request calls for it. | `summary` |
-| `jira.workitem.update` | Update an existing Jira work item. | `issue_key` |
+| `jira.workitem.get` | Read one Jira work item. | required: one of `issue_key`, `id`, `key`; prefer `issue_key` |
+| `jira.workitem.query` | Query Jira work items. | required: `jql`; optional: `limit` (number), `project_key`, `board_id`, `site` |
+| `jira.sprint.untested.report` | Read the untested Story report. | optional: `standard` (`A`/`B`/`C`/`D`), `statuses` (array) |
+| `jira.workitem.create` | Create a Jira work item after the request calls for it. | required: `summary`; optional: `description`, `project_key`, `issue_type`, `target_version`, `priority`, `labels` (array), `parent` |
+| `jira.workitem.update` | Update an existing Jira work item. | required: `issue_key`; plus at least one of `summary`, `description`, `priority`, `labels` (array), `add_labels` (array), `comment`, `status` |
 
 ## Milchick operations
 
-| Canonical action | Purpose | Required fields |
+| Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `test_case.generate` | Generate test cases and write the configured Sheet. | one of `issue_key`, `story`, `story_id`, `scope` |
+| `test_case.generate` | Generate test cases and write the configured Sheet. | required: one of `issue_key`, `story`, `story_id`, `scope`; use `scope="ready_for_qa"` for all matching Stories; optional: `statuses` (array) |
 | `project.status` | Read lightweight project status. | none |
 | `workflow.status` | Read lightweight workflow status. | none |
 | `schedule.status` | Read lightweight schedule status. | none |
@@ -48,31 +74,111 @@ receipt before claiming that work was assigned or started.
 
 ## Mark delivery and loops
 
-| Canonical action | Purpose | Required fields |
+| Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `delivery.readiness` | Read delivery readiness. | none |
-| `delivery.status` | Read delivery status. | none |
-| `delivery.result` | Read a delivery result. | none |
-| `delivery.start` | Start delivery for an approved Story. | one of `story`, `story_id`, `issue_key` |
-| `delivery.cancel` | Cancel a delivery run. | one of `run_id`, `story`, `story_id` |
-| `delivery.quick_change` | Run a bounded source change. | one of each: repository, target files, request |
+| `delivery.readiness` | Read delivery readiness. | required: `story` |
+| `delivery.status` | Read delivery status. | optional: `story`, `run_id` |
+| `delivery.result` | Read a delivery result. | required: `run_id` |
+| `delivery.start` | Start delivery for an approved Story. | required: one of `story`, `story_id`, `issue_key`; prefer `story` |
+| `delivery.cancel` | Cancel a delivery run. | required: one of `run_id`, `story`, `story_id`; prefer `run_id` |
+| `delivery.quick_change` | Run a bounded source change. | required: `repository` (string), `target_files` (array), `request` (string); optional: `target_version`, `change_type` |
 | `loop.business` | Start the Business Loop. | none |
-| `loop.technical` | Start the Technical Loop. | one of `issue_key`, `story`, `story_id` |
-| `story.read` | Read Story context. | adapter/workflow dependent |
-| `technical_plan.read` | Read a Technical Plan. | adapter/workflow dependent |
+| `loop.technical` | Start the Technical Loop. | required: one of `issue_key`, `story`, `story_id`; prefer `issue_key` |
+| `story.read` | Read Story context. | required: `story` |
+| `technical_plan.read` | Read a Technical Plan. | required: `story` |
 
 ## Dylan risk and scan
 
-| Canonical action | Purpose | Required fields |
+| Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `risk.read` | Read risk findings. | none |
-| `risk.resolve` | Resolve a risk finding. | `finding_id` |
-| `risk.mark_remediated` | Mark a finding remediated. | `finding_id` |
-| `risk.reconcile` | Reconcile project risk state. | `project` |
-| `scan.read` | Read scan results. | none |
-| `scan.schedule.read` | Read scan schedule. | none |
-| `scan.schedule.update` | Update scan schedule. | adapter/workflow dependent |
-| `scan.verify.request` | Request scan verification. | adapter/workflow dependent |
+| `risk.read` | Read risk findings. | required: one of `project`, `finding_id`; optional: `limit` (number) |
+| `risk.resolve` | Resolve a risk finding. | required: `finding_id`; optional: `basis`, `reason`, `override` (boolean) |
+| `risk.mark_remediated` | Mark a finding remediated. | required: `finding_id`; optional: `reason` |
+| `risk.reconcile` | Reconcile project risk state. | required: `project` |
+| `scan.read` | Read scan results. | required: one of `project`, `finding_id`; optional: `limit` (number) |
+| `scan.schedule.read` | Read scan schedule. | required: `project` |
+| `scan.schedule.update` | Update scan schedule. | required: `project`, `cron` |
+| `scan.verify.request` | Request scan verification. | required: `finding_id` |
+
+## Canonical request recipes
+
+### Delegate a Technical Plan
+
+Use the canonical action name and put the routing fields in `arguments`:
+
+```text
+<ACTION_REQUEST>{"action":"agent.job.create","arguments":{"target_agent":"mark","capability":"loop.technical","issue_key":"MBPAS-1503"},"resource":{}}</ACTION_REQUEST>
+```
+
+`target_agent` is an Agent ID, not a person display name. `capability` is the
+target Agent's canonical capability, not a natural-language description. For
+this workflow, `mark` + `loop.technical` is the valid Technical Plan handoff.
+After emitting this request, wait for the host receipt before saying the job
+was assigned or started.
+
+Do **not** emit either of these shapes:
+
+```text
+<ACTION_REQUEST>{"action":"create_job","arguments":{"agent":"Mark","task":"Technical Plan"}}</ACTION_REQUEST>
+<ACTION_REQUEST>{"action":"agent.job.create","resource":{"target_agent":"mark","capability":"loop.technical"}}</ACTION_REQUEST>
+```
+
+The first uses a compatibility alias and invented field names; the second puts
+model inputs in the wrong object. Both are avoidable when this catalog is read.
+
+### Common action shapes
+
+Generate test cases for every Ready for QA Story:
+
+```text
+<ACTION_REQUEST>{"action":"test_case.generate","arguments":{"scope":"ready_for_qa"},"resource":{}}</ACTION_REQUEST>
+```
+
+Start or cancel delivery:
+
+```text
+<ACTION_REQUEST>{"action":"delivery.start","arguments":{"story":"MBPAS-1503"},"resource":{}}</ACTION_REQUEST>
+<ACTION_REQUEST>{"action":"delivery.cancel","arguments":{"run_id":"run-123"},"resource":{}}</ACTION_REQUEST>
+```
+
+Run a bounded source change; `target_files` is a JSON array:
+
+```text
+<ACTION_REQUEST>{"action":"delivery.quick_change","arguments":{"repository":"lumon","target_files":["lib/agents/action-catalog.md"],"request":"Document the canonical action argument contract","change_type":"documentation"},"resource":{}}</ACTION_REQUEST>
+```
+
+Start a Technical Loop directly:
+
+```text
+<ACTION_REQUEST>{"action":"loop.technical","arguments":{"issue_key":"MBPAS-1503"},"resource":{}}</ACTION_REQUEST>
+```
+
+Read or update Jira:
+
+```text
+<ACTION_REQUEST>{"action":"jira.workitem.get","arguments":{"issue_key":"MBPAS-1503"},"resource":{}}</ACTION_REQUEST>
+<ACTION_REQUEST>{"action":"jira.workitem.query","arguments":{"jql":"project = MBPAS AND issuetype = Story","limit":20},"resource":{}}</ACTION_REQUEST>
+<ACTION_REQUEST>{"action":"jira.workitem.update","arguments":{"issue_key":"MBPAS-1503","comment":"Technical Plan requested"},"resource":{}}</ACTION_REQUEST>
+```
+
+Read or mutate a risk finding:
+
+```text
+<ACTION_REQUEST>{"action":"risk.read","arguments":{"finding_id":"finding-123"},"resource":{}}</ACTION_REQUEST>
+<ACTION_REQUEST>{"action":"risk.mark_remediated","arguments":{"finding_id":"finding-123","reason":"Fix verified"},"resource":{}}</ACTION_REQUEST>
+```
+
+Read or update the scan schedule:
+
+```text
+<ACTION_REQUEST>{"action":"scan.schedule.read","arguments":{"project":"mbpas"},"resource":{}}</ACTION_REQUEST>
+<ACTION_REQUEST>{"action":"scan.schedule.update","arguments":{"project":"mbpas","cron":"0 2 * * *"},"resource":{}}</ACTION_REQUEST>
+```
+
+For `agent.job.show`, `agent.job.cancel`, and `agent.job.retry`, pass the job
+identifier as `arguments.job_id`. For actions marked `none`, send an empty
+`arguments` object. Read operations still need their listed target; do not
+replace a missing target with a guessed project, Story, or finding.
 
 ## Compatibility aliases — host normalization only
 
