@@ -185,25 +185,26 @@ class AgentJobStore:
     def find_waiting_loop(
         self,
         *,
-        agent_id: str,
-        chat_id: str,
+        agent_id: str = "",
+        chat_id: str = "",
         thread_id: str = "",
         parent_id: str = "",
         root_id: str = "",
     ) -> Optional[AgentJob]:
         """Find the active Loop whose Feishu question this message answers."""
-        candidates = self.conn.execute(
-            """
+        query = """
             SELECT * FROM agent_job
             WHERE status = 'waiting_user'
-              AND target_agent = ?
               AND chat_id = ?
               AND capability IN ('loop.business', 'loop.technical')
-            ORDER BY updated_at DESC
-            LIMIT 50
-            """,
-            (str(agent_id or "").strip().lower(), str(chat_id or "").strip()),
-        ).fetchall()
+        """
+        args: list[str] = [str(chat_id or "").strip()]
+        target = str(agent_id or "").strip().lower()
+        if target:
+            query += " AND target_agent = ?"
+            args.append(target)
+        query += " ORDER BY updated_at DESC LIMIT 50"
+        candidates = self.conn.execute(query, args).fetchall()
         reply_ids = {
             str(value or "").strip()
             for value in (parent_id, root_id)

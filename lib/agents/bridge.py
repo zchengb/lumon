@@ -82,9 +82,17 @@ def _finish_waiting_loop(job: Any, result: dict[str, Any]) -> None:
         current = store.get(job.job_id) or job
         broker = AgentJobBroker(store)
         current.result["resume_result"] = result
-        if str(result.get("status") or "").strip().lower() not in {"ok", "delegate"}:
-            current.status = "failed"
+        result_status = str(result.get("status") or "").strip().lower()
+        if result_status not in {"ok", "delegate"}:
+            retryable = bool(result.get("retryable"))
+            current.status = "waiting_user" if retryable else "failed"
             current.error = str(result.get("detail") or result.get("text") or "loop_resume_failed")[:500]
+            if retryable:
+                current.result["resume_retryable"] = True
+                current.result["result"] = {
+                    "summary": str(result.get("text") or "Mark 尚未完成這一輪調查；請在此 thread 回覆「繼續調查」重試。"),
+                    "resume_retryable": True,
+                }
         elif result.get("pending_clarification"):
             current.status = "waiting_user"
             current.error = ""

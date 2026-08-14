@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "lib"
@@ -37,6 +38,11 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         self.assertIsInstance(runtime, OpenCodeAgentRuntime)
         self.assertTrue(runtime.supports_resume)
 
+    def test_deepseek_runtime_uses_max_reasoning_effort(self) -> None:
+        config = json.loads(OpenCodeAgentRuntime()._config_content())
+        model = config["provider"]["deepseek"]["models"]["deepseek-v4-flash"]
+        self.assertEqual("max", model["options"]["reasoningEffort"])
+
     def test_workspace_context_contains_readable_safety_files(self) -> None:
         runtime = OpenCodeAgentRuntime(agent_id="mark")
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,6 +52,51 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             self.assertTrue((workspace / ".lumon" / "responsibilities" / "mark.md").is_file())
             self.assertTrue((workspace / ".lumon" / "protocol.md").is_file())
             self.assertIn("Common hard blacklist", (workspace / ".lumon" / "blacklist.md").read_text(encoding="utf-8"))
+
+    def test_hard_timeout_discards_partial_text(self) -> None:
+        class Stream:
+            def __init__(self, line: str = "") -> None:
+                self.line = line
+
+            def readline(self) -> str:
+                line, self.line = self.line, ""
+                return line
+
+            def read(self) -> str:
+                return ""
+
+        class Process:
+            def __init__(self) -> None:
+                self.stdout = Stream(json.dumps({"type": "text", "part": {"type": "text", "text": "partial"}}) + "\n")
+                self.stderr = Stream()
+
+            def terminate(self) -> None:
+                pass
+
+            def wait(self, timeout: int = 0) -> None:
+                pass
+
+            def kill(self) -> None:
+                pass
+
+            def poll(self) -> None:
+                return None
+
+        runtime = OpenCodeAgentRuntime(hard_timeout_seconds=1)
+        process = Process()
+        clock = iter((0.0, 0.0, 2.0, 2.0))
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(runtime, "_env", return_value={}):
+                with mock.patch.object(runtime, "_agent_bin", return_value="opencode"):
+                    with mock.patch("agents.runtime.opencode_runtime.subprocess.Popen", return_value=process):
+                        with mock.patch("agents.runtime.opencode_runtime.select.select", return_value=([process.stdout], [], [])):
+                            with mock.patch(
+                                "agents.runtime.opencode_runtime.time.time",
+                                side_effect=lambda: next(clock, 2.0),
+                            ):
+                                result = runtime.run(workspace=Path(tmp), prompt="test")
+        self.assertEqual("timed_out", result.status)
+        self.assertEqual("", result.text)
 
     def test_jira_read_grant_allows_only_the_matching_direct_twg_verb(self) -> None:
         runtime = OpenCodeAgentRuntime(

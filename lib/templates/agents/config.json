@@ -1,5 +1,8 @@
 {
   "enabled": false,
+  "agent_security": {
+    "workspace_isolation_v2": false
+  },
   "profiles": {
     "dylan": {
       "role": "scan",

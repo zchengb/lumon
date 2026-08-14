@@ -561,9 +561,11 @@ def handle_autonomous_conversation(
                         "[LUMEN MANAGED LOOP]\n"
                         f"You are executing {loop_name} under a host-tracked Loop job.\n"
                         "A read action is intermediate; after the host returns its receipt, continue investigating. "
+                        "Never expose internal tool calls, planning notes, or repeated progress updates as the Feishu answer. "
                         "Never finish with only a Jira title/status.\n"
                         "Every turn must report: current stage, evidence completed, blocker or question, and next step.\n"
-                        "If a decision or prerequisite is missing, emit CLARIFICATION_REQUEST and ask the user in this Feishu thread.\n"
+                        "If a decision or prerequisite is missing, emit CLARIFICATION_REQUEST and ask the user in this Feishu thread; "
+                        "if the latest message answered the previous question, continue without asking for a generic 'continue'.\n"
                         "Only finish when the Loop artifact contract is satisfied; the host verifies the artifact before marking the job completed.\n"
                     )
                 return "\n\n".join(
@@ -726,10 +728,18 @@ def handle_autonomous_conversation(
 
             if result.status != "succeeded" or not result.text:
                 obs.upsert_trace(trace, state="failed", error_code=result.status or "agent_failed")
+                error_text = _user_facing_agent_error(result.error or result.status, trace.trace_id)
+                if agent_id == "mark" and result.status == "timed_out":
+                    error_text = (
+                        "這一輪 Technical Loop 調查超過時間限制，尚未形成完整計畫；"
+                        "我沒有把中間進度當成結論。請在此 thread 回覆「繼續調查」，Mark 會從現有會話續接。\n"
+                        f"Trace ID: {trace.trace_id}"
+                    )
                 return {
                     "status": "error",
                     "action": "autonomous.failed",
-                    "text": _user_facing_agent_error(result.error or result.status, trace.trace_id),
+                    "text": error_text,
+                    "retryable": result.status == "timed_out",
                     "trace_id": trace.trace_id,
                     "session_id": session["session_id"],
                     "provider_session_id": result.provider_session_id,

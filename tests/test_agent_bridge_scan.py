@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "lib"
@@ -14,6 +15,8 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from agents.parser import parse_dylan_text
+from agents.jobs.broker import AgentJobBroker
+from agents.jobs.store import AgentJobStore
 from agents.runtime.autonomous import _prepare_feishu_image_context
 from feishu.dedup import MessageDeduper
 from feishu.handlers import extract_message_meta, extract_text, handle_message_event, should_handle
@@ -286,6 +289,59 @@ class AgentBridgeScanTests(unittest.TestCase):
                 )
                 self.assertEqual(meta_no_thread["thread_id"], "")
                 self.assertEqual(meta_no_thread["root_id"], "om_root")
+
+    def test_waiting_loop_reply_routes_to_child_owner_without_mention(self) -> None:
+        mark = FeishuClientConfig(
+            agent_id="mark",
+            app_id="cli_m",
+            app_secret="secret",
+            profile=PROFILES["mark"],
+        )
+        milchick = FeishuClientConfig(
+            agent_id="milchick",
+            app_id="cli_mil",
+            app_secret="secret",
+            profile=PROFILES["milchick"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"LUMEN_AGENTS_HOME": tmp}):
+                store = AgentJobStore(Path(tmp) / "agent_jobs.sqlite3")
+                try:
+                    broker = AgentJobBroker(store)
+                    parent = broker.create_parent(
+                        project="mbpass",
+                        requested_by="ou_owner",
+                        delegated_by="milchick",
+                        source_message_id="om-root",
+                        chat_id="oc1",
+                        thread_id="",
+                        trace_id="tr1",
+                    )
+                    child = broker.create_child(
+                        parent=parent,
+                        target_agent="mark",
+                        capability="loop.technical",
+                        input_data={"issue_key": "MBPAS-1503"},
+                    )
+                    child.status = "waiting_user"
+                    child.result = {"question_message_id": "om-question"}
+                    store.save(child)
+                finally:
+                    store.close()
+                reply = {
+                    "event": {
+                        "message": {
+                            "chat_id": "oc1",
+                            "chat_type": "group",
+                            "mentions": [],
+                            "parent_id": "om-question",
+                            "root_id": "om-root",
+                            "content": '{"text":"D：完成 API 層 Technical Plan"}',
+                        }
+                    }
+                }
+                self.assertTrue(should_handle(reply, mark))
+                self.assertFalse(should_handle(reply, milchick))
 
     def test_should_reply_in_thread_for_group_mentions(self) -> None:
         from feishu.messenger import should_reply_in_thread

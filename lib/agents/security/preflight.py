@@ -217,7 +217,7 @@ def run_security_check(
     checks["access_configured"] = bool(
         access.get("mutation_allowed_user_ids") or access.get("admin_user_ids")
     )
-    checks["host_visibility"] = "denied"
+    checks["host_visibility"] = "denied" if flags.get("workspace_isolation_v2") else "limited"
 
     if live:
         if os.environ.get("LUMEN_SECURITY_E2E") != "1":

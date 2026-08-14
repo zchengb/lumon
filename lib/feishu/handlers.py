@@ -198,6 +198,28 @@ def _content_targets_agent(content: str, agent_id: str) -> bool:
     return f"@{needle}" in text.lower()
 
 
+def _waiting_loop_owner(message: dict[str, Any]) -> str:
+    chat_id = str(message.get("chat_id") or "").strip()
+    if not chat_id or not any(str(message.get(key) or "").strip() for key in ("thread_id", "parent_id", "root_id")):
+        return ""
+    try:
+        from agents.jobs.store import AgentJobStore
+
+        store = AgentJobStore()
+        try:
+            job = store.find_waiting_loop(
+                chat_id=chat_id,
+                thread_id=str(message.get("thread_id") or ""),
+                parent_id=str(message.get("parent_id") or ""),
+                root_id=str(message.get("root_id") or ""),
+            )
+            return str(job.target_agent or "").strip().lower() if job is not None else ""
+        finally:
+            store.close()
+    except Exception:
+        return ""
+
+
 def should_handle(event: dict[str, Any], client: FeishuClientConfig) -> bool:
     body = event.get("event") if isinstance(event.get("event"), dict) else event
     message = body.get("message") if isinstance(body, dict) else {}
@@ -209,6 +231,11 @@ def should_handle(event: dict[str, Any], client: FeishuClientConfig) -> bool:
         return False
     agent_id = str(client.agent_id or "").strip().lower()
     chat_type = str(message.get("chat_type") or "").strip().lower()
+    loop_owner = _waiting_loop_owner(message)
+    if loop_owner:
+        # A Loop answer belongs to the child agent that asked the question,
+        # even when Feishu delivered the reply to the original host bot.
+        return loop_owner == agent_id
     mentions = message.get("mentions")
     if chat_type in {"p2p", "private"}:
         return True

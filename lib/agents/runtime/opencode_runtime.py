@@ -237,7 +237,12 @@ class OpenCodeAgentRuntime:
                             "baseURL": self.base_url,
                             "apiKey": f"{{env:{self.api_key_env}}}",
                         },
-                        "models": {model_id: {"name": model_id}},
+                        "models": {
+                            model_id: {
+                                "name": model_id,
+                                "options": {"reasoningEffort": "max"},
+                            }
+                        },
                     }
                 },
                 "permission": self._permission_config(),
@@ -360,8 +365,13 @@ class OpenCodeAgentRuntime:
 
         parsed = parse_opencode_json_lines(lines)
         duration = int((time.time() - started) * 1000)
-        if timed_out and parsed.text:
-            parsed.status = "succeeded"
+        if timed_out:
+            # Text emitted before the hard timeout is an incomplete provider
+            # stream, not a Feishu answer. Returning it as succeeded leaks
+            # tool/planning progress through the legacy response sanitizer.
+            parsed.text = ""
+            parsed.error = f"agent hard timeout after {self.hard_timeout_seconds}s"
+            parsed.status = "timed_out"
         if not parsed.text and parsed.status != "succeeded":
             if parsed.error:
                 error = parsed.error

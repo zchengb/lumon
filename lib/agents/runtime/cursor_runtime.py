@@ -193,26 +193,6 @@ class CursorAgentRuntime:
         duration = parsed.duration_ms or int((time.time() - started) * 1000)
 
         if timed_out:
-            if parsed.text:
-                if obs and trace:
-                    obs.emit(
-                        trace,
-                        "agent.result.completed",
-                        duration_ms=duration,
-                        tool_count=len(parsed.tool_events),
-                        provider_session_id=parsed.provider_session_id or provider_session_id,
-                        partial_on_timeout=True,
-                    )
-                return AgentRunResult(
-                    text=parsed.text,
-                    provider_session_id=parsed.provider_session_id or (provider_session_id or ""),
-                    request_id=parsed.request_id,
-                    duration_ms=duration,
-                    tool_events=parsed.tool_events,
-                    status="succeeded",
-                    error="",
-                    raw_event_count=len(parsed.events),
-                )
             if obs and trace:
                 obs.emit(trace, "agent.result.failed", error=f"hard timeout after {self.hard_timeout_seconds}s", level="ERROR")
             return AgentRunResult(

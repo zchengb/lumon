@@ -10,8 +10,10 @@ def workspace_isolation_v2_enabled(config: Optional[dict[str, Any]] = None) -> b
     security = data.get("agent_security") if isinstance(data.get("agent_security"), dict) else {}
     if "workspace_isolation_v2" in security:
         return bool(security.get("workspace_isolation_v2"))
-    # M0.3.1 ships default-on for conversational agents.
-    return True
+    # Conversational Agents use the host user's HOME so file-backed CLIs such
+    # as TWG can reuse the user's existing login. Tool permissions and brokered
+    # mutations remain enforced separately.
+    return False
 
 
 def security_flags(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
