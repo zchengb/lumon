@@ -9,7 +9,7 @@ Write `<workspace-root>/lumen/results/patch-result.json` with this shape:
   "jira_key": "PROJ-123",
   "summary": "Short honest summary",
   "repository_decision": {"repositories": ["service"], "reason": "Evidence"},
-  "repos_touched": [{"name": "service", "files_changed": ["src/example.ts"], "commit_subject": "[lumen] #PROJ-123 fix: correct behavior"}],
+  "repos_touched": [{"name": "service", "files_changed": ["src/example.ts"], "commit_subject": "[lumon] #PROJ-123 fix: correct behavior"}],
   "self_checks": [{"label": "git diff check", "status": "passed", "summary": "No whitespace errors"}],
   "question": "",
   "failures": []

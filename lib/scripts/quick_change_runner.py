@@ -35,6 +35,7 @@ from delivery_workspace import (
 )
 from git_publish import merge_pr, open_pr_with_retry, push_default_branch, run_git, commit_changes
 from run_delivery_verification import docker_policy, run_step, verification_steps
+from sync_delivery_docs import lumen_commit_subject
 
 
 VERSION_RE = re.compile(r"\b(version|upgrade|bump)\b|版本|升级|更新版本", re.IGNORECASE)
@@ -337,7 +338,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         mode = configured_publish_mode(delivery_config)
-        subject = f"chore: {request.replace(chr(10), ' ')[:100]}".strip()
+        subject = lumen_commit_subject("N/A", request.replace(chr(10), " ")[:100], kind="chore")
         commit_sha = commit_changes(worktree, subject, repository)
         publish_item: dict[str, Any] = {"mode": mode}
         pr_urls: list[str] = []

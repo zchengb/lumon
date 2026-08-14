@@ -387,6 +387,10 @@ Usage:
                                  Capture one eligible Jira Task/Bug and run Auto Patch
   lumen patch schedule add --project <slug> --every 5m
                                  Poll eligible Jira cards for Auto Patch
+  lumen workspace sync --project <slug>
+                                 Pull and publish Lumen-owned Workspace changes safely
+  lumen workspace schedule add --project <slug> --every 5m
+                                 Sync the Workspace every 5 minutes via launchd
   lumen agents start|status|stop|logs
                                  Feishu Agent Gateway (Dylan MVP). Requires agents.enabled and
                                  FEISHU_DYLAN_APP_ID / FEISHU_DYLAN_APP_SECRET.
@@ -2764,6 +2768,7 @@ cmd_schedule() {
   case "${sub}" in
     scan) cmd_schedule_scan "$@" ;;
     delivery) cmd_delivery_schedule "$@" ;;
+    workspace) cmd_workspace_schedule "$@" ;;
     add|remove|rm)
       # Compatibility with Lumen <= 1.13.1: these commands target scan schedules.
       cmd_schedule_scan "${sub}" "$@"
@@ -2773,6 +2778,8 @@ cmd_schedule() {
       cmd_schedule_list
       printf '\n%sDelivery schedules%s\n' "${BOLD}" "${RESET}"
       cmd_delivery_schedule_list
+      printf '\n%sWorkspace sync schedules%s\n' "${BOLD}" "${RESET}"
+      cmd_workspace_schedule list
       ;;
     *)
       printf 'Usage:\n'
@@ -2780,6 +2787,8 @@ cmd_schedule() {
       printf '  lumen schedule scan remove --project <slug>\n'
       printf '  lumen schedule delivery add --project <slug> --every 5m\n'
       printf '  lumen schedule delivery remove --project <slug>\n'
+      printf '  lumen schedule workspace add --project <slug> --every 5m\n'
+      printf '  lumen schedule workspace remove --project <slug>\n'
       printf '  lumen schedule list\n'
       exit 1
       ;;
@@ -3607,6 +3616,116 @@ cmd_patch() {
   esac
 }
 
+cmd_workspace_sync() {
+  local slug=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project|-p) slug="${2:-}"; shift 2 ;;
+      --*) err "Unknown option: $1"; exit 1 ;;
+      *) err "Unexpected argument: $1"; exit 1 ;;
+    esac
+  done
+  [[ -n "${slug}" ]] || { err "Usage: lumen workspace sync --project <slug>"; exit 1; }
+  local docs_dir sync_py
+  docs_dir="$(delivery_docs_dir_for_project "${slug}")" || { err "Project not found: ${slug}."; exit 1; }
+  sync_py="${LUMEN_LIB_DIR}/workspace_sync.py"
+  [[ -f "${sync_py}" ]] || { err "Workspace sync helper not found: ${sync_py}"; exit 1; }
+  require_python3
+  python3 "${sync_py}" "${docs_dir}"
+}
+
+cmd_workspace_schedule() {
+  local action="${1:-list}"
+  shift || true
+  local slug="" every="5m"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project|-p) slug="${2:-}"; shift 2 ;;
+      --every) every="${2:-}"; shift 2 ;;
+      --*) err "Unknown option: $1"; exit 1 ;;
+      *) err "Unexpected argument: $1"; exit 1 ;;
+    esac
+  done
+  local scheduler_py="${LUMEN_LIB_DIR}/workspace_sync_launchd.py"
+  [[ -f "${scheduler_py}" ]] || { err "Workspace sync scheduler not found: ${scheduler_py}"; exit 1; }
+  require_python3
+  case "${action}" in
+    add)
+      [[ -n "${slug}" ]] || { err "Usage: lumen workspace schedule add --project <slug> --every 5m"; exit 1; }
+      [[ "${every}" =~ ^[1-9][0-9]*m$ ]] || { err "--every must look like 5m"; exit 1; }
+      local docs_dir workspace lumen_bin minutes log_file
+      docs_dir="$(delivery_docs_dir_for_project "${slug}")" || { err "Project not found: ${slug}."; exit 1; }
+      workspace="$(workspace_dir_for_root "${docs_dir}")"
+      require_workspace_initialized "${workspace}"
+      minutes="${every%m}"
+      log_file="${workspace}/logs/workspace-sync.log"
+      lumen_bin="$(command -v lumen || true)"
+      [[ -n "${lumen_bin}" ]] || lumen_bin="${LUMEN_CLI_BIN}"
+      if [[ "$(uname -s)" == "Darwin" ]]; then
+        python3 "${scheduler_py}" add --project "${slug}" --cron "*/${minutes} * * * *" \
+          --lumen-bin "${lumen_bin}" --lumen-home "${LUMEN_HOME}" --path "${PATH}" --log-file "${log_file}"
+      else
+        command -v crontab >/dev/null 2>&1 || { err "crontab is required on non-macOS systems."; exit 1; }
+        local marker="# lumen-workspace-sync:${slug}" existing filtered
+        existing="$(crontab -l 2>/dev/null || true)"
+        filtered="$(printf '%s\n' "${existing}" | grep -vF "${marker}" || true)"
+        printf '%s\n%s %q workspace sync --project %q >> %q 2>&1 %s\n' \
+          "${filtered}" "*/${minutes} * * * *" "${lumen_bin}" "${slug}" "${log_file}" "${marker}" | crontab -
+      fi
+      ok "Scheduled Workspace sync for '${slug}' every ${minutes} minute(s)."
+      ;;
+    remove|rm)
+      [[ -n "${slug}" ]] || { err "Usage: lumen workspace schedule remove --project <slug>"; exit 1; }
+      if [[ "$(uname -s)" == "Darwin" ]]; then
+        python3 "${scheduler_py}" remove --project "${slug}"
+      else
+        command -v crontab >/dev/null 2>&1 || { err "crontab is required on non-macOS systems."; exit 1; }
+        local marker="# lumen-workspace-sync:${slug}" existing
+        existing="$(crontab -l 2>/dev/null || true)"
+        printf '%s\n' "${existing}" | grep -vF "${marker}" | crontab - || true
+      fi
+      ok "Workspace sync schedule removed for '${slug}'."
+      ;;
+    status)
+      [[ -n "${slug}" ]] || { err "Usage: lumen workspace schedule status --project <slug>"; exit 1; }
+      if [[ "$(uname -s)" == "Darwin" ]]; then
+        python3 "${scheduler_py}" status --project "${slug}"
+      else
+        printf '{"enabled":false}\n'
+      fi
+      ;;
+    list)
+      if [[ "$(uname -s)" == "Darwin" ]]; then
+        local schedule_json description slug_from_registry
+        while IFS=$'\t' read -r _ _ _ slug_from_registry _; do
+          [[ -n "${slug_from_registry}" ]] || continue
+          schedule_json="$(python3 "${scheduler_py}" status --project "${slug_from_registry}")"
+          description="$(printf '%s' "${schedule_json}" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("enabled" if d.get("enabled") else "disabled", end="")')"
+          printf 'launchd  %-18s %s\n' "${slug_from_registry}" "${description}"
+        done < <(registry_cmd list-lines)
+      fi
+      ;;
+    *) err "Usage: lumen workspace schedule add|remove|status|list --project <slug> [--every 5m]"; exit 1 ;;
+  esac
+}
+
+cmd_workspace() {
+  local sub="${1:-}"
+  shift || true
+  case "${sub}" in
+    sync) cmd_workspace_sync "$@" ;;
+    schedule) cmd_workspace_schedule "$@" ;;
+    ""|help|-h|--help)
+      printf 'Usage:\n'
+      printf '  lumen workspace sync --project <slug>\n'
+      printf '  lumen workspace schedule add --project <slug> --every 5m\n'
+      printf '  lumen workspace schedule remove --project <slug>\n'
+      printf '  lumen workspace schedule status --project <slug>\n'
+      ;;
+    *) err "Unknown workspace command: ${sub}"; exit 1 ;;
+  esac
+}
+
 cmd_delivery() {
   local sub="${1:-}"
   shift || true
@@ -4156,6 +4275,7 @@ main() {
     set-up-docs|setup-docs) cmd_legacy_workspace_init "$@" ;;
     delivery) cmd_delivery "$@" ;;
     patch) cmd_patch "$@" ;;
+    workspace) cmd_workspace "$@" ;;
     agents) cmd_agents "$@" ;;
     dylan) cmd_dylan "$@" ;;
     dashboard) cmd_dashboard "$@" ;;

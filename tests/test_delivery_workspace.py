@@ -854,7 +854,7 @@ class DeliveryWorkspaceTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual("[lumen] #N/A feat: update delivery config", log.stdout.strip())
+            self.assertEqual("[lumon] #N/A feat: update delivery config", log.stdout.strip())
 
     def test_auto_fix_merge_resolves_the_tracked_finding(self) -> None:
         finding = {"issue_id": "ISSUE-42", "auto_fix": {"status": "pr_open"}, "issue_status": "pr_open"}
@@ -902,7 +902,7 @@ class DeliveryWorkspaceTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual("[lumen] #N/A feat: update delivery config", log.stdout.strip())
+            self.assertEqual("[lumon] #N/A feat: update delivery config", log.stdout.strip())
 
     def test_repository_branch_options_include_local_and_remote_refs(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -1490,7 +1490,7 @@ class DeliveryWorkspaceTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual("[lumen] #MBPAS-100 feat: update MBPAS-100 delivery status", log.stdout.strip())
+            self.assertEqual("[lumon] #MBPAS-100 feat: update MBPAS-100 delivery status", log.stdout.strip())
             status = subprocess.run(
                 ["git", "-C", str(docs), "status", "--short"],
                 check=True,
@@ -1546,9 +1546,9 @@ class DeliveryWorkspaceTests(unittest.TestCase):
             self.assertIn("Hello", content["story_markdown"])
             result = save_observatory_story_content(workspace, "DRAFT-1", "# Story\n\nUpdated\n", "# Plan\n\nDone\n")
             self.assertTrue(result["ok"])
-            self.assertEqual("[lumen] #DRAFT-1 feat: update DRAFT-1 story docs", result["subject"])
+            self.assertEqual("[lumon] #DRAFT-1 feat: update DRAFT-1 story docs", result["subject"])
             log = subprocess.run(["git", "-C", str(docs), "log", "-1", "--format=%s"], check=True, capture_output=True, text=True)
-            self.assertEqual("[lumen] #DRAFT-1 feat: update DRAFT-1 story docs", log.stdout.strip())
+            self.assertEqual("[lumon] #DRAFT-1 feat: update DRAFT-1 story docs", log.stdout.strip())
             status = subprocess.run(["git", "-C", str(docs), "status", "--short"], check=True, capture_output=True, text=True)
             self.assertEqual("?? notes.md", status.stdout.strip())
             self.assertEqual("# Story\n\nUpdated\n", (draft / "story.md").read_text(encoding="utf-8"))

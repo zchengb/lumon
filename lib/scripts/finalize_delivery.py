@@ -26,6 +26,7 @@ from git_publish import (
     push_default_branch,
     run_git,
 )
+from sync_delivery_docs import normalize_lumon_commit_subject
 
 
 def open_pr_with_retry(repo: Path, branch: str, base: str, title: str, body: str, repo_name: str) -> str:
@@ -41,12 +42,12 @@ def open_pr_with_retry(repo: Path, branch: str, base: str, title: str, body: str
     raise RuntimeError(f"{repo_name}: publish failed after {PUBLISH_RETRY_ATTEMPTS} attempt(s): {last_error}")
 
 
-def commit_subject(result: dict[str, Any], repo_name: str) -> str:
+def commit_subject(result: dict[str, Any], repo_name: str, ticket: str = "N/A") -> str:
     for item in result.get("repos_touched") or []:
         if isinstance(item, dict) and str(item.get("name", "")) == repo_name:
             subject = str(item.get("commit_subject", "")).strip()
             if subject:
-                return subject
+                return normalize_lumon_commit_subject(subject, ticket)
     raise RuntimeError(
         f"{repo_name}: Agent did not provide commit_subject in delivery-result.json. "
         "Remediation must preserve commit_subject entries for every repository with changes."
@@ -126,7 +127,8 @@ def main() -> int:
                 "branch": context.branch_name,
                 "files_changed": files,
             }
-            subject = commit_subject(result, repo.name) if files else ""
+            ticket = str(context.metadata.get("jiraKey") or context.story_dir.name or "N/A").strip()
+            subject = commit_subject(result, repo.name, ticket) if files else ""
             if files:
                 sha = commit_changes(repo.worktree_path, subject, repo.name)
                 commits.append({"repository": repo.name, "sha": sha, "subject": subject})

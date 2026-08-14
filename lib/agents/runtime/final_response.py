@@ -17,6 +17,8 @@ _FINAL_ENVELOPE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_FINAL_OPEN = re.compile(r"<FINAL_RESPONSE>\s*", re.IGNORECASE)
+
 _ACTION_ENVELOPE = re.compile(
     r"<ACTION_REQUEST>\s*(.*?)\s*</ACTION_REQUEST>",
     re.IGNORECASE | re.DOTALL,
@@ -175,6 +177,21 @@ def extract_final_response(raw: str) -> FinalResponseParse:
                 mode="final_response_envelope",
                 valid=True,
                 fallback_used=False,
+                action_requests=actions,
+                clarification_request=clarification,
+                conversation_decision=conversation_decision,
+            )
+    opening = _FINAL_OPEN.search(text)
+    if opening:
+        body = _CONVERSATION_DECISION_ENVELOPE.sub("", text[opening.end() :]).strip()
+        body = _CLARIFICATION_ENVELOPE.sub("", _ACTION_ENVELOPE.sub("", body)).strip()
+        if body:
+            return FinalResponseParse(
+                text=body,
+                mode="final_response_unclosed",
+                valid=False,
+                fallback_used=True,
+                error_code="UNCLOSED_FINAL_RESPONSE",
                 action_requests=actions,
                 clarification_request=clarification,
                 conversation_decision=conversation_decision,

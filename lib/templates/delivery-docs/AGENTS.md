@@ -24,20 +24,20 @@ Do not create extra decision, question, change, refactor, or evidence files unle
 When committing to this delivery docs repository (`stories/`, `topics/`, `standards/`, `AGENTS.md`, `lumen/config/`, and related docs), always use:
 
 ```text
-[lumen] #{JIRA_KEY_OR_N/A} {chore|docs|feat|fix|refactor|style|test}: {summary}
+[lumon] #{JIRA_KEY_OR_N/A} {chore|docs|feat|fix|refactor|style|test}: {summary}
 ```
 
 Examples:
 
 ```text
-[lumen] #N/A feat: update delivery config
-[lumen] #MBPAS-1400 feat: update MBPAS-1400 delivery status
-[lumen] #N/A docs: align business loop questioning rules
+[lumon] #N/A feat: update delivery config
+[lumon] #MBPAS-1400 feat: update MBPAS-1400 delivery status
+[lumon] #N/A docs: align business loop questioning rules
 ```
 
 Rules:
 
-- Always use the `[lumen]` prefix. Never use a human author prefix such as `[xiaobin]`, even when older history used one.
+- Always use the `[lumon]` prefix. Never use a human author prefix such as `[xiaobin]`, even when older history used one.
 - Use the Story JIRA key when the change belongs to one Story; otherwise use `N/A`.
 - Prefer `feat` for Story/docs/config updates unless another type is clearly better.
 - Keep the summary short and concrete.

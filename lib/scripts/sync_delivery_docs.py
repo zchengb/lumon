@@ -15,6 +15,15 @@ from git_sync import clear_conflict, run_git, save_conflict
 
 METADATA_PATH = re.compile(r"^stories/[^/]+/metadata\.json$")
 CONFIG_PATH = re.compile(r"^lumen/config/.+\.json$")
+_COMMIT_KINDS = "chore|docs|feat|fix|refactor|style|test"
+_CANONICAL_SUBJECT = re.compile(
+    rf"^\[[^\]\r\n]+\]\s+#\S+\s+(?P<kind>{_COMMIT_KINDS}):\s*(?P<summary>.+)$",
+    re.IGNORECASE,
+)
+_CONVENTIONAL_SUBJECT = re.compile(
+    rf"^(?P<kind>{_COMMIT_KINDS})(?:\([^\r\n)]*\))?\s*:\s*(?P<summary>.+)$",
+    re.IGNORECASE,
+)
 
 
 def failure_text(result: subprocess.CompletedProcess[str], fallback: str) -> str:
@@ -27,7 +36,25 @@ def lumen_commit_subject(ticket: str, summary: str, *, kind: str = "feat") -> st
     text = " ".join(str(summary or "").strip().split())
     if not text:
         text = "update delivery docs"
-    return f"[lumen] #{key} {change}: {text}"
+    return f"[lumon] #{key} {change}: {text}"
+
+
+def normalize_lumon_commit_subject(
+    subject: str,
+    ticket: str,
+    *,
+    default_kind: str = "feat",
+    default_summary: str = "update delivery docs",
+) -> str:
+    """Convert agent/history subjects to the canonical Lumon commit format."""
+    raw = " ".join(str(subject or "").strip().split())
+    kind = str(default_kind or "feat").strip().lower() or "feat"
+    summary = raw or default_summary
+    match = _CANONICAL_SUBJECT.match(raw) or _CONVENTIONAL_SUBJECT.match(raw)
+    if match:
+        kind = match.group("kind").lower()
+        summary = match.group("summary").strip()
+    return lumen_commit_subject(ticket, summary, kind=kind)
 
 
 def porcelain_paths(docs_dir: Path) -> list[str]:
@@ -106,6 +133,21 @@ def integrate_remote_and_push(docs_dir: Path, branch_name: str, subject: str = "
     parts = counts.stdout.strip().split()
     ahead = int(parts[0]) if parts else 0
     behind = int(parts[1]) if len(parts) > 1 else 0
+    if behind > 0 and ahead == 0:
+        pulled = run_git(docs_dir, "pull", "--ff-only", "origin", branch_name)
+        if pulled.returncode != 0:
+            save_conflict(
+                workspace_lumen_dir(docs_dir) / "state",
+                repo=docs_dir,
+                branch=branch_name,
+                remote_oid=run_git(docs_dir, "rev-parse", remote_ref).stdout.strip(),
+                local_oid=run_git(docs_dir, "rev-parse", "HEAD").stdout.strip(),
+                reason="Remote docs updates could not be fast-forwarded safely.",
+                subject=subject,
+            )
+            raise RuntimeError(failure_text(pulled, "git pull --ff-only failed"))
+        clear_conflict(workspace_lumen_dir(docs_dir) / "state")
+        return "pulled"
     if behind > 0:
         rebase = run_git(docs_dir, "rebase", remote_ref)
         if rebase.returncode != 0:

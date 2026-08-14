@@ -12,4 +12,4 @@ Avoid vague claims such as “might be risky”, “could be refactored”, or �
 
 Create a local auto-fix commit only when the finding is confirmed High, the trigger is realistic, the fix is minimal and low risk, the worktree was clean, and that repository allows auto-fix/PR creation. Add focused tests when practical, but do not run project validation in review-only mode.
 
-For each qualifying fix: create the auto-fix branch, edit only the affected behavior, inspect Git identity/history, commit with the Lumen format, record `auto_fix`, and leave pushing/PR creation to post-scan. If any step fails, record `auto_fix.status: failed` and the exact error.
+For each qualifying fix: create the auto-fix branch, edit only the affected behavior, inspect Git identity/history, commit with the Lumon format, record `auto_fix`, and leave pushing/PR creation to post-scan. If any step fails, record `auto_fix.status: failed` and the exact error.

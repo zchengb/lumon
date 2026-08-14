@@ -19,7 +19,7 @@ Use this shape:
       "path": "/absolute/path/to/worktree",
       "branch": "feature/MBPAS-123-example",
       "files_changed": ["src/main/java/..."],
-      "commit_subject": "feat: add survey filter"
+      "commit_subject": "[lumon] #PROJ-123 feat: add survey filter"
     }
   ],
   "commits": [],

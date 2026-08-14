@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -37,6 +38,46 @@ _TRANSIENT_MARKERS = (
     "Connection reset",
     "Broken pipe",
 )
+
+_MARKDOWN_CARD_LIMIT = 12000
+_MARKDOWN_FENCE_OPEN = re.compile(r"(?m)^[ \t]*```(?:markdown|md)[ \t]*$")
+_MARKDOWN_FENCE_CLOSE = re.compile(r"(?m)^[ \t]*```[ \t]*$")
+
+
+def normalize_markdown_for_feishu(text: str) -> str:
+    """Render a Markdown document instead of rendering its outer fence."""
+    raw = str(text or "").strip()
+    opening = _MARKDOWN_FENCE_OPEN.search(raw)
+    if opening is None:
+        return raw
+    closings = list(_MARKDOWN_FENCE_CLOSE.finditer(raw, opening.end()))
+    if not closings:
+        return raw
+    closing = closings[-1]
+    parts = (
+        raw[: opening.start()].strip(),
+        raw[opening.end() : closing.start()].strip(),
+        raw[closing.end() :].strip(),
+    )
+    return "\n\n".join(part for part in parts if part).strip()
+
+
+def split_markdown_for_feishu(text: str, *, limit: int = _MARKDOWN_CARD_LIMIT) -> list[str]:
+    """Split long Markdown at line boundaries so every card remains renderable."""
+    remaining = str(text or "").strip()
+    if not remaining:
+        return [""]
+    parts: list[str] = []
+    while len(remaining) > limit:
+        cut = remaining.rfind("\n\n", 0, limit + 1)
+        if cut < limit // 2:
+            cut = remaining.rfind("\n", 0, limit + 1)
+        if cut <= 0:
+            cut = limit
+        parts.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip("\n")
+    parts.append(remaining)
+    return parts
 
 
 def should_reply_in_thread(meta: dict[str, Any] | None = None) -> bool:
@@ -419,12 +460,19 @@ class FeishuMessenger:
         *,
         reply_in_thread: bool = False,
     ) -> Optional[dict[str, Any]]:
+        rendered = normalize_markdown_for_feishu(text)
+        parts = split_markdown_for_feishu(rendered)
+        sent: Optional[dict[str, Any]] = None
         try:
-            return self.reply_markdown(message_id, text, reply_in_thread=reply_in_thread)
+            for part in parts:
+                sent = self.reply_markdown(message_id, part, reply_in_thread=reply_in_thread)
+            return sent
         except Exception as exc:
             _LOG.warning("reply_markdown failed message_id=%s err=%s; falling back to text", message_id, exc)
+            if sent is not None:
+                return sent
             try:
-                return self.reply_text(message_id, text, reply_in_thread=reply_in_thread)
+                return self.reply_text(message_id, rendered, reply_in_thread=reply_in_thread)
             except Exception as exc2:
                 _LOG.warning("reply_text failed message_id=%s err=%s", message_id, exc2)
                 return None

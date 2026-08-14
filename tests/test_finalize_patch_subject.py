@@ -12,20 +12,20 @@ class FinalizePatchSubjectTests(unittest.TestCase):
     def test_normalizes_conventional_subject(self):
         result = {"repos_touched": [{"name": "service", "commit_subject": "fix(MBPAS-1548): handle fuel type"}]}
         self.assertEqual(
-            "[lumen] #MBPAS-1548 fix: handle fuel type",
+            "[lumon] #MBPAS-1548 fix: handle fuel type",
             subject_for(result, "service", "MBPAS-1548"),
         )
 
     def test_replaces_human_prefix_and_keeps_allowed_kind(self):
         result = {"repos_touched": [{"name": "service", "commit_subject": "[xiaobin] #MBPAS-1548 refactor: simplify filter"}]}
         self.assertEqual(
-            "[lumen] #MBPAS-1548 refactor: simplify filter",
+            "[lumon] #MBPAS-1548 refactor: simplify filter",
             subject_for(result, "service", "MBPAS-1548"),
         )
 
     def test_supplies_canonical_default(self):
         self.assertEqual(
-            "[lumen] #MBPAS-1548 fix: apply Auto Patch correction",
+            "[lumon] #MBPAS-1548 fix: apply Auto Patch correction",
             subject_for({}, "service", "MBPAS-1548"),
         )
 

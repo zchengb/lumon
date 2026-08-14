@@ -146,28 +146,28 @@ If the repository already uses a different feature-branch convention, follow the
 
 Before committing, inspect `git log --oneline -n 20` only to understand the work style of recent changes.
 
-Always write Lumen-created commit subjects in this exact format, even when older history used a human author prefix such as `[xiaobin]`:
+Always write Lumon-created commit subjects in this exact format, even when older history used a human author prefix such as `[xiaobin]`:
 
 ```text
-[lumen] #{JIRA_NUMBER} {chore|docs|feat|fix|refactor|style|test}: {COMMIT_MESSAGE}
+[lumon] #{JIRA_NUMBER} {chore|docs|feat|fix|refactor|style|test}: {COMMIT_MESSAGE}
 ```
 
 Examples:
 
 ```text
-[lumen] #N/A feat: update user bind-car agreement content.
-[lumen] #MBPAS-1369 refactor: refactor missing-contact dialog.
-[lumen] #N/A feat: update delivery config
+[lumon] #N/A feat: update user bind-car agreement content.
+[lumon] #MBPAS-1369 refactor: refactor missing-contact dialog.
+[lumon] #N/A feat: update delivery config
 ```
 
-Never replace `[lumen]` with a person name. When past commits include an author name in the subject, still use **`[lumen]`** for every Lumen or delivery-docs commit.
+Never replace `[lumon]` with a person name. When past commits include an author name in the subject, still use **`[lumon]`** for every Lumon or delivery-docs commit.
 Commit rules:
 
 - Commit on a feature branch only, never directly on the default branch.
 - Commit in small, incremental steps after completing each small feature.
 - Always write concise, clear commit messages following the format above.
 - Use the story JIRA key from `metadata.json` for `{JIRA_NUMBER}` (for example `MBPAS-1369`).
-- If there is no JIRA number in the context, use `N/A` as the JIRA number: `[lumen] #N/A ...`
+- If there is no JIRA number in the context, use `N/A` as the JIRA number: `[lumon] #N/A ...`
 - Allowed types: `chore`, `docs`, `feat`, `fix`, `refactor`, `style`, `test`
 
 ## Pull Request Rules

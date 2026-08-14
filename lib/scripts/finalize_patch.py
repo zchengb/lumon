@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,18 +20,7 @@ from git_publish import (
 )
 from patch_runtime import load_delivery_config, publish_mode, read_json, result_path, write_json
 from delivery_workspace import workspace_lumen_dir
-from sync_delivery_docs import lumen_commit_subject
-
-
-COMMIT_KINDS = "chore|docs|feat|fix|refactor|style|test"
-CANONICAL_SUBJECT = re.compile(
-    rf"^\[[^\]\r\n]+\]\s+#\S+\s+(?P<kind>{COMMIT_KINDS}):\s*(?P<summary>.+)$",
-    re.IGNORECASE,
-)
-CONVENTIONAL_SUBJECT = re.compile(
-    rf"^(?P<kind>{COMMIT_KINDS})(?:\([^\r\n)]*\))?\s*:\s*(?P<summary>.+)$",
-    re.IGNORECASE,
-)
+from sync_delivery_docs import normalize_lumon_commit_subject
 
 
 def utc_now() -> str:
@@ -40,15 +28,12 @@ def utc_now() -> str:
 
 
 def normalize_subject(subject: str, key: str) -> str:
-    """Convert agent/history-style subjects to the repository's Lumen format."""
-    raw = " ".join(str(subject or "").strip().split())
-    kind = "fix"
-    summary = raw or "apply Auto Patch correction"
-    match = CANONICAL_SUBJECT.match(raw) or CONVENTIONAL_SUBJECT.match(raw)
-    if match:
-        kind = match.group("kind").lower()
-        summary = match.group("summary").strip()
-    return lumen_commit_subject(key, summary, kind=kind)
+    return normalize_lumon_commit_subject(
+        subject,
+        key,
+        default_kind="fix",
+        default_summary="apply Auto Patch correction",
+    )
 
 
 def subject_for(agent_result: dict[str, Any], repository: str, key: str) -> str:

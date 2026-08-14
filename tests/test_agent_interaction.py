@@ -60,6 +60,17 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual(["delivery.quick_change"], decision["required_actions"])
         self.assertEqual("a verified delivery result", decision["completion_criteria"])
 
+    def test_unclosed_final_response_drops_internal_preamble_and_marker(self) -> None:
+        parsed = extract_final_response(
+            "User answered: 2A. Let me record these decisions in story.md.\n"
+            "Decisions recorded in story.md.\n"
+            "<FINAL_RESPONSE>已记录你的决定：后端推荐 API；UI 由你手动完成。"
+        )
+        self.assertEqual("已记录你的决定：后端推荐 API；UI 由你手动完成。", parsed.text)
+        self.assertEqual("final_response_unclosed", parsed.mode)
+        self.assertEqual("UNCLOSED_FINAL_RESPONSE", parsed.error_code)
+        self.assertFalse(parsed.valid)
+
     def test_action_requirements_detect_missing_target(self) -> None:
         self.assertEqual(["story"], action_missing_fields("delivery.start", arguments={}))
         self.assertEqual([], action_missing_fields("delivery.start", resource={"story": "MBPAS-1"}))
