@@ -43,7 +43,7 @@ def _managed_block(project_slug: str) -> str:
         f"(host/admin only; conversational path uses the internal host execution channel)\n"
         f"- Test-case generation is owned by Milchick; Mark only handles delivery work\n\n"
         f"## Jira\n"
-        f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
+        f"- Prefer authorized `twg jira workitem get/query` for read-only Jira evidence; host reads remain the fallback\n"
         f"- Create/update work items only through the internal <ACTION_REQUEST> channel when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
         f"- Conversational Mark is workspace-isolated over delivery docs\n"

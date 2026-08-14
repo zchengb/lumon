@@ -24,7 +24,7 @@
 - `agent.job.*`
 - `test_case.generate`
 - `host.applications.*`
-- `lumen.*`
+- `lumen.*`; use only authorized direct `twg jira workitem get/query` for Jira reads
 
 ## Decision rule
 

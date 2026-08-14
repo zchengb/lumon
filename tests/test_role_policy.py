@@ -50,6 +50,7 @@ class RolePolicyTests(unittest.TestCase):
         self.assertFalse(is_action_known("filesystem.delete"))
         guidance = build_role_guidance("milchick")
         self.assertIn("responsibility document", guidance)
+        self.assertIn(".lumon/blacklist.md", guidance)
         self.assertIn("never attempt to bypass them", guidance)
         self.assertIn("Delete, move, or overwrite files outside", load_common_blacklist())
         self.assertIn("original user", responsibility_document("milchick"))

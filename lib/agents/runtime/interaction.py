@@ -431,10 +431,12 @@ def interaction_contract_prompt(
 ) -> str:
     protocol_path = Path(__file__).resolve().parents[1] / "protocol.md"
     action_catalog_path = Path(__file__).resolve().parents[1] / "action-catalog.md"
+    blacklist_path = Path(__file__).resolve().parents[1] / "responsibilities" / "blacklist.md"
     if workspace_path is not None:
         workspace = Path(workspace_path).expanduser().resolve()
         protocol_path = workspace / ".lumon" / "protocol.md"
         action_catalog_path = workspace / ".lumon" / "action-catalog.md"
+        blacklist_path = workspace / ".lumon" / "blacklist.md"
     lines = [
         "[LUMON INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumon conversation.",
@@ -442,7 +444,9 @@ def interaction_contract_prompt(
         "It defines the envelope schemas (CONVERSATION_DECISION / ACTION_REQUEST / CLARIFICATION_REQUEST / FINAL_RESPONSE) and the Grill protocol.",
         "Non-negotiable:",
         "- Before the final answer, emit exactly one CONVERSATION_DECISION envelope.",
-        "- To execute anything (Jira, jobs, delegation), emit exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without the host receipt.",
+        "- Before using tools, READ the common blacklist at " + str(blacklist_path) + ".",
+        "- For read-only Jira evidence, prefer the authorized `twg jira workitem get/query` commands described in the action catalog; do not emit ACTION_REQUEST for that read when the command succeeds.",
+        "- Jira create/update and other external mutations still require exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without the host receipt.",
         "- Put the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.",
         "Envelope schemas:",
         '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":""}</CONVERSATION_DECISION>',

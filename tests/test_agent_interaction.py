@@ -93,6 +93,8 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertIn('"target_agent":"mark"', catalog)
         self.assertIn("Put every model-selected input in `arguments`", catalog)
         self.assertIn("`target_files` is a JSON array", catalog)
+        self.assertIn("twg jira workitem get", catalog)
+        self.assertIn("twg jira workitem query", catalog)
         self.assertTrue(all(f"`{action}`" in catalog for action in ALL_ACTIONS))
 
     def test_pending_clarification_survives_session_reload(self) -> None:
@@ -253,6 +255,8 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertIn("CONVERSATION_DECISION", prompt)
         self.assertIn("ACTION_REQUEST", prompt)
         self.assertIn("Never claim work was delegated", prompt)
+        self.assertIn("common blacklist", prompt)
+        self.assertIn("twg jira workitem get/query", prompt)
 
     def test_grill_protocol_lives_in_readable_file(self) -> None:
         protocol = (ROOT / "lib" / "agents" / "protocol.md").read_text(encoding="utf-8")

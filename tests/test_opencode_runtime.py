@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -35,6 +36,28 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         runtime = create_agent_runtime(provider="deepseek", model="deepseek-v4-flash")
         self.assertIsInstance(runtime, OpenCodeAgentRuntime)
         self.assertTrue(runtime.supports_resume)
+
+    def test_workspace_context_contains_readable_safety_files(self) -> None:
+        runtime = OpenCodeAgentRuntime(agent_id="mark")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            runtime._ensure_workspace_context(workspace)
+            self.assertTrue((workspace / ".lumon" / "blacklist.md").is_file())
+            self.assertTrue((workspace / ".lumon" / "responsibilities" / "mark.md").is_file())
+            self.assertTrue((workspace / ".lumon" / "protocol.md").is_file())
+            self.assertIn("Common hard blacklist", (workspace / ".lumon" / "blacklist.md").read_text(encoding="utf-8"))
+
+    def test_jira_read_grant_allows_only_the_matching_direct_twg_verb(self) -> None:
+        runtime = OpenCodeAgentRuntime(
+            agent_id="milchick",
+            jira_read_actions=frozenset({"jira.workitem.get"}),
+        )
+        bash = runtime._permission_config()["bash"]
+        self.assertEqual("allow", bash["twg jira workitem get *"])
+        self.assertNotIn("twg jira workitem query *", bash)
+        self.assertNotIn("twg jira workitem create *", bash)
+        self.assertNotIn("twg jira workitem update *", bash)
+        self.assertNotIn("twg jira workitem get *", OpenCodeAgentRuntime()._permission_config()["bash"])
 
 
 if __name__ == "__main__":

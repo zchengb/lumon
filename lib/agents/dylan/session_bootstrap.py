@@ -76,7 +76,7 @@ def build_bootstrap_prompt(
         "(Desktop/Documents/Downloads/Library/Applications/ssh/home secrets, hostname, hardware).\n"
         "- Prefer <ACTION_REQUEST> JSON for risk resolve / mark-remediated / schedule updates. "
         "Host fills actor/chat identity — never invent --actor, chat_id, or explicit_authorization.\n"
-        "- Jira reads use jira.workitem.get/query or jira.sprint.untested.report; Jira create/update uses ACTION_REQUEST when the latest request calls for a Jira write.\n"
+        "- For read-only Jira evidence, prefer authorized `twg jira workitem get/query` commands; if they are unavailable or fail, fall back to jira.workitem.get/query or jira.sprint.untested.report. Jira create/update always uses ACTION_REQUEST when the latest request calls for a Jira write.\n"
         "- Do not invent project facts, Finding IDs, Jira keys, PRs, or scan statuses.\n"
         "- Keep final answers suitable for Feishu markdown cards: answer first, concise enough to stay readable.\n"
         "- Wrap the user-facing answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>. Nothing else is sent to Feishu.\n"

@@ -124,6 +124,7 @@ class OpenCodeAgentRuntime:
         agent_id: str = "",
         project: str = "",
         workflow_mode: bool = False,
+        jira_read_actions: frozenset[str] | None = None,
     ) -> None:
         self.model = model or "deepseek-v4-flash"
         self.base_url = base_url or DEFAULT_BASE_URL
@@ -136,6 +137,7 @@ class OpenCodeAgentRuntime:
         self.agent_id = agent_id
         self.project = project
         self.workflow_mode = workflow_mode
+        self.jira_read_actions = frozenset(jira_read_actions or ())
         self.isolated_env: dict[str, str] | None = None
         self.additional_files: list[Path] = []
         self.additional_directories: list[Path] = []
@@ -190,20 +192,25 @@ class OpenCodeAgentRuntime:
         edit: Any = "deny"
         if self.agent_id == "mark":
             edit = {"*": "deny", "topics/**": "allow", "stories/**": "allow"}
+        bash_permissions: dict[str, Any] = {
+            "*": "deny",
+            "rg *": "allow",
+            "git status*": "allow",
+            "git diff*": "allow",
+            "git log*": "allow",
+            "lumen *": "allow",
+        }
+        if "jira.workitem.get" in self.jira_read_actions:
+            bash_permissions["twg jira workitem get *"] = "allow"
+        if "jira.workitem.query" in self.jira_read_actions:
+            bash_permissions["twg jira workitem query *"] = "allow"
         return {
             "*": "deny",
             "read": "allow",
             "glob": "allow",
             "grep": "allow",
             "edit": edit,
-            "bash": {
-                "*": "deny",
-                "rg *": "allow",
-                "git status*": "allow",
-                "git diff*": "allow",
-                "git log*": "allow",
-                "lumen *": "allow",
-            },
+            "bash": bash_permissions,
             "task": "deny",
             "webfetch": "deny",
             "websearch": "deny",
@@ -260,10 +267,21 @@ class OpenCodeAgentRuntime:
         package_agents = Path(__file__).resolve().parents[1]
         target = workspace / ".lumon"
         target.mkdir(parents=True, exist_ok=True)
-        for name in ("action-catalog.md", "protocol.md"):
-            source = package_agents / name
-            destination = target / name
+        entries = [
+            ("action-catalog.md", "action-catalog.md"),
+            ("protocol.md", "protocol.md"),
+            ("responsibilities/blacklist.md", "blacklist.md"),
+        ]
+        if self.agent_id:
+            entries.append((f"responsibilities/{self.agent_id}.md", f"responsibilities/{self.agent_id}.md"))
+            entries.append((f"responsibilities/{self.agent_id}-workflow.md", f"responsibilities/{self.agent_id}-workflow.md"))
+        if self.agent_id == "milchick":
+            entries.append(("milchick/soul.md", "milchick-soul.md"))
+        for source_name, destination_name in entries:
+            source = package_agents / source_name
+            destination = target / destination_name
             if source.is_file():
+                destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
 
     def run(

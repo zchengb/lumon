@@ -56,7 +56,7 @@ def _managed_block(project_slug: str) -> str:
         f"- lumen agents action --agent dylan --action risk.resolve "
         f"--finding <id> --json  (host/admin only; conversational path prefers ACTION_REQUEST)\n\n"
         f"## Jira\n"
-        f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
+        f"- Prefer authorized `twg jira workitem get/query` for read-only Jira evidence; host reads remain the fallback\n"
         f"- Create/update work items only through <ACTION_REQUEST> when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
         f"- Conversational Dylan is workspace-isolated (no host enumeration)\n"

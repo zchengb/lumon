@@ -1,8 +1,9 @@
 # Lumon Interaction Protocol
 
 This file defines the machine envelopes every Lumon Agent must emit inside a
-persistent conversation. Read it before responding; the host executes actions
-only from these envelopes, never from natural-language claims.
+persistent conversation. Read it before responding; the host executes
+external side effects only from these envelopes, never from natural-language
+claims. Approved read-only workspace commands remain Harness tools.
 
 ## Turn envelope
 
@@ -34,8 +35,8 @@ message and emit exactly one internal envelope:
 
 ## Action envelope
 
-To execute anything (Jira reads/writes, jobs, delegation, delivery, risk),
-emit exactly one JSON object inside:
+To execute an external mutation (Jira writes, jobs, delegation, delivery,
+risk), emit exactly one JSON object inside:
 
 ```
 <ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>
@@ -43,13 +44,17 @@ emit exactly one JSON object inside:
 
 Non-negotiable:
 
-- Execution happens only through ACTION_REQUEST envelopes. Never claim a
-  mutation, deployment, Jira write, Sheet write, PR, verification, delegation,
-  or job was created or executed without its host receipt.
+- External mutations execute only through ACTION_REQUEST envelopes. Never claim
+  a mutation, deployment, Jira write, Sheet write, PR, verification,
+  delegation, or job was created or executed without its host receipt.
 - The host fills actor/chat/thread/trace identity. Never invent or forge
   identity fields.
-- Never run host tools (for example `twg`) in the sandbox shell; use
-  ACTION_REQUEST only.
+- Never run arbitrary host tools or shell/HTTP commands in the sandbox. For
+  read-only Jira evidence, the only autonomous TWG exceptions are
+  `twg jira workitem get` and `twg jira workitem query`; the Harness
+  permission profile denies other TWG verbs, including create/update. If an
+  authorized read command is unavailable or fails, use the canonical host read
+  action.
 - The canonical action names, purposes, and required fields are in the adjacent
   `action-catalog.md`. Read it before emitting an ACTION_REQUEST; use exact
   canonical names only.
@@ -84,9 +89,11 @@ Put the Feishu-facing answer inside:
   request, or ordinary feedback into a Bug/Story/Jira choice menu by default.
   Create or update Jira only when the user explicitly asks for a Jira card,
   ticket, or issue, or confirms that proposal.
-- Jira reads/report use `jira.workitem.get` / `jira.workitem.query` /
-  `jira.sprint.untested.report`; create/update use `jira.workitem.create` /
-  `jira.workitem.update`. Never run twg in the sandbox or invent Jira results.
+- Jira reads/report prefer authorized `twg jira workitem get` /
+  `twg jira workitem query`. `jira.workitem.get` / `jira.workitem.query` /
+  `jira.sprint.untested.report` remain host fallbacks. Create/update always use
+  `jira.workitem.create` / `jira.workitem.update`. Never run other TWG
+  verbs in the sandbox or invent Jira results.
 - If the attached image contains a readable request, marked UI, wording, error,
   or expected change, inspect and use that evidence; do not ask the user to
   transcribe visible content. Infer the smallest safe action and ask only when

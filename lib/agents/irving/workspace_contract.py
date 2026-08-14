@@ -18,7 +18,7 @@ def _managed_block(project_slug: str) -> str:
         f"- risk.read\n"
         f"- risk.mark_remediated (explicit authorization only)\n\n"
         f"## Jira\n"
-        f"- Read/query work items and active-sprint reports through the host TWG adapter\n"
+        f"- Prefer authorized `twg jira workitem get/query` for read-only Jira evidence; host reads remain the fallback\n"
         f"- Create/update work items only through <ACTION_REQUEST> when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
         f"- Workspace-isolated; no host enumeration\n"

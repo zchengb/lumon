@@ -35,6 +35,35 @@ The JSON inside the envelope is parsed as JSON, not as a shell command. Lists
 must be JSON arrays and booleans must be JSON booleans. The examples below are
 copyable request shapes; replace only the business values.
 
+## Execution lanes
+
+Use the lowest-risk lane that completes the current turn:
+
+1. **Autonomous read lane** — for read-only Jira evidence, use the directly
+   authorized TWG commands below when available. They do not create an
+   `ACTION_REQUEST`, and the Harness permission profile allows only
+   these two Jira read verbs:
+
+   ```text
+   twg jira workitem get <JIRA-KEY> -o json [--site <configured-site>]
+   twg jira workitem query --jql 'project = MBPAS AND issuetype = Story' --limit 20 -o json [--site <configured-site>]
+   ```
+
+   Use the current workspace/project Jira configuration and do not read TWG
+   auth files or secrets. If a configured Jira site is required, read the
+   non-secret workspace config and pass its site value; never invent one. Never
+   run other TWG verbs, arbitrary shell, HTTP, Python, or GUI commands. If the
+   authorized command is unavailable or fails, use the canonical host read
+   action as the fallback.
+
+2. **Host-gated mutation lane** — Jira create/update and every external,
+   irreversible, identity-sensitive, or audited mutation must use the exact
+   `ACTION_REQUEST` recipe below. A successful read is not permission to write.
+
+3. **Workspace lane** — ordinary project-file investigation may use the
+   read/edit capabilities explicitly granted by the current Harness profile;
+   read `.lumon/blacklist.md` before using them.
+
 ## Delegation and jobs — Milchick
 
 | Canonical action | Purpose | `arguments` fields |
@@ -50,12 +79,12 @@ copyable request shapes; replace only the business values.
 For delegation, emit one `agent.job.create` request and wait for its host
 receipt before claiming that work was assigned or started.
 
-## Jira — available through the host adapter
+## Jira — direct read lane first; mutations through the host adapter
 
 | Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `jira.workitem.get` | Read one Jira work item. | required: one of `issue_key`, `id`, `key`; prefer `issue_key` |
-| `jira.workitem.query` | Query Jira work items. | required: `jql`; optional: `limit` (number), `project_key`, `board_id`, `site` |
+| `jira.workitem.get` | Host fallback for reading one Jira work item when the authorized TWG read command is unavailable or fails. | required: one of `issue_key`, `id`, `key`; prefer `issue_key` |
+| `jira.workitem.query` | Host fallback for querying Jira when the authorized TWG read command is unavailable or fails. | required: `jql`; optional: `limit` (number), `project_key`, `board_id`, `site` |
 | `jira.sprint.untested.report` | Read the untested Story report. | optional: `standard` (`A`/`B`/`C`/`D`), `statuses` (array) |
 | `jira.workitem.create` | Create a Jira work item after the request calls for it. | required: `summary`; optional: `description`, `project_key`, `issue_type`, `target_version`, `priority`, `labels` (array), `parent` |
 | `jira.workitem.update` | Update an existing Jira work item. | required: `issue_key`; plus at least one of `summary`, `description`, `priority`, `labels` (array), `add_labels` (array), `comment`, `status` |

@@ -32,7 +32,7 @@ def build_bootstrap_prompt(
         "Operating policy:\n"
         "- Workspace-isolated: do not enumerate host apps/hardware/home.\n"
         "- Prefer <ACTION_REQUEST> for risk.read / risk.mark_remediated.\n"
-        "- Jira reads use jira.workitem.get/query or jira.sprint.untested.report; Jira create/update uses ACTION_REQUEST when the latest request calls for a Jira write.\n"
+        "- For read-only Jira evidence, prefer authorized `twg jira workitem get/query` commands; if they are unavailable or fail, fall back to jira.workitem.get/query or jira.sprint.untested.report. Jira create/update always uses ACTION_REQUEST when the latest request calls for a Jira write.\n"
         "- Host fills actor/chat identity — never invent --actor.\n"
         "- Wrap Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n\n"
         "Irving Soul notes:\n"

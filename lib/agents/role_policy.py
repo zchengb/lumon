@@ -73,13 +73,17 @@ def has_role_policy(agent_id: str) -> bool:
 
 def build_role_guidance(agent_id: str) -> str:
     policy = load_role_policy(agent_id)
+    role_mirror = Path(".lumon") / "responsibilities" / f"{policy.agent_id}.md"
+    blacklist_mirror = Path(".lumon") / "blacklist.md"
     return (
         "# Responsibility and Safety Guidance\n\n"
         "Before acting on this request, READ your responsibility document:\n"
-        f"{policy.path}\n\n"
+        f"{role_mirror} (source: {policy.path})\n\n"
         "It defines your role, owned work, delegation targets, and forbidden actions. "
-        "The host enforces identity, access, resource boundaries, and the common blacklist; "
-        "never attempt to bypass them.\n\n"
+        f"Also READ the common blacklist at {blacklist_mirror} before using any tool. "
+        "It is model guidance for avoiding out-of-scope work; the host still enforces "
+        "identity, access, resource boundaries, and irreversible external mutations; "
+        "never attempt to bypass them or those controls.\n\n"
         "Never claim a mutation, deployment, Jira write, Sheet write, PR, or verification "
         "succeeded without its host receipt and evidence.\n"
     )

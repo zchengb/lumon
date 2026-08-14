@@ -618,6 +618,12 @@ def handle_autonomous_conversation(
                 agent_id=agent_id,
                 project=slug,
             )
+            if hasattr(cursor, "jira_read_actions"):
+                cursor.jira_read_actions = frozenset(
+                    action
+                    for action in ("jira.workitem.get", "jira.workitem.query")
+                    if action in access.effective_capabilities
+                )
             cursor_for_cleanup = cursor
             supports_stateless = bool(getattr(cursor, "supports_stateless", False))
             if not bool(getattr(cursor, "supports_resume", True)):

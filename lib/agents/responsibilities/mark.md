@@ -20,7 +20,7 @@
 - `risk.*`
 - `scan.*`
 - `host.*`
-- `lumen.*`
+- `lumen.*`; use only authorized direct `twg jira workitem get/query` for Jira reads
 
 ## Decision rule
 
