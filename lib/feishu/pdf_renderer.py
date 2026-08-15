@@ -9,8 +9,10 @@ from typing import Any
 _PLAN_MARKER = re.compile(r"(?:technical[- ]plan|story[- ]plan)(?:\.md)?", re.IGNORECASE)
 _TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 _FENCE = re.compile(r"^\s*```(?:[A-Za-z0-9_+-]+)?\s*$")
+_FENCE_LANGUAGE = re.compile(r"^\s*```([A-Za-z0-9_+-]*)\s*$")
 _TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
 _METADATA_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$")
+_PLAN_PROMPT = re.compile(r"(?mi)^\s*(?:以上(?:為|为)完整(?:內容|内容)|看完後請回覆|看完后请回复).*$")
 
 
 def is_plan_document(text: str) -> bool:
@@ -27,6 +29,46 @@ def plan_pdf_filename(text: str) -> str:
     ticket = (_TICKET.search(raw) or ["LUMON"])[0]
     kind = "technical-plan" if "technical" in raw.lower() else "story-plan"
     return f"{ticket}-{kind}.pdf"
+
+
+def _trim_document_separators(text: str) -> str:
+    lines = str(text or "").strip().splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and lines[0].strip() == "---":
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    while lines and lines[-1].strip() == "---":
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def split_plan_response(text: str) -> tuple[str, str, str]:
+    """Return conversation prefix, Markdown document, and conversation suffix."""
+    raw = str(text or "").strip()
+    opening = re.search(r"(?m)^[ \t]*```(?:markdown|md)[ \t]*$", raw)
+    if opening is not None:
+        closings = list(re.finditer(r"(?m)^[ \t]*```[ \t]*$", raw[opening.end() :]))
+        if closings:
+            closing = closings[-1]
+            body_start = opening.end()
+            body_end = opening.end() + closing.start()
+            return (
+                _trim_document_separators(raw[: opening.start()]),
+                raw[body_start:body_end].strip(),
+                _trim_document_separators(raw[opening.end() + closing.end() :]),
+            )
+
+    heading = re.search(r"(?mi)^\s*#\s+(?:technical|story)\s+plan\b.*$", raw)
+    if heading is None:
+        return "", raw, ""
+    before = raw[: heading.start()].strip()
+    rest = raw[heading.start() :]
+    prompt = _PLAN_PROMPT.search(rest)
+    if prompt is None:
+        return before, rest.strip(), ""
+    return before, rest[: prompt.start()].strip(), _trim_document_separators(rest[prompt.start() :])
 
 
 def _strip_outer_fence(text: str) -> str:
@@ -244,6 +286,254 @@ def _table_flowable(rows: list[list[str]], styles: dict[str, Any], fonts: dict[s
     return table
 
 
+def _mermaid_label(value: str) -> str:
+    label = str(value or "").strip()
+    if len(label) >= 2 and label[0] == label[-1] and label[0] in {'"', "'"}:
+        label = label[1:-1]
+    return label.replace("\\n", "\n").replace("<br/>", "\n").replace("<br>", "\n")
+
+
+def _parse_mermaid(source: str) -> dict[str, Any] | None:
+    lines = [line.rstrip() for line in str(source or "").splitlines()]
+    header = next((line.strip() for line in lines if line.strip() and not line.strip().startswith("%%")), "")
+    header_match = re.match(r"^(flowchart|graph)\s+(TB|TD|BT|LR|RL)\b", header, re.IGNORECASE)
+    class_mode = header.lower().startswith("classdiagram")
+    if not header_match and not class_mode:
+        return None
+
+    nodes: dict[str, dict[str, str]] = {}
+    edges: list[tuple[str, str, str]] = []
+    node_pattern = re.compile(
+        r"(?P<id>[A-Za-z_][\w-]*)\s*(?P<open>\[|\{|\()(?P<label>.*?)(?P<close>\]|\}|\))"
+    )
+    edge_pattern = re.compile(
+        r"(?P<a>[A-Za-z_][\w-]*)\s*(?:\[[^\]]*\]|\{[^}]*\}|\([^)]*\))?\s*"
+        r"(?P<arrow>-->|-.->|==>|---)\s*"
+        r"(?:\|(?P<label>[^|]*)\|)?\s*(?P<b>[A-Za-z_][\w-]*)"
+    )
+
+    if header_match:
+        direction = header_match.group(2).upper()
+        if direction == "TD":
+            direction = "TB"
+        for line in lines[1:]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("%%") or stripped.lower().startswith("subgraph") or stripped == "end":
+                continue
+            for match in node_pattern.finditer(line):
+                nodes.setdefault(
+                    match.group("id"),
+                    {"label": _mermaid_label(match.group("label")), "shape": match.group("open")},
+                )
+            match = edge_pattern.search(line)
+            if match:
+                source_id = match.group("a")
+                target_id = match.group("b")
+                nodes.setdefault(source_id, {"label": source_id, "shape": "["})
+                nodes.setdefault(target_id, {"label": target_id, "shape": "["})
+                edges.append((source_id, target_id, _mermaid_label(match.group("label") or "")))
+        return {"direction": direction, "nodes": nodes, "edges": edges, "kind": "flowchart"} if nodes else None
+
+    current_class = ""
+    relation_pattern = re.compile(r"^\s*([A-Za-z_][\w-]*)\s+(<\|--|--\|>|\*--|o--|-->|<--)\s+([A-Za-z_][\w-]*)(?:\s*:\s*(.*))?$")
+    class_pattern = re.compile(r"^\s*class\s+([A-Za-z_][\w-]*)\s*\{")
+    for line in lines[1:]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("%%"):
+            continue
+        class_match = class_pattern.match(line)
+        if class_match:
+            current_class = class_match.group(1)
+            nodes.setdefault(current_class, {"label": current_class, "shape": "["})
+            continue
+        if stripped == "}":
+            current_class = ""
+            continue
+        relation = relation_pattern.match(line)
+        if relation:
+            source_id, _, target_id, label = relation.groups()
+            nodes.setdefault(source_id, {"label": source_id, "shape": "["})
+            nodes.setdefault(target_id, {"label": target_id, "shape": "["})
+            edges.append((source_id, target_id, _mermaid_label(label or "")))
+            continue
+        if current_class:
+            nodes[current_class]["label"] += "\n" + stripped
+    return {"direction": "LR", "nodes": nodes, "edges": edges, "kind": "class"} if nodes else None
+
+
+def _mermaid_flowable(source: str, fonts: dict[str, str], width: float, styles: dict[str, Any]) -> Any:
+    parsed = _parse_mermaid(source)
+    if parsed is None:
+        return _code_flowable(source, styles)
+
+    import math
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Flowable, Paragraph
+
+    label_style = ParagraphStyle(
+        "LumonDiagramLabel", fontName=fonts["body"], fontSize=7.2, leading=9.2,
+        alignment=TA_CENTER, textColor=colors.HexColor("#203040"), wordWrap="CJK",
+    )
+    edge_style = ParagraphStyle(
+        "LumonDiagramEdge", fontName=fonts["body"], fontSize=6.2, leading=7.5,
+        alignment=TA_CENTER, textColor=colors.HexColor("#52606d"), wordWrap="CJK",
+    )
+
+    class MermaidFlowable(Flowable):
+        def __init__(self) -> None:
+            super().__init__()
+            self._natural_width = width
+            self._natural_height = 80.0
+            self._scale = 1.0
+            self._positions: dict[str, tuple[float, float, float, float]] = {}
+            self._levels: dict[str, int] = {}
+            self._node_width = 120.0
+
+        def _build_levels(self) -> list[list[str]]:
+            node_ids = list(parsed["nodes"])
+            incoming = {node_id: 0 for node_id in node_ids}
+            outgoing: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+            for source_id, target_id, _ in parsed["edges"]:
+                outgoing.setdefault(source_id, []).append(target_id)
+                incoming[target_id] = incoming.get(target_id, 0) + 1
+            queue = [node_id for node_id in node_ids if incoming.get(node_id, 0) == 0]
+            if not queue and node_ids:
+                queue = [node_ids[0]]
+            levels = {node_id: 0 for node_id in queue}
+            cursor = 0
+            while cursor < len(queue):
+                source_id = queue[cursor]
+                cursor += 1
+                for target_id in outgoing.get(source_id, []):
+                    levels[target_id] = max(levels.get(target_id, 0), levels[source_id] + 1)
+                    incoming[target_id] -= 1
+                    if incoming[target_id] == 0:
+                        queue.append(target_id)
+            for node_id in node_ids:
+                levels.setdefault(node_id, max(levels.values(), default=0) + 1)
+            self._levels = levels
+            groups: list[list[str]] = []
+            for node_id in node_ids:
+                level = levels[node_id]
+                while len(groups) <= level:
+                    groups.append([])
+                groups[level].append(node_id)
+            return groups
+
+        def _layout(self, available_width: float) -> None:
+            self._positions = {}
+            groups = self._build_levels()
+            max_group = max((len(group) for group in groups), default=1)
+            horizontal = parsed["direction"] in {"LR", "RL"}
+            if horizontal:
+                node_width = 150.0
+            else:
+                node_width = min(165.0, max(96.0, (available_width - (max_group - 1) * 18) / max_group))
+            self._node_width = node_width
+            heights: dict[str, float] = {}
+            paragraphs: dict[str, Any] = {}
+            for node_id, node in parsed["nodes"].items():
+                paragraph = Paragraph(_inline_markup(node["label"], fonts), label_style)
+                _, paragraph_height = paragraph.wrap(node_width - 14, 2000)
+                paragraphs[node_id] = paragraph
+                heights[node_id] = max(30.0, paragraph_height + 14.0)
+            gap = 26.0 if horizontal else 34.0
+            margin = 12.0
+            if horizontal:
+                rank_heights = [sum(heights[node_id] for node_id in group) + max(0, len(group) - 1) * 16 for group in groups]
+                self._natural_width = margin * 2 + len(groups) * node_width + max(0, len(groups) - 1) * gap
+                self._natural_height = margin * 2 + max(rank_heights, default=30.0)
+                x = margin
+                for group, rank_height in zip(groups, rank_heights):
+                    y = (self._natural_height - rank_height) / 2
+                    for node_id in group:
+                        node_height = heights[node_id]
+                        self._positions[node_id] = (x, y, node_width, node_height)
+                        y += node_height + 16
+                    x += node_width + gap
+            else:
+                rank_heights = [max((heights[node_id] for node_id in group), default=30.0) for group in groups]
+                self._natural_width = available_width
+                self._natural_height = margin * 2 + sum(rank_heights) + max(0, len(groups) - 1) * gap
+                y = self._natural_height - margin
+                for group, rank_height in zip(groups, rank_heights):
+                    y -= rank_height
+                    total_width = len(group) * node_width + max(0, len(group) - 1) * 18
+                    x = (available_width - total_width) / 2
+                    for node_id in group:
+                        node_height = heights[node_id]
+                        self._positions[node_id] = (x, y + (rank_height - node_height) / 2, node_width, node_height)
+                        x += node_width + 18
+                    y -= gap
+            self._paragraphs = paragraphs
+
+        def wrap(self, available_width: float, available_height: float) -> tuple[float, float]:
+            self._layout(max(100.0, available_width))
+            width_scale = min(1.0, available_width / max(self._natural_width, 1.0))
+            height_scale = 1.0
+            if available_height > 0:
+                height_scale = min(1.0, available_height / max(self._natural_height, 1.0))
+            self._scale = min(width_scale, height_scale)
+            return available_width, max(24.0, self._natural_height * self._scale)
+
+        def _arrow(self, canvas: Any, start: tuple[float, float], end: tuple[float, float]) -> None:
+            sx, sy = start
+            ex, ey = end
+            canvas.line(sx, sy, ex, ey)
+            angle = math.atan2(ey - sy, ex - sx)
+            size = 5.0
+            left = (ex - size * math.cos(angle - math.pi / 6), ey - size * math.sin(angle - math.pi / 6))
+            right = (ex - size * math.cos(angle + math.pi / 6), ey - size * math.sin(angle + math.pi / 6))
+            canvas.setFillColor(colors.HexColor("#55738f"))
+            canvas.setStrokeColor(colors.HexColor("#55738f"))
+            canvas.line(ex, ey, left[0], left[1])
+            canvas.line(ex, ey, right[0], right[1])
+
+        def draw(self) -> None:
+            canvas = self.canv
+            canvas.saveState()
+            canvas.scale(self._scale, self._scale)
+            canvas.setFillColor(colors.HexColor("#f6f8fb"))
+            canvas.setStrokeColor(colors.HexColor("#d3dce7"))
+            canvas.roundRect(0, 0, self._natural_width, self._natural_height, 6, fill=1, stroke=1)
+            for source_id, target_id, edge_label in parsed["edges"]:
+                if source_id not in self._positions or target_id not in self._positions:
+                    continue
+                sx, sy, sw, sh = self._positions[source_id]
+                tx, ty, tw, th = self._positions[target_id]
+                if parsed["direction"] in {"LR", "RL"}:
+                    start = (sx + sw, sy + sh / 2)
+                    end = (tx, ty + th / 2)
+                else:
+                    start = (sx + sw / 2, sy)
+                    end = (tx + tw / 2, ty + th)
+                canvas.setStrokeColor(colors.HexColor("#55738f"))
+                self._arrow(canvas, start, end)
+                if edge_label:
+                    edge = Paragraph(_inline_markup(edge_label, fonts), edge_style)
+                    ew, eh = edge.wrap(120, 40)
+                    edge.drawOn(canvas, (start[0] + end[0] - ew) / 2, (start[1] + end[1]) / 2 - eh / 2)
+            for node_id, node in parsed["nodes"].items():
+                x, y, node_width, node_height = self._positions[node_id]
+                canvas.setFillColor(colors.HexColor("#eaf3fb" if node["shape"] != "{" else "#fff6df"))
+                canvas.setStrokeColor(colors.HexColor("#2d628f"))
+                if node["shape"] == "{":
+                    canvas.setFillColor(colors.HexColor("#fff7df"))
+                    canvas.roundRect(x, y, node_width, node_height, 4, fill=1, stroke=1)
+                elif node["shape"] == "(":
+                    canvas.roundRect(x, y, node_width, node_height, min(12, node_height / 2), fill=1, stroke=1)
+                else:
+                    canvas.roundRect(x, y, node_width, node_height, 4, fill=1, stroke=1)
+                paragraph = self._paragraphs[node_id]
+                _, paragraph_height = paragraph.wrap(node_width - 14, node_height - 10)
+                paragraph.drawOn(canvas, x + 7, y + (node_height - paragraph_height) / 2)
+            canvas.restoreState()
+
+    return MermaidFlowable()
+
+
 def _code_flowable(code: str, styles: dict[str, Any]) -> Any:
     from reportlab.platypus import Paragraph
 
@@ -330,6 +620,7 @@ def _parse_markdown(
     paragraph_lines: list[str] = []
     in_code = False
     code_lines: list[str] = []
+    code_language = ""
     title_consumed = False
 
     def flush_paragraph() -> None:
@@ -343,9 +634,11 @@ def _parse_markdown(
         stripped = line.strip()
         if in_code:
             if _FENCE.match(line):
-                story.append(_code_flowable("\n".join(code_lines), styles))
+                code = "\n".join(code_lines)
+                story.append(_mermaid_flowable(code, fonts, width, styles) if code_language == "mermaid" else _code_flowable(code, styles))
                 code_lines.clear()
                 in_code = False
+                code_language = ""
             else:
                 code_lines.append(line.rstrip())
             index += 1
@@ -353,6 +646,8 @@ def _parse_markdown(
         if _FENCE.match(line):
             flush_paragraph()
             in_code = True
+            language = _FENCE_LANGUAGE.match(line)
+            code_language = (language.group(1) if language else "").lower()
             index += 1
             continue
         if stripped == "---":
@@ -430,7 +725,8 @@ def _parse_markdown(
         paragraph_lines.append(line)
         index += 1
     if in_code:
-        story.append(_code_flowable("\n".join(code_lines), styles))
+        code = "\n".join(code_lines)
+        story.append(_mermaid_flowable(code, fonts, width, styles) if code_language == "mermaid" else _code_flowable(code, styles))
     flush_paragraph()
     return story
 

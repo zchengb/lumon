@@ -18,7 +18,7 @@ from feishu.messenger import (
     normalize_markdown_for_feishu,
     split_markdown_for_feishu,
 )
-from feishu.pdf_renderer import is_plan_document, plan_pdf_filename, render_markdown_pdf
+from feishu.pdf_renderer import _parse_mermaid, is_plan_document, plan_pdf_filename, render_markdown_pdf, split_plan_response
 
 
 class FeishuMessengerTests(unittest.TestCase):
@@ -44,6 +44,40 @@ class FeishuMessengerTests(unittest.TestCase):
         render.assert_called_once()
         upload.assert_called_once()
         reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
+
+    def test_wrapped_plan_keeps_conversation_text_outside_pdf(self) -> None:
+        document = "---\nstatus: draft\njiraKey: MBPAS-1503\n---\n\n# Technical Plan: MBPAS-1503\n\n" + ("## Section\ncontent\n\n" * 80)
+        text = (
+            "以下是 MBPAS-1503 完整 technical-plan.md 內容：\n\n---\n\n"
+            "```markdown\n" + document + "```\n\n"
+            "以上為完整內容。看完後請回覆 A（批准）／B（修改）／C（draft）／D（回 Business Loop）。"
+        )
+        prefix, body, suffix = split_plan_response(text)
+        self.assertIn("以下是 MBPAS-1503", prefix)
+        self.assertTrue(body.startswith("---\nstatus: draft"))
+        self.assertNotIn("以上為完整內容", body)
+        self.assertIn("請回覆 A", suffix)
+
+        messenger = FeishuMessenger("mark")
+        with patch.object(messenger, "_upload_plan_pdf", return_value="file_v2_plan"), patch.object(
+            messenger, "reply_text", side_effect=[{"data": {"message_id": "om_prefix"}}, {"data": {"message_id": "om_suffix"}}]
+        ) as reply_text, patch.object(
+            messenger, "reply_file", return_value={"data": {"message_id": "om_pdf"}}
+        ) as reply_file:
+            sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True)
+
+        self.assertEqual("om_suffix", sent["data"]["message_id"])
+        self.assertEqual(2, reply_text.call_count)
+        self.assertEqual(prefix, reply_text.call_args_list[0].args[1])
+        self.assertEqual(suffix, reply_text.call_args_list[1].args[1])
+        reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
+
+    def test_mermaid_flowchart_is_parsed_as_a_diagram(self) -> None:
+        parsed = _parse_mermaid('flowchart TD\n  A["開始"] -->|成功| B{"判斷"}\n  B --> C["完成"]')
+        self.assertIsNotNone(parsed)
+        self.assertEqual("TB", parsed["direction"])
+        self.assertEqual("開始", parsed["nodes"]["A"]["label"])
+        self.assertIn(("A", "B", "成功"), parsed["edges"])
 
     def test_plan_pdf_renders_readable_document(self) -> None:
         text = """---

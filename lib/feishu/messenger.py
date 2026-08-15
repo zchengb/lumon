@@ -14,7 +14,7 @@ from urllib.parse import quote
 from typing import Any, Optional
 
 from agents.registry import APP_ID_ENV
-from feishu.pdf_renderer import is_plan_document, plan_pdf_filename, render_markdown_pdf
+from feishu.pdf_renderer import is_plan_document, plan_pdf_filename, render_markdown_pdf, split_plan_response
 
 APP_SECRET_ENV = {
     "dylan": "FEISHU_DYLAN_APP_SECRET",
@@ -607,9 +607,17 @@ class FeishuMessenger:
         *,
         reply_in_thread: bool = False,
     ) -> Optional[dict[str, Any]]:
-        if is_plan_document(text):
+        prefix, document, suffix = split_plan_response(text)
+        if is_plan_document(document):
             try:
-                return self.safe_reply_pdf(message_id, text, reply_in_thread=reply_in_thread)
+                file_key = self._upload_plan_pdf(document)
+                sent: Optional[dict[str, Any]] = None
+                if prefix:
+                    sent = self.reply_text(message_id, prefix, reply_in_thread=reply_in_thread)
+                sent = self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
+                if suffix:
+                    sent = self.reply_text(message_id, suffix, reply_in_thread=reply_in_thread)
+                return sent
             except Exception as exc:
                 _LOG.warning("PDF plan reply failed message_id=%s err=%s; falling back to card", message_id, exc)
         rendered = normalize_markdown_for_feishu(text)
@@ -636,11 +644,14 @@ class FeishuMessenger:
         *,
         reply_in_thread: bool = False,
     ) -> dict[str, Any]:
+        file_key = self._upload_plan_pdf(markdown)
+        return self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
+
+    def _upload_plan_pdf(self, markdown: str) -> str:
         from tempfile import TemporaryDirectory
 
         filename = plan_pdf_filename(markdown)
         with TemporaryDirectory(prefix="lumon-pdf-") as temporary_dir:
             pdf_path = Path(temporary_dir) / filename
             render_markdown_pdf(markdown, pdf_path)
-            file_key = self.upload_file(pdf_path)
-            return self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
+            return self.upload_file(pdf_path)
