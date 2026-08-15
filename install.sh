@@ -18,6 +18,29 @@ RESET="$(printf '\033[0m')"
 
 echo "${BOLD}Installing Lumon...${RESET}"
 
+# PDF plan replies are rendered locally before upload to Feishu.
+pdf_python=""
+for candidate in \
+  /opt/homebrew/opt/python@*/bin/python3.* \
+  /opt/homebrew/bin/python3 \
+  /usr/local/opt/python@*/bin/python3.* \
+  "$(command -v python3 2>/dev/null || true)"; do
+  if [[ -x "${candidate}" ]]; then
+    pdf_python="${candidate}"
+    break
+  fi
+done
+if [[ -z "${pdf_python}" ]]; then
+  echo "${YELLOW}!${RESET} Python 3 is required for PDF plan replies." >&2
+  exit 1
+fi
+if ! "${pdf_python}" -c 'import reportlab' >/dev/null 2>&1; then
+  echo "${YELLOW}!${RESET} Installing the PDF export dependency (reportlab) into ${pdf_python}..."
+  if ! "${pdf_python}" -m pip install --user reportlab >/dev/null 2>&1; then
+    "${pdf_python}" -m pip install --user --break-system-packages reportlab >/dev/null
+  fi
+fi
+
 GATEWAY_WAS_RUNNING=0
 if [[ -f "${LUMON_HOME}/agents/gateway.pid" ]]; then
   gateway_pid="$(tr -d '[:space:]' < "${LUMON_HOME}/agents/gateway.pid" 2>/dev/null || true)"

@@ -8,10 +8,13 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
+from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Optional
 
 from agents.registry import APP_ID_ENV
+from feishu.pdf_renderer import is_plan_document, plan_pdf_filename, render_markdown_pdf
 
 APP_SECRET_ENV = {
     "dylan": "FEISHU_DYLAN_APP_SECRET",
@@ -23,6 +26,7 @@ APP_SECRET_ENV = {
 TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 REPLY_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply"
 CREATE_URL = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
+UPLOAD_FILE_URL = "https://open.feishu.cn/open-apis/im/v1/files"
 UPDATE_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}"
 MESSAGE_RESOURCE_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/resources/{file_key}"
 REACTION_URL = "https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reactions"
@@ -42,24 +46,119 @@ _TRANSIENT_MARKERS = (
 _MARKDOWN_CARD_LIMIT = 12000
 _MARKDOWN_FENCE_OPEN = re.compile(r"(?m)^[ \t]*```(?:markdown|md)[ \t]*$")
 _MARKDOWN_FENCE_CLOSE = re.compile(r"(?m)^[ \t]*```[ \t]*$")
+_TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
+_METADATA_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$")
+
+
+def _table_cells(line: str) -> list[str]:
+    stripped = str(line or "").strip()
+    if "|" not in stripped:
+        return []
+    inner = stripped[1:-1] if stripped.startswith("|") and stripped.endswith("|") else stripped
+    return [cell.replace(r"\|", "|").strip() for cell in re.split(r"(?<!\\)\|", inner)]
+
+
+def _is_table_separator(line: str) -> bool:
+    cells = _table_cells(line)
+    return len(cells) >= 2 and all(_TABLE_SEPARATOR.fullmatch(cell.replace(" ", "")) for cell in cells)
+
+
+def _metadata_label(key: str) -> str:
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(key or "").replace("_", " ").replace("-", " "))
+    return spaced.strip().title()
+
+
+def _metadata_value(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1].strip()
+    return f"`{text}`" if text else "—"
+
+
+def _normalize_metadata_blocks(text: str) -> str:
+    """Turn YAML-like front matter into a compact card-friendly metadata section."""
+    lines = str(text or "").splitlines()
+    output: list[str] = []
+    in_code = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not in_code and line.strip() == "---":
+            fields: list[tuple[str, str]] = []
+            cursor = index + 1
+            while cursor < len(lines):
+                if lines[cursor].strip() == "---":
+                    break
+                match = _METADATA_FIELD.match(lines[cursor].strip())
+                if match is None:
+                    fields = []
+                    break
+                fields.append((match.group(1), match.group(2)))
+                cursor += 1
+            if fields and cursor < len(lines) and lines[cursor].strip() == "---":
+                if output and output[-1].strip():
+                    output.append("")
+                output.append("### Document metadata")
+                output.extend(f"- **{_metadata_label(key)}:** {_metadata_value(value)}" for key, value in fields)
+                output.append("")
+                index = cursor + 1
+                continue
+        output.append(line)
+        if line.strip().startswith("```"):
+            in_code = not in_code
+        index += 1
+    return "\n".join(output).strip()
+
+
+def _flatten_markdown_tables(text: str) -> str:
+    """Replace GFM tables with labeled bullets accepted by Feishu cards."""
+    lines = str(text or "").splitlines()
+    output: list[str] = []
+    in_code = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not in_code and index + 1 < len(lines) and _table_cells(line) and _is_table_separator(lines[index + 1]):
+            headers = _table_cells(line)
+            cursor = index + 2
+            rows: list[list[str]] = []
+            while cursor < len(lines) and not in_code and _table_cells(lines[cursor]):
+                cells = _table_cells(lines[cursor])
+                if cells:
+                    rows.append(cells)
+                cursor += 1
+            for row in rows:
+                pairs = []
+                for position, value in enumerate(row):
+                    label = headers[position] if position < len(headers) else f"Column {position + 1}"
+                    pairs.append(f"**{label}:** {value or '—'}")
+                output.append("- " + " · ".join(pairs))
+            if rows:
+                output.append("")
+                index = cursor
+                continue
+        output.append(line)
+        if line.strip().startswith("```"):
+            in_code = not in_code
+        index += 1
+    return "\n".join(output).strip()
 
 
 def normalize_markdown_for_feishu(text: str) -> str:
-    """Render a Markdown document instead of rendering its outer fence."""
+    """Render a Markdown document using syntax supported by Feishu cards."""
     raw = str(text or "").strip()
     opening = _MARKDOWN_FENCE_OPEN.search(raw)
-    if opening is None:
-        return raw
-    closings = list(_MARKDOWN_FENCE_CLOSE.finditer(raw, opening.end()))
-    if not closings:
-        return raw
-    closing = closings[-1]
-    parts = (
-        raw[: opening.start()].strip(),
-        raw[opening.end() : closing.start()].strip(),
-        raw[closing.end() :].strip(),
-    )
-    return "\n\n".join(part for part in parts if part).strip()
+    if opening is not None:
+        closings = list(_MARKDOWN_FENCE_CLOSE.finditer(raw, opening.end()))
+        if closings:
+            closing = closings[-1]
+            parts = (
+                raw[: opening.start()].strip(),
+                raw[opening.end() : closing.start()].strip(),
+                raw[closing.end() :].strip(),
+            )
+            raw = "\n\n".join(part for part in parts if part).strip()
+    return _flatten_markdown_tables(_normalize_metadata_blocks(raw))
 
 
 def split_markdown_for_feishu(text: str, *, limit: int = _MARKDOWN_CARD_LIMIT) -> list[str]:
@@ -229,6 +328,44 @@ class FeishuMessenger:
     def _post(self, url: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", url, token, payload)
 
+    def upload_file(self, file_path: str | Path) -> str:
+        path = Path(file_path).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        token = self.tenant_token()
+        boundary = f"----Lumon{uuid.uuid4().hex}"
+        body = bytearray()
+
+        def field(name: str, value: str) -> None:
+            body.extend(f"--{boundary}\r\n".encode())
+            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            body.extend(str(value).encode("utf-8"))
+            body.extend(b"\r\n")
+
+        field("file_type", "stream")
+        field("file_name", path.name)
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'.encode())
+        body.extend(b"Content-Type: application/pdf\r\n\r\n")
+        body.extend(path.read_bytes())
+        body.extend(b"\r\n")
+        body.extend(f"--{boundary}--\r\n".encode())
+        request = urllib.request.Request(
+            UPLOAD_FILE_URL,
+            data=bytes(body),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+            },
+            method="POST",
+        )
+        response = self._urlopen_json(request, retries=4)
+        data = response.get("data") if isinstance(response.get("data"), dict) else {}
+        file_key = str(data.get("file_key") or response.get("file_key") or "").strip()
+        if not file_key:
+            raise RuntimeError(f"Feishu file upload error: {response.get('msg') or response}")
+        return file_key
+
     def add_reaction(self, message_id: str, emoji_type: str) -> dict[str, Any]:
         token = self.tenant_token()
         return self._post(
@@ -293,6 +430,16 @@ class FeishuMessenger:
         payload: dict[str, Any] = {
             "content": json.dumps(card, ensure_ascii=False),
             "msg_type": "interactive",
+        }
+        if reply_in_thread:
+            payload["reply_in_thread"] = True
+        return self._post(REPLY_URL.format(message_id=message_id), token, payload)
+
+    def reply_file(self, message_id: str, file_key: str, *, reply_in_thread: bool = False) -> dict[str, Any]:
+        token = self.tenant_token()
+        payload: dict[str, Any] = {
+            "content": json.dumps({"file_key": str(file_key or "").strip()}, ensure_ascii=False),
+            "msg_type": "file",
         }
         if reply_in_thread:
             payload["reply_in_thread"] = True
@@ -460,6 +607,11 @@ class FeishuMessenger:
         *,
         reply_in_thread: bool = False,
     ) -> Optional[dict[str, Any]]:
+        if is_plan_document(text):
+            try:
+                return self.safe_reply_pdf(message_id, text, reply_in_thread=reply_in_thread)
+            except Exception as exc:
+                _LOG.warning("PDF plan reply failed message_id=%s err=%s; falling back to card", message_id, exc)
         rendered = normalize_markdown_for_feishu(text)
         parts = split_markdown_for_feishu(rendered)
         sent: Optional[dict[str, Any]] = None
@@ -476,3 +628,19 @@ class FeishuMessenger:
             except Exception as exc2:
                 _LOG.warning("reply_text failed message_id=%s err=%s", message_id, exc2)
                 return None
+
+    def safe_reply_pdf(
+        self,
+        message_id: str,
+        markdown: str,
+        *,
+        reply_in_thread: bool = False,
+    ) -> dict[str, Any]:
+        from tempfile import TemporaryDirectory
+
+        filename = plan_pdf_filename(markdown)
+        with TemporaryDirectory(prefix="lumon-pdf-") as temporary_dir:
+            pdf_path = Path(temporary_dir) / filename
+            render_markdown_pdf(markdown, pdf_path)
+            file_key = self.upload_file(pdf_path)
+            return self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
