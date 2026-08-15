@@ -613,10 +613,18 @@ class FeishuMessenger:
                 file_key = self._upload_plan_pdf(document)
                 sent: Optional[dict[str, Any]] = None
                 if prefix:
-                    sent = self.reply_text(message_id, prefix, reply_in_thread=reply_in_thread)
+                    sent = self.reply_markdown(
+                        message_id,
+                        normalize_markdown_for_feishu(prefix),
+                        reply_in_thread=reply_in_thread,
+                    )
                 sent = self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
                 if suffix:
-                    sent = self.reply_text(message_id, suffix, reply_in_thread=reply_in_thread)
+                    sent = self.reply_markdown(
+                        message_id,
+                        normalize_markdown_for_feishu(suffix),
+                        reply_in_thread=reply_in_thread,
+                    )
                 return sent
             except Exception as exc:
                 _LOG.warning("PDF plan reply failed message_id=%s err=%s; falling back to card", message_id, exc)

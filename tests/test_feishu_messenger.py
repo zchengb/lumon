@@ -60,16 +60,16 @@ class FeishuMessengerTests(unittest.TestCase):
 
         messenger = FeishuMessenger("mark")
         with patch.object(messenger, "_upload_plan_pdf", return_value="file_v2_plan"), patch.object(
-            messenger, "reply_text", side_effect=[{"data": {"message_id": "om_prefix"}}, {"data": {"message_id": "om_suffix"}}]
-        ) as reply_text, patch.object(
+            messenger, "reply_markdown", side_effect=[{"data": {"message_id": "om_prefix"}}, {"data": {"message_id": "om_suffix"}}]
+        ) as reply_markdown, patch.object(
             messenger, "reply_file", return_value={"data": {"message_id": "om_pdf"}}
         ) as reply_file:
             sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True)
 
         self.assertEqual("om_suffix", sent["data"]["message_id"])
-        self.assertEqual(2, reply_text.call_count)
-        self.assertEqual(prefix, reply_text.call_args_list[0].args[1])
-        self.assertEqual(suffix, reply_text.call_args_list[1].args[1])
+        self.assertEqual(2, reply_markdown.call_count)
+        self.assertEqual(prefix, reply_markdown.call_args_list[0].args[1])
+        self.assertEqual(suffix, reply_markdown.call_args_list[1].args[1])
         reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
 
     def test_mermaid_flowchart_is_parsed_as_a_diagram(self) -> None:
