@@ -71,6 +71,13 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual("UNCLOSED_FINAL_RESPONSE", parsed.error_code)
         self.assertFalse(parsed.valid)
 
+    def test_legacy_response_drops_compact_approval_progress_prefix(self) -> None:
+        parsed = extract_final_response(
+            "User approved (A). Let me update metadata.json and the plan's front matter."
+            "**技術計畫已批准 ✅**（technicalStatus: approved）"
+        )
+        self.assertEqual("**技術計畫已批准 ✅**（technicalStatus: approved）", parsed.text)
+
     def test_action_requirements_detect_missing_target(self) -> None:
         self.assertEqual(["story"], action_missing_fields("delivery.start", arguments={}))
         self.assertEqual([], action_missing_fields("delivery.start", resource={"story": "MBPAS-1"}))

@@ -1,6 +1,6 @@
 # Patch Result
 
-Write `<workspace-root>/lumen/results/patch-result.json` with this shape:
+Write `<workspace-root>/lumon/results/patch-result.json` with this shape:
 
 ```json
 {

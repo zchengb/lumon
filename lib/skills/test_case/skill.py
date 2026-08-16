@@ -17,13 +17,13 @@ from skills.test_case.workspace_context import enrich_story_from_workspace, load
 
 SHEET_COLUMN_WIDTHS = (
     (0, 12),
-    (1, 42),
-    (2, 48),
-    (3, 72),
-    (4, 72),
+    (1, 38),
+    (2, 30),
+    (3, 46),
+    (4, 46),
     (5, 16),
-    (6, 14),
-    (7, 40),
+    (6, 16),
+    (7, 26),
 )
 
 DesignRunner = Callable[[str], str]
@@ -69,12 +69,38 @@ def _ensure_table(client: FeishuBitable, app_token: str, table_name: str) -> str
     return table_id
 
 
-def _ensure_fields(client: FeishuBitable, app_token: str, table_id: str) -> None:
-    existing = {str(field.get("field_name") or field.get("name") or "").strip() for field in client.list_fields(app_token, table_id)}
+def _verify_status_property(language: str) -> dict[str, Any]:
+    return {
+        "options": [
+            {"name": option, "color": index}
+            for index, option in enumerate(localize_verify_status_options(language))
+        ]
+    }
+
+
+def _ensure_fields(client: FeishuBitable, app_token: str, table_id: str, language: str = "zh-Hant") -> None:
+    fields = client.list_fields(app_token, table_id)
+    existing = {
+        str(field.get("field_name") or field.get("name") or "").strip(): field
+        for field in fields
+        if isinstance(field, dict)
+    }
     for name, field_type in REQUIRED_FIELDS:
-        if name in existing:
+        field = existing.get(name)
+        property = _verify_status_property(language) if name == "Verify Status" else None
+        if field is not None:
+            field_id = str(field.get("field_id") or field.get("id") or "").strip()
+            if name == "Verify Status" and int(field.get("type") or 0) != field_type and field_id:
+                client.update_field(
+                    app_token,
+                    table_id,
+                    field_id,
+                    name=name,
+                    field_type=field_type,
+                    property=property,
+                )
             continue
-        client.create_field(app_token, table_id, name=name, field_type=field_type)
+        client.create_field(app_token, table_id, name=name, field_type=field_type, property=property)
 
 
 def _ensure_story_view(client: FeishuBitable, app_token: str, table_id: str, *, story_key: str, story_title: str) -> tuple[str, str]:
@@ -232,7 +258,7 @@ def _write_cases_to_sheet(
             sheet_id=sheet_id,
             range_a1=f"{verify_col}2:{verify_col}2000",
             options=list(localize_verify_status_options(language)),
-            colors=["#34C759", "#FF3B30"],
+            colors=["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"],
         )
     except Exception:
         pass
@@ -244,6 +270,7 @@ def _write_cases_to_sheet(
             freeze_rows=1,
             bold_header=True,
             header_end_col=end_col,
+            body_row_height=96,
         )
     except Exception:
         pass
@@ -451,13 +478,13 @@ def generate_test_cases_for_issue(
         else:
             bitable = client or FeishuBitable(agent_id=generated_by)
             table_id = _ensure_table(bitable, app_token, cfg["table_name"])
-            _ensure_fields(bitable, app_token, table_id)
+            _ensure_fields(bitable, app_token, table_id, language)
             records = bitable.list_records(app_token, table_id)
             existing = _existing_titles_for_story(records, story.key)
             created_cases, skipped_cases = partition_new_cases(generated, existing)
             for case in created_cases:
                 case.generated_by = generated_by
-                bitable.create_record(app_token, table_id, case.to_fields())
+                bitable.create_record(app_token, table_id, case.to_fields(language))
             view_name, view_id = _ensure_story_view(
                 bitable,
                 app_token,

@@ -12,6 +12,7 @@ import argparse
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -67,22 +68,59 @@ def normalized_config(delivery_config: dict[str, Any]) -> dict[str, Any]:
         timeout = 3600
     jenkins = raw.get("jenkins") if isinstance(raw.get("jenkins"), dict) else {}
     github = raw.get("github_actions") if isinstance(raw.get("github_actions"), dict) else {}
+    jenkins_job = str(jenkins.get("job") or "").strip()
+    github_repository = str(github.get("repository") or "").strip()
+    if provider == "jenkins" and not jenkins_job:
+        readiness = "Jenkins job is not configured"
+    elif provider == "github_actions" and not github_repository:
+        readiness = "GitHub Actions repository is not configured"
+    elif provider == "none":
+        readiness = "Deployment tracking is disabled"
+    else:
+        readiness = ""
     return {
-        "enabled": bool(raw.get("enabled", False)) and provider != "none",
+        "enabled": bool(raw.get("enabled", False)) and provider != "none" and not readiness,
+        "readiness": readiness,
         "provider": provider,
         "poll_interval_seconds": poll_interval,
         "timeout_seconds": timeout,
         "jenkins": {
-            "job": str(jenkins.get("job") or "").strip(),
+            "job": jenkins_job,
             "url_env": str(jenkins.get("url_env") or "JENKINS_URL").strip() or "JENKINS_URL",
             "auth_env": str(jenkins.get("auth_env") or "JENKINS_AUTH").strip() or "JENKINS_AUTH",
         },
         "github_actions": {
-            "repository": str(github.get("repository") or "").strip(),
+            "repository": github_repository,
             "workflow": str(github.get("workflow") or "").strip(),
             "gh_bin": str(github.get("gh_bin") or "gh").strip() or "gh",
         },
     }
+
+
+def provider_readiness(config: dict[str, Any]) -> tuple[bool, str]:
+    """Check the runtime prerequisites before creating a tracking worker."""
+    if not config.get("enabled"):
+        return False, str(config.get("readiness") or "Deployment tracking is disabled")
+    provider = str(config.get("provider") or "none").strip().casefold()
+    if provider == "jenkins":
+        settings = config.get("jenkins") if isinstance(config.get("jenkins"), dict) else {}
+        job = str(settings.get("job") or "").strip()
+        url_env = str(settings.get("url_env") or "JENKINS_URL").strip() or "JENKINS_URL"
+        if not job:
+            return False, "Jenkins job is not configured"
+        if not os.environ.get(url_env, "").strip():
+            return False, f"Jenkins URL env {url_env} is not set"
+        return True, ""
+    if provider == "github_actions":
+        settings = config.get("github_actions") if isinstance(config.get("github_actions"), dict) else {}
+        repository = str(settings.get("repository") or "").strip()
+        gh_bin = str(settings.get("gh_bin") or "gh").strip() or "gh"
+        if not repository:
+            return False, "GitHub Actions repository is not configured"
+        if not (os.environ.get("GH_TOKEN", "").strip() or os.environ.get("GITHUB_TOKEN", "").strip()) and not shutil.which(gh_bin):
+            return False, f"GitHub CLI {gh_bin} is not available"
+        return True, ""
+    return False, "Deployment tracking provider is disabled"
 
 
 def deployment_config_for_workspace(workspace_root: Path) -> dict[str, Any]:
@@ -107,7 +145,10 @@ def commit_sha(result: dict[str, Any]) -> str:
 
 def prepare_tracking(result_path: Path, config: dict[str, Any], source: str) -> dict[str, Any] | None:
     result = load_json(result_path, {})
-    if not isinstance(result, dict) or not config.get("enabled"):
+    if not isinstance(result, dict):
+        return None
+    ready, _ = provider_readiness(config)
+    if not ready:
         return None
     sha = commit_sha(result)
     pr_urls = [str(value).strip() for value in result.get("pr_urls") or [] if str(value).strip()]

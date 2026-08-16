@@ -42,7 +42,7 @@ from discover_repos import default_branch, infer_profile
 from delivery_scheduler import DEFAULT_ELIGIBLE_JIRA_STATUSES, eligible_jira_statuses, normalize_statuses
 from sync_delivery_docs import commit_dirty_config, commit_paths, commit_story_metadata, lumen_commit_subject
 from git_sync import force_push_conflict, read_conflict
-from patch_runtime import patch_candidate_options, patch_config, publish_mode as patch_publish_mode
+from patch_runtime import DEFAULT_PATCH_TRIGGER_LABEL, patch_candidate_options, patch_config, publish_mode as patch_publish_mode
 from deployment_tracking import normalized_config
 
 
@@ -218,6 +218,7 @@ def schedule_payload(workspace: Path, project: str) -> dict[str, Any]:
     patch_raw["interval_seconds"] = int(patch_raw.get("interval_seconds") or int(scheduled_patch.get("poll_interval_minutes", 5)) * 60)
     patch_raw["jira_statuses"] = normalize_statuses(scheduled_patch.get("eligible_jira_statuses"), ("To Do",))
     patch_raw["issue_types"] = normalize_statuses(scheduled_patch.get("issue_types"), ("Task", "Bug"))
+    patch_raw["trigger_label"] = str(scheduled_patch.get("required_label") or DEFAULT_PATCH_TRIGGER_LABEL).strip()
     patch_raw["in_progress_status"] = scheduled_patch.get("in_progress_status", "In Progress")
     patch_raw["done_status"] = scheduled_patch.get("done_status", "Done")
     patch_raw["blocked_status"] = scheduled_patch.get("blocked_status", "Block")

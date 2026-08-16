@@ -12,6 +12,14 @@ _PLANNING_PREFIX = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+_INTERNAL_PROGRESS_PREFIX = re.compile(
+    r"^(?:(?:User\s+(?:approved|confirmed|answered|chose)\b|"
+    r"Story\s+(?:marked|updated)\b|Decisions\s+recorded\b|"
+    r"Let\s+me\b|Now\s+(?:I'll|I\s+will)\b).*?)"
+    r"(?=(?:\*\*|#{1,6}\s|[\u4e00-\u9fff]))",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _FINAL_ENVELOPE = re.compile(
     r"<FINAL_RESPONSE>\s*(.*?)\s*</FINAL_RESPONSE>",
     re.IGNORECASE | re.DOTALL,
@@ -78,7 +86,9 @@ def sanitize_feishu_answer(text: str) -> str:
         return raw
     cleaned = raw
     for _ in range(6):
-        nxt = _PLANNING_PREFIX.sub("", cleaned, count=1).lstrip()
+        nxt = _INTERNAL_PROGRESS_PREFIX.sub("", cleaned, count=1).lstrip()
+        if nxt == cleaned:
+            nxt = _PLANNING_PREFIX.sub("", cleaned, count=1).lstrip()
         if nxt == cleaned:
             break
         cleaned = nxt

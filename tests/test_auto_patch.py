@@ -30,6 +30,7 @@ from patch_runtime import (  # noqa: E402
     query_candidates,
 )
 from patch_runner import select_repositories, skip  # noqa: E402
+from compose_patch_prompt import compose  # noqa: E402
 
 
 class AutoPatchTests(unittest.TestCase):
@@ -86,6 +87,26 @@ class AutoPatchTests(unittest.TestCase):
         self.assertIn("functional change with explicit acceptance criteria", pipeline)
         self.assertIn("every selected repository", implementation)
         self.assertNotIn("Do not implement a feature", pipeline)
+        output_contract = (templates / "09-output-contract.md").read_text(encoding="utf-8")
+        self.assertIn("<workspace-root>/lumon/results/patch-result.json", output_contract)
+        self.assertNotIn("<workspace-root>/lumen/results/patch-result.json", output_contract)
+
+    def test_patch_prompt_normalizes_legacy_local_output_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            prompts = workspace / "lumon" / "prompts" / "patch"
+            prompts.mkdir(parents=True)
+            (prompts / "manifest.json").write_text(
+                json.dumps({"inline": ["09-output-contract.md"], "catalog": []}), encoding="utf-8"
+            )
+            (prompts / "09-output-contract.md").write_text(
+                'Write `<workspace-root>/lumen/results/patch-result.json` with `[lumen] #KEY`.', encoding="utf-8"
+            )
+            with patch("compose_patch_prompt.repo_registry", return_value=[]):
+                prompt = compose(workspace, "DEMO-1", "Example", workspace / "context.json", [])
+        self.assertIn("<workspace-root>/lumon/results/patch-result.json", prompt)
+        self.assertIn("[lumon] #KEY", prompt)
+        self.assertNotIn("<workspace-root>/lumen/results/patch-result.json", prompt)
 
     def test_candidate_jql_filters_configured_types_and_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -95,7 +116,7 @@ class AutoPatchTests(unittest.TestCase):
             ), patch("patch_runtime.issue_types", return_value=["Task", "Bug"]):
                 query = candidate_jql(workspace, "10025")
         self.assertEqual(
-            'project = DEMO AND sprint = 10025 AND issuetype in ("Task", "Bug") AND status in ("To Do", "Ready") ORDER BY priority DESC, updated ASC',
+            'project = DEMO AND sprint = 10025 AND issuetype in ("Task", "Bug") AND status in ("To Do", "Ready") AND labels = "lumon-auto-patch" ORDER BY priority DESC, updated ASC',
             query,
         )
 
@@ -117,6 +138,15 @@ class AutoPatchTests(unittest.TestCase):
                 candidate_jql(Path(directory), "")
             with self.assertRaises(ValueError):
                 candidate_jql(Path(directory), "10025 OR sprint in openSprints()")
+
+    def test_explicit_patch_key_can_bypass_the_scheduled_trigger_label(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            with patch("patch_runtime.jira_config", return_value={"project_key": "DEMO"}), patch(
+                "patch_runtime.eligible_statuses", return_value=["To Do"]
+            ), patch("patch_runtime.issue_types", return_value=["Task"]):
+                query = candidate_jql(workspace, "10025", require_trigger=False)
+        self.assertNotIn("labels =", query)
 
     def test_board_auto_detection_does_not_use_an_issue_from_another_sprint(self) -> None:
         with patch("jira_sync.twg_ready", return_value=(True, "")), patch(

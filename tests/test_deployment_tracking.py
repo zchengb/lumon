@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,15 +51,21 @@ class DeploymentTrackingTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            deployment = prepare_tracking(
-                result_path,
-                normalized_config({"deployment_tracking": {"enabled": True, "provider": "jenkins", "jenkins": {"job": "deploy"}}}),
-                "quick_change",
-            )
+            with patch.dict(os.environ, {"JENKINS_URL": "https://jenkins.example"}):
+                deployment = prepare_tracking(
+                    result_path,
+                    normalized_config({"deployment_tracking": {"enabled": True, "provider": "jenkins", "jenkins": {"job": "deploy"}}}),
+                    "quick_change",
+                )
             payload = json.loads(result_path.read_text(encoding="utf-8"))
             self.assertEqual("queued", deployment["status"] if deployment else None)
             self.assertEqual("awaiting_deploy", payload["delivery_status"])
             self.assertEqual("abc123", payload["deployment"]["commit_sha"])
+
+    def test_unconfigured_provider_does_not_queue_tracking(self) -> None:
+        config = normalized_config({"deployment_tracking": {"enabled": True, "provider": "jenkins", "jenkins": {"job": ""}}})
+        self.assertFalse(config["enabled"])
+        self.assertEqual("Jenkins job is not configured", config["readiness"])
 
     def test_github_actions_completed_success_is_normalized(self) -> None:
         original_run = subprocess.run

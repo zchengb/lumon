@@ -54,12 +54,12 @@ TYPE_LABELS = {
     },
 }
 
-VERIFY_STATUS_KEYS = ("passed", "failed")
+VERIFY_STATUS_KEYS = ("pending", "passed", "failed", "ignored")
 
 VERIFY_STATUS_LABELS = {
-    "zh-Hant": {"passed": "通過", "failed": "失敗"},
-    "zh-Hans": {"passed": "通过", "failed": "失败"},
-    "en": {"passed": "Passed", "failed": "Failed"},
+    "zh-Hant": {"pending": "待驗證", "passed": "驗證成功", "failed": "驗證失敗", "ignored": "忽略"},
+    "zh-Hans": {"pending": "待验证", "passed": "验证成功", "failed": "验证失败", "ignored": "忽略"},
+    "en": {"pending": "Pending", "passed": "Passed", "failed": "Failed", "ignored": "Ignored"},
 }
 
 _LEGACY_TYPE_MAP = {
@@ -128,6 +128,10 @@ def localize_verify_status(status_key: str, language: str) -> str:
         key = "passed"
     elif key in {"fail", "failed", "failure"}:
         key = "failed"
+    elif key in {"pending", "todo", "to_verify", "待驗證", "待验证"}:
+        key = "pending"
+    elif key in {"ignore", "ignored", "skip", "skipped", "忽略"}:
+        key = "ignored"
     labels = VERIFY_STATUS_LABELS.get(lang) or VERIFY_STATUS_LABELS["en"]
     label = labels.get(key)
     if not label:

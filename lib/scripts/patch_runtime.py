@@ -26,6 +26,7 @@ from jira_sync import parse_twg_json, refresh_twg_auth, resolve_active_sprint, r
 
 DEFAULT_PATCH_STATUSES = ("To Do",)
 DEFAULT_PATCH_TYPES = ("Task", "Bug")
+DEFAULT_PATCH_TRIGGER_LABEL = "lumon-auto-patch"
 PATCH_PHASES = (
     ("capture", "Capture"),
     ("screen", "Initial screening"),
@@ -110,6 +111,11 @@ def issue_types(workspace: Path) -> list[str]:
     return normalize_values(patch_config(workspace).get("issue_types"), DEFAULT_PATCH_TYPES)
 
 
+def trigger_label(workspace: Path) -> str:
+    """Only cards explicitly marked for Auto Patch enter the scheduled queue."""
+    return str(patch_config(workspace).get("required_label") or DEFAULT_PATCH_TRIGGER_LABEL).strip()
+
+
 def blocked_statuses(workspace: Path) -> list[str]:
     configured = str(patch_config(workspace).get("blocked_status", "Block")).strip() or "Block"
     statuses = [configured]
@@ -122,14 +128,17 @@ def quote_jql_values(values: list[str]) -> str:
     return ", ".join('"' + value.replace('"', '\\"') + '"' for value in values)
 
 
-def candidate_jql(workspace: Path, sprint_id: str, include_blocked: bool = False) -> str:
+def candidate_jql(workspace: Path, sprint_id: str, include_blocked: bool = False, require_trigger: bool = True) -> str:
     sprint_id = str(sprint_id or "").strip()
     if not sprint_id.isdigit():
         raise ValueError("Auto Patch requires a numeric active sprint ID")
     statuses = eligible_statuses(workspace)
     if include_blocked:
         statuses = [*statuses, *blocked_statuses(workspace)]
-    return f"project = {jira_config(workspace).get('project_key', '')} AND sprint = {sprint_id} AND issuetype in ({quote_jql_values(issue_types(workspace))}) AND status in ({quote_jql_values(statuses)}) ORDER BY priority DESC, updated ASC"
+    label = trigger_label(workspace)
+    escaped_label = label.replace('"', '\\"')
+    trigger = f' AND labels = "{escaped_label}"' if require_trigger and escaped_label else ""
+    return f"project = {jira_config(workspace).get('project_key', '')} AND sprint = {sprint_id} AND issuetype in ({quote_jql_values(issue_types(workspace))}) AND status in ({quote_jql_values(statuses)}){trigger} ORDER BY priority DESC, updated ASC"
 
 
 def unwrap_jira(payload: Any) -> Any:
@@ -163,7 +172,7 @@ def jira_updated(item: dict[str, Any]) -> str:
     return str(jira_fields(item).get("updated") or item.get("updated") or "").strip()
 
 
-def query_candidates(workspace: Path, include_blocked: bool = False) -> list[dict[str, Any]]:
+def query_candidates(workspace: Path, include_blocked: bool = False, require_trigger: bool = True) -> list[dict[str, Any]]:
     config = jira_config(workspace)
     if not config.get("project_key"):
         raise RuntimeError("Jira project_key is not configured")
@@ -176,7 +185,7 @@ def query_candidates(workspace: Path, include_blocked: bool = False) -> list[dic
     sprint_id, _ = resolve_active_sprint(config)
     if not sprint_id:
         raise RuntimeError("No active sprint found for the configured Jira board")
-    jql = candidate_jql(workspace, sprint_id, include_blocked)
+    jql = candidate_jql(workspace, sprint_id, include_blocked, require_trigger=require_trigger)
     code, output = run_twg(["jira", "workitem", "query", "--jql", jql, "--limit", "50", "-o", "json", *site_args(config)])
     if code != 0:
         raise RuntimeError((output or "Jira candidate query failed").strip()[-1000:])

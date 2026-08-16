@@ -46,6 +46,19 @@ class WorkflowAgentTests(unittest.TestCase):
             self.assertEqual("openai_compatible", workflow_agent.resolve_config(workspace, "auto_patch")["provider"])
             self.assertEqual("gpt-test", workflow_agent.resolve_config(workspace, "auto_patch")["model"])
 
+    def test_resolve_config_reads_parent_project_lumon_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "lumon" / "config").mkdir(parents=True)
+            (workspace / "lumon" / "config" / "common.json").write_text(
+                json.dumps({"execution": {"provider": "opencode", "model": "deepseek-v4-flash"}}),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                {"provider": "opencode", "model": "deepseek-v4-flash", "base_url": "", "api_key_env": ""},
+                workflow_agent.resolve_config(workspace, "auto_patch"),
+            )
+
     def test_api_runtime_executes_tool_then_returns_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "lumon"

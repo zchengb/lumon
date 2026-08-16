@@ -46,6 +46,7 @@
       "poll_interval_minutes": 5,
       "eligible_jira_statuses": ["To Do"],
       "issue_types": ["Task", "Bug"],
+      "required_label": "lumon-auto-patch",
       "in_progress_status": "In Progress",
       "done_status": "Done",
       "blocked_status": "Block"

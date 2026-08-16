@@ -1622,6 +1622,58 @@ class DeliveryWorkspaceTests(unittest.TestCase):
         overview = card["card"]["body"]["elements"][0]["content"]
         self.assertIn("**Duration:**  14m 25s", overview)
 
+    def test_delivery_completion_keeps_completed_event_when_tracking_is_unconfigured(self) -> None:
+        renderer = load_delivery_notification_renderer()
+        with tempfile.TemporaryDirectory() as temp:
+            docs = Path(temp) / "docs"
+            workspace = docs / "lumen"
+            story = docs / "stories" / "DEMO-127"
+            (workspace / "config").mkdir(parents=True)
+            (workspace / "results").mkdir(parents=True)
+            story.mkdir(parents=True)
+            (workspace / "config" / "delivery.json").write_text(
+                json.dumps(
+                    {
+                        "notifications": {"feishu": {"enabled": True}},
+                        "deployment_tracking": {"enabled": True, "provider": "jenkins", "jenkins": {"job": ""}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (story / "metadata.json").write_text(
+                json.dumps({"jiraKey": "DEMO-127", "title": "Demo", "deliveryStatus": "in_progress"}),
+                encoding="utf-8",
+            )
+            result = workspace / "results" / "delivery-result.json"
+            result.write_text(
+                json.dumps(
+                    {
+                        "workspace_root": str(docs),
+                        "docs_dir": str(docs),
+                        "story_path": "stories/DEMO-127",
+                        "story_id": "DEMO-127",
+                        "jira_key": "DEMO-127",
+                        "delivery_status": "completed",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            events: list[str] = []
+
+            def publish(**kwargs):
+                events.append(str(kwargs.get("event_type")))
+                return {"status": "sent"}
+
+            with patch.dict(os.environ, {"FEISHU_WEBHOOK_URL": "https://example.test/hook"}), \
+                    patch.object(renderer, "sync_delivery_jira", return_value={"status": "skipped"}), \
+                    patch.object(renderer, "_publish_workflow_feishu", side_effect=publish), \
+                    patch.object(sys, "argv", ["render-delivery-and-notify.py", str(result), "--event", "delivery.dev_done"]):
+                self.assertEqual(0, renderer.main())
+
+            self.assertEqual(["delivery.dev_done"], events)
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertEqual("completed", payload["delivery_status"])
+
     def test_patch_started_notification_uses_runtime_context(self) -> None:
         renderer = load_delivery_notification_renderer()
         card = renderer.build_patch_feishu_card(

@@ -24,7 +24,13 @@ def compose(workspace: Path, key: str, summary: str, context_path: Path, reposit
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     parts = []
     for name in manifest.get("inline", ["01-role-and-mission.md"]):
-        parts.append((root / str(name)).read_text(encoding="utf-8").strip())
+        content = (root / str(name)).read_text(encoding="utf-8")
+        if str(name) == "09-output-contract.md":
+            # Existing workspaces keep editable prompt copies; normalize the old
+            # control-plane path without overwriting those user-owned files.
+            content = content.replace("<workspace-root>/lumen/", "<workspace-root>/lumon/")
+            content = content.replace("[lumen]", "[lumon]")
+        parts.append(content.strip())
     rows = []
     for entry in manifest.get("catalog", []):
         if not isinstance(entry, dict):

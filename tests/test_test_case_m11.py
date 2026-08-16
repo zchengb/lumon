@@ -34,9 +34,9 @@ class LocalizationTests(unittest.TestCase):
             localize_test_case_type("not-a-type", "en")
 
     def test_verify_status_options(self) -> None:
-        self.assertEqual(localize_verify_status_options("zh-Hant"), ("通過", "失敗"))
-        self.assertEqual(localize_verify_status_options("zh-Hans"), ("通过", "失败"))
-        self.assertEqual(localize_verify_status_options("en"), ("Passed", "Failed"))
+        self.assertEqual(localize_verify_status_options("zh-Hant"), ("待驗證", "驗證成功", "驗證失敗", "忽略"))
+        self.assertEqual(localize_verify_status_options("zh-Hans"), ("待验证", "验证成功", "验证失败", "忽略"))
+        self.assertEqual(localize_verify_status_options("en"), ("Pending", "Passed", "Failed", "Ignored"))
 
     def test_normalize_legacy(self) -> None:
         self.assertEqual(normalize_case_type("Negative"), "validation")

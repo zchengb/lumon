@@ -633,7 +633,6 @@ def main() -> int:
             )
             if should_launch_deployment_tracking:
                 delivery = load_delivery_result(result_path)
-                event = "delivery.submitted"
         except Exception as exc:
             delivery["deployment_tracking_error"] = str(exc)[:500]
     story_path = delivery.get("story_path")
@@ -691,8 +690,10 @@ def main() -> int:
         update_notifications(workspace_root, jira_result, feishu_result)
         if event == "delivery.started":
             set_phase(workspace_root, "jira_start", "completed", str(jira_result.get("detail", "")))
-        elif event == "delivery.submitted":
-            set_phase(workspace_root, "deployment", "in_progress", "CI/CD deployment tracking started")
+        elif event == "delivery.dev_done":
+            if should_launch_deployment_tracking:
+                set_phase(workspace_root, "deployment", "in_progress", "Published; waiting for CI/CD deployment result")
+            set_phase(workspace_root, "jira_done", "completed", str(jira_result.get("detail", "")))
             set_phase(workspace_root, "notify", "completed", str(feishu_result.get("status", "")))
         elif event == "delivery.deployed":
             deployment = delivery.get("deployment") if isinstance(delivery.get("deployment"), dict) else {}

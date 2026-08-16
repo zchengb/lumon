@@ -38,6 +38,13 @@ def read_json(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def config_workspace(workspace: Path) -> Path:
+    """Resolve a direct Lumon workspace or its parent project root."""
+    workspace = workspace.expanduser().resolve()
+    candidates = (workspace, *(workspace / name for name in ("lumon", "lumen", ".lumen")))
+    return next((candidate for candidate in candidates if (candidate / "config").is_dir()), workspace)
+
+
 def normalize_provider(value: str) -> str:
     provider = str(value or "cursor_cli").strip().casefold()
     if provider in {"cursor", "cursor-cli", "cursor_cli"}:
@@ -57,10 +64,11 @@ def resolve_config(
     base_url: str = "",
     api_key_env: str = "",
 ) -> dict[str, str]:
-    common_execution = read_json(workspace / "config" / "common.json").get("execution")
+    config_root = config_workspace(workspace)
+    common_execution = read_json(config_root / "config" / "common.json").get("execution")
     common_execution = common_execution if isinstance(common_execution, dict) else {}
     config_name = "common.json" if workflow == "auto_scan" else "delivery.json"
-    workflow_execution = read_json(workspace / "config" / config_name).get("execution")
+    workflow_execution = read_json(config_root / "config" / config_name).get("execution")
     workflow_execution = workflow_execution if isinstance(workflow_execution, dict) else {}
     execution = common_execution if any(common_execution.get(key) for key in ("provider", "model")) else workflow_execution
     prefix = "patch_" if workflow == "auto_patch" and execution is workflow_execution else ""
@@ -116,7 +124,8 @@ def trace_tool_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def allowed_roots(workspace: Path) -> tuple[Path, ...]:
     roots = [workspace.parent.resolve(), workspace.resolve()]
-    repositories = read_json(workspace / "config" / "repos.json").get("repositories")
+    config_root = config_workspace(workspace)
+    repositories = read_json(config_root / "config" / "repos.json").get("repositories")
     if isinstance(repositories, list):
         for repository in repositories:
             if isinstance(repository, dict) and repository.get("path"):

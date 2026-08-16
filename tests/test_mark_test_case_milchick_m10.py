@@ -55,8 +55,13 @@ class FakeBitable:
     def list_fields(self, app_token: str, table_id: str) -> list[dict[str, Any]]:
         return self.fields
 
-    def create_field(self, app_token: str, table_id: str, *, name: str, field_type: int = 1) -> dict[str, Any]:
-        field = {"field_name": name, "type": field_type}
+    def create_field(self, app_token: str, table_id: str, *, name: str, field_type: int = 1, property=None) -> dict[str, Any]:
+        field = {"field_name": name, "type": field_type, "property": property}
+        self.fields.append(field)
+        return field
+
+    def update_field(self, app_token: str, table_id: str, field_id: str, *, name: str, field_type: int, property=None) -> dict[str, Any]:
+        field = {"field_name": name, "field_id": field_id, "type": field_type, "property": property}
         self.fields.append(field)
         return field
 
@@ -106,8 +111,8 @@ class FakeSheets:
         self.dropdowns.append({"sheet_id": sheet_id, "range_a1": range_a1, "options": list(options), "colors": list(colors or [])})
         return {}
 
-    def set_range_style(self, spreadsheet_token: str, *, sheet_id: str, range_a1: str, bold: bool | None = None, v_align: int | None = None) -> dict[str, Any]:
-        self.styles.append({"sheet_id": sheet_id, "range_a1": range_a1, "bold": bold, "v_align": v_align})
+    def set_range_style(self, spreadsheet_token: str, *, sheet_id: str, range_a1: str, bold: bool | None = None, v_align: int | None = None, back_color=None, fore_color=None, h_align=None, border_type=None, border_color=None, font_size=None) -> dict[str, Any]:
+        self.styles.append({"sheet_id": sheet_id, "range_a1": range_a1, "bold": bold, "v_align": v_align, "back_color": back_color, "fore_color": fore_color, "border_type": border_type, "border_color": border_color, "font_size": font_size})
         return {}
 
     def format_sheet(
@@ -119,6 +124,7 @@ class FakeSheets:
         freeze_rows: int = 1,
         bold_header: bool = False,
         header_end_col: str = "",
+        body_row_height: int = 96,
     ) -> dict[str, Any]:
         self.formatted.append(
             {
@@ -127,6 +133,7 @@ class FakeSheets:
                 "freeze_rows": freeze_rows,
                 "bold_header": bold_header,
                 "header_end_col": header_end_col,
+                "body_row_height": body_row_height,
             }
         )
         if bold_header:
@@ -375,13 +382,15 @@ class TestCaseSkillTests(unittest.TestCase):
             self.assertFalse(str(row[1]).startswith("MBPAS-1601"))
             self.assertEqual(len(row), 8)
             self.assertIn(row[5], {"功能", "驗證", "介面"})
-            self.assertEqual(row[6], "")
+            self.assertEqual(row[6], "待驗證")
             self.assertEqual(row[7], "")
-        self.assertEqual(fake.dropdowns[0]["options"], ["通過", "失敗"])
+        self.assertEqual(fake.dropdowns[0]["options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
+        self.assertEqual(fake.dropdowns[0]["colors"], ["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"])
         self.assertIn("G2:G2000", fake.dropdowns[0]["range_a1"])
         self.assertTrue(fake.formatted)
         self.assertTrue(fake.formatted[0]["bold_header"])
         self.assertEqual(fake.formatted[0]["header_end_col"], "H")
+        self.assertEqual(fake.formatted[0]["body_row_height"], 96)
         self.assertTrue(any(s.get("bold") and s.get("range_a1") == "A1:H1" for s in fake.styles))
         self.assertIn("/sheets/OG4Js7cIlh7d0QtHOEnc1kDfnvf?sheet=sht1", result["sheet_url"])
 

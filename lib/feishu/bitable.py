@@ -56,11 +56,43 @@ class FeishuBitable:
         items = data.get("items") if isinstance(data, dict) else []
         return items if isinstance(items, list) else []
 
-    def create_field(self, app_token: str, table_id: str, *, name: str, field_type: int = 1) -> dict[str, Any]:
+    def create_field(
+        self,
+        app_token: str,
+        table_id: str,
+        *,
+        name: str,
+        field_type: int = 1,
+        property: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"field_name": name, "type": field_type}
+        if property is not None:
+            payload["property"] = property
         data = self._request(
             "POST",
             f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
-            {"field_name": name, "type": field_type},
+            payload,
+        )
+        field = data.get("field") if isinstance(data, dict) else None
+        return field if isinstance(field, dict) else (data if isinstance(data, dict) else {})
+
+    def update_field(
+        self,
+        app_token: str,
+        table_id: str,
+        field_id: str,
+        *,
+        name: str,
+        field_type: int,
+        property: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"field_name": name, "type": field_type}
+        if property is not None:
+            payload["property"] = property
+        data = self._request(
+            "PUT",
+            f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields/{field_id}",
+            payload,
         )
         field = data.get("field") if isinstance(data, dict) else None
         return field if isinstance(field, dict) else (data if isinstance(data, dict) else {})

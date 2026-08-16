@@ -516,7 +516,9 @@ def write_idle_state(workspace: Path, message: str) -> str:
 
 def choose_item(workspace: Path, requested: str) -> tuple[dict[str, Any] | None, bool]:
     registry = load_registry(workspace).get("issues", {})
-    candidates = query_candidates(workspace, include_blocked=True)
+    # A scheduled run requires the opt-in label; an explicit --jira-key is
+    # already a deliberate human trigger and may bypass that queue filter.
+    candidates = query_candidates(workspace, include_blocked=True, require_trigger=not bool(requested))
     if requested:
         candidates = [candidate for candidate in candidates if jira_key(candidate) == requested]
     for candidate in candidates:

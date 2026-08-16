@@ -172,6 +172,12 @@ class FeishuSheets:
         range_a1: str,
         bold: bool | None = None,
         v_align: int | None = None,
+        back_color: str | None = None,
+        fore_color: str | None = None,
+        h_align: int | None = None,
+        border_type: str | None = None,
+        border_color: str | None = None,
+        font_size: str | None = None,
     ) -> dict[str, Any]:
         token = parse_spreadsheet_token(spreadsheet_token)
         sid = str(sheet_id or "").strip()
@@ -179,10 +185,25 @@ class FeishuSheets:
             return {}
         target = range_a1 if "!" in range_a1 else f"{sid}!{range_a1}"
         style: dict[str, Any] = {}
+        font: dict[str, Any] = {}
         if bold is not None:
-            style["font"] = {"bold": bool(bold)}
+            font["bold"] = bool(bold)
+        if font_size:
+            font["fontSize"] = font_size
+        if font:
+            style["font"] = font
         if v_align is not None:
             style["vAlign"] = int(v_align)
+        if back_color:
+            style["backColor"] = back_color
+        if fore_color:
+            style["foreColor"] = fore_color
+        if h_align is not None:
+            style["hAlign"] = int(h_align)
+        if border_type:
+            style["borderType"] = border_type
+        if border_color:
+            style["borderColor"] = border_color
         if not style:
             return {}
         return self._request(
@@ -233,6 +254,7 @@ class FeishuSheets:
         freeze_rows: int = 1,
         bold_header: bool = False,
         header_end_col: str = "",
+        body_row_height: int = 96,
     ) -> dict[str, Any]:
         token = parse_spreadsheet_token(spreadsheet_token)
         sid = str(sheet_id or "").strip()
@@ -266,6 +288,21 @@ class FeishuSheets:
                     }
                 }
             )
+        if body_row_height > 0:
+            requests.append(
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": sid,
+                            "majorDimension": "ROWS",
+                            "startIndex": int(freeze_rows),
+                            "endIndex": 2000,
+                        },
+                        "properties": {"visibleSize": int(body_row_height)},
+                        "fields": "visibleSize",
+                    }
+                }
+            )
         result: dict[str, Any] = {}
         if requests:
             result = self._request(
@@ -280,5 +317,20 @@ class FeishuSheets:
                 sheet_id=sid,
                 range_a1=f"A1:{end}1",
                 bold=True,
+                v_align=1,
+                back_color="#E8F1FB",
+                fore_color="#1F2937",
+                border_type="FULL_BORDER",
+                border_color="#B8C7D9",
+                font_size="11pt",
+            )
+            self.set_range_style(
+                spreadsheet_token,
+                sheet_id=sid,
+                range_a1=f"A2:{end}2000",
+                v_align=0,
+                border_type="FULL_BORDER",
+                border_color="#E5E7EB",
+                font_size="10pt",
             )
         return result if isinstance(result, dict) else {}
