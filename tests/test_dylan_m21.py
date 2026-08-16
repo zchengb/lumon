@@ -178,6 +178,14 @@ class DashboardOverlayTests(unittest.TestCase):
         self.assertEqual(issue["status"], "open")
         self.assertEqual(issue["status_source"], "issue_registry")
 
+    def test_workspace_ignore_overrides_stale_open_risk_finding(self) -> None:
+        issue = overlay_issue_with_finding(
+            {"id": "ISSUE-1", "status": "ignored"},
+            {"id": "FIND-1", "registry_issue_id": "ISSUE-1", "status": "Open"},
+        )
+        self.assertEqual(issue["status"], "ignored")
+        self.assertEqual(issue["status_source"], "issue_registry")
+
     def test_build_payload_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

@@ -2116,7 +2116,44 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 issue_id = str(body.get("issue_id", "")).strip()
                 if not issue_id:
                     raise ValueError("Issue id is required")
-                issue = set_issue_status(workspace, issue_id, "ignored", str(body.get("reason", "")).strip())
+                reason = str(body.get("reason", "")).strip()
+                issue = set_issue_status(workspace, issue_id, "ignored", reason)
+                risk_db = workspace / "risk" / "risk.sqlite3"
+                if risk_db.is_file():
+                    if str(LIB_DIR) not in sys.path:
+                        sys.path.insert(0, str(LIB_DIR))
+                    from risk.lifecycle import upsert_ignore_policy
+                    from risk.store import RiskStore
+
+                    store = RiskStore(workspace)
+                    try:
+                        risk_finding_id = str(issue.get("risk_finding_id") or "").strip()
+                        finding = store.get_finding(risk_finding_id) if risk_finding_id else None
+                        if finding is None:
+                            finding = store.fetchone(
+                                "SELECT * FROM finding WHERE registry_issue_id = ? LIMIT 1",
+                                (issue_id,),
+                            )
+                        if finding is not None:
+                            finding_id = str(finding["id"] or "")
+                            upsert_ignore_policy(
+                                store,
+                                finding_id,
+                                ignored_by="dashboard",
+                                reason=reason,
+                            )
+                            store.insert_event(
+                                finding_id,
+                                "ignored",
+                                previous_status=str(finding["status"] or ""),
+                                new_status="Ignored",
+                                actor_type="user",
+                                actor_id="dashboard",
+                                reason=reason,
+                            )
+                            store.commit()
+                    finally:
+                        store.close()
                 return self.respond_json(HTTPStatus.OK, {"issue": issue})
             if parsed.path == "/api/schedule":
                 return self.respond_json(HTTPStatus.OK, {"schedules": self.server.update_schedule(body, workspace, project, push=False)})

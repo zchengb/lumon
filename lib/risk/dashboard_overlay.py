@@ -64,7 +64,9 @@ def overlay_issue_with_finding(issue: dict[str, Any], finding: Optional[dict[str
         out.setdefault("risk_finding_id", "")
         return out
     evidence = evidence_summary(finding)
-    status = dashboard_status(finding)
+    registry_status = str(out.get("status") or "").strip().lower()
+    workspace_ignored = registry_status == "ignored"
+    status = registry_status if workspace_ignored else dashboard_status(finding)
     out["status"] = status
     out["risk_finding_id"] = str(finding.get("id") or "")
     out["resolution_basis"] = str(finding.get("resolution_basis") or "")
@@ -75,7 +77,7 @@ def overlay_issue_with_finding(issue: dict[str, Any], finding: Optional[dict[str
     out["resolved_at"] = str(finding.get("resolved_at") or finding.get("owner_resolved_at") or out.get("resolved_at") or "")
     out["last_verified_at"] = str(finding.get("last_verified_at") or "")
     out["last_verification_run_id"] = str(finding.get("last_verification_run_id") or "")
-    out["status_source"] = "risk_store"
+    out["status_source"] = "issue_registry" if workspace_ignored else "risk_store"
     if not out.get("jira_key") and finding.get("registry_issue_id"):
         pass
     return out

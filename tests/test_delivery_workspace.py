@@ -22,6 +22,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "lib" / "scripts"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECTS_REGISTRY = SCRIPTS / "projects_registry.py"
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(REPO_ROOT / "lib"))
 
 from delivery_workspace import (  # noqa: E402
     RepoTarget,
@@ -70,6 +71,7 @@ from finalize_delivery import branch_has_commits  # noqa: E402
 from run_delivery_verification import java_gradle_steps, resolve_codeartifact_token, run_command, verification_steps  # noqa: E402
 from delivery_preflight import requires_docker_verification  # noqa: E402
 from delivery_runtime import runtime_values  # noqa: E402
+from risk.store import RiskStore  # noqa: E402
 
 
 def load_delivery_notification_renderer():
@@ -761,13 +763,18 @@ class DeliveryWorkspaceTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
-    def test_dashboard_ignore_api_updates_only_local_issue_registry(self) -> None:
+    def test_dashboard_ignore_updates_workspace_issue_registry_and_risk_store(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             workspace = Path(temp)
             (workspace / "config").mkdir()
             (workspace / "state").mkdir()
             (workspace / "config" / "common.json").write_text(
-                json.dumps({"paths": {"issue_registry": "state/issue-registry.json"}}),
+                json.dumps(
+                    {
+                        "project": {"slug": "demo"},
+                        "paths": {"issue_registry": "state/issue-registry.json"},
+                    }
+                ),
                 encoding="utf-8",
             )
             (workspace / "config" / "repos.json").write_text('{"repositories": []}\n', encoding="utf-8")
@@ -775,6 +782,16 @@ class DeliveryWorkspaceTests(unittest.TestCase):
                 json.dumps({"issues": [{"id": "ISSUE-1", "status": "open", "title": "Demo"}]}),
                 encoding="utf-8",
             )
+            store = RiskStore(workspace)
+            store.execute(
+                """
+                INSERT INTO finding(id, project_slug, canonical_fingerprint, registry_issue_id, status)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                ("FIND-1", "demo", "fp-1", "ISSUE-1", "Open"),
+            )
+            store.commit()
+            store.close()
             server = DashboardServer(("127.0.0.1", 0), workspace, "demo", "lumen", str(REPO_ROOT))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -796,6 +813,13 @@ class DeliveryWorkspaceTests(unittest.TestCase):
             registry = json.loads((workspace / "state" / "issue-registry.json").read_text(encoding="utf-8"))
             self.assertEqual("ignored", registry["issues"][0]["status"])
             self.assertEqual("Not applicable", registry["issues"][0]["ignore_reason"])
+            store = RiskStore(workspace)
+            finding = store.get_finding("FIND-1")
+            ignore_policy = store.fetchone("SELECT * FROM ignore_policy WHERE finding_id = ?", ("FIND-1",))
+            store.close()
+            self.assertIsNotNone(finding)
+            self.assertEqual("Ignored", finding["status"])
+            self.assertIsNotNone(ignore_policy)
 
     def test_repository_and_publish_configuration_persist_in_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
