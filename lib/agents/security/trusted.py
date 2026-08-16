@@ -104,7 +104,7 @@ def execute_trusted_actions(
         ):
             arguments.pop(key, None)
             resource.pop(key, None)
-        if action in {"agent.job.create", "delivery.start", "delivery.quick_change"}:
+        if action in {"agent.job.create", "delivery.start", "delivery.quick_change", "test_case.generate"}:
             if context.user_message:
                 arguments["user_message"] = context.user_message
             if context.image_keys:

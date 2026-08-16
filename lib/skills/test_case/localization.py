@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from skills.test_case.config import normalize_test_case_language
 
 CANONICAL_CASE_TYPES = (
@@ -61,6 +63,9 @@ VERIFY_STATUS_LABELS = {
     "zh-Hans": {"pending": "待验证", "passed": "验证成功", "failed": "验证失败", "ignored": "忽略"},
     "en": {"pending": "Pending", "passed": "Passed", "failed": "Failed", "ignored": "Ignored"},
 }
+
+_SIMPLIFIED_HINTS = set("这为么请将对发个测验证筛选为")
+_TRADITIONAL_HINTS = set("這為麼請將對發個測驗證篩選為")
 
 _LEGACY_TYPE_MAP = {
     "functional": "functional",
@@ -141,3 +146,20 @@ def localize_verify_status(status_key: str, language: str) -> str:
 
 def localize_verify_status_options(language: str) -> tuple[str, ...]:
     return tuple(localize_verify_status(key, language) for key in VERIFY_STATUS_KEYS)
+
+
+def infer_test_case_language(text: str, fallback: str = "zh-Hant") -> str:
+    """Infer reply language from the user's message, with a configured fallback."""
+    raw = str(text or "").strip()
+    if not raw:
+        return normalize_test_case_language(fallback)
+    if not re.search(r"[\u3400-\u9fff]", raw):
+        return "en"
+    simplified = sum(char in _SIMPLIFIED_HINTS for char in raw)
+    traditional = sum(char in _TRADITIONAL_HINTS for char in raw)
+    if simplified > traditional:
+        return "zh-Hans"
+    if traditional > simplified:
+        return "zh-Hant"
+    configured = normalize_test_case_language(fallback)
+    return configured if configured != "en" else "zh-Hant"

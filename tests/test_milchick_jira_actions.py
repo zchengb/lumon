@@ -155,6 +155,51 @@ class JiraActionTests(unittest.TestCase):
         self.assertIn("Target version: 2.4.0", " ".join(cmd))
         self.assertEqual("2.4.0", result["target_version"])
 
+    def test_create_adapter_assigns_new_issue_to_active_sprint_by_workspace_default(self) -> None:
+        from agents.security.adapters import jira as jira_adapter
+
+        with mock.patch.object(
+            jira_adapter,
+            "_jira_config",
+            return_value={
+                "project_key": "MBPAS",
+                "issue_type": "Task",
+                "board_id": "42",
+                "assign_to_active_sprint": True,
+            },
+        ):
+            with mock.patch("jira_sync.twg_ready", return_value=(True, "")):
+                with mock.patch("jira_sync.resolve_active_sprint", return_value=("7", "Sprint 7")):
+                    with mock.patch("jira_sync.assign_workitem_to_sprint") as assign:
+                        with mock.patch(
+                            "jira_sync.run_twg",
+                            return_value=(0, '{"key":"MBPAS-2002"}'),
+                        ) as run:
+                            with mock.patch(
+                                "jira_sync.parse_issue_key",
+                                return_value=("MBPAS-2002", "https://example.atlassian.net/browse/MBPAS-2002"),
+                            ):
+                                with mock.patch("jira_sync.site_args", return_value=[]):
+                                    result = jira_adapter.execute_jira_action(
+                                        ActionRequest(
+                                            agent_id="milchick",
+                                            action="jira.workitem.create",
+                                            project_slug="mbpass",
+                                            actor_user_id="ou_1",
+                                            chat_id="oc_1",
+                                            thread_id="",
+                                            source_message_id="om_1",
+                                            trace_id="tr_2",
+                                            arguments={"summary": "Sprint task"},
+                                        )
+                                    )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["sprint_id"], "7")
+        self.assertEqual(result["sprint_name"], "Sprint 7")
+        assign.assert_called_once_with("MBPAS-2002", "7", mock.ANY)
+        self.assertEqual(run.call_args.args[0][:3], ["jira", "workitem", "create"])
+
     def test_update_adapter_requires_fields(self) -> None:
         from agents.security.adapters import jira as jira_adapter
         from agents.security.errors import ResourceDenied

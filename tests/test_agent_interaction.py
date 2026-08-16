@@ -266,6 +266,36 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual("Admin Portal 中的 Wording 改成多圖", request.arguments["user_message"])
         self.assertEqual('["img_v3"]', request.arguments["image_keys"])
 
+    def test_test_case_handoff_injects_original_message(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeBroker:
+            def execute(self, request: object) -> object:
+                captured["request"] = request
+                return object()
+
+        execute_trusted_actions(
+            context=TrustedActionContext(
+                agent_id="milchick",
+                project_slug="mbpass",
+                actor_user_id="ou_owner",
+                chat_id="oc1",
+                thread_id="omt1",
+                source_message_id="om1",
+                trace_id="tr1",
+                user_message="請生成測試用例",
+            ),
+            requests=[
+                {
+                    "action": "test_case.generate",
+                    "arguments": {"scope": "ready_for_qa", "user_message": "wrong summary"},
+                }
+            ],
+            broker=FakeBroker(),
+        )
+        request = captured["request"]
+        self.assertEqual("請生成測試用例", request.arguments["user_message"])
+
     def test_interaction_contract_distinguishes_grill_from_quick_change(self) -> None:
         prompt = interaction_contract_prompt(agent_id="mark")
         self.assertIn("[LUMON INTERACTION CONTRACT]", prompt)

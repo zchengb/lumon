@@ -90,6 +90,7 @@ class FakeSheets:
         self.dropdowns: list[dict[str, Any]] = []
         self.formatted: list[dict[str, Any]] = []
         self.styles: list[dict[str, Any]] = []
+        self.verified: list[dict[str, Any]] = []
 
     def ensure_sheet(self, spreadsheet_token: str, sheet_name: str) -> dict[str, Any]:
         self.ensured_names.append(sheet_name)
@@ -143,6 +144,17 @@ class FakeSheets:
                 range_a1=f"A1:{(header_end_col or 'A')}1",
                 bold=True,
             )
+        return {}
+
+    def verify_sheet_format(self, spreadsheet_token: str, *, sheet_id: str, freeze_rows: int, validation_range: str, validation_options: list[str]) -> dict[str, Any]:
+        self.verified.append(
+            {
+                "sheet_id": sheet_id,
+                "freeze_rows": freeze_rows,
+                "validation_range": validation_range,
+                "validation_options": list(validation_options),
+            }
+        )
         return {}
 
 def _mock_design_runner(payload: dict[str, Any]):
@@ -387,12 +399,69 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertEqual(fake.dropdowns[0]["options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
         self.assertEqual(fake.dropdowns[0]["colors"], ["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"])
         self.assertIn("G2:G2000", fake.dropdowns[0]["range_a1"])
+        self.assertEqual(fake.verified[0]["freeze_rows"], 1)
+        self.assertEqual(fake.verified[0]["validation_options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
         self.assertTrue(fake.formatted)
         self.assertTrue(fake.formatted[0]["bold_header"])
         self.assertEqual(fake.formatted[0]["header_end_col"], "H")
         self.assertEqual(fake.formatted[0]["body_row_height"], 96)
         self.assertTrue(any(s.get("bold") and s.get("range_a1") == "A1:H1" for s in fake.styles))
         self.assertIn("/sheets/OG4Js7cIlh7d0QtHOEnc1kDfnvf?sheet=sht1", result["sheet_url"])
+
+    def test_feishu_sheet_format_uses_native_dimension_payload_and_readback(self) -> None:
+        from feishu.sheets import FeishuSheets
+
+        client = FeishuSheets.__new__(FeishuSheets)
+        calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+        def request(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+            calls.append((method, path, payload))
+            if path.endswith("/metainfo"):
+                return {"sheets": [{"sheetId": "sht1", "frozenRowCount": 1}]}
+            if "/dataValidation?" in path:
+                return {"dataValidations": [{"conditionValues": ["待驗證", "驗證成功"]}]}
+            return {}
+
+        client._request = request
+        client.format_sheet(
+            "spreadsheet",
+            sheet_id="sht1",
+            column_widths=[(0, 80)],
+            freeze_rows=1,
+            body_row_height=96,
+        )
+        client.verify_sheet_format(
+            "spreadsheet",
+            sheet_id="sht1",
+            freeze_rows=1,
+            validation_range="G2:G2000",
+            validation_options=["待驗證", "驗證成功"],
+        )
+
+        dimension_calls = [call for call in calls if call[1].endswith("/dimension_range")]
+        self.assertEqual("PUT", dimension_calls[0][0])
+        self.assertEqual(80, dimension_calls[0][2]["dimensionProperties"]["fixedSize"])
+        freeze_call = next(call for call in calls if call[1].endswith("/sheets_batch_update"))
+        self.assertEqual(1, freeze_call[2]["requests"][0]["updateSheet"]["properties"]["frozenRowCount"])
+        self.assertTrue(any("/dataValidation?" in call[1] for call in calls))
+
+    def test_summary_uses_story_title_and_response_language(self) -> None:
+        from skills.test_case.skill import format_summary
+
+        summary = format_summary(
+            {
+                "issue_key": "MBPAS-1491",
+                "story_title": "後台新增活動 Banner 管理",
+                "generated": 2,
+                "created": 2,
+                "skipped_existing": 0,
+                "test_case_counts": {"功能": 2},
+                "sheet_url": "https://sheet/1",
+            },
+            "zh-Hant",
+        )
+        self.assertIn("MBPAS-1491 — 後台新增活動 Banner 管理", summary)
+        self.assertIn("飛書測試用例表", summary)
 
     def test_broker_test_case_action_uses_request_agent_identity(self) -> None:
         ensure_definitions_loaded()
@@ -447,7 +516,7 @@ class TestCaseSkillTests(unittest.TestCase):
             thread_id="omt1",
             source_message_id="om1",
             trace_id="tr1",
-            arguments={"scope": "ready_for_qa"},
+            arguments={"scope": "ready_for_qa", "user_message": "請把 JIRA Ready for QA 的 Story 生成測試用例"},
         )
         with mock.patch(
             "agents.security.adapters.jira._action_jira_config",
@@ -475,7 +544,12 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertEqual(1, result["completed"])
         self.assertEqual(1, result["failed"])
         self.assertEqual(["MBPAS-1", "MBPAS-2"], [item["issue_key"] for item in result["items"]])
+        self.assertIn("MBPAS-1 — First", result["summary"])
+        self.assertIn("MBPAS-2 — Second", result["summary"])
+        self.assertIn("已為", result["summary"])
+        self.assertEqual("zh-Hant", result["response_language"])
         self.assertEqual(2, generate.call_count)
+        self.assertEqual("zh-Hant", generate.call_args_list[0].kwargs["response_language"])
 
     def test_scoped_query_is_story_only(self) -> None:
         from agents.security.adapters.test_case import execute_test_case_action

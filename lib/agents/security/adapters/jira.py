@@ -239,7 +239,17 @@ def _untested_report(request: ActionRequest) -> dict[str, Any]:
 
 
 def _create_workitem(request: ActionRequest) -> dict[str, Any]:
-    from jira_sync import jira_browse_url_from_config, parse_issue_key, run_twg, site_args, truncate_error, twg_ready
+    from jira_sync import (
+        assign_to_active_sprint_enabled,
+        assign_workitem_to_sprint,
+        jira_browse_url_from_config,
+        parse_issue_key,
+        resolve_active_sprint,
+        run_twg,
+        site_args,
+        truncate_error,
+        twg_ready,
+    )
 
     args = request.arguments if isinstance(request.arguments, dict) else {}
     resource = request.resource if isinstance(request.resource, dict) else {}
@@ -260,6 +270,25 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
     ready, reason = twg_ready()
     if not ready:
         return {"status": "failed", "code": "TWG_UNAVAILABLE", "message": reason}
+
+    sprint_id = None
+    sprint_name = None
+    if assign_to_active_sprint_enabled(cfg):
+        try:
+            sprint_id, sprint_name = resolve_active_sprint(cfg)
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "code": "JIRA_SPRINT_LOOKUP_FAILED",
+                "message": truncate_error(str(exc)),
+            }
+        if not sprint_id:
+            return {
+                "status": "failed",
+                "code": "JIRA_NO_ACTIVE_SPRINT",
+                "message": "No active sprint found for the configured Jira board",
+            }
+
     command = [
         "jira",
         "workitem",
@@ -292,6 +321,18 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
     if not key:
         return {"status": "failed", "code": "JIRA_CREATE_PARSE", "message": truncate_error(output or "no issue key")}
     url = url or jira_browse_url_from_config(key, cfg) or ""
+    if sprint_id:
+        try:
+            assign_workitem_to_sprint(key, sprint_id, cfg)
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "code": "JIRA_SPRINT_ASSIGN_FAILED",
+                "issue_key": key,
+                "url": url,
+                "summary": summary,
+                "message": f"Created {key}, but could not assign it to active sprint {sprint_name or sprint_id}: {truncate_error(str(exc))}",
+            }
     return {
         "status": "completed",
         "issue_key": key,
@@ -300,6 +341,8 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
         "issue_type": issue_type,
         "project_key": project_key,
         "target_version": target_version,
+        "sprint_id": sprint_id or "",
+        "sprint_name": sprint_name or "",
     }
 
 

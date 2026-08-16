@@ -164,6 +164,26 @@ class FeishuSheets:
             },
         )
 
+    def get_dropdown(
+        self,
+        spreadsheet_token: str,
+        *,
+        sheet_id: str,
+        range_a1: str,
+    ) -> list[dict[str, Any]]:
+        token = parse_spreadsheet_token(spreadsheet_token)
+        sid = str(sheet_id or "").strip()
+        if not sid or not range_a1:
+            return []
+        target = range_a1 if "!" in range_a1 else f"{sid}!{range_a1}"
+        query = urllib.parse.urlencode({"dataValidationType": "list", "range": target})
+        data = self._request(
+            "GET",
+            f"/sheets/v2/spreadsheets/{token}/dataValidation?{query}",
+        )
+        validations = data.get("dataValidations") if isinstance(data, dict) else []
+        return [item for item in validations if isinstance(item, dict)]
+
     def set_range_style(
         self,
         spreadsheet_token: str,
@@ -260,59 +280,61 @@ class FeishuSheets:
         sid = str(sheet_id or "").strip()
         if not sid:
             return {}
-        requests: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         for col_index, width in column_widths or []:
-            requests.append(
-                {
-                    "updateDimensionProperties": {
-                        "range": {
+            results.append(
+                self._request(
+                    "PUT",
+                    f"/sheets/v2/spreadsheets/{token}/dimension_range",
+                    {
+                        "dimension": {
                             "sheetId": sid,
                             "majorDimension": "COLUMNS",
                             "startIndex": int(col_index),
                             "endIndex": int(col_index) + 1,
                         },
-                        "properties": {"visibleSize": int(width)},
-                        "fields": "visibleSize",
-                    }
-                }
+                        "dimensionProperties": {"fixedSize": int(width)},
+                    },
+                )
             )
         if freeze_rows > 0:
-            requests.append(
-                {
-                    "updateSheetProperties": {
-                        "properties": {
-                            "sheetId": sid,
-                            "frozenRowCount": int(freeze_rows),
-                        },
-                        "fields": "frozenRowCount",
-                    }
-                }
+            results.append(
+                self._request(
+                    "POST",
+                    f"/sheets/v2/spreadsheets/{token}/sheets_batch_update",
+                    {
+                        "requests": [
+                            {
+                                "updateSheet": {
+                                    "properties": {
+                                        "sheetId": sid,
+                                        "frozenRowCount": int(freeze_rows),
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                )
             )
         if body_row_height > 0:
-            requests.append(
-                {
-                    "updateDimensionProperties": {
-                        "range": {
+            results.append(
+                self._request(
+                    "PUT",
+                    f"/sheets/v2/spreadsheets/{token}/dimension_range",
+                    {
+                        "dimension": {
                             "sheetId": sid,
                             "majorDimension": "ROWS",
                             "startIndex": int(freeze_rows),
                             "endIndex": 2000,
                         },
-                        "properties": {"visibleSize": int(body_row_height)},
-                        "fields": "visibleSize",
-                    }
-                }
-            )
-        result: dict[str, Any] = {}
-        if requests:
-            result = self._request(
-                "POST",
-                f"/sheets/v2/spreadsheets/{token}/sheets_batch_update",
-                {"requests": requests},
+                        "dimensionProperties": {"fixedSize": int(body_row_height)},
+                    },
+                )
             )
         if bold_header:
             end = str(header_end_col or "").strip() or "A"
-            self.set_range_style(
+            results.append(self.set_range_style(
                 spreadsheet_token,
                 sheet_id=sid,
                 range_a1=f"A1:{end}1",
@@ -323,8 +345,8 @@ class FeishuSheets:
                 border_type="FULL_BORDER",
                 border_color="#B8C7D9",
                 font_size="11pt",
-            )
-            self.set_range_style(
+            ))
+            results.append(self.set_range_style(
                 spreadsheet_token,
                 sheet_id=sid,
                 range_a1=f"A2:{end}2000",
@@ -332,5 +354,55 @@ class FeishuSheets:
                 border_type="FULL_BORDER",
                 border_color="#E5E7EB",
                 font_size="10pt",
+            ))
+        return {"operations": len(results)}
+
+    def verify_sheet_format(
+        self,
+        spreadsheet_token: str,
+        *,
+        sheet_id: str,
+        freeze_rows: int = 0,
+        validation_range: str = "",
+        validation_options: list[str] | None = None,
+    ) -> dict[str, Any]:
+        sid = str(sheet_id or "").strip()
+        if not sid:
+            raise ValueError("sheet_id required")
+        sheet = next(
+            (
+                item
+                for item in self.list_sheets(spreadsheet_token)
+                if str(item.get("sheetId") or item.get("sheet_id") or "").strip() == sid
+            ),
+            None,
+        )
+        if sheet is None:
+            raise RuntimeError(f"Feishu Sheet read-back failed: worksheet {sid!r} not found")
+        actual_freeze = int(sheet.get("frozenRowCount") or sheet.get("frozen_row_count") or 0)
+        if actual_freeze != int(freeze_rows):
+            raise RuntimeError(
+                f"Feishu Sheet read-back mismatch: expected {freeze_rows} frozen rows, got {actual_freeze}"
             )
-        return result if isinstance(result, dict) else {}
+        validations: list[dict[str, Any]] = []
+        expected = [str(item) for item in (validation_options or [])]
+        if validation_range and expected:
+            validations = self.get_dropdown(
+                spreadsheet_token,
+                sheet_id=sid,
+                range_a1=validation_range,
+            )
+            found = False
+            for validation in validations:
+                values = validation.get("conditionValues")
+                if not isinstance(values, list):
+                    nested = validation.get("dataValidation")
+                    values = nested.get("conditionValues") if isinstance(nested, dict) else []
+                if [str(item) for item in values] == expected:
+                    found = True
+                    break
+            if not found:
+                raise RuntimeError(
+                    f"Feishu Sheet read-back mismatch: dropdown options not found for {validation_range}"
+                )
+        return {"sheet": sheet, "data_validations": validations}

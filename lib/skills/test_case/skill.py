@@ -7,7 +7,7 @@ from typing import Any, Callable, Optional
 from feishu.bitable import FeishuBitable
 from feishu.config import load_agents_config
 from feishu.sheets import FeishuSheets, column_letter, parse_spreadsheet_token
-from skills.test_case.config import REQUIRED_FIELDS, SHEET_HEADER_COLUMNS, load_test_case_config
+from skills.test_case.config import REQUIRED_FIELDS, SHEET_HEADER_COLUMNS, load_test_case_config, normalize_test_case_language
 from skills.test_case.dedupe import partition_new_cases
 from skills.test_case.designer import TestCaseDesignUnavailable, design_test_cases
 from skills.test_case.jira_read import read_jira_issue
@@ -16,14 +16,14 @@ from skills.test_case.validator import TestCaseDesignQualityError, validate_test
 from skills.test_case.workspace_context import enrich_story_from_workspace, load_workspace_context
 
 SHEET_COLUMN_WIDTHS = (
-    (0, 12),
-    (1, 38),
-    (2, 30),
-    (3, 46),
-    (4, 46),
-    (5, 16),
-    (6, 16),
-    (7, 26),
+    (0, 80),
+    (1, 260),
+    (2, 240),
+    (3, 360),
+    (4, 360),
+    (5, 110),
+    (6, 140),
+    (7, 240),
 )
 
 DesignRunner = Callable[[str], str]
@@ -260,8 +260,8 @@ def _write_cases_to_sheet(
             options=list(localize_verify_status_options(language)),
             colors=["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"],
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        raise RuntimeError(f"Feishu Sheet dropdown setup failed: {exc}") from exc
     try:
         client.format_sheet(
             spreadsheet_token,
@@ -272,8 +272,18 @@ def _write_cases_to_sheet(
             header_end_col=end_col,
             body_row_height=96,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        raise RuntimeError(f"Feishu Sheet formatting failed: {exc}") from exc
+    try:
+        client.verify_sheet_format(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            freeze_rows=1,
+            validation_range=f"{verify_col}2:{verify_col}2000",
+            validation_options=list(localize_verify_status_options(language)),
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Feishu Sheet read-back verification failed: {exc}") from exc
     sheet_url = build_sheet_url(
         destination="sheet",
         spreadsheet_token=spreadsheet_token,
@@ -304,22 +314,34 @@ def _count_types(cases: list[Any], language: str) -> dict[str, int]:
     return counts
 
 
-def format_summary(result: dict[str, Any]) -> str:
+def format_summary(result: dict[str, Any], language: str = "") -> str:
+    language = normalize_test_case_language(language or str(result.get("response_language") or "en"))
     counts = result.get("test_case_counts") if isinstance(result.get("test_case_counts"), dict) else {}
     sheet_url = str(result.get("sheet_url") or "").strip()
     view_name = str(result.get("view_name") or "").strip()
-    lines = [
-        f"Generated {result.get('generated', 0)} test cases for {result.get('issue_key')}.",
-        "",
-    ]
+    issue_key = str(result.get("issue_key") or "").strip()
+    story_title = " ".join(str(result.get("story_title") or "").split())
+    issue_label = " — ".join(item for item in (issue_key, story_title) if item)
+    labels = {
+        "zh-Hant": {"added": "新增", "existing": "已存在", "sheet": "飛書測試用例表：", "warnings": "警告"},
+        "zh-Hans": {"added": "新增", "existing": "已存在", "sheet": "飞书测试用例表：", "warnings": "警告"},
+        "en": {"added": "Added", "existing": "Existing", "sheet": "Feishu Test Cases sheet:", "warnings": "Warnings"},
+    }[language]
+    if language == "en":
+        headline = f"Generated {result.get('generated', 0)} test cases for {issue_label}."
+    elif language == "zh-Hans":
+        headline = f"已为 {issue_label} 生成 {result.get('generated', 0)} 个测试用例。"
+    else:
+        headline = f"已為 {issue_label} 生成 {result.get('generated', 0)} 個測試用例。"
+    lines = [headline, ""]
     for label, count in counts.items():
         lines.append(f"- {label}: {count}")
     lines.extend(
         [
-            f"- Added: {result.get('created', 0)}",
-            f"- Existing: {result.get('skipped_existing', 0)}",
+            f"- {labels['added']}: {result.get('created', 0)}",
+            f"- {labels['existing']}: {result.get('skipped_existing', 0)}",
             "",
-            "Feishu Test Cases sheet:",
+            labels["sheet"],
         ]
     )
     link = format_sheet_link(sheet_url, view_name or "Open Test Cases sheet")
@@ -329,7 +351,7 @@ def format_summary(result: dict[str, Any]) -> str:
         lines.append(view_name)
     warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
     if warnings:
-        lines.extend(["", "Warnings:"] + [f"- {w}" for w in warnings[:8]])
+        lines.extend(["", f"{labels['warnings']}:"] + [f"- {w}" for w in warnings[:8]])
     return "\n".join(lines).strip()
 
 
@@ -373,6 +395,7 @@ def generate_test_cases_for_issue(
     workspace: Path | None = None,
     requested_by: str = "",
     generated_by: str = "mark",
+    response_language: str = "",
     source_message_id: str = "",
     trace_id: str = "",
     config: Optional[dict[str, Any]] = None,
@@ -386,6 +409,7 @@ def generate_test_cases_for_issue(
     generated_by = str(generated_by or "mark").strip() or "mark"
     destination = str(cfg.get("destination") or "bitable")
     language = str(cfg.get("language") or "zh-Hant")
+    response_language = normalize_test_case_language(response_language or language)
     app_token = cfg.get("base_app_token") or ""
     spreadsheet_token = cfg.get("spreadsheet_token") or ""
     if destination == "sheet" and not spreadsheet_token:
@@ -512,7 +536,7 @@ def generate_test_cases_for_issue(
             "message": message[:500],
             "trace_id": trace_id,
         }
-    counts = _count_types(generated, language)
+    counts = _count_types(generated, response_language)
     result = {
         "status": "completed",
         "issue_key": story.key,
@@ -526,6 +550,7 @@ def generate_test_cases_for_issue(
         "view_id": view_id,
         "sheet_url": sheet_url,
         "destination": destination,
+        "response_language": response_language,
         "test_case_counts": counts,
         "warnings": list(story.warnings),
         "requested_by": requested_by,
@@ -533,5 +558,5 @@ def generate_test_cases_for_issue(
         "trace_id": trace_id,
         "summary": "",
     }
-    result["summary"] = format_summary(result)
+    result["summary"] = format_summary(result, response_language)
     return result

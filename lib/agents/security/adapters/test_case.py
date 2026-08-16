@@ -5,6 +5,7 @@ from typing import Any
 
 from agents.security.actions import ActionRequest
 from agents.security.errors import CapabilityDenied, ResourceDenied
+from skills.test_case.localization import infer_test_case_language
 
 
 def _docs_root(project_slug: str) -> Path | None:
@@ -25,6 +26,31 @@ def _docs_root(project_slug: str) -> Path | None:
     return workspace
 
 
+def _format_batch_summary(per_issue: list[dict[str, Any]], completed: int, language: str) -> str:
+    total = len(per_issue)
+    if language == "en":
+        lines = [f"Generated test cases for {completed}/{total} Ready for QA Stories."]
+        done, failed = "completed", "failed"
+    elif language == "zh-Hans":
+        lines = [f"已为 {completed}/{total} 张 Ready for QA Story 生成测试用例。"]
+        done, failed = "已完成", "失败"
+    else:
+        lines = [f"已為 {completed}/{total} 張 Ready for QA Story 生成測試用例。"]
+        done, failed = "已完成", "失敗"
+    for item in per_issue:
+        key = str(item.get("issue_key") or "").strip()
+        summary = " ".join(str(item.get("summary") or "").split())
+        label = " — ".join(part for part in (key, summary) if part)
+        if item["status"] in {"completed", "succeeded", "success"}:
+            link = str(item.get("sheet_url") or "").strip()
+            suffix = f" — {link}" if link else ""
+            lines.append(f"- {label}: {done}{suffix}" if language == "en" else f"- {label}：{done}{suffix}")
+        else:
+            detail = str(item.get("message") or item.get("code") or "generation failed").strip()
+            lines.append(f"- {label}: {failed} — {detail}" if language == "en" else f"- {label}：{failed} — {detail}")
+    return "\n".join(lines)
+
+
 def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
     from skills.test_case.skill import generate_test_cases_for_issue
 
@@ -42,6 +68,8 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
         raise ResourceDenied("project required")
     workspace = _docs_root(project)
     args = request.arguments if isinstance(request.arguments, dict) else {}
+    user_message = str(args.get("user_message") or request.resource.get("user_message") or "").strip()
+    response_language = infer_test_case_language(user_message)
     scope = str(args.get("scope") or request.resource.get("scope") or "").strip().casefold().replace(" ", "_")
     if not issue_key and scope not in {"ready_for_qa", "ready_for_test"}:
         raise ResourceDenied("issue_key or scope=ready_for_qa required")
@@ -77,6 +105,7 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
                     workspace=workspace,
                     requested_by=request.actor_user_id,
                     generated_by=request.agent_id,
+                    response_language=response_language,
                     source_message_id=request.source_message_id,
                     trace_id=request.trace_id,
                 )
@@ -98,14 +127,6 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
         completed = sum(1 for item in per_issue if item["status"] in {"completed", "succeeded", "success"})
         failed = len(per_issue) - completed
         overall = "completed" if failed == 0 else "partial" if completed else "failed"
-        lines = [f"Generated test cases for {completed}/{len(per_issue)} Ready for QA Stories."]
-        for item in per_issue:
-            if item["status"] in {"completed", "succeeded", "success"}:
-                link = str(item.get("sheet_url") or "").strip()
-                lines.append(f"- {item['issue_key']}: completed" + (f" — {link}" if link else ""))
-            else:
-                detail = str(item.get("message") or item.get("code") or "generation failed").strip()
-                lines.append(f"- {item['issue_key']}: failed — {detail}")
         return {
             "status": overall,
             "scope": "ready_for_qa",
@@ -114,7 +135,8 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
             "completed": completed,
             "failed": failed,
             "items": per_issue,
-            "summary": "\n".join(lines),
+            "response_language": response_language,
+            "summary": _format_batch_summary(per_issue, completed, response_language),
         }
     return generate_test_cases_for_issue(
         project=project,
@@ -122,6 +144,7 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
         workspace=workspace,
         requested_by=request.actor_user_id,
         generated_by=request.agent_id,
+        response_language=response_language,
         source_message_id=request.source_message_id,
         trace_id=request.trace_id,
     )
