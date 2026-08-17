@@ -19,7 +19,7 @@ if str(LIB_DIR) not in sys.path:
 from patch_launchd import interval_minutes_from_cron, status as patch_schedule_status  # noqa: E402
 from patch_jira import blocked_comment, skipped_comment  # noqa: E402
 from capture_patch_context import related_candidates  # noqa: E402
-from jira_sync import resolve_board_id, workspace_jira_config  # noqa: E402
+from jira_sync import allowed_severities, resolve_board_id, workspace_jira_config  # noqa: E402
 from patch_runtime import (  # noqa: E402
     blocked_statuses,
     candidate_jql,
@@ -34,6 +34,9 @@ from compose_patch_prompt import compose  # noqa: E402
 
 
 class AutoPatchTests(unittest.TestCase):
+    def test_default_jira_sync_includes_all_supported_severities(self) -> None:
+        self.assertEqual(["High", "Medium", "Low"], allowed_severities({}))
+
     def test_repository_mapping_prioritizes_labels_and_repository_field(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

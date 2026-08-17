@@ -90,7 +90,7 @@
       "board_id": "",
       "assign_to_active_sprint": true,
       "issue_type": "Bug",
-      "severities": ["High", "Medium"],
+      "severities": ["High", "Medium", "Low"],
       "summary_prefix": "[Lumen]"
     }
   },

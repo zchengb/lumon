@@ -512,8 +512,16 @@ def format_action_receipts_summary(receipts: list[dict[str, Any]]) -> str:
         if action == "test_case.generate" and receipt.get("status") == "succeeded":
             result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
             if str(result.get("status") or "").strip().lower() == "failed":
-                detail = str(result.get("message") or result.get("code") or "generation failed").strip()
-                test_case_details.append(f"Test-case generation failed: {detail}")
+                code = str(result.get("code") or "").strip()
+                message = str(result.get("message") or "").strip()
+                detail = " — ".join(item for item in (code, message) if item) or "generation failed"
+                language = str(result.get("response_language") or "en").strip()
+                if language == "zh-Hans":
+                    test_case_details.append(f"测试用例生成失败：{detail}")
+                elif language == "zh-Hant":
+                    test_case_details.append(f"測試用例生成失敗：{detail}")
+                else:
+                    test_case_details.append(f"Test-case generation failed: {detail}")
             else:
                 detail = str(result.get("summary") or "").strip()
                 if detail:
@@ -661,6 +669,15 @@ def prefer_action_summary(
         str(r.get("action") or "").strip() in _STATUS_READ_ACTIONS and r.get("status") == "succeeded"
         for r in receipts
     )
+    has_test_case_failure = any(
+        str(r.get("action") or "").strip() == "test_case.generate"
+        and r.get("status") == "succeeded"
+        and str((r.get("result") or {}).get("status") if isinstance(r.get("result"), dict) else "").strip().lower()
+        in {"failed", "error", "denied", "blocked"}
+        for r in receipts
+    )
+    if has_test_case_failure and summary:
+        return summary
     if has_status_read and summary and not (preserve_substantive and reply_text and not is_planning_reply(reply_text)):
         notices = "\n\n".join(item for item in (denial_text, failure_text) if item)
         return f"{summary}\n\n{notices}" if notices else summary

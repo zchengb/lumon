@@ -200,6 +200,27 @@ def test_denied_job_create_does_not_claim_job_was_created() -> None:
     assert "was not executed" in text
 
 
+def test_test_case_failure_receipt_replaces_false_no_delegation_reply() -> None:
+    text = prefer_action_summary(
+        "還沒有真正開始：這次沒有產生委派回執，工作並未交給 Mark。",
+        [
+            {
+                "action": "test_case.generate",
+                "status": "succeeded",
+                "result": {
+                    "status": "failed",
+                    "code": "FEISHU_SHEETS_FAILED",
+                    "message": "Feishu Sheet formatting failed: invalid fontSize",
+                    "response_language": "zh-Hant",
+                },
+            }
+        ],
+    )
+    assert "測試用例生成失敗" in text
+    assert "FEISHU_SHEETS_FAILED" in text
+    assert "沒有產生委派回執" not in text
+
+
 def test_job_list_keeps_latest_per_issue_only() -> None:
     receipts = [
         {

@@ -50,7 +50,7 @@ def allowed_severities(config: dict) -> List[str]:
     severities = config.get("severities") or config.get("create_for_severities")
     if isinstance(severities, list) and severities:
         return [str(item) for item in severities]
-    return ["High", "Medium"]
+    return list(SEVERITY_PRIORITY)
 
 
 def twg_binary() -> Optional[str]:

@@ -222,7 +222,7 @@ class FeishuSheets:
         h_align: int | None = None,
         border_type: str | None = None,
         border_color: str | None = None,
-        font_size: str | None = None,
+        font_size: int | float | None = None,
     ) -> dict[str, Any]:
         token = parse_spreadsheet_token(spreadsheet_token)
         sid = str(sheet_id or "").strip()
@@ -233,7 +233,7 @@ class FeishuSheets:
         font: dict[str, Any] = {}
         if bold is not None:
             font["bold"] = bool(bold)
-        if font_size:
+        if font_size is not None:
             font["fontSize"] = font_size
         if font:
             style["font"] = font
@@ -373,7 +373,7 @@ class FeishuSheets:
                 fore_color="#1F2937",
                 border_type="FULL_BORDER",
                 border_color="#B8C7D9",
-                font_size="11pt",
+                font_size=11,
             ))
             if body_end > int(freeze_rows):
                 results.append(self.set_range_style(
@@ -383,7 +383,7 @@ class FeishuSheets:
                     v_align=0,
                     border_type="FULL_BORDER",
                     border_color="#E5E7EB",
-                    font_size="10pt",
+                    font_size=10,
                 ))
         return {"operations": len(results)}
 

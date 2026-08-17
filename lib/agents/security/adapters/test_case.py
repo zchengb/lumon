@@ -138,7 +138,7 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
             "response_language": response_language,
             "summary": _format_batch_summary(per_issue, completed, response_language),
         }
-    return generate_test_cases_for_issue(
+    generated = generate_test_cases_for_issue(
         project=project,
         issue_key=issue_key,
         workspace=workspace,
@@ -148,3 +148,5 @@ def execute_test_case_action(request: ActionRequest) -> dict[str, Any]:
         source_message_id=request.source_message_id,
         trace_id=request.trace_id,
     )
+    generated.setdefault("response_language", response_language)
+    return generated

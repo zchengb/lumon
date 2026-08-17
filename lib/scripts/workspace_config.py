@@ -111,7 +111,7 @@ def default_jira_config() -> dict:
         "assign_to_active_sprint": True,
         "issue_type": "Bug",
         "blocked_status": "Block",
-        "severities": ["High", "Medium"],
+        "severities": ["High", "Medium", "Low"],
         "summary_prefix": "[Lumen]",
     }
 
