@@ -88,7 +88,7 @@
       },
       "runtime": {
         "soft_timeout_seconds": 90,
-        "hard_timeout_seconds": 300,
+        "hard_timeout_seconds": 3600,
         "max_concurrent_sessions": 3,
         "serialize_same_session": true
       },
@@ -211,7 +211,7 @@
       },
       "runtime": {
         "soft_timeout_seconds": 90,
-        "hard_timeout_seconds": 300,
+        "hard_timeout_seconds": 3600,
         "max_concurrent_sessions": 3,
         "serialize_same_session": true
       },
@@ -263,7 +263,7 @@
       },
       "runtime": {
         "soft_timeout_seconds": 90,
-        "hard_timeout_seconds": 300,
+        "hard_timeout_seconds": 3600,
         "max_concurrent_sessions": 3,
         "serialize_same_session": true
       },
@@ -315,7 +315,7 @@
       },
       "runtime": {
         "soft_timeout_seconds": 90,
-        "hard_timeout_seconds": 300,
+        "hard_timeout_seconds": 3600,
         "max_concurrent_sessions": 3,
         "serialize_same_session": true
       },

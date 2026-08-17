@@ -188,7 +188,7 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
         "model_configured": model_configured,
         "model": str(provider.get("model") or "cursor-grok-4.5-medium"),
         "soft_timeout_seconds": int(runtime.get("soft_timeout_seconds") or 90),
-        "hard_timeout_seconds": int(runtime.get("hard_timeout_seconds") or 300),
+        "hard_timeout_seconds": int(runtime.get("hard_timeout_seconds") or 3600),
         "reaction_enabled": bool(reaction.get("enabled", True)),
         "max_concurrent_jobs": int(agent_cfg.get("max_concurrent_jobs") or 3),
         "soul_version": str(soul_cfg.get("version") or ""),
@@ -472,12 +472,12 @@ def apply_agent_settings(payload: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("soft_timeout_seconds must be between 10 and 3600")
             runtime["soft_timeout_seconds"] = soft
         if "hard_timeout_seconds" in item:
-            hard = int(item.get("hard_timeout_seconds") or 300)
+            hard = int(item.get("hard_timeout_seconds") or 3600)
             if hard < 30 or hard > 7200:
                 raise ValueError("hard_timeout_seconds must be between 30 and 7200")
             runtime["hard_timeout_seconds"] = hard
         soft = int(runtime.get("soft_timeout_seconds") or 90)
-        hard = int(runtime.get("hard_timeout_seconds") or 300)
+        hard = int(runtime.get("hard_timeout_seconds") or 3600)
         if hard < soft:
             raise ValueError("hard_timeout_seconds must be >= soft_timeout_seconds")
         reaction = _ensure_dict(v4, "reaction")

@@ -116,7 +116,7 @@ class ConversationFlags:
     autonomous_mode: str = ""
     session_scope: str = "thread_shared"
     soft_timeout_seconds: int = 90
-    hard_timeout_seconds: int = 300
+    hard_timeout_seconds: int = 3600
 
     @classmethod
     def from_common(
@@ -231,7 +231,7 @@ class ConversationFlags:
             autonomous_mode=str(v4.get("mode") or ("autonomous_workspace" if v4_enabled else "")),
             session_scope=str(session_raw.get("scope") or "thread_shared"),
             soft_timeout_seconds=int(runtime_raw.get("soft_timeout_seconds") or 90),
-            hard_timeout_seconds=int(runtime_raw.get("hard_timeout_seconds") or 300),
+            hard_timeout_seconds=int(runtime_raw.get("hard_timeout_seconds") or 3600),
         )
         flags._max_concurrent_jobs = int(dylan.get("max_concurrent_jobs") or runtime_raw.get("max_concurrent_sessions") or 3)  # type: ignore[attr-defined]
         return flags

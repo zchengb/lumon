@@ -137,7 +137,7 @@ class OpenAICompatibleAgentRuntime:
         base_url: str = "",
         api_key_env: str = "",
         soft_timeout_seconds: int = 90,
-        hard_timeout_seconds: int = 300,
+        hard_timeout_seconds: int = 3600,
         sandbox: str = "enabled",
         force: bool = False,
         trust: bool = True,

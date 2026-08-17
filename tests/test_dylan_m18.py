@@ -88,6 +88,12 @@ class ConversationV4FlagsTests(unittest.TestCase):
         self.assertEqual(flags.model.model_name, "fake-model")
         self.assertEqual(flags.soft_timeout_seconds, 60)
 
+    def test_default_hard_timeout_is_one_hour(self) -> None:
+        common = _v4_common()
+        common["agents"]["dylan"]["conversation_v4"].pop("runtime")
+        flags = ConversationFlags.from_common(common)
+        self.assertEqual(flags.hard_timeout_seconds, 3600)
+
     def test_global_execution_model_overrides_agent_model(self) -> None:
         common = _v4_common()
         common["execution"] = {"provider": "deepseek", "model": "deepseek-v4-flash", "api_key_env": "DEEPSEEK_API_KEY"}
