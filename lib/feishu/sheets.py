@@ -222,7 +222,7 @@ class FeishuSheets:
         h_align: int | None = None,
         border_type: str | None = None,
         border_color: str | None = None,
-        font_size: int | float | None = None,
+        font_size: int | float | str | None = None,
     ) -> dict[str, Any]:
         token = parse_spreadsheet_token(spreadsheet_token)
         sid = str(sheet_id or "").strip()
@@ -234,7 +234,11 @@ class FeishuSheets:
         if bold is not None:
             font["bold"] = bool(bold)
         if font_size is not None:
-            font["fontSize"] = font_size
+            # Feishu Sheets v2 expects "<pt>/<line-height>", not a bare number.
+            if isinstance(font_size, (int, float)) and not isinstance(font_size, bool):
+                font["fontSize"] = f"{font_size:g}pt/1.5"
+            else:
+                font["fontSize"] = str(font_size)
         if font:
             style["font"] = font
         if v_align is not None:

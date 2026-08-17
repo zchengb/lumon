@@ -453,8 +453,8 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertEqual(2, dimension_calls[0][2]["dimension"]["endIndex"])
         self.assertEqual(80, dimension_calls[0][2]["dimensionProperties"]["fixedSize"])
         style_calls = [call for call in calls if call[1].endswith("/style")]
-        self.assertEqual(11, style_calls[0][2]["appendStyle"]["style"]["font"]["fontSize"])
-        self.assertEqual(10, style_calls[1][2]["appendStyle"]["style"]["font"]["fontSize"])
+        self.assertEqual("11pt/1.5", style_calls[0][2]["appendStyle"]["style"]["font"]["fontSize"])
+        self.assertEqual("10pt/1.5", style_calls[1][2]["appendStyle"]["style"]["font"]["fontSize"])
         freeze_call = next(call for call in calls if call[1].endswith("/sheets_batch_update"))
         self.assertEqual(1, freeze_call[2]["requests"][0]["updateSheet"]["properties"]["frozenRowCount"])
         self.assertTrue(any("/dataValidation?" in call[1] for call in calls))
