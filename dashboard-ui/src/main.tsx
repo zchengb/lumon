@@ -291,7 +291,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModelsDescription": "Auto Scan, Auto Delivery, and Auto Patch use the same global provider and model.",
     "settings.workflowRuntimeLabel": "Applied to every Agent and workflow",
     "settings.openCodeHarness": "OpenCode Harness",
-    "settings.openCodeHarnessDescription": "Qwen runs locally through OpenCode, which owns workspace tools and persistent sessions.",
+    "settings.openCodeHarnessDescription": "OpenCode runs the configured model and owns workspace tools and persistent sessions.",
     "settings.openCodeRuntime": "Agent runtime",
     "settings.openCodeRuntimeDescription": "This is the live Harness status used by conversational Agents and automation workflows.",
     "settings.harness": "Harness",
@@ -379,7 +379,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "prompt.preview": "Preview",
     "customModel.enter": "Enter a custom model",
     "customModel.id": "Model ID",
-    "customModel.placeholder": "e.g. qwen/qwen3.8-27b-mlx",
+    "customModel.placeholder": "e.g. deepseek-v4-flash",
     "customModel.copy": "Lumon does not validate model availability. The value will be used on the next run.",
     "customModel.edit": "Edit custom model",
     "customModel.option": "Custom model ID…",
@@ -854,7 +854,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModelsDescription": "自动扫描、自动交付和自动修复使用同一组全局提供商和模型。",
     "settings.workflowRuntimeLabel": "应用于所有 Agent 和工作流",
     "settings.openCodeHarness": "OpenCode Harness",
-    "settings.openCodeHarnessDescription": "通过 OpenCode 调用本地 Qwen，由 OpenCode 管理工作区工具和持久会话。",
+    "settings.openCodeHarnessDescription": "通过 OpenCode 调用已配置的模型，由 OpenCode 管理工作区工具和持久会话。",
     "settings.openCodeRuntime": "Agent 运行时",
     "settings.openCodeRuntimeDescription": "这里显示对话 Agent 和自动化工作流实际使用的 Harness 状态。",
     "settings.harness": "Harness",
@@ -942,7 +942,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "prompt.preview": "预览",
     "customModel.enter": "输入自定义模型",
     "customModel.id": "模型 ID",
-    "customModel.placeholder": "例如：qwen/qwen3.8-27b-mlx",
+    "customModel.placeholder": "例如：deepseek-v4-flash",
     "customModel.copy": "Lumon 不会验证模型是否可用，该值将在下一次运行时使用。",
     "customModel.edit": "编辑自定义模型",
     "customModel.option": "自定义模型 ID…",
@@ -1417,7 +1417,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModelsDescription": "自動掃描、自動交付和自動修復使用同一組全域提供者與模型。",
     "settings.workflowRuntimeLabel": "套用於所有 Agent 與工作流",
     "settings.openCodeHarness": "OpenCode Harness",
-    "settings.openCodeHarnessDescription": "透過 OpenCode 呼叫本機 Qwen，由 OpenCode 管理工作區工具與持久會話。",
+    "settings.openCodeHarnessDescription": "透過 OpenCode 呼叫已設定的模型，由 OpenCode 管理工作區工具與持久會話。",
     "settings.openCodeRuntime": "Agent 執行環境",
     "settings.openCodeRuntimeDescription": "這裡顯示對話 Agent 與自動化工作流實際使用的 Harness 狀態。",
     "settings.harness": "Harness",
@@ -1505,7 +1505,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "prompt.preview": "預覽",
     "customModel.enter": "輸入自訂模型",
     "customModel.id": "模型 ID",
-    "customModel.placeholder": "例如：qwen/qwen3.8-27b-mlx",
+    "customModel.placeholder": "例如：deepseek-v4-flash",
     "customModel.copy": "Lumon 不會驗證模型是否可用，該值將在下一次執行時使用。",
     "customModel.edit": "編輯自訂模型",
     "customModel.option": "自訂模型 ID…",
@@ -1978,8 +1978,8 @@ const cursorModelOptions = [
   { label: "Sonnet 4.5", value: "sonnet-4.5" },
   { label: "GPT-5.1 Codex", value: "gpt-5.1-codex" }
 ];
-const qwenModelOptions = [
-  { label: "Qwen 3.8 27B (local)", value: "qwen/qwen3.8-27b-mlx" }
+const opencodeModelOptions = [
+  { label: "DeepSeek V4 Flash", value: "deepseek-v4-flash" }
 ];
 const customModelOption = "__custom__";
 
@@ -3629,7 +3629,7 @@ function StatusMultiSelect({ options, value, onChange, markDirty }: { options: s
 function ModelField({ label, value, provider = "cursor_cli", onChange, markDirty }: { label: string; value: string; provider?: string; onChange: (value: string) => void; markDirty: () => void }) {
   const { t } = useI18n();
   const normalizedValue = trimmedModelValue(value);
-  const options = provider === "opencode" || provider === "deepseek" || provider === "deepseek_api" ? qwenModelOptions : cursorModelOptions;
+  const options = provider === "opencode" || provider === "deepseek" || provider === "deepseek_api" ? opencodeModelOptions : cursorModelOptions;
   const isPreset = options.some((model) => model.value === normalizedValue);
   const customModelLabel = normalizedValue || t("customModel.option");
   const [customOpen, setCustomOpen] = useState(false);
@@ -3651,13 +3651,13 @@ function WorkflowModelField({ label, provider, model, baseUrl, apiKeyEnv, onProv
   const { t } = useI18n();
   const selectProvider = (value: string) => {
     onProviderChange(value);
-    onModelChange(value === "opencode" ? "qwen/qwen3.8-27b-mlx" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
+    onModelChange(value === "opencode" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
     markDirty();
   };
   return <div className="workflow-model-editor">
     <div className="workflow-model-editor-heading"><strong>{label}</strong><span>{t("settings.workflowRuntimeLabel")}</span></div>
     <div className="form-grid compact workflow-model-editor-fields">
-      <Field label={t("label.modelProvider")}><select value={provider} onChange={(event) => selectProvider(event.target.value)}><option value="opencode">OpenCode + local Qwen</option><option value="cursor_cli">Cursor CLI</option><option value="openai_compatible">OpenAI-compatible API</option></select></Field>
+      <Field label={t("label.modelProvider")}><select value={provider} onChange={(event) => selectProvider(event.target.value)}><option value="opencode">OpenCode</option><option value="cursor_cli">Cursor CLI</option><option value="openai_compatible">OpenAI-compatible API</option></select></Field>
       <ModelField label={t("label.cursorModel")} provider={provider} value={model} onChange={onModelChange} markDirty={markDirty} />
       {(provider === "openai_compatible" || provider === "openai") && <><Field label={t("label.apiBaseUrl")}><input value={baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => { onBaseUrlChange(event.target.value); markDirty(); }} /></Field><Field label={t("label.apiKeyEnv")}><input value={apiKeyEnv} placeholder="OPENAI_API_KEY" onChange={(event) => { onApiKeyEnvChange(event.target.value); markDirty(); }} /></Field></>}
       {provider === "opencode" && <div className="workflow-harness-note"><strong>{t("settings.openCodeHarness")}</strong><span>{t("settings.openCodeHarnessDescription")}</span><code>{apiKeyEnv || "local model (no key)"}</code></div>}

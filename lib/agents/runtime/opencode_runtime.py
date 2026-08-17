@@ -16,7 +16,7 @@ from agents.runtime.cursor_stream import AgentToolEvent
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_MODEL = "qwen/qwen3.8-27b-mlx"
+DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 

@@ -12,9 +12,9 @@
   "execution": {
     "mode": "lightweight_review_only",
     "provider": "opencode",
-    "model": "qwen/qwen3.8-27b-mlx",
-    "base_url": "http://127.0.0.1:1234/v1",
-    "api_key_env": "",
+    "model": "deepseek-v4-flash",
+    "base_url": "",
+    "api_key_env": "DEEPSEEK_API_KEY",
     "scan_window_days": 7,
     "run_project_commands": false,
     "validation_policy": "skip_all_local_validation_commands",

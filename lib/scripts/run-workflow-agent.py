@@ -79,7 +79,7 @@ def resolve_config(
         selected_model = (
             os.environ.get("CURSOR_AGENT_MODEL")
             if normalized == "cursor_cli"
-            else "qwen/qwen3.8-27b-mlx"
+            else "deepseek-v4-flash"
             if normalized == "opencode"
             else "gpt-4o-mini"
         )

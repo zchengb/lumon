@@ -251,6 +251,30 @@ _LOOP_READ_CONTINUATION_ACTIONS = frozenset(
 # only a runaway guard; which card comes next remains the Agent's decision.
 _MAX_ACTION_RESULT_CONTINUATIONS = 24
 
+_TEST_CASE_COMMAND_RE = re.compile(
+    r"(?:重新|再)?(?:生成|產生|產出|创建|創建|建立|generate|create|regenerate|retry)"
+    r".{0,160}?(?:测试用例|測試用例|test[\s_-]*cases?)",
+    re.IGNORECASE | re.DOTALL,
+)
+_JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b", re.IGNORECASE)
+
+
+def _explicit_test_case_action(text: str) -> dict[str, Any] | None:
+    """Infer only an unambiguous user-requested test-case action.
+
+    This is a routing guard, not a second action system: execution still goes
+    through ``execute_trusted_actions`` and the normal capability policy.
+    """
+    raw = str(text or "").strip()
+    if not _TEST_CASE_COMMAND_RE.search(raw):
+        return None
+    keys = list(dict.fromkeys(match.upper() for match in _JIRA_KEY_RE.findall(raw)))
+    if len(keys) == 1:
+        return {"action": "test_case.generate", "arguments": {"issue_key": keys[0]}}
+    if not keys and re.search(r"ready\s+for\s+qa|待测|待測|待测试|待測試", raw, re.IGNORECASE):
+        return {"action": "test_case.generate", "arguments": {"scope": "ready_for_qa"}}
+    return None
+
 
 def _action_results_need_continuation(
     receipts: list[dict[str, Any]],
@@ -528,6 +552,20 @@ def handle_autonomous_conversation(
                     previous_provider=session.get("provider"),
                     expected_provider=expected_provider,
                 )
+                store.close_session(session["session_id"])
+                session = None
+                checkpoint = None
+                is_new = True
+            inferred_test_case_action = _explicit_test_case_action(text) if agent_id == "milchick" else None
+            if inferred_test_case_action and session is not None:
+                stale_pending = store.get_pending(session)
+                obs.emit(
+                    trace,
+                    "agent.session.new_request_boundary",
+                    reason="explicit_test_case_request",
+                    previous_action=str((stale_pending or {}).get("action") or ""),
+                )
+                store.clear_pending(session["session_id"])
                 store.close_session(session["session_id"])
                 session = None
                 checkpoint = None
@@ -822,6 +860,25 @@ def handle_autonomous_conversation(
                     source_message_id=message_id,
                 ) if parsed.clarification_request else None
                 raw_action_requests = list(parsed.action_requests)
+                if (
+                    inferred_test_case_action
+                    and continuation_count == 0
+                    and not raw_action_requests
+                    and (
+                        clarification is None
+                        or str(clarification.get("action") or "").strip() == "test_case.generate"
+                    )
+                ):
+                    # A clear, user-authored Jira test-case request must not
+                    # disappear just because the model omitted its envelope.
+                    clarification = None
+                    raw_action_requests = [inferred_test_case_action]
+                    obs.emit(
+                        trace,
+                        "agent.action_request.inferred",
+                        action="test_case.generate",
+                        reason="explicit_test_case_request_without_model_action",
+                    )
                 action_requests = _serialize_repeated_actions(raw_action_requests)
                 if len(action_requests) < len(raw_action_requests):
                     obs.emit(
@@ -1006,7 +1063,9 @@ def handle_autonomous_conversation(
                 and not clarification
                 and str(meta.get("_nested_handoff") or "") != "1"
             ):
-                if has_unbacked_delegation_claim(reply_text) or (
+                if inferred_test_case_action and not action_receipts:
+                    reply_text = "這次沒有產生測試用例執行回執，Milchick 尚未開始執行，請稍後重試。"
+                elif has_unbacked_delegation_claim(reply_text) or (
                     not str(reply_text or "").strip()
                     and has_unbacked_delegation_claim(unbacked_original)
                 ):

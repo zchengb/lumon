@@ -307,7 +307,7 @@ def design_test_cases(
             if provider in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
                 raw = _run_opencode_agent(
                     prompt,
-                    model=selected_model or "qwen/qwen3.8-27b-mlx",
+                    model=selected_model or "deepseek-v4-flash",
                     workspace=(Path(workspace).expanduser() if workspace else Path.home()),
                 )
             elif provider in {"openai", "openai_compatible"}:

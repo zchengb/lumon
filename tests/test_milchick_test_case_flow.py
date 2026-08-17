@@ -18,6 +18,7 @@ if str(LIB) not in sys.path:
 from agents.milchick.definition import MILCHICK_DEFINITION
 from agents.runtime.autonomous import (
     _action_results_need_continuation,
+    _explicit_test_case_action,
     _serialize_repeated_actions,
     handle_autonomous_conversation,
 )
@@ -73,6 +74,129 @@ def _common() -> dict:
 
 
 class MilchickTestCaseFlowTests(unittest.TestCase):
+    def test_explicit_issue_request_is_inferred_when_model_omits_action(self) -> None:
+        self.assertEqual(
+            {
+                "action": "test_case.generate",
+                "arguments": {"issue_key": "MBPAS-1550"},
+            },
+            _explicit_test_case_action(
+                "接下来请生成 https://inspire.atlassian.net/browse/MBPAS-1550 的测试用例"
+            ),
+        )
+
+    def test_diagnostic_test_case_message_is_not_inferred_as_execution(self) -> None:
+        self.assertIsNone(_explicit_test_case_action("测试用例的生成出了问题，请帮忙分析原因"))
+
+    def test_new_issue_request_clears_pending_session_and_executes_inferred_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "stories").mkdir()
+            previous_home = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"clarify","route":"test_case_generation"}'
+                            "</CONVERSATION_DECISION>"
+                            '<CLARIFICATION_REQUEST>{"action":"test_case.generate",'
+                            '"question":"需要哪一張 Jira 卡？","missing":["issue_key"]}'
+                            "</CLARIFICATION_REQUEST>"
+                        ),
+                        provider_session_id="stale-provider",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text=(
+                            '<FINAL_RESPONSE>還沒有真正開始，請直接 @Mark。</FINAL_RESPONSE>'
+                        ),
+                        provider_session_id="new-provider",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text='<FINAL_RESPONSE>已生成 MBPAS-1550 的測試用例。</FINAL_RESPONSE>',
+                        provider_session_id="new-provider",
+                        status="succeeded",
+                    ),
+                ]
+            )
+            generated = _receipt(
+                "test_case.generate",
+                {"status": "completed", "summary": "已生成 MBPAS-1550 的測試用例。"},
+                resource={"issue_key": "MBPAS-1550"},
+            )
+            definition = replace(
+                MILCHICK_DEFINITION,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", workspace),
+                ensure_workspace_contract=lambda **kwargs: workspace,
+            )
+            meta = {
+                "chat_id": "oc1",
+                "chat_type": "group",
+                "thread_id": "omt1",
+                "user_id": "ou_owner",
+                "message_id": "om1",
+            }
+            try:
+                with mock.patch(
+                    "agents.runtime.autonomous.resolve_project",
+                    return_value={"slug": "mbpass", "workspace": str(workspace)},
+                ):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            with mock.patch(
+                                "agents.runtime.autonomous.execute_trusted_actions",
+                                return_value=[generated],
+                            ) as execute:
+                                first = handle_autonomous_conversation(
+                                    definition=definition,
+                                    text="請生成測試用例",
+                                    meta=meta,
+                                    common=_common(),
+                                    agents_config={
+                                        "access": {
+                                            "default_policy": "legacy_allow",
+                                            "allowed_chat_ids": ["oc1"],
+                                            "allowed_user_ids": ["ou_owner"],
+                                            "mutation_allowed_user_ids": ["ou_owner"],
+                                        }
+                                    },
+                                    runtime=runtime,
+                                )
+                                second = handle_autonomous_conversation(
+                                    definition=definition,
+                                    text=(
+                                        "接下來請生成 "
+                                        "https://inspire.atlassian.net/browse/MBPAS-1550 的測試用例"
+                                    ),
+                                    meta={**meta, "message_id": "om2"},
+                                    common=_common(),
+                                    agents_config={
+                                        "access": {
+                                            "default_policy": "legacy_allow",
+                                            "allowed_chat_ids": ["oc1"],
+                                            "allowed_user_ids": ["ou_owner"],
+                                            "mutation_allowed_user_ids": ["ou_owner"],
+                                        }
+                                    },
+                                    runtime=runtime,
+                                )
+            finally:
+                if previous_home is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous_home
+
+            self.assertEqual("autonomous.clarification", first["action"])
+            self.assertEqual("ok", second["status"])
+            self.assertEqual(1, execute.call_count)
+            self.assertIsNone(runtime.calls[1]["provider_session_id"])
+            request = execute.call_args.kwargs["requests"][0]
+            self.assertEqual("test_case.generate", request["action"])
+            self.assertEqual("MBPAS-1550", request["arguments"]["issue_key"])
+            self.assertIn("MBPAS-1550", second["text"])
+
     def test_repeated_test_case_actions_are_serialized(self) -> None:
         requests = [
             {"action": "test_case.generate", "arguments": {"issue_key": "MBPAS-1"}},
