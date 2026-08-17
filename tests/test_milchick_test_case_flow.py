@@ -16,7 +16,11 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from agents.milchick.definition import MILCHICK_DEFINITION
-from agents.runtime.autonomous import _serialize_repeated_actions, handle_autonomous_conversation
+from agents.runtime.autonomous import (
+    _action_results_need_continuation,
+    _serialize_repeated_actions,
+    handle_autonomous_conversation,
+)
 from agents.runtime.cursor_runtime import AgentRunResult, CursorAgentRuntime
 from agents.security.actions import ActionReceipt
 
@@ -76,6 +80,13 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
             {"action": "test_case.generate", "arguments": {"issue_key": "MBPAS-3"}},
         ]
         self.assertEqual([requests[0]], _serialize_repeated_actions(requests))
+
+    def test_failed_test_case_result_does_not_trigger_duplicate_retry(self) -> None:
+        receipt = _receipt(
+            "test_case.generate",
+            {"status": "failed", "code": "TEST_CASE_DESIGN_UNAVAILABLE"},
+        ).to_dict()
+        self.assertFalse(_action_results_need_continuation([receipt]))
 
     def test_jira_results_return_to_milchick_for_per_item_generation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

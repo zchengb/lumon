@@ -58,6 +58,14 @@ class JsonExtractionTests(unittest.TestCase):
         payload = _extract_json_object("{'test_cases': [{'title': '登入'}]}")
         self.assertEqual(payload["test_cases"][0]["title"], "登入")
 
+    def test_wraps_top_level_case_array(self) -> None:
+        payload = _extract_json_object('[{"title":"登入"},{"title":"登出"}]')
+        self.assertEqual([item["title"] for item in payload["test_cases"]], ["登入", "登出"])
+
+    def test_wraps_array_with_surrounding_text(self) -> None:
+        payload = _extract_json_object('Result:\n[{"title":"登入"}]\nDone.')
+        self.assertEqual(payload["test_cases"][0]["title"], "登入")
+
 
 class ValidatorTests(unittest.TestCase):
     def _story(self) -> StoryContext:

@@ -33,29 +33,46 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         raw = "\n".join(lines).strip()
     decoder = json.JSONDecoder()
 
+    def normalize_payload(data: Any) -> dict[str, Any] | None:
+        if isinstance(data, list) and all(isinstance(item, dict) for item in data):
+            return {"test_cases": data}
+        if not isinstance(data, dict):
+            return None
+        if isinstance(data.get("test_cases"), list):
+            return data
+        for alias in ("testCases", "cases"):
+            rows = data.get(alias)
+            if isinstance(rows, list) and all(isinstance(item, dict) for item in rows):
+                payload = dict(data)
+                payload["test_cases"] = rows
+                return payload
+        return None
+
     def decode_candidates(value: str) -> tuple[dict[str, Any] | None, json.JSONDecodeError | None]:
         first: dict[str, Any] | None = None
         last_error: json.JSONDecodeError | None = None
         for index, char in enumerate(value):
-            if char != "{":
+            if char not in "[{":
                 continue
             try:
                 data, _end = decoder.raw_decode(value[index:])
             except json.JSONDecodeError as exc:
                 last_error = exc
                 continue
+            payload = normalize_payload(data)
+            if payload is not None:
+                return payload, None
             if not isinstance(data, dict):
                 continue
             if first is None:
                 first = data
-            # Prefer the actual design payload when the harness returned
-            # metadata or another JSON object before it.
-            if isinstance(data.get("test_cases"), list):
-                return data, None
         return first, last_error
 
     try:
         data = json.loads(raw)
+        payload = normalize_payload(data)
+        if payload is not None:
+            return payload
         if isinstance(data, dict):
             return data
     except Exception:
@@ -79,14 +96,19 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     # Some model versions use Python-style single-quoted literals. The
     # literal parser accepts data only (never calls or imports), so it is a
     # safe last fallback for that response shape.
-    match = re.search(r"\{[\s\S]*\}", repaired)
-    if match:
+    literal_candidates = [repaired]
+    for pattern in (r"\{[\s\S]*\}", r"\[[\s\S]*\]"):
+        match = re.search(pattern, repaired)
+        if match:
+            literal_candidates.append(match.group(0))
+    for candidate in literal_candidates:
         try:
-            data = ast.literal_eval(match.group(0))
+            data = ast.literal_eval(candidate)
         except (SyntaxError, ValueError, MemoryError, RecursionError):
-            data = None
-        if isinstance(data, dict):
-            return data
+            continue
+        payload = normalize_payload(data)
+        if payload is not None:
+            return payload
     if last_error is not None:
         raise ValueError(f"invalid JSON model output: {last_error.msg}") from last_error
     if repaired_error is not None:

@@ -270,6 +270,11 @@ def _action_results_need_continuation(
             continue
         if action == "test_case.generate":
             result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+            # The trusted receipt only means the adapter ran. The nested
+            # result is the business outcome; failed generation is terminal
+            # for this turn and must not be submitted again by continuation.
+            if str(result.get("status") or "").strip().casefold() in {"failed", "error", "denied", "blocked"}:
+                continue
             if result.get("batch") or str(result.get("scope") or "").strip():
                 continue
             if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
