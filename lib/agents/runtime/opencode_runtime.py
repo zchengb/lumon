@@ -15,8 +15,10 @@ from agents.runtime.cursor_runtime import AgentRunResult
 from agents.runtime.cursor_stream import AgentToolEvent
 
 
-DEFAULT_BASE_URL = "https://api.deepseek.com"
+DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
+DEFAULT_MODEL = "qwen/qwen3.8-27b-mlx"
 DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 
 def find_opencode_bin() -> str:
@@ -99,12 +101,26 @@ def parse_opencode_json_text(text: str) -> OpenCodeStreamResult:
 
 
 def _model_id(model: str) -> str:
-    value = str(model or "deepseek-v4-flash").strip()
+    value = str(model or DEFAULT_MODEL).strip()
     return value.split("/", 1)[1] if "/" in value else value
 
 
+def _model_provider(model: str, base_url: str = "") -> str:
+    value = str(model or DEFAULT_MODEL).strip()
+    if "/" in value:
+        return value.split("/", 1)[0].strip() or "qwen"
+    url = str(base_url or "").strip().casefold()
+    if url.startswith(("http://127.0.0.1", "http://localhost", "http://0.0.0.0")):
+        return "qwen"
+    return "deepseek"
+
+
+def is_local_opencode_provider(model: str, base_url: str = "") -> bool:
+    return _model_provider(model, base_url) == "qwen"
+
+
 class OpenCodeAgentRuntime:
-    """Persistent OpenCode Harness using DeepSeek as its configured provider."""
+    """Persistent OpenCode Harness using a configured OpenAI-compatible provider."""
 
     supports_stateless = False
     supports_resume = True
@@ -113,7 +129,7 @@ class OpenCodeAgentRuntime:
     def __init__(
         self,
         *,
-        model: str = "deepseek-v4-flash",
+        model: str = "",
         base_url: str = "",
         api_key_env: str = "",
         soft_timeout_seconds: int = 90,
@@ -126,9 +142,10 @@ class OpenCodeAgentRuntime:
         workflow_mode: bool = False,
         jira_read_actions: frozenset[str] | None = None,
     ) -> None:
-        self.model = model or "deepseek-v4-flash"
-        self.base_url = base_url or DEFAULT_BASE_URL
-        self.api_key_env = api_key_env or DEFAULT_API_KEY_ENV
+        self.model = model or DEFAULT_MODEL
+        provider = _model_provider(self.model, base_url)
+        self.base_url = base_url or (DEFAULT_BASE_URL if provider == "qwen" else DEEPSEEK_BASE_URL)
+        self.api_key_env = api_key_env or ("" if provider == "qwen" else DEFAULT_API_KEY_ENV)
         self.soft_timeout_seconds = soft_timeout_seconds
         self.hard_timeout_seconds = hard_timeout_seconds
         self.sandbox = sandbox
@@ -225,22 +242,25 @@ class OpenCodeAgentRuntime:
 
     def _config_content(self) -> str:
         model_id = _model_id(self.model)
+        provider_id = _model_provider(self.model, self.base_url)
+        model_options = {"reasoningEffort": "max"} if provider_id == "deepseek" else {}
+        api_key = f"{{env:{self.api_key_env}}}" if self.api_key_env else "local"
         return json.dumps(
             {
                 "$schema": "https://opencode.ai/config.json",
-                "model": f"deepseek/{model_id}",
+                "model": f"{provider_id}/{model_id}",
                 "provider": {
-                    "deepseek": {
+                    provider_id: {
                         "npm": "@ai-sdk/openai-compatible",
-                        "name": "DeepSeek",
+                        "name": "Qwen (local)" if provider_id == "qwen" else "DeepSeek",
                         "options": {
                             "baseURL": self.base_url,
-                            "apiKey": f"{{env:{self.api_key_env}}}",
+                            "apiKey": api_key,
                         },
                         "models": {
                             model_id: {
                                 "name": model_id,
-                                "options": {"reasoningEffort": "max"},
+                                "options": model_options,
                             }
                         },
                     }
@@ -257,10 +277,13 @@ class OpenCodeAgentRuntime:
             from agents.security.env import build_agent_env
 
             env = build_agent_env(agent_id=self.agent_id, project=self.project)
-        key = os.environ.get(self.api_key_env, "").strip()
-        if not key:
-            raise RuntimeError(f"DeepSeek API key is not configured ({self.api_key_env}); add it to ~/.lumon/.env.local")
-        env[self.api_key_env] = key
+        if self.api_key_env:
+            key = os.environ.get(self.api_key_env, "").strip()
+            if not key and not is_local_opencode_provider(self.model, self.base_url):
+                provider_id = _model_provider(self.model, self.base_url)
+                raise RuntimeError(f"{provider_id} API key is not configured ({self.api_key_env}); add it to ~/.lumon/.env.local")
+            if key:
+                env[self.api_key_env] = key
         env["OPENCODE_CONFIG_CONTENT"] = self._config_content()
         home = Path(env.get("HOME") or Path.home()).expanduser()
         log_file = home / ".local" / "share" / "opencode" / "log" / "opencode.log"
@@ -305,7 +328,8 @@ class OpenCodeAgentRuntime:
         started = time.time()
         try:
             env = self._env()
-            command = [self._agent_bin(), "run", "--log-level", "ERROR", "--format", "json", "--dir", str(workspace), "--model", f"deepseek/{_model_id(self.model)}"]
+            provider_id = _model_provider(self.model, self.base_url)
+            command = [self._agent_bin(), "run", "--log-level", "ERROR", "--format", "json", "--dir", str(workspace), "--model", f"{provider_id}/{_model_id(self.model)}"]
             if provider_session_id:
                 command.extend(["--session", str(provider_session_id)])
             for path in self.additional_files:

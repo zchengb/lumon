@@ -80,8 +80,12 @@ def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_k
             version = subprocess.run([command, "--version"], capture_output=True, text=True, timeout=5, check=False).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             version = ""
+    local_opencode = provider == "opencode" and (
+        str(model.get("model") or "").strip().casefold().startswith("qwen/")
+        or str(model.get("base_url") or "").strip().casefold().startswith(("http://127.0.0.1", "http://localhost", "http://0.0.0.0"))
+    )
     defaults = {
-        "opencode": "DEEPSEEK_API_KEY",
+        "opencode": "" if local_opencode else "DEEPSEEK_API_KEY",
         "cursor_cli": "CURSOR_API_KEY",
         "openai_compatible": "OPENAI_API_KEY",
     }
@@ -94,7 +98,7 @@ def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_k
         "version": version,
         "installed": bool(command) if provider in {"opencode", "cursor_cli"} else True,
         "api_key_env": key_env,
-        "api_key_configured": key_env in configured_keys,
+        "api_key_configured": local_opencode or key_env in configured_keys,
         "session_mode": "persistent provider session" if provider == "opencode" else "provider managed",
         "action_catalog": str((workspace / ".lumon" / "action-catalog.md").resolve()),
         "permission_profile": "workspace OpenCode permission policy" if provider == "opencode" else "provider sandbox policy",

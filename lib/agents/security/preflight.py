@@ -75,9 +75,13 @@ def run_security_check(
     critical_fail = False
 
     if runtime_provider == "opencode":
+        from agents.runtime.opencode_runtime import is_local_opencode_provider
+
         checks["cursor_cli"] = "not_required"
         checks["opencode_cli"] = "pass" if _opencode_available() else "fail"
-        checks["model_api"] = "pass" if os.environ.get(model_flags.model.api_key_env or "DEEPSEEK_API_KEY", "").strip() else "missing:DEEPSEEK_API_KEY"
+        local_model = is_local_opencode_provider(model_flags.model.model_name, model_flags.model.base_url)
+        key_env = model_flags.model.api_key_env or "DEEPSEEK_API_KEY"
+        checks["model_api"] = "pass" if local_model or os.environ.get(key_env, "").strip() else f"missing:{key_env}"
         if checks["opencode_cli"] != "pass" or checks["model_api"] != "pass":
             critical_fail = True
     elif api_provider:

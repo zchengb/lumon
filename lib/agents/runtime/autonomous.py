@@ -110,8 +110,8 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
         )
     if "opencode" in lower or "deepseek" in lower:
         return (
-            "I couldn't finish this turn through the configured OpenCode/DeepSeek runtime. "
-            "Check the OpenCode installation and DeepSeek key, then retry.\n"
+            "I couldn't finish this turn through the configured OpenCode model runtime. "
+            "Check the OpenCode installation and configured model endpoint, then retry.\n"
             f"Trace ID: {trace_id}"
         )
     if any(tok in lower for tok in ("failed to reach", "cursor api", "proxy", "https_proxy")):

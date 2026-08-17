@@ -65,9 +65,12 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         )
     )
     if harness_provider:
+        from agents.runtime.opencode_runtime import is_local_opencode_provider
+
         checks.append(_check("opencode_cli", "PASS" if opencode_bin else "FAIL", opencode_bin or "not found"))
         key_env = flags.model.api_key_env or "DEEPSEEK_API_KEY"
-        checks.append(_check("opencode_auth", "PASS" if os.environ.get(key_env, "").strip() else "FAIL", key_env))
+        local_model = is_local_opencode_provider(flags.model.model_name, flags.model.base_url)
+        checks.append(_check("opencode_auth", "PASS" if local_model or os.environ.get(key_env, "").strip() else "FAIL", "local" if local_model else key_env))
     if api_provider:
         key_env = flags.model.api_key_env or default_api_key_env(flags.model.provider)
         checks.append(
@@ -103,7 +106,7 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     checks.append(
         _check(
             "model",
-            "PASS" if (flags.model.provider in {"cursor", "cursor_cli", "fake"} or harness_provider and os.environ.get(flags.model.api_key_env or "DEEPSEEK_API_KEY", "").strip() or (api_provider and os.environ.get(flags.model.api_key_env or default_api_key_env(flags.model.provider), "").strip())) else "FAIL",
+            "PASS" if (flags.model.provider in {"cursor", "cursor_cli", "fake"} or harness_provider and (is_local_opencode_provider(flags.model.model_name, flags.model.base_url) or os.environ.get(flags.model.api_key_env or "DEEPSEEK_API_KEY", "").strip()) or (api_provider and os.environ.get(flags.model.api_key_env or default_api_key_env(flags.model.provider), "").strip())) else "FAIL",
             f"{flags.model.provider}/{flags.model.model_name} required={flags.model.required}",
         )
     )

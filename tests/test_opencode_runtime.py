@@ -39,9 +39,21 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         self.assertTrue(runtime.supports_resume)
 
     def test_deepseek_runtime_uses_max_reasoning_effort(self) -> None:
-        config = json.loads(OpenCodeAgentRuntime()._config_content())
+        config = json.loads(OpenCodeAgentRuntime(model="deepseek-v4-flash", base_url="https://api.deepseek.com", api_key_env="DEEPSEEK_API_KEY")._config_content())
         model = config["provider"]["deepseek"]["models"]["deepseek-v4-flash"]
         self.assertEqual("max", model["options"]["reasoningEffort"])
+
+    def test_local_qwen_runtime_uses_openai_compatible_provider_without_key(self) -> None:
+        runtime = OpenCodeAgentRuntime(
+            model="qwen/qwen3.8-27b-mlx",
+            base_url="http://127.0.0.1:1234/v1",
+            api_key_env="",
+        )
+        config = json.loads(runtime._config_content())
+        self.assertEqual("qwen/qwen3.8-27b-mlx", config["model"])
+        self.assertEqual("http://127.0.0.1:1234/v1", config["provider"]["qwen"]["options"]["baseURL"])
+        self.assertEqual("local", config["provider"]["qwen"]["options"]["apiKey"])
+        self.assertEqual({}, config["provider"]["qwen"]["models"]["qwen3.8-27b-mlx"]["options"])
 
     def test_workspace_context_contains_readable_safety_files(self) -> None:
         runtime = OpenCodeAgentRuntime(agent_id="mark")

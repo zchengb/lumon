@@ -291,7 +291,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModelsDescription": "Auto Scan, Auto Delivery, and Auto Patch use the same global provider and model.",
     "settings.workflowRuntimeLabel": "Applied to every Agent and workflow",
     "settings.openCodeHarness": "OpenCode Harness",
-    "settings.openCodeHarnessDescription": "DeepSeek is reached through OpenCode, which owns workspace tools and persistent sessions.",
+    "settings.openCodeHarnessDescription": "Qwen runs locally through OpenCode, which owns workspace tools and persistent sessions.",
     "settings.openCodeRuntime": "Agent runtime",
     "settings.openCodeRuntimeDescription": "This is the live Harness status used by conversational Agents and automation workflows.",
     "settings.harness": "Harness",
@@ -300,9 +300,9 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.sessionMode": "Session",
     "settings.permissionProfile": "Permissions",
     "settings.actionCatalog": "Action catalog",
-    "settings.deepSeekCredential": "DeepSeek API key",
+    "settings.deepSeekCredential": "Model credentials",
     "settings.deepSeekCredentialConfigured": "Configured in ~/.lumon/.env.local",
-    "settings.deepSeekCredentialMissing": "Not configured",
+    "settings.deepSeekCredentialMissing": "Not configured (local models need no key)",
     "settings.automationOutcome": "Automation outcome",
     "settings.notificationsDescription": "Control whether Scan and Delivery post cards to the configured Feishu webhook. The webhook URL still lives under Variable Keys.",
     "settings.storedWorkspace": "Stored in this workspace",
@@ -379,7 +379,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "prompt.preview": "Preview",
     "customModel.enter": "Enter a custom model",
     "customModel.id": "Model ID",
-    "customModel.placeholder": "e.g. deepseek-v4-flash",
+    "customModel.placeholder": "e.g. qwen/qwen3.8-27b-mlx",
     "customModel.copy": "Lumon does not validate model availability. The value will be used on the next run.",
     "customModel.edit": "Edit custom model",
     "customModel.option": "Custom model ID…",
@@ -854,7 +854,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModelsDescription": "自动扫描、自动交付和自动修复使用同一组全局提供商和模型。",
     "settings.workflowRuntimeLabel": "应用于所有 Agent 和工作流",
     "settings.openCodeHarness": "OpenCode Harness",
-    "settings.openCodeHarnessDescription": "通过 OpenCode 调用 DeepSeek，由 OpenCode 管理工作区工具和持久会话。",
+    "settings.openCodeHarnessDescription": "通过 OpenCode 调用本地 Qwen，由 OpenCode 管理工作区工具和持久会话。",
     "settings.openCodeRuntime": "Agent 运行时",
     "settings.openCodeRuntimeDescription": "这里显示对话 Agent 和自动化工作流实际使用的 Harness 状态。",
     "settings.harness": "Harness",
@@ -863,9 +863,9 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.sessionMode": "会话",
     "settings.permissionProfile": "权限",
     "settings.actionCatalog": "Action 清单",
-    "settings.deepSeekCredential": "DeepSeek API 密钥",
+    "settings.deepSeekCredential": "模型凭证",
     "settings.deepSeekCredentialConfigured": "已配置于 ~/.lumon/.env.local",
-    "settings.deepSeekCredentialMissing": "未配置",
+    "settings.deepSeekCredentialMissing": "未配置（本地模型无需密钥）",
     "settings.automationOutcome": "自动化结果",
     "settings.notificationsDescription": "控制 Scan 和 Delivery 是否向已配置的飞书 Webhook 发布卡片。Webhook URL 仍位于变量密钥中。",
     "settings.storedWorkspace": "存储在此工作区",
@@ -942,7 +942,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "prompt.preview": "预览",
     "customModel.enter": "输入自定义模型",
     "customModel.id": "模型 ID",
-    "customModel.placeholder": "例如：deepseek-v4-flash",
+    "customModel.placeholder": "例如：qwen/qwen3.8-27b-mlx",
     "customModel.copy": "Lumon 不会验证模型是否可用，该值将在下一次运行时使用。",
     "customModel.edit": "编辑自定义模型",
     "customModel.option": "自定义模型 ID…",
@@ -1417,7 +1417,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.workflowModelsDescription": "自動掃描、自動交付和自動修復使用同一組全域提供者與模型。",
     "settings.workflowRuntimeLabel": "套用於所有 Agent 與工作流",
     "settings.openCodeHarness": "OpenCode Harness",
-    "settings.openCodeHarnessDescription": "透過 OpenCode 呼叫 DeepSeek，由 OpenCode 管理工作區工具與持久會話。",
+    "settings.openCodeHarnessDescription": "透過 OpenCode 呼叫本機 Qwen，由 OpenCode 管理工作區工具與持久會話。",
     "settings.openCodeRuntime": "Agent 執行環境",
     "settings.openCodeRuntimeDescription": "這裡顯示對話 Agent 與自動化工作流實際使用的 Harness 狀態。",
     "settings.harness": "Harness",
@@ -1426,9 +1426,9 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.sessionMode": "會話",
     "settings.permissionProfile": "權限",
     "settings.actionCatalog": "Action 清單",
-    "settings.deepSeekCredential": "DeepSeek API 金鑰",
+    "settings.deepSeekCredential": "模型憑證",
     "settings.deepSeekCredentialConfigured": "已設定於 ~/.lumon/.env.local",
-    "settings.deepSeekCredentialMissing": "未設定",
+    "settings.deepSeekCredentialMissing": "未設定（本機模型無需金鑰）",
     "settings.automationOutcome": "自動化結果",
     "settings.notificationsDescription": "控制 Scan 和 Delivery 是否向已設定的飛書 Webhook 發布卡片。Webhook URL 仍位於變數金鑰中。",
     "settings.storedWorkspace": "儲存在此工作區",
@@ -1505,7 +1505,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "prompt.preview": "預覽",
     "customModel.enter": "輸入自訂模型",
     "customModel.id": "模型 ID",
-    "customModel.placeholder": "例如：deepseek-v4-flash",
+    "customModel.placeholder": "例如：qwen/qwen3.8-27b-mlx",
     "customModel.copy": "Lumon 不會驗證模型是否可用，該值將在下一次執行時使用。",
     "customModel.edit": "編輯自訂模型",
     "customModel.option": "自訂模型 ID…",
@@ -1978,9 +1978,8 @@ const cursorModelOptions = [
   { label: "Sonnet 4.5", value: "sonnet-4.5" },
   { label: "GPT-5.1 Codex", value: "gpt-5.1-codex" }
 ];
-const deepSeekModelOptions = [
-  { label: "DeepSeek V4 Flash", value: "deepseek-v4-flash" },
-  { label: "DeepSeek V4 Pro", value: "deepseek-v4-pro" }
+const qwenModelOptions = [
+  { label: "Qwen 3.8 27B (local)", value: "qwen/qwen3.8-27b-mlx" }
 ];
 const customModelOption = "__custom__";
 
@@ -3630,7 +3629,7 @@ function StatusMultiSelect({ options, value, onChange, markDirty }: { options: s
 function ModelField({ label, value, provider = "cursor_cli", onChange, markDirty }: { label: string; value: string; provider?: string; onChange: (value: string) => void; markDirty: () => void }) {
   const { t } = useI18n();
   const normalizedValue = trimmedModelValue(value);
-  const options = provider === "opencode" || provider === "deepseek" || provider === "deepseek_api" ? deepSeekModelOptions : cursorModelOptions;
+  const options = provider === "opencode" || provider === "deepseek" || provider === "deepseek_api" ? qwenModelOptions : cursorModelOptions;
   const isPreset = options.some((model) => model.value === normalizedValue);
   const customModelLabel = normalizedValue || t("customModel.option");
   const [customOpen, setCustomOpen] = useState(false);
@@ -3652,16 +3651,16 @@ function WorkflowModelField({ label, provider, model, baseUrl, apiKeyEnv, onProv
   const { t } = useI18n();
   const selectProvider = (value: string) => {
     onProviderChange(value);
-    onModelChange(value === "opencode" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
+    onModelChange(value === "opencode" ? "qwen/qwen3.8-27b-mlx" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
     markDirty();
   };
   return <div className="workflow-model-editor">
     <div className="workflow-model-editor-heading"><strong>{label}</strong><span>{t("settings.workflowRuntimeLabel")}</span></div>
     <div className="form-grid compact workflow-model-editor-fields">
-      <Field label={t("label.modelProvider")}><select value={provider} onChange={(event) => selectProvider(event.target.value)}><option value="opencode">OpenCode + DeepSeek</option><option value="cursor_cli">Cursor CLI</option><option value="openai_compatible">OpenAI-compatible API</option></select></Field>
+      <Field label={t("label.modelProvider")}><select value={provider} onChange={(event) => selectProvider(event.target.value)}><option value="opencode">OpenCode + local Qwen</option><option value="cursor_cli">Cursor CLI</option><option value="openai_compatible">OpenAI-compatible API</option></select></Field>
       <ModelField label={t("label.cursorModel")} provider={provider} value={model} onChange={onModelChange} markDirty={markDirty} />
       {(provider === "openai_compatible" || provider === "openai") && <><Field label={t("label.apiBaseUrl")}><input value={baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => { onBaseUrlChange(event.target.value); markDirty(); }} /></Field><Field label={t("label.apiKeyEnv")}><input value={apiKeyEnv} placeholder="OPENAI_API_KEY" onChange={(event) => { onApiKeyEnvChange(event.target.value); markDirty(); }} /></Field></>}
-      {provider === "opencode" && <div className="workflow-harness-note"><strong>{t("settings.openCodeHarness")}</strong><span>{t("settings.openCodeHarnessDescription")}</span><code>{apiKeyEnv || "DEEPSEEK_API_KEY"}</code></div>}
+      {provider === "opencode" && <div className="workflow-harness-note"><strong>{t("settings.openCodeHarness")}</strong><span>{t("settings.openCodeHarnessDescription")}</span><code>{apiKeyEnv || "local model (no key)"}</code></div>}
     </div>
   </div>;
 }
@@ -4219,7 +4218,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
               <div><span>{t("settings.harness")}</span><strong>{text(runtimeStatus.harness, "OpenCode")}</strong></div>
               <div><span>{t("settings.runtimeModel")}</span><code>{text(runtimeStatus.model, globalModel)}</code></div>
               <div><span>{t("settings.cliVersion")}</span><strong>{text(runtimeStatus.version, runtimeStatus.installed ? "installed" : "not installed")}</strong></div>
-              <div><span>{t("settings.deepSeekCredential")}</span><strong className={runtimeStatus.api_key_configured ? "runtime-ok" : "runtime-warning"}>{text(runtimeStatus.api_key_env, "DEEPSEEK_API_KEY")} · {runtimeStatus.api_key_configured ? t("settings.configured") : t("settings.notConfigured")}</strong></div>
+              <div><span>{t("settings.deepSeekCredential")}</span><strong className={runtimeStatus.api_key_configured ? "runtime-ok" : "runtime-warning"}>{text(runtimeStatus.api_key_env, "local model (no key)")} · {runtimeStatus.api_key_configured ? t("settings.configured") : t("settings.notConfigured")}</strong></div>
               <div><span>{t("settings.sessionMode")}</span><strong>{text(runtimeStatus.session_mode)}</strong></div>
               <div><span>{t("settings.permissionProfile")}</span><strong>{text(runtimeStatus.permission_profile)}</strong></div>
               <div className="runtime-status-wide"><span>{t("settings.actionCatalog")}</span><code>{text(runtimeStatus.action_catalog)}</code></div>

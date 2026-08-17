@@ -115,9 +115,10 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
     model_configured = True
     if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
         from agents.runtime.openai_compatible import default_api_key_env
+        from agents.runtime.opencode_runtime import is_local_opencode_provider
 
         model_key_env = str(provider.get("api_key_env") or ("DEEPSEEK_API_KEY" if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"} else default_api_key_env(provider_type))).strip()
-        model_configured = bool(os.environ.get(model_key_env, "").strip() or read_lumen_env_var(model_key_env))
+        model_configured = is_local_opencode_provider(provider.get("model", ""), provider.get("base_url", "")) or bool(os.environ.get(model_key_env, "").strip() or read_lumen_env_var(model_key_env))
     security = {
         "filesystem": "workspace_read",
         "mutations": "brokered",
