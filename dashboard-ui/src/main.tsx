@@ -266,6 +266,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.canAdmin": "Can administer Agents",
     "settings.accessSummary": "Configured identities",
     "settings.identityCount": "{{count}} identity records",
+    "settings.pendingAccess": "Pending authorization",
     "settings.rolesApplied": "roles",
     "settings.agentCoreDescription": "Core controls are editable here. Role ownership, safety boundaries, and SOUL files stay managed by the Agent registry.",
     "settings.responsibility": "Responsibility",
@@ -828,6 +829,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.canAdmin": "可以管理 Agent",
     "settings.accessSummary": "已配置身份",
     "settings.identityCount": "{{count}} 个身份记录",
+    "settings.pendingAccess": "待授权",
     "settings.rolesApplied": "项权限",
     "settings.agentCoreDescription": "这里只编辑核心控制项。角色归属、安全边界和 SOUL 文件仍由 Agent 注册表管理。",
     "settings.responsibility": "职责",
@@ -1390,6 +1392,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.canAdmin": "可以管理 Agent",
     "settings.accessSummary": "已設定身分",
     "settings.identityCount": "{{count}} 個身分記錄",
+    "settings.pendingAccess": "待授權",
     "settings.rolesApplied": "項權限",
     "settings.agentCoreDescription": "這裡只編輯核心控制項。角色歸屬、安全邊界和 SOUL 檔案仍由 Agent 登錄表管理。",
     "settings.responsibility": "職責",
@@ -1823,6 +1826,8 @@ interface FeishuIdentityItem {
   id?: string;
   name?: string;
   kind?: string;
+  union_id?: string;
+  pending?: boolean;
 }
 
 interface TestCaseSettings {
@@ -3870,13 +3875,23 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   for (const person of recentPeople) if (person.id) accessPeopleById.set(String(person.id), person);
   for (const id of configuredUserIds) if (!accessPeopleById.has(id)) accessPeopleById.set(id, { id, name: feishuName(id) });
   const accessPeople = Array.from(accessPeopleById.values()).filter((item) => item.id);
-  const accessPeopleGroups: Array<{ name: string; ids: string[] }> = [];
+  const accessPeopleGroups: Array<{ key: string; name: string; ids: string[]; pending: boolean }> = [];
   for (const person of accessPeople) {
     const id = String(person.id);
-    const name = String(person.name || feishuName(id) || t("common.unknown"));
-    const group = accessPeopleGroups.find((item) => item.name === name);
-    if (group) group.ids.push(id);
-    else accessPeopleGroups.push({ name, ids: [id] });
+    const unionId = String(person.union_id || "").trim();
+    const key = unionId || `id:${id}`;
+    const pendingName = t("settings.pendingAccess");
+    const name = String(person.name || feishuName(id) || pendingName);
+    const group = accessPeopleGroups.find((item) => item.key === key);
+    if (group) {
+      group.ids.push(id);
+      if (name !== pendingName) group.name = name;
+    } else {
+      accessPeopleGroups.push({ key, name, ids: [id], pending: false });
+    }
+  }
+  for (const group of accessPeopleGroups) {
+    group.pending = group.ids.some((id) => !configuredUserIds.includes(id));
   }
   const accessChatIds = Array.from(new Set([...(accessDraft.allowed_chat_ids || []), ...(recentFeishu.chat_ids || [])]));
   const accessChats = accessChatIds.map((id) => recentChats.find((chat) => String(chat.id) === id) || { id, name: feishuName(id) });
@@ -4098,12 +4113,12 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
         </div>
         <div className="settings-control wide access-control-panel">
           <div className="access-selector-grid">
-            <Field label={t("settings.accessPerson")} help={t("settings.selectIdentityHelp")}><select value={selectedPersonId} onChange={(event) => setSelectedPersonId(event.target.value)}><option value="">{t("settings.selectPerson")}</option>{accessPeopleGroups.map((group) => <optgroup label={`${group.name} · ${group.ids.length}`} key={group.name}>{group.ids.map((id) => <option value={id} key={id}>{shortFeishuId(id)}</option>)}</optgroup>)}</select></Field>
+          <Field label={t("settings.accessPerson")} help={t("settings.selectIdentityHelp")}><select value={selectedPersonId} onChange={(event) => setSelectedPersonId(event.target.value)}><option value="">{t("settings.selectPerson")}</option>{accessPeopleGroups.map((group) => <optgroup label={`${group.name} · ${group.ids.length}${group.pending ? ` · ${t("settings.pendingAccess")}` : ""}`} key={group.key}>{group.ids.map((id) => <option value={id} key={id}>{shortFeishuId(id)}</option>)}</optgroup>)}</select></Field>
             <Field label={t("settings.accessChat")} help={t("settings.allowedChatHelp")}><select value={selectedChatId} onChange={(event) => setSelectedChatId(event.target.value)}><option value="">{t("settings.selectChat")}</option>{accessChats.map((chat) => <option value={String(chat.id)} key={String(chat.id)}>{chat.name || feishuName(String(chat.id)) || shortFeishuId(String(chat.id))}</option>)}</select></Field>
           </div>
           {selectedPersonId && <div className="access-identity-editor"><div className="access-identity-heading"><span>{t("settings.identityRoles")}</span><code>{shortFeishuId(selectedPersonId)}</code></div><label><input type="checkbox" checked={hasAccess("allowed_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("allowed_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canTalk")}</label><label><input type="checkbox" checked={hasAccess("mutation_allowed_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("mutation_allowed_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canMutate")}</label><label><input type="checkbox" checked={hasAccess("admin_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("admin_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canAdmin")}</label></div>}
           {selectedChatId && <div className="access-identity-editor"><div className="access-identity-heading"><span>{t("settings.accessChat")}</span><code>{shortFeishuId(selectedChatId)}</code></div><label><input type="checkbox" checked={(accessDraft.allowed_chat_ids || []).includes(selectedChatId)} onChange={(event) => toggleAccess("allowed_chat_ids", selectedChatId, event.target.checked)} />{t("settings.allowChat")}</label></div>}
-          {configuredPeople.length > 0 && <div className="access-summary"><div className="access-identity-heading"><span>{t("settings.accessSummary")}</span><small>{t("settings.identityCount", { count: configuredPeople.reduce((count, group) => count + group.ids.length, 0) })}</small></div>{configuredPeople.map((group) => <button type="button" className="access-summary-row" key={group.name} onClick={() => setSelectedPersonId(group.ids[0])}><strong>{group.name}</strong><span>{t("settings.identityCount", { count: group.ids.length })}</span><em>{["allowed_user_ids", "mutation_allowed_user_ids", "admin_user_ids"].filter((field) => group.ids.some((id) => hasAccess(field as "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids", id))).length} {t("settings.rolesApplied")}</em></button>)}</div>}
+          {configuredPeople.length > 0 && <div className="access-summary"><div className="access-identity-heading"><span>{t("settings.accessSummary")}</span><small>{t("settings.identityCount", { count: configuredPeople.reduce((count, group) => count + group.ids.length, 0) })}</small></div>{configuredPeople.map((group) => <button type="button" className="access-summary-row" key={group.key} onClick={() => setSelectedPersonId(group.ids[0])}><strong>{group.name}</strong><span>{t("settings.identityCount", { count: group.ids.length })}</span><em>{["allowed_user_ids", "mutation_allowed_user_ids", "admin_user_ids"].filter((field) => group.ids.some((id) => hasAccess(field as "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids", id))).length} {t("settings.rolesApplied")}</em></button>)}</div>}
           {accessPeople.length === 0 && <p className="schedule-note access-empty-note">{t("settings.noRecentPeople")}</p>}
         </div>
       </div>

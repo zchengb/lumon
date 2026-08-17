@@ -82,14 +82,15 @@ def remember_user_identity(
         return
     name = str(display_name or "").strip() or store.get_feishu_display_name(uid)
     union = str(union_id or "").strip() or store.get_feishu_union_id(uid)
-    if name and union:
+    if name or union:
         store.upsert_feishu_identity(
             identity_id=uid,
             identity_type="user",
             display_name=name,
             union_id=union,
         )
-        return
+        if union:
+            return
     agents = [str(agent_id or "").strip().lower()] if agent_id else []
     agents.extend(a for a in GATEWAY_AGENTS if a not in agents)
     for aid in agents:
@@ -112,6 +113,15 @@ def remember_user_identity(
             identity_id=uid,
             identity_type="user",
             display_name=name,
+            union_id=union,
+        )
+    else:
+        # The sender open_id is still useful for Dashboard authorization even
+        # when Feishu refuses cross-app profile lookup (41050/99992361).
+        store.upsert_feishu_identity(
+            identity_id=uid,
+            identity_type="user",
+            display_name="",
             union_id=union,
         )
 
@@ -151,7 +161,7 @@ def enrich_feishu_identities(
     network: bool = True,
 ) -> dict[str, Any]:
     ensure_lumen_env_loaded()
-    users: list[dict[str, str]] = []
+    users: list[dict[str, Any]] = []
     chats: list[dict[str, str]] = []
     names: dict[str, str] = {}
     project_names: dict[str, str] = {}
@@ -171,14 +181,22 @@ def enrich_feishu_identities(
         if not uid or not is_feishu_open_user_id(uid):
             continue
         name = store.get_feishu_display_name(uid)
-        if not name and network:
+        known_union = store.get_feishu_union_id(uid)
+        if not name and network and not known_union:
             name = _resolve_one(
                 store=store,
                 identity_id=uid,
                 identity_type="user",
                 preferred_agent=agent_id,
             )
-        users.append({"id": uid, "name": name or ""})
+        users.append(
+            {
+                "id": uid,
+                "name": name or "",
+                "union_id": store.get_feishu_union_id(uid) or known_union,
+                "pending": not bool(name),
+            }
+        )
         if name:
             names[uid] = name
 

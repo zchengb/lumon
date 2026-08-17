@@ -94,6 +94,35 @@ class FeishuIdentityTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_unknown_sender_is_kept_as_pending_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            store = GlobalAgentStore()
+            try:
+                with mock.patch("feishu.identity._messenger_for", return_value=None):
+                    from feishu.identity import remember_user_identity
+
+                    remember_user_identity(
+                        store=store,
+                        open_id=BOB,
+                        union_id="on_pending_user",
+                        agent_id="mark",
+                    )
+                self.assertEqual(store.get_feishu_display_name(BOB), "")
+                self.assertEqual(store.get_feishu_union_id(BOB), "on_pending_user")
+                recent = store.list_recent_feishu_ids()
+                self.assertIn(BOB, recent["user_ids"])
+                enriched = enrich_feishu_identities(
+                    user_ids=[BOB],
+                    chat_ids=[],
+                    store=store,
+                    network=False,
+                )
+                self.assertTrue(enriched["users"][0]["pending"])
+                self.assertEqual(enriched["users"][0]["union_id"], "on_pending_user")
+            finally:
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

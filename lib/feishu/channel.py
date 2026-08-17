@@ -186,27 +186,44 @@ class FeishuChannel:
             ) from exc
 
         if len(self.clients) == 1:
-            self._start_client(self.clients[0], lark, EventDispatcherHandler, WsClient)
+            while True:
+                try:
+                    self._start_client(self.clients[0], lark, EventDispatcherHandler, WsClient)
+                except Exception:
+                    _LOG.error("ws client failed agent=%s\n%s", self.clients[0].agent_id, traceback.format_exc())
+                _LOG.warning("ws client exited; reconnecting agent=%s", self.clients[0].agent_id)
+                time.sleep(2)
             return
 
         ctx = multiprocessing.get_context("spawn")
-        procs = [
-            ctx.Process(
+        clients = {client.agent_id: client for client in self.clients}
+
+        def spawn(client: FeishuClientConfig) -> multiprocessing.Process:
+            proc = ctx.Process(
                 target=_run_single_client_process,
                 args=(client.agent_id, _LIB_DIR),
                 name=f"feishu-ws-{client.agent_id}",
                 daemon=True,
             )
-            for client in self.clients
-        ]
-        for proc in procs:
             proc.start()
             _LOG.info("spawned ws process pid=%s agent=%s", proc.pid, proc.name)
+            return proc
+
+        procs = {agent_id: spawn(client) for agent_id, client in clients.items()}
         try:
-            for proc in procs:
-                proc.join()
+            while procs:
+                for agent_id, proc in list(procs.items()):
+                    proc.join(timeout=1)
+                    if proc.is_alive():
+                        continue
+                    _LOG.error(
+                        "ws process exited agent=%s exitcode=%s; reconnecting",
+                        agent_id,
+                        proc.exitcode,
+                    )
+                    procs[agent_id] = spawn(clients[agent_id])
         finally:
-            for proc in procs:
+            for proc in procs.values():
                 if proc.is_alive():
                     proc.terminate()
 
@@ -239,7 +256,10 @@ class FeishuChannel:
         )
         print(f"Lumen agent gateway listening as {client.agent_id} ({client.app_id[:6]}…)")
         _LOG.info("starting ws client for %s app_id=%s…", client.agent_id, client.app_id[:8])
-        ws.start()
+        try:
+            ws.start()
+        finally:
+            _LOG.warning("ws client returned agent=%s", client.agent_id)
 
     def _safe_process(self, event: dict[str, Any], client: FeishuClientConfig) -> None:
         try:

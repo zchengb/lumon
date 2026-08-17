@@ -239,7 +239,10 @@ def _write_cases_to_sheet(
         raise RuntimeError("Feishu sheet id missing")
     headers = list(SHEET_HEADER_COLUMNS)
     end_col = column_letter(len(headers) - 1)
-    rows = client.get_values(spreadsheet_token, f"{sheet_id}!A1:{end_col}2000")
+    grid_rows = client.get_sheet_row_count(spreadsheet_token, sheet_id=sheet_id)
+    if grid_rows < 2:
+        raise RuntimeError(f"Feishu Sheet grid is too small: {grid_rows} rows")
+    rows = client.get_values(spreadsheet_token, f"{sheet_id}!A1:{end_col}{grid_rows}")
     rows = _ensure_sheet_headers(client, spreadsheet_token, sheet_id, rows)
     records = _sheet_rows_to_records(rows)
     existing = _existing_sheet_titles(records)
@@ -251,12 +254,16 @@ def _write_cases_to_sheet(
         values.append([str(fields.get(col) or "") for col in headers])
     if values:
         client.append_values(spreadsheet_token, sheet_id=sheet_id, values=values, end_col=end_col)
+        # INSERT_ROWS may grow the grid; use the post-write metadata for every
+        # subsequent range so validation, formatting, and read-back stay aligned.
+        grid_rows = client.get_sheet_row_count(spreadsheet_token, sheet_id=sheet_id)
     verify_col = column_letter(headers.index("Verify Status"))
+    validation_range = f"{verify_col}2:{verify_col}{grid_rows}"
     try:
         client.set_dropdown(
             spreadsheet_token,
             sheet_id=sheet_id,
-            range_a1=f"{verify_col}2:{verify_col}2000",
+            range_a1=validation_range,
             options=list(localize_verify_status_options(language)),
             colors=["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"],
         )
@@ -271,6 +278,7 @@ def _write_cases_to_sheet(
             bold_header=True,
             header_end_col=end_col,
             body_row_height=96,
+            body_end_row=grid_rows,
         )
     except Exception as exc:
         raise RuntimeError(f"Feishu Sheet formatting failed: {exc}") from exc
@@ -279,7 +287,7 @@ def _write_cases_to_sheet(
             spreadsheet_token,
             sheet_id=sheet_id,
             freeze_rows=1,
-            validation_range=f"{verify_col}2:{verify_col}2000",
+            validation_range=validation_range,
             validation_options=list(localize_verify_status_options(language)),
         )
     except Exception as exc:

@@ -81,6 +81,31 @@ class FeishuSheets:
             return sheets[0]
         raise RuntimeError(f"No worksheet found in spreadsheet for tab {wanted!r}")
 
+    def get_sheet_row_count(self, spreadsheet_token: str, *, sheet_id: str) -> int:
+        sid = str(sheet_id or "").strip()
+        if not sid:
+            raise ValueError("sheet_id required")
+        sheet = next(
+            (
+                item
+                for item in self.list_sheets(spreadsheet_token)
+                if str(item.get("sheetId") or item.get("sheet_id") or "").strip() == sid
+            ),
+            None,
+        )
+        if sheet is None:
+            raise RuntimeError(f"Feishu Sheet metadata failed: worksheet {sid!r} not found")
+        grid = sheet.get("gridProperties") if isinstance(sheet.get("gridProperties"), dict) else {}
+        for source in (sheet, grid):
+            for key in ("rowCount", "row_count"):
+                try:
+                    rows = int(source.get(key) or 0)
+                except (TypeError, ValueError):
+                    rows = 0
+                if rows > 0:
+                    return rows
+        raise RuntimeError(f"Feishu Sheet metadata failed: row count missing for worksheet {sid!r}")
+
     def add_sheet(self, spreadsheet_token: str, title: str, *, index: int | None = None) -> dict[str, Any]:
         token = parse_spreadsheet_token(spreadsheet_token)
         props: dict[str, Any] = {"title": str(title or "Sheet").strip() or "Sheet"}
@@ -275,6 +300,7 @@ class FeishuSheets:
         bold_header: bool = False,
         header_end_col: str = "",
         body_row_height: int = 96,
+        body_end_row: int | None = None,
     ) -> dict[str, Any]:
         token = parse_spreadsheet_token(spreadsheet_token)
         sid = str(sheet_id or "").strip()
@@ -316,7 +342,8 @@ class FeishuSheets:
                     },
                 )
             )
-        if body_row_height > 0:
+        body_end = int(body_end_row or 0)
+        if body_row_height > 0 and body_end > int(freeze_rows):
             results.append(
                 self._request(
                     "PUT",
@@ -326,7 +353,7 @@ class FeishuSheets:
                             "sheetId": sid,
                             "majorDimension": "ROWS",
                             "startIndex": int(freeze_rows),
-                            "endIndex": 2000,
+                            "endIndex": body_end,
                         },
                         "dimensionProperties": {"fixedSize": int(body_row_height)},
                     },
@@ -346,15 +373,16 @@ class FeishuSheets:
                 border_color="#B8C7D9",
                 font_size="11pt",
             ))
-            results.append(self.set_range_style(
-                spreadsheet_token,
-                sheet_id=sid,
-                range_a1=f"A2:{end}2000",
-                v_align=0,
-                border_type="FULL_BORDER",
-                border_color="#E5E7EB",
-                font_size="10pt",
-            ))
+            if body_end > int(freeze_rows):
+                results.append(self.set_range_style(
+                    spreadsheet_token,
+                    sheet_id=sid,
+                    range_a1=f"A2:{end}{body_end}",
+                    v_align=0,
+                    border_type="FULL_BORDER",
+                    border_color="#E5E7EB",
+                    font_size="10pt",
+                ))
         return {"operations": len(results)}
 
     def verify_sheet_format(

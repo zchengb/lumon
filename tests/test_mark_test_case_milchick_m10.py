@@ -85,6 +85,7 @@ class FakeBitable:
 class FakeSheets:
     def __init__(self) -> None:
         self.rows: list[list[Any]] = []
+        self.grid_rows = 120
         self.appended: list[list[Any]] = []
         self.ensured_names: list[str] = []
         self.dropdowns: list[dict[str, Any]] = []
@@ -98,6 +99,9 @@ class FakeSheets:
 
     def resolve_sheet(self, spreadsheet_token: str, sheet_name: str = "Sheet1") -> dict[str, Any]:
         return {"sheetId": "sht1", "title": sheet_name}
+
+    def get_sheet_row_count(self, spreadsheet_token: str, *, sheet_id: str) -> int:
+        return self.grid_rows
 
     def get_values(self, spreadsheet_token: str, range_a1: str) -> list[list[Any]]:
         return list(self.rows)
@@ -126,6 +130,7 @@ class FakeSheets:
         bold_header: bool = False,
         header_end_col: str = "",
         body_row_height: int = 96,
+        body_end_row: int | None = None,
     ) -> dict[str, Any]:
         self.formatted.append(
             {
@@ -398,7 +403,7 @@ class TestCaseSkillTests(unittest.TestCase):
             self.assertEqual(row[7], "")
         self.assertEqual(fake.dropdowns[0]["options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
         self.assertEqual(fake.dropdowns[0]["colors"], ["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"])
-        self.assertIn("G2:G2000", fake.dropdowns[0]["range_a1"])
+        self.assertEqual("G2:G120", fake.dropdowns[0]["range_a1"])
         self.assertEqual(fake.verified[0]["freeze_rows"], 1)
         self.assertEqual(fake.verified[0]["validation_options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
         self.assertTrue(fake.formatted)
@@ -417,12 +422,13 @@ class TestCaseSkillTests(unittest.TestCase):
         def request(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
             calls.append((method, path, payload))
             if path.endswith("/metainfo"):
-                return {"sheets": [{"sheetId": "sht1", "frozenRowCount": 1}]}
+                return {"sheets": [{"sheetId": "sht1", "frozenRowCount": 1, "rowCount": 120}]}
             if "/dataValidation?" in path:
                 return {"dataValidations": [{"conditionValues": ["待驗證", "驗證成功"]}]}
             return {}
 
         client._request = request
+        self.assertEqual(120, client.get_sheet_row_count("spreadsheet", sheet_id="sht1"))
         client.format_sheet(
             "spreadsheet",
             sheet_id="sht1",

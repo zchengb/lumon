@@ -579,6 +579,12 @@ class GlobalAgentStore:
             ("user_id", "SELECT user_id AS value FROM conversation_context WHERE user_id != '' ORDER BY updated_at DESC LIMIT ?"),
             ("user_id", "SELECT user_id AS value FROM agent_run WHERE user_id != '' ORDER BY updated_at DESC LIMIT ?"),
             ("user_id", "SELECT user_id AS value FROM conversation_log WHERE user_id != '' ORDER BY created_at DESC LIMIT ?"),
+            (
+                "user_id",
+                "SELECT identity_id AS value FROM feishu_identity "
+                "WHERE identity_type = 'user' AND identity_id LIKE 'ou_%' "
+                "ORDER BY updated_at DESC LIMIT ?",
+            ),
             ("chat_id", "SELECT chat_id AS value FROM conversation_context WHERE chat_id != '' ORDER BY updated_at DESC LIMIT ?"),
             ("chat_id", "SELECT chat_id AS value FROM agent_run WHERE chat_id != '' ORDER BY updated_at DESC LIMIT ?"),
             ("chat_id", "SELECT chat_id AS value FROM chat_project_map WHERE chat_id != '' ORDER BY updated_at DESC LIMIT ?"),
@@ -621,7 +627,7 @@ class GlobalAgentStore:
         name = str(display_name or "").strip()
         kind = str(identity_type or "").strip().lower() or "user"
         union = str(union_id or "").strip()
-        if not iid or not name:
+        if not iid:
             return
         self.conn.execute(
             """
