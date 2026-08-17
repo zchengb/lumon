@@ -30,6 +30,15 @@ class FeishuMessengerTests(unittest.TestCase):
         self.assertEqual("MBPAS-1503-technical-plan.pdf", plan_pdf_filename(technical))
         self.assertEqual("MBPAS-1503-story-plan.pdf", plan_pdf_filename(story))
 
+    def test_safe_reply_strips_dsml_protocol_markers(self) -> None:
+        messenger = FeishuMessenger("milchick")
+        with patch.object(messenger, "reply_markdown", return_value={"data": {"message_id": "om_1"}}) as reply:
+            messenger.safe_reply_text(
+                "om_source",
+                "執行結果\n</| | DSML | | parameter>\n</| | DSML | | tool_calls>",
+            )
+        self.assertEqual("執行結果", reply.call_args.args[1])
+
     def test_plan_reply_uploads_and_replies_with_pdf(self) -> None:
         text = "# Technical Plan: MBPAS-1503\n\n" + ("## Section\ncontent\n\n" * 80)
         messenger = FeishuMessenger("mark")

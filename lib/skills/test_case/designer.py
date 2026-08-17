@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -30,19 +31,67 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         raw = "\n".join(lines).strip()
+    decoder = json.JSONDecoder()
+
+    def decode_candidates(value: str) -> tuple[dict[str, Any] | None, json.JSONDecodeError | None]:
+        first: dict[str, Any] | None = None
+        last_error: json.JSONDecodeError | None = None
+        for index, char in enumerate(value):
+            if char != "{":
+                continue
+            try:
+                data, _end = decoder.raw_decode(value[index:])
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+            if not isinstance(data, dict):
+                continue
+            if first is None:
+                first = data
+            # Prefer the actual design payload when the harness returned
+            # metadata or another JSON object before it.
+            if isinstance(data.get("test_cases"), list):
+                return data, None
+        return first, last_error
+
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
             return data
     except Exception:
         pass
-    match = re.search(r"\{[\s\S]*\}", raw)
-    if not match:
-        raise ValueError("no json object in model output")
-    data = json.loads(match.group(0))
-    if not isinstance(data, dict):
-        raise ValueError("json root is not object")
-    return data
+    data, last_error = decode_candidates(raw)
+    if data is not None:
+        return data
+
+    # DeepSeek occasionally emits JavaScript-style keys or trailing commas
+    # despite the JSON-only contract. Repair only those safe, structural
+    # mistakes; never evaluate model output as code.
+    repaired = raw.translate(
+        str.maketrans({"“": '"', "”": '"', "„": '"', "‟": '"', "‘": "'", "’": "'"})
+    )
+    repaired = re.sub(r"([,{\[]\s*)([A-Za-z_][A-Za-z0-9_-]*)\s*:", r'\1"\2":', repaired)
+    repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+    data, repaired_error = decode_candidates(repaired)
+    if data is not None:
+        return data
+
+    # Some model versions use Python-style single-quoted literals. The
+    # literal parser accepts data only (never calls or imports), so it is a
+    # safe last fallback for that response shape.
+    match = re.search(r"\{[\s\S]*\}", repaired)
+    if match:
+        try:
+            data = ast.literal_eval(match.group(0))
+        except (SyntaxError, ValueError, MemoryError, RecursionError):
+            data = None
+        if isinstance(data, dict):
+            return data
+    if last_error is not None:
+        raise ValueError(f"invalid JSON model output: {last_error.msg}") from last_error
+    if repaired_error is not None:
+        raise ValueError(f"invalid JSON model output: {repaired_error.msg}") from repaired_error
+    raise ValueError("no json object in model output")
 
 
 def _load_lumen_dotenv() -> None:

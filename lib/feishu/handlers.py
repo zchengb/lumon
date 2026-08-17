@@ -135,7 +135,12 @@ def remember_message_identities(
     agent_id: str = "",
 ) -> None:
     try:
-        from feishu.identity import is_feishu_open_chat_id, remember_chat_identity, remember_user_identity
+        from feishu.identity import (
+            is_feishu_agent_display_name,
+            is_feishu_open_chat_id,
+            remember_chat_identity,
+            remember_user_identity,
+        )
         from risk.store import GlobalAgentStore
     except Exception:
         return
@@ -164,6 +169,9 @@ def remember_message_identities(
             open_id = str(mention_id.get("open_id") or "").strip()
             name = str(item.get("name") or "").strip()
             union_id = str(mention_id.get("union_id") or "").strip()
+            mentioned_type = str(item.get("mentioned_type") or item.get("mention_type") or "").strip().lower()
+            if mentioned_type in {"bot", "app"} or is_feishu_agent_display_name(name):
+                continue
             if open_id:
                 remember_user_identity(
                     store=store,

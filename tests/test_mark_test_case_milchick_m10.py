@@ -446,6 +446,8 @@ class TestCaseSkillTests(unittest.TestCase):
 
         dimension_calls = [call for call in calls if call[1].endswith("/dimension_range")]
         self.assertEqual("PUT", dimension_calls[0][0])
+        self.assertEqual(1, dimension_calls[0][2]["dimension"]["startIndex"])
+        self.assertEqual(2, dimension_calls[0][2]["dimension"]["endIndex"])
         self.assertEqual(80, dimension_calls[0][2]["dimensionProperties"]["fixedSize"])
         freeze_call = next(call for call in calls if call[1].endswith("/sheets_batch_update"))
         self.assertEqual(1, freeze_call[2]["requests"][0]["updateSheet"]["properties"]["frozenRowCount"])

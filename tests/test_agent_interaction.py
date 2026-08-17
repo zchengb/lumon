@@ -78,6 +78,15 @@ class AgentInteractionTests(unittest.TestCase):
         )
         self.assertEqual("**技術計畫已批准 ✅**（technicalStatus: approved）", parsed.text)
 
+    def test_dsml_protocol_markers_never_reach_feishu(self) -> None:
+        parsed = extract_final_response(
+            "執行失敗，請先修正表格。\n"
+            "</| | DSML | | parameter>\n"
+            "</| | DSML | | invoke>\n"
+            "</| | DSML | | tool_calls>"
+        )
+        self.assertEqual("執行失敗，請先修正表格。", parsed.text)
+
     def test_action_requirements_detect_missing_target(self) -> None:
         self.assertEqual(["story"], action_missing_fields("delivery.start", arguments={}))
         self.assertEqual([], action_missing_fields("delivery.start", resource={"story": "MBPAS-1"}))

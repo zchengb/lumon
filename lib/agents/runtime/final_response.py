@@ -42,6 +42,13 @@ _CONVERSATION_DECISION_ENVELOPE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# DeepSeek/OpenCode may leave protocol delimiters in the text stream after a
+# tool call. They are transport syntax, never user-facing response content.
+_DSML_MARKER = re.compile(
+    r"</?\s*(?:[|｜]\s*){1,2}DSML(?:\s*[|｜]){1,2}[^>]*>",
+    re.IGNORECASE,
+)
+
 _FORGED_IDENTITY_KEYS = frozenset(
     {
         "actor_user_id",
@@ -84,7 +91,7 @@ def sanitize_feishu_answer(text: str) -> str:
     raw = str(text or "").strip()
     if not raw:
         return raw
-    cleaned = raw
+    cleaned = _DSML_MARKER.sub("", raw).strip()
     for _ in range(6):
         nxt = _INTERNAL_PROGRESS_PREFIX.sub("", cleaned, count=1).lstrip()
         if nxt == cleaned:
@@ -100,7 +107,10 @@ def sanitize_feishu_answer(text: str) -> str:
                 if any(tok in head.lower() for tok in ("i'll ", "pulling ", "checking ", "looking ", "via `", "mcp")):
                     cleaned = cleaned[idx + 1 :].lstrip()
                     break
-    return cleaned.strip() or raw
+    cleaned = cleaned.strip()
+    if cleaned:
+        return cleaned
+    return "" if _DSML_MARKER.search(raw) else raw
 
 
 def _strip_forged_identity(payload: dict[str, Any]) -> dict[str, Any]:
@@ -180,7 +190,7 @@ def extract_final_response(raw: str) -> FinalResponseParse:
         )
     match = _FINAL_ENVELOPE.search(text)
     if match:
-        body = _CONVERSATION_DECISION_ENVELOPE.sub("", match.group(1)).strip()
+        body = sanitize_feishu_answer(_CONVERSATION_DECISION_ENVELOPE.sub("", match.group(1)))
         if body:
             return FinalResponseParse(
                 text=body,
@@ -195,6 +205,7 @@ def extract_final_response(raw: str) -> FinalResponseParse:
     if opening:
         body = _CONVERSATION_DECISION_ENVELOPE.sub("", text[opening.end() :]).strip()
         body = _CLARIFICATION_ENVELOPE.sub("", _ACTION_ENVELOPE.sub("", body)).strip()
+        body = sanitize_feishu_answer(body)
         if body:
             return FinalResponseParse(
                 text=body,

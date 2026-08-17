@@ -9,6 +9,16 @@ from feishu.messenger import FeishuMessenger
 
 _OPEN_USER_RE = re.compile(r"^ou_[a-fA-F0-9]{16,}$")
 _OPEN_CHAT_RE = re.compile(r"^oc_[a-fA-F0-9]{16,}$")
+_AGENT_DISPLAY_NAMES = {
+    "dylan",
+    "dylan g",
+    "irving",
+    "irving b",
+    "mark",
+    "mark s",
+    "milchick",
+    "mr milchick",
+}
 
 
 def is_feishu_open_user_id(value: str) -> bool:
@@ -17,6 +27,11 @@ def is_feishu_open_user_id(value: str) -> bool:
 
 def is_feishu_open_chat_id(value: str) -> bool:
     return bool(_OPEN_CHAT_RE.fullmatch(str(value or "").strip()))
+
+
+def is_feishu_agent_display_name(value: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().casefold()).strip()
+    return normalized in _AGENT_DISPLAY_NAMES
 
 
 def _messenger_for(agent_id: str) -> FeishuMessenger | None:
@@ -182,6 +197,10 @@ def enrich_feishu_identities(
             continue
         name = store.get_feishu_display_name(uid)
         known_union = store.get_feishu_union_id(uid)
+        if is_feishu_agent_display_name(name):
+            # Agent mentions used to be persisted as users. Keep them out of
+            # the human authorization picker, including historical rows.
+            continue
         if not name and network and not known_union:
             name = _resolve_one(
                 store=store,

@@ -123,6 +123,45 @@ class FeishuIdentityTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_agent_mentions_are_not_human_identities(self) -> None:
+        bot_id = "ou_cccccccccccccccccccccccccccccccc"
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            store = GlobalAgentStore()
+            try:
+                event = {
+                    "event": {
+                        "message": {
+                            "chat_id": CHAT,
+                            "chat_type": "group",
+                            "mentions": [
+                                {
+                                    "id": {"open_id": bot_id},
+                                    "name": "Mr. Milchick",
+                                    "mentioned_type": "bot",
+                                }
+                            ],
+                        }
+                    }
+                }
+                remember_message_identities(event, {"user_id": "", "chat_id": CHAT, "chat_type": "group"})
+                self.assertNotIn(bot_id, store.list_recent_feishu_ids()["user_ids"])
+                store.upsert_feishu_identity(
+                    identity_id=bot_id,
+                    identity_type="user",
+                    display_name="Mr. Milchick",
+                    union_id="on_agent",
+                )
+                enriched = enrich_feishu_identities(
+                    user_ids=[bot_id],
+                    chat_ids=[],
+                    store=store,
+                    network=False,
+                )
+                self.assertEqual(enriched["users"], [])
+            finally:
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

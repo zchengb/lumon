@@ -316,8 +316,10 @@ class FeishuSheets:
                         "dimension": {
                             "sheetId": sid,
                             "majorDimension": "COLUMNS",
-                            "startIndex": int(col_index),
-                            "endIndex": int(col_index) + 1,
+                            # Feishu's dimension_range endpoint uses a
+                            # 1-based column range and rejects startIndex=0.
+                            "startIndex": int(col_index) + 1,
+                            "endIndex": int(col_index) + 2,
                         },
                         "dimensionProperties": {"fixedSize": int(width)},
                     },

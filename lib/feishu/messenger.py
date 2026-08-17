@@ -14,6 +14,7 @@ from urllib.parse import quote
 from typing import Any, Optional
 
 from agents.registry import APP_ID_ENV
+from agents.runtime.final_response import sanitize_feishu_answer
 from feishu.pdf_renderer import is_plan_document, plan_pdf_filename, render_markdown_pdf, split_plan_response
 
 APP_SECRET_ENV = {
@@ -607,6 +608,7 @@ class FeishuMessenger:
         *,
         reply_in_thread: bool = False,
     ) -> Optional[dict[str, Any]]:
+        text = sanitize_feishu_answer(text)
         prefix, document, suffix = split_plan_response(text)
         if is_plan_document(document):
             try:

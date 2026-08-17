@@ -278,10 +278,11 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
             )
             recent_user_set = set(recent_ids.get("user_ids", []))
             recent_chat_set = set(recent_ids.get("chat_ids", []))
+            recent_users = [item for item in enriched.get("users", []) if item.get("id") in recent_user_set]
             recent = {
-                "user_ids": recent_ids.get("user_ids", []),
+                "user_ids": [str(item.get("id")) for item in recent_users if item.get("id")],
                 "chat_ids": recent_ids.get("chat_ids", []),
-                "users": [item for item in enriched.get("users", []) if item.get("id") in recent_user_set],
+                "users": recent_users,
                 "chats": [
                     item
                     for item in enriched.get("chats", [])

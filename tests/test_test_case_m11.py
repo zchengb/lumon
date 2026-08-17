@@ -11,7 +11,7 @@ LIB = ROOT / "lib"
 if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
-from skills.test_case.designer import drafts_from_payload
+from skills.test_case.designer import _extract_json_object, drafts_from_payload
 from skills.test_case.localization import (
     localize_test_case_type,
     localize_verify_status_options,
@@ -41,6 +41,22 @@ class LocalizationTests(unittest.TestCase):
     def test_normalize_legacy(self) -> None:
         self.assertEqual(normalize_case_type("Negative"), "validation")
         self.assertEqual(normalize_case_type("導航"), "navigation")
+
+
+class JsonExtractionTests(unittest.TestCase):
+    def test_extracts_json_with_fence_and_trailing_text(self) -> None:
+        payload = _extract_json_object(
+            'Here is the payload:\n```json\n{"test_cases":[{"title":"登入"}]}\n```\nDone.'
+        )
+        self.assertEqual(payload["test_cases"][0]["title"], "登入")
+
+    def test_repairs_structural_model_json_errors(self) -> None:
+        payload = _extract_json_object('{"test_cases":[{title: "登入", "steps": ["1."],},],}')
+        self.assertEqual(payload["test_cases"][0]["title"], "登入")
+
+    def test_accepts_python_style_single_quoted_payload(self) -> None:
+        payload = _extract_json_object("{'test_cases': [{'title': '登入'}]}")
+        self.assertEqual(payload["test_cases"][0]["title"], "登入")
 
 
 class ValidatorTests(unittest.TestCase):
