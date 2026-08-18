@@ -191,7 +191,13 @@ class AgentJobStore:
         parent_id: str = "",
         root_id: str = "",
     ) -> Optional[AgentJob]:
-        """Find the active Loop whose Feishu question this message answers."""
+        """Find a Loop only when the reply targets its posted question.
+
+        A conversation thread can contain ordinary follow-up requests while a
+        Loop is waiting for a decision.  The thread (or the original user
+        message) is therefore context, not ownership: only an exact question
+        message anchor may resume the waiting child.
+        """
         query = """
             SELECT * FROM agent_job
             WHERE status = 'waiting_user'
@@ -210,7 +216,6 @@ class AgentJobStore:
             for value in (parent_id, root_id)
             if str(value or "").strip()
         }
-        thread = str(thread_id or "").strip()
         for row in candidates:
             job = self._row_to_job(row)
             result = job.result if isinstance(job.result, dict) else {}
@@ -218,7 +223,6 @@ class AgentJobStore:
             question_ids = {
                 str(value or "").strip()
                 for value in (
-                    job.source_message_id,
                     result.get("question_message_id"),
                     result.get("outbound_message_id"),
                     nested.get("question_message_id"),
@@ -227,7 +231,5 @@ class AgentJobStore:
                 if str(value or "").strip()
             }
             if reply_ids.intersection(question_ids):
-                return job
-            if thread and thread == job.thread_id:
                 return job
         return None

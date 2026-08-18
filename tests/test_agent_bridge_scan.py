@@ -343,6 +343,93 @@ class AgentBridgeScanTests(unittest.TestCase):
                 self.assertTrue(should_handle(reply, mark))
                 self.assertFalse(should_handle(reply, milchick))
 
+    def test_waiting_loop_does_not_hijack_explicit_host_reply(self) -> None:
+        mark = FeishuClientConfig(
+            agent_id="mark",
+            app_id="cli_m",
+            app_secret="secret",
+            profile=PROFILES["mark"],
+        )
+        milchick = FeishuClientConfig(
+            agent_id="milchick",
+            app_id="cli_mil",
+            app_secret="secret",
+            profile=PROFILES["milchick"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"LUMEN_AGENTS_HOME": tmp}):
+                store = AgentJobStore(Path(tmp) / "agent_jobs.sqlite3")
+                try:
+                    broker = AgentJobBroker(store)
+                    parent = broker.create_parent(
+                        project="mbpass",
+                        requested_by="ou_owner",
+                        delegated_by="milchick",
+                        source_message_id="om-root",
+                        chat_id="oc1",
+                        thread_id="omt1",
+                        trace_id="tr1",
+                    )
+                    child = broker.create_child(
+                        parent=parent,
+                        target_agent="mark",
+                        capability="loop.business",
+                        input_data={},
+                    )
+                    child.status = "waiting_user"
+                    child.result = {"question_message_id": "om-mark-question"}
+                    store.save(child)
+                finally:
+                    store.close()
+                reply = {
+                    "event": {
+                        "message": {
+                            "chat_id": "oc1",
+                            "chat_type": "group",
+                            "mentions": [{"name": "Milchick"}],
+                            "parent_id": "om-mark-question",
+                            "root_id": "om-root",
+                            "thread_id": "omt1",
+                            "content": '{"text":"請先回答我目前的問題"}',
+                        }
+                    }
+                }
+                self.assertFalse(should_handle(reply, mark))
+                self.assertTrue(should_handle(reply, milchick))
+
+    def test_waiting_loop_requires_question_anchor_not_thread_or_original_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AgentJobStore(Path(tmp) / "agent_jobs.sqlite3")
+            try:
+                broker = AgentJobBroker(store)
+                parent = broker.create_parent(
+                    project="mbpass",
+                    requested_by="ou_owner",
+                    delegated_by="milchick",
+                    source_message_id="om-root",
+                    chat_id="oc1",
+                    thread_id="omt1",
+                    trace_id="tr1",
+                )
+                child = broker.create_child(
+                    parent=parent,
+                    target_agent="mark",
+                    capability="loop.business",
+                    input_data={},
+                )
+                child.status = "waiting_user"
+                child.result = {"question_message_id": "om-mark-question"}
+                store.save(child)
+                found = store.find_waiting_loop(
+                    agent_id="mark",
+                    chat_id="oc1",
+                    thread_id="omt1",
+                    root_id="om-root",
+                )
+                self.assertIsNone(found)
+            finally:
+                store.close()
+
     def test_should_reply_in_thread_for_group_mentions(self) -> None:
         from feishu.messenger import should_reply_in_thread
 

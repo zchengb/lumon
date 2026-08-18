@@ -239,18 +239,22 @@ def should_handle(event: dict[str, Any], client: FeishuClientConfig) -> bool:
         return False
     agent_id = str(client.agent_id or "").strip().lower()
     chat_type = str(message.get("chat_type") or "").strip().lower()
-    loop_owner = _waiting_loop_owner(message)
-    if loop_owner:
-        # A Loop answer belongs to the child agent that asked the question,
-        # even when Feishu delivered the reply to the original host bot.
-        return loop_owner == agent_id
     mentions = message.get("mentions")
-    if chat_type in {"p2p", "private"}:
-        return True
+    # An explicit target is always the latest user intent.  A pending Loop
+    # must not hijack a message addressed to the host agent or another owner.
     if isinstance(mentions, list) and len(mentions) > 0:
         return _mention_targets_agent(mentions, agent_id)
     content = extract_text(event)
     if _content_targets_agent(content, agent_id):
+        return True
+
+    loop_owner = _waiting_loop_owner(message)
+    if loop_owner:
+        # A Loop answer belongs to the child agent only when the user replied
+        # to that child's concrete question message.  Waiting status alone is
+        # not a conversation lock.
+        return loop_owner == agent_id
+    if chat_type in {"p2p", "private"}:
         return True
     parent_id = str(message.get("parent_id") or "").strip()
     root_id = str(message.get("root_id") or "").strip()
