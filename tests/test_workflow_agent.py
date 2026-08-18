@@ -48,6 +48,18 @@ class WorkflowAgentTests(unittest.TestCase):
             self.assertEqual("xhigh", config["reasoning_effort"])
             self.assertEqual("kuoyio0820@gmail.com", config["account_email"])
 
+    def test_resolve_config_ignores_legacy_api_fields_for_codex(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "config").mkdir()
+            (workspace / "config" / "common.json").write_text(
+                json.dumps({"execution": {"provider": "codex", "base_url": "https://old.example/v1", "api_key_env": "DEEPSEEK_API_KEY"}}),
+                encoding="utf-8",
+            )
+            config = workflow_agent.resolve_config(workspace, "auto_scan")
+            self.assertEqual("", config["base_url"])
+            self.assertEqual("", config["api_key_env"])
+
     def test_resolve_config_keeps_legacy_delivery_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

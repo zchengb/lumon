@@ -70,6 +70,11 @@ class RepositoryGovernanceTests(unittest.TestCase):
         self.assertEqual("xhigh", config["reasoning_effort"])
         self.assertEqual("kuoyio0820@gmail.com", config["account_email"])
 
+    def test_codex_ignores_legacy_api_endpoint_fields(self) -> None:
+        config = workflow_model_config({"provider": "codex", "base_url": "https://old.example/v1", "api_key_env": "DEEPSEEK_API_KEY"})
+        self.assertEqual("", config["base_url"])
+        self.assertEqual("", config["api_key_env"])
+
     def test_workflow_model_config_normalizes_all_provider_aliases(self) -> None:
         self.assertEqual("cursor_cli", workflow_model_config({"provider": "cursor-cli"})["provider"])
         self.assertEqual("opencode", workflow_model_config({"provider": "deepseek_api"})["provider"])

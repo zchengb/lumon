@@ -95,6 +95,8 @@ def resolve_config(
     if not str(selected_model).strip():
         raise ValueError(f"No model configured for {workflow}")
     if normalized == "codex":
+        selected_base_url = ""
+        selected_key_env = ""
         selected_reasoning_effort = str(selected_reasoning_effort or DEFAULT_REASONING_EFFORT)
         selected_account_email = str(selected_account_email or DEFAULT_ACCOUNT_EMAIL)
     result = {

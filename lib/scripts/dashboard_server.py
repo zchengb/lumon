@@ -328,8 +328,8 @@ def workflow_model_config(execution: object, prefix: str = "") -> dict[str, str]
         "openai_compatible": "gpt-4o-mini",
     }.get(provider, "cursor-grok-4.5-medium")
     model = str(values.get(f"{prefix}model") or values.get("model") or default_model).strip()
-    base_url = str(values.get(f"{prefix}base_url") or values.get("base_url") or "").strip()
-    api_key_env = str(values.get(f"{prefix}api_key_env") or values.get("api_key_env") or "").strip()
+    base_url = "" if provider == "codex" else str(values.get(f"{prefix}base_url") or values.get("base_url") or "").strip()
+    api_key_env = "" if provider == "codex" else str(values.get(f"{prefix}api_key_env") or values.get("api_key_env") or "").strip()
     reasoning_effort = str(values.get(f"{prefix}reasoning_effort") or values.get("reasoning_effort") or ("xhigh" if provider == "codex" else "")).strip()
     account_email = str(values.get(f"{prefix}account_email") or values.get("account_email") or ("kuoyio0820@gmail.com" if provider == "codex" else "")).strip()
     return {

@@ -3680,6 +3680,10 @@ function WorkflowModelField({ label, provider, model, baseUrl, apiKeyEnv, reason
   const selectProvider = (value: string) => {
     onProviderChange(value);
     onModelChange(value === "codex" ? "gpt-5.6-luna" : value === "opencode" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : value === "openai_compatible" ? "gpt-4o-mini" : model);
+    if (value === "codex") {
+      onBaseUrlChange("");
+      onApiKeyEnvChange("");
+    }
     onReasoningEffortChange(value === "codex" ? "xhigh" : "");
     onAccountEmailChange(value === "codex" ? codexAccountEmail : "");
     markDirty();
