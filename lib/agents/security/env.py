@@ -61,6 +61,7 @@ _ALLOW_KEYS = (
     "SHELL",
     "XDG_RUNTIME_DIR",
     "AGENT_CLI_CREDENTIAL_STORE",
+    "CODEX_HOME",
 )
 
 

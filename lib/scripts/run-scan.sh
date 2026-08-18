@@ -84,7 +84,11 @@ if [[ "${PROVIDER}" == "cursor" || "${PROVIDER}" == "cursor_cli" ]]; then
 else
   MODEL="$(model_from_config)"
 fi
-MODEL="${MODEL:-cursor-grok-4.5-medium}"
+if [[ "${PROVIDER}" == "codex" || "${PROVIDER}" == "codex_cli" || "${PROVIDER}" == "codex-cli" ]]; then
+  MODEL="${MODEL:-gpt-5.6-luna}"
+else
+  MODEL="${MODEL:-cursor-grok-4.5-medium}"
+fi
 export LUMEN_MODEL="${MODEL}"
 SANDBOX_MODE="${CURSOR_AGENT_SANDBOX:-enabled}"
 OUTPUT_FORMAT="${CURSOR_AGENT_OUTPUT_FORMAT:-stream-json}"

@@ -16,13 +16,14 @@ LIB_DIR = Path(__file__).resolve().parent.parent
 if str(LIB_DIR) not in sys.path:
     sys.path.insert(0, str(LIB_DIR))
 
+from agents.runtime.codex_runtime import DEFAULT_ACCOUNT_EMAIL, DEFAULT_MODEL as CODEX_DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, CodexAgentRuntime
 from agents.runtime.opencode_runtime import OpenCodeAgentRuntime
 from agents.runtime.openai_compatible import chat_completion_messages, is_api_provider
 from agents.runner.runner_env import build_runner_env
 
 
 DEFAULT_MODEL = "cursor-grok-4.5-medium"
-PROVIDERS = {"cursor_cli", "deepseek", "deepseek_api", "opencode", "opencode_deepseek", "openai", "openai_compatible"}
+PROVIDERS = {"codex", "codex_cli", "cursor_cli", "deepseek", "deepseek_api", "opencode", "opencode_deepseek", "openai", "openai_compatible"}
 # Auto Scan may inspect many repositories before it can write its result. Keep
 # a bounded budget, but leave enough turns for the configured workspace rather
 # than failing halfway through normal evidence collection.
@@ -49,6 +50,8 @@ def normalize_provider(value: str) -> str:
     provider = str(value or "cursor_cli").strip().casefold()
     if provider in {"cursor", "cursor-cli", "cursor_cli"}:
         return "cursor_cli"
+    if provider in {"codex", "codex_cli", "codex-cli"}:
+        return "codex"
     if provider in {"deepseek", "deepseek_api", "opencode", "opencode_deepseek"}:
         return "opencode"
     if provider in {"openai", "openai_compatible", "openai-compatible"}:
@@ -79,20 +82,31 @@ def resolve_config(
         selected_model = (
             os.environ.get("CURSOR_AGENT_MODEL")
             if normalized == "cursor_cli"
+            else CODEX_DEFAULT_MODEL
+            if normalized == "codex"
             else "deepseek-v4-flash"
             if normalized == "opencode"
             else "gpt-4o-mini"
         )
     selected_base_url = base_url or execution.get(f"{prefix}base_url") or execution.get("base_url") or ""
     selected_key_env = api_key_env or execution.get(f"{prefix}api_key_env") or execution.get("api_key_env") or ""
+    selected_reasoning_effort = execution.get(f"{prefix}reasoning_effort") or execution.get("reasoning_effort") or ""
+    selected_account_email = execution.get(f"{prefix}account_email") or execution.get("account_email") or ""
     if not str(selected_model).strip():
         raise ValueError(f"No model configured for {workflow}")
-    return {
+    if normalized == "codex":
+        selected_reasoning_effort = str(selected_reasoning_effort or DEFAULT_REASONING_EFFORT)
+        selected_account_email = str(selected_account_email or DEFAULT_ACCOUNT_EMAIL)
+    result = {
         "provider": normalized,
         "model": str(selected_model).strip(),
         "base_url": str(selected_base_url or "").strip(),
         "api_key_env": str(selected_key_env or "").strip(),
     }
+    if normalized == "codex":
+        result["reasoning_effort"] = str(selected_reasoning_effort or DEFAULT_REASONING_EFFORT).strip()
+        result["account_email"] = str(selected_account_email or DEFAULT_ACCOUNT_EMAIL).strip()
+    return result
 
 
 def emit(event: dict[str, Any], output_format: str) -> None:
@@ -304,6 +318,27 @@ def run_opencode(config: dict[str, str], args: argparse.Namespace) -> int:
     return 0
 
 
+def run_codex(config: dict[str, str], args: argparse.Namespace) -> int:
+    roots = allowed_roots(args.workspace)
+    runtime = CodexAgentRuntime(
+        model=config["model"],
+        reasoning_effort=config.get("reasoning_effort") or DEFAULT_REASONING_EFFORT,
+        account_email=config.get("account_email") or DEFAULT_ACCOUNT_EMAIL,
+        hard_timeout_seconds=args.timeout,
+        sandbox=args.sandbox,
+        agent_id=args.agent_id,
+        project=args.project,
+    )
+    runtime.additional_directories = list(roots)
+    result = runtime.run(workspace=args.workspace, prompt=args.prompt)
+    if result.status != "succeeded" or not result.text.strip():
+        emit({"type": "result", "subtype": "error", "is_error": True, "result": redact(result.error or result.status)}, args.output_format)
+        return 1
+    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": redact(result.text)}]}}, args.output_format)
+    emit({"type": "result", "subtype": "success", "request_id": result.request_id, "session_id": result.provider_session_id, "result": redact(result.text), "duration_ms": result.duration_ms}, args.output_format)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
@@ -324,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
     args.workspace = args.workspace.expanduser().resolve()
     try:
         config = resolve_config(args.workspace, args.workflow, args.provider, args.model, args.base_url, args.api_key_env)
+        if config["provider"] == "codex":
+            return run_codex(config, args)
         if config["provider"] == "opencode":
             return run_opencode(config, args)
         if is_api_provider(config["provider"]):

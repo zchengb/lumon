@@ -50,6 +50,8 @@ class ModelConfig:
     provider: str = "cursor"
     base_url: str = ""
     api_key_env: str = ""
+    reasoning_effort: str = ""
+    account_email: str = ""
     router_timeout_seconds: int = 8
     response_timeout_seconds: int = 25
     max_router_retries: int = 1
@@ -147,7 +149,7 @@ class ConversationFlags:
         execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
         global_model_src = {
             key: execution.get(key)
-            for key in ("provider", "model", "base_url", "api_key_env")
+            for key in ("provider", "model", "base_url", "api_key_env", "reasoning_effort", "account_email")
             if execution.get(key)
         }
         provider_src = global_model_src or (v4.get("provider") if isinstance(v4.get("provider"), dict) else {})
@@ -171,15 +173,19 @@ class ConversationFlags:
         session_raw = v4.get("session") if isinstance(v4.get("session"), dict) else {}
         runtime_raw = v4.get("runtime") if isinstance(v4.get("runtime"), dict) else {}
         v4_enabled = bool(v4.get("enabled", False))
+        provider_name = str(model_src.get("type") or model_src.get("provider") or "cursor").strip().casefold()
+        codex_provider = provider_name in {"codex", "codex_cli", "codex-cli"}
         model = ModelConfig(
             provider=str(model_src.get("type") or model_src.get("provider") or "cursor"),
             base_url=str(model_src.get("base_url") or ""),
             api_key_env=str(model_src.get("api_key_env") or ""),
+            reasoning_effort=str(model_src.get("reasoning_effort") or ("xhigh" if codex_provider else "")),
+            account_email=str(model_src.get("account_email") or ("kuoyio0820@gmail.com" if codex_provider else "")),
             router_timeout_seconds=int(model_src.get("router_timeout_seconds") or model_src.get("planner_timeout_seconds") or 45),
             response_timeout_seconds=int(model_src.get("response_timeout_seconds") or model_src.get("responder_timeout_seconds") or 60),
             max_router_retries=int(model_src.get("max_router_retries") or model_src.get("max_planner_retries") or 1),
             max_response_retries=int(model_src.get("max_response_retries") or model_src.get("max_responder_retries") or 1),
-            model_name=str(model_src.get("model") or model_src.get("name") or "cursor-grok-4.5-medium"),
+            model_name=str(model_src.get("model") or model_src.get("name") or ("gpt-5.6-luna" if codex_provider else "cursor-grok-4.5-medium")),
             planner_timeout_seconds=int(model_src.get("planner_timeout_seconds") or 45),
             responder_timeout_seconds=int(model_src.get("responder_timeout_seconds") or 60),
             required=bool(model_src.get("required", True if (v4_enabled or v3.get("enabled")) else False)),

@@ -31,6 +31,7 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
 
     api_provider = is_api_provider(flags.model.provider)
     harness_provider = canonical_agent_provider(flags.model.provider) == "opencode"
+    codex_provider = canonical_agent_provider(flags.model.provider) == "codex"
     checks: list[dict[str, str]] = []
     checks.append(
         _check(
@@ -60,7 +61,7 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     checks.append(
         _check(
             "agent_cli",
-            "N/A" if api_provider or harness_provider else ("PASS" if agent_bin else ("WARN" if flags.model.provider == "fake" else "FAIL")),
+            "N/A" if api_provider or harness_provider or codex_provider else ("PASS" if agent_bin else ("WARN" if flags.model.provider == "fake" else "FAIL")),
             opencode_bin if harness_provider else (agent_bin or "not found"),
         )
     )
@@ -71,6 +72,13 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         key_env = flags.model.api_key_env or "DEEPSEEK_API_KEY"
         local_model = is_local_opencode_provider(flags.model.model_name, flags.model.base_url)
         checks.append(_check("opencode_auth", "PASS" if local_model or os.environ.get(key_env, "").strip() else "FAIL", "local" if local_model else key_env))
+    if codex_provider:
+        from agents.runtime.codex_runtime import codex_account_status, find_codex_bin
+
+        codex_bin = find_codex_bin()
+        account = codex_account_status(flags.model.account_email)
+        checks.append(_check("codex_cli", "PASS" if codex_bin else "FAIL", codex_bin or "not found"))
+        checks.append(_check("codex_account", "PASS" if account["matches"] else "FAIL", str(account.get("email") or "not logged in")))
     if api_provider:
         key_env = flags.model.api_key_env or default_api_key_env(flags.model.provider)
         checks.append(
@@ -106,7 +114,7 @@ def doctor_deep(*, common: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     checks.append(
         _check(
             "model",
-            "PASS" if (flags.model.provider in {"cursor", "cursor_cli", "fake"} or harness_provider and (is_local_opencode_provider(flags.model.model_name, flags.model.base_url) or os.environ.get(flags.model.api_key_env or "DEEPSEEK_API_KEY", "").strip()) or (api_provider and os.environ.get(flags.model.api_key_env or default_api_key_env(flags.model.provider), "").strip())) else "FAIL",
+            "PASS" if (flags.model.provider in {"cursor", "cursor_cli", "fake"} or codex_provider and bool(codex_account_status(flags.model.account_email)["matches"]) or harness_provider and (is_local_opencode_provider(flags.model.model_name, flags.model.base_url) or os.environ.get(flags.model.api_key_env or "DEEPSEEK_API_KEY", "").strip()) or (api_provider and os.environ.get(flags.model.api_key_env or default_api_key_env(flags.model.provider), "").strip())) else "FAIL",
             f"{flags.model.provider}/{flags.model.model_name} required={flags.model.required}",
         )
     )

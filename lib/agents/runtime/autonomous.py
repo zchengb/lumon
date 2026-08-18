@@ -54,6 +54,7 @@ _RESUME_RETRY_TOKENS = (
     "failed to reach",
     "cursor api",
     "opencode",
+    "codex",
     "provider",
     "empty stream",
 )
@@ -106,6 +107,18 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
         return (
             "I can't run that turn because the secure Agent sandbox is unavailable. "
             "Conversation agents stay offline until security-check passes.\n"
+            f"Trace ID: {trace_id}"
+        )
+    if "codex_account_mismatch" in lower:
+        return (
+            "The selected Codex account is not the configured Kuoyio account, so I couldn't run this turn. "
+            "Sign in to Codex with the configured account and retry. No Jira action or workspace change was made.\n"
+            f"Trace ID: {trace_id}"
+        )
+    if "codex" in lower:
+        return (
+            "I couldn't finish this turn through the configured Codex runtime. "
+            "Check the Codex CLI login and workspace connection, then retry.\n"
             f"Trace ID: {trace_id}"
         )
     if "opencode" in lower or "deepseek" in lower:
@@ -655,6 +668,8 @@ def handle_autonomous_conversation(
                 model=flags.model.model_name,
                 base_url=flags.model.base_url,
                 api_key_env=flags.model.api_key_env,
+                reasoning_effort=flags.model.reasoning_effort,
+                account_email=flags.model.account_email,
                 soft_timeout_seconds=flags.soft_timeout_seconds,
                 hard_timeout_seconds=flags.hard_timeout_seconds,
                 sandbox="enabled",

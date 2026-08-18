@@ -37,6 +37,17 @@ class WorkflowAgentTests(unittest.TestCase):
             self.assertEqual("opencode", workflow_agent.resolve_config(workspace, "auto_patch")["provider"])
             self.assertEqual("deepseek-v4-flash", workflow_agent.resolve_config(workspace, "auto_patch")["model"])
 
+    def test_resolve_config_applies_codex_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "config").mkdir()
+            (workspace / "config" / "common.json").write_text(json.dumps({"execution": {"provider": "codex"}}), encoding="utf-8")
+            config = workflow_agent.resolve_config(workspace, "auto_scan")
+            self.assertEqual("codex", config["provider"])
+            self.assertEqual("gpt-5.6-luna", config["model"])
+            self.assertEqual("xhigh", config["reasoning_effort"])
+            self.assertEqual("kuoyio0820@gmail.com", config["account_email"])
+
     def test_resolve_config_keeps_legacy_delivery_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

@@ -54,6 +54,8 @@ LUMON_PROVIDER_KEYS = {"DEEPSEEK_API_KEY", "OPENAI_API_KEY"}
 
 def dashboard_provider(value: object) -> str:
     provider = str(value or "cursor_cli").strip().casefold()
+    if provider in {"codex", "codex_cli", "codex-cli"}:
+        return "codex"
     if provider in {"deepseek", "deepseek_api", "opencode_deepseek"}:
         return "opencode"
     if provider == "cursor":
@@ -63,6 +65,8 @@ def dashboard_provider(value: object) -> str:
 
 def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_keys: list[str]) -> dict[str, Any]:
     provider = dashboard_provider(model.get("provider"))
+    account: dict[str, str | bool] = {}
+    login_detail = ""
     if provider == "opencode":
         try:
             from agents.runtime.opencode_runtime import find_opencode_bin
@@ -72,6 +76,16 @@ def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_k
             command = shutil.which("opencode") or ""
     elif provider == "cursor_cli":
         command = shutil.which("agent") or shutil.which("cursor-agent") or ""
+    elif provider == "codex":
+        try:
+            from agents.runtime.codex_runtime import codex_account_status, codex_login_status, find_codex_bin
+
+            command = find_codex_bin()
+            account = codex_account_status(model.get("account_email") or "kuoyio0820@gmail.com")
+            _, login_detail = codex_login_status(command=command, codex_home=Path(str(account.get("home") or "")))
+        except Exception as exc:
+            command = ""
+            login_detail = str(exc)[:160]
     else:
         command = ""
     version = ""
@@ -87,21 +101,29 @@ def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_k
     defaults = {
         "opencode": "" if local_opencode else "DEEPSEEK_API_KEY",
         "cursor_cli": "CURSOR_API_KEY",
+        "codex": "ChatGPT login",
         "openai_compatible": "OPENAI_API_KEY",
     }
     key_env = model.get("api_key_env") or defaults.get(provider, "")
+    codex_ready = bool(command) and bool(account.get("configured")) and bool(account.get("matches")) and not login_detail.casefold().startswith("not logged in")
     return {
-        "harness": {"opencode": "OpenCode", "cursor_cli": "Cursor CLI"}.get(provider, "OpenAI-compatible API"),
+        "harness": {"opencode": "OpenCode", "cursor_cli": "Cursor CLI", "codex": "Codex CLI"}.get(provider, "OpenAI-compatible API"),
         "provider": provider,
         "model": model.get("model", ""),
+        "reasoning_effort": model.get("reasoning_effort", ""),
         "command": command,
         "version": version,
-        "installed": bool(command) if provider in {"opencode", "cursor_cli"} else True,
+        "installed": bool(command) if provider in {"opencode", "cursor_cli", "codex"} else True,
         "api_key_env": key_env,
-        "api_key_configured": local_opencode or key_env in configured_keys,
-        "session_mode": "persistent provider session" if provider == "opencode" else "provider managed",
+        "api_key_configured": codex_ready if provider == "codex" else local_opencode or key_env in configured_keys,
+        "account_email": str(account.get("email") or "") if provider == "codex" else "",
+        "expected_account_email": str(account.get("expected_email") or model.get("account_email") or "") if provider == "codex" else "",
+        "account_configured": codex_ready if provider == "codex" else True,
+        "account_match": bool(account.get("matches")) if provider == "codex" else True,
+        "auth_detail": login_detail if provider == "codex" else "",
+        "session_mode": "persistent Codex session" if provider == "codex" else "persistent provider session" if provider == "opencode" else "provider managed",
         "action_catalog": str((workspace / ".lumon" / "action-catalog.md").resolve()),
-        "permission_profile": "workspace OpenCode permission policy" if provider == "opencode" else "provider sandbox policy",
+        "permission_profile": "workspace Codex sandbox policy" if provider == "codex" else "workspace OpenCode permission policy" if provider == "opencode" else "provider sandbox policy",
     }
 
 if str(LIB_DIR) not in sys.path:
@@ -298,10 +320,20 @@ def capture_schedule_status(func: Any, project: str) -> dict[str, Any] | None:
 def workflow_model_config(execution: object, prefix: str = "") -> dict[str, str]:
     values = execution if isinstance(execution, dict) else {}
     provider = dashboard_provider(values.get(f"{prefix}provider") or values.get("provider") or "cursor_cli")
-    model = str(values.get(f"{prefix}model") or values.get("model") or "cursor-grok-4.5-medium").strip()
+    default_model = "gpt-5.6-luna" if provider == "codex" else "cursor-grok-4.5-medium"
+    model = str(values.get(f"{prefix}model") or values.get("model") or default_model).strip()
     base_url = str(values.get(f"{prefix}base_url") or values.get("base_url") or "").strip()
     api_key_env = str(values.get(f"{prefix}api_key_env") or values.get("api_key_env") or "").strip()
-    return {"provider": provider, "model": model, "base_url": base_url, "api_key_env": api_key_env}
+    reasoning_effort = str(values.get(f"{prefix}reasoning_effort") or values.get("reasoning_effort") or ("xhigh" if provider == "codex" else "")).strip()
+    account_email = str(values.get(f"{prefix}account_email") or values.get("account_email") or ("kuoyio0820@gmail.com" if provider == "codex" else "")).strip()
+    return {
+        "provider": provider,
+        "model": model,
+        "base_url": base_url,
+        "api_key_env": api_key_env,
+        "reasoning_effort": reasoning_effort,
+        "account_email": account_email,
+    }
 
 
 def workspace_payload(workspace: Path) -> dict[str, Any]:
@@ -2194,7 +2226,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 if not isinstance(execution, dict):
                     raise ValueError("Invalid workspace execution configuration")
                 execution["scan_window_days"] = days
-                workflow_providers = {"cursor_cli", "cursor", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}
+                workflow_providers = {"codex", "codex_cli", "codex-cli", "cursor_cli", "cursor", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}
 
                 def apply_model_config(target: dict[str, Any], body_prefix: str, file_prefix: str = "") -> None:
                     provider = str(body.get(f"{body_prefix}provider") or "").strip()
@@ -2205,12 +2237,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         target[f"{file_prefix}provider"] = dashboard_provider(provider)
                     if model:
                         target[f"{file_prefix}model"] = model
-                    for suffix in ("base_url", "api_key_env"):
+                    for suffix in ("base_url", "api_key_env", "reasoning_effort", "account_email"):
                         key = f"{body_prefix}{suffix}"
                         if key in body:
                             target[f"{file_prefix}{suffix}"] = str(body.get(key) or "").strip()
 
-                global_model_keys = ("ai_provider", "ai_model", "ai_base_url", "ai_api_key_env")
+                global_model_keys = ("ai_provider", "ai_model", "ai_base_url", "ai_api_key_env", "ai_reasoning_effort", "ai_account_email")
                 has_global_model = any(key in body for key in global_model_keys)
                 if has_global_model:
                     apply_model_config(execution, "ai_")
@@ -2231,7 +2263,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     if not isinstance(delivery_execution, dict):
                         raise ValueError("Invalid delivery execution configuration")
                     if has_global_model:
-                        for key in ("provider", "model", "base_url", "api_key_env"):
+                        for key in ("provider", "model", "base_url", "api_key_env", "reasoning_effort", "account_email"):
                             if key in execution:
                                 delivery_execution[key] = execution[key]
                                 delivery_execution[f"patch_{key}"] = execution[key]

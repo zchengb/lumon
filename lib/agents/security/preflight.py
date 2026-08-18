@@ -32,6 +32,12 @@ def _opencode_available() -> bool:
     return bool(find_opencode_bin())
 
 
+def _codex_available() -> bool:
+    from agents.runtime.codex_runtime import find_codex_bin
+
+    return bool(find_codex_bin())
+
+
 def _sandbox_defaults_ok() -> bool:
     from agents.runtime.cursor_runtime import CursorAgentRuntime
 
@@ -83,6 +89,15 @@ def run_security_check(
         key_env = model_flags.model.api_key_env or "DEEPSEEK_API_KEY"
         checks["model_api"] = "pass" if local_model or os.environ.get(key_env, "").strip() else f"missing:{key_env}"
         if checks["opencode_cli"] != "pass" or checks["model_api"] != "pass":
+            critical_fail = True
+    elif runtime_provider == "codex":
+        from agents.runtime.codex_runtime import codex_account_status
+
+        checks["cursor_cli"] = "not_required"
+        checks["codex_cli"] = "pass" if _codex_available() else "fail"
+        account = codex_account_status(model_flags.model.account_email)
+        checks["codex_account"] = "pass" if account["matches"] else f"mismatch:{account.get('email') or 'not_logged_in'}"
+        if checks["codex_cli"] != "pass" or checks["codex_account"] != "pass":
             critical_fail = True
     elif api_provider:
         checks["cursor_cli"] = "not_required"

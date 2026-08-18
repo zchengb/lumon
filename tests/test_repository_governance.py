@@ -15,7 +15,7 @@ LIB_DIR = Path(__file__).resolve().parents[1] / "lib" / "scripts"
 if str(LIB_DIR) not in sys.path:
     sys.path.insert(0, str(LIB_DIR))
 
-from dashboard_server import integration_value, save_repositories, update_env_value, workspace_payload  # noqa: E402
+from dashboard_server import integration_value, save_repositories, update_env_value, workflow_model_config, workspace_payload  # noqa: E402
 from delivery_workspace import repository_delivery_disabled_reasons  # noqa: E402
 from auto_fix_sync import is_pr_candidate  # noqa: E402
 from patch_runner import select_repository  # noqa: E402
@@ -62,6 +62,13 @@ class RepositoryGovernanceTests(unittest.TestCase):
             self.assertEqual(payload["model_config"], payload["model_configs"]["scan"])
             self.assertEqual(payload["model_config"], payload["model_configs"]["delivery"])
             self.assertEqual(payload["model_config"], payload["model_configs"]["patch"])
+
+    def test_codex_model_config_defaults_to_luna_xhigh_and_kuoyio(self) -> None:
+        config = workflow_model_config({"provider": "codex"})
+        self.assertEqual("codex", config["provider"])
+        self.assertEqual("gpt-5.6-luna", config["model"])
+        self.assertEqual("xhigh", config["reasoning_effort"])
+        self.assertEqual("kuoyio0820@gmail.com", config["account_email"])
 
     def test_payload_exposes_and_updates_lumon_provider_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -340,6 +340,8 @@ def create_agent_runtime(
     model: str,
     base_url: str = "",
     api_key_env: str = "",
+    reasoning_effort: str = "",
+    account_email: str = "",
     soft_timeout_seconds: int = 90,
     hard_timeout_seconds: int = 3600,
     sandbox: str = "enabled",
@@ -349,6 +351,21 @@ def create_agent_runtime(
     project: str = "",
 ) -> Any:
     normalized = canonical_agent_provider(provider)
+    if normalized == "codex":
+        from agents.runtime.codex_runtime import CodexAgentRuntime
+
+        return CodexAgentRuntime(
+            model=model,
+            reasoning_effort=reasoning_effort,
+            account_email=account_email,
+            soft_timeout_seconds=soft_timeout_seconds,
+            hard_timeout_seconds=hard_timeout_seconds,
+            sandbox=sandbox,
+            force=force,
+            trust=trust,
+            agent_id=agent_id,
+            project=project,
+        )
     if normalized in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
         from agents.runtime.opencode_runtime import OpenCodeAgentRuntime
 
@@ -394,6 +411,8 @@ def create_agent_runtime(
 
 def canonical_agent_provider(provider: str) -> str:
     normalized = str(provider or "cursor").strip().casefold()
+    if normalized in {"codex", "codex_cli", "codex-cli"}:
+        return "codex"
     if normalized in {"deepseek", "deepseek_api", "opencode_deepseek"}:
         return "opencode"
     if normalized in {"cursor", "cursor-cli"}:

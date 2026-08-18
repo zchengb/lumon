@@ -364,6 +364,28 @@ class OpenCodeDylanModelClient(OpenAICompatibleDylanModelClient):
         return result.text
 
 
+class CodexDylanModelClient(OpenAICompatibleDylanModelClient):
+    """Use the installed Codex CLI for the legacy Dylan contract."""
+
+    provider_name = "codex"
+
+    def _run_api(self, prompt: str, *, timeout: int) -> str:
+        from agents.runtime.codex_runtime import CodexAgentRuntime
+
+        runtime = CodexAgentRuntime(
+            model=self.config.model_name,
+            reasoning_effort=self.config.reasoning_effort,
+            account_email=self.config.account_email,
+            hard_timeout_seconds=timeout,
+            agent_id="dylan",
+            project=self.workspace.name,
+        )
+        result = runtime.run(workspace=self.workspace, prompt=prompt)
+        if result.status != "succeeded" or not result.text.strip():
+            raise RuntimeError(result.error or "Codex returned no usable response")
+        return result.text
+
+
 class HeuristicDylanModelClient(DylanModelClient):
     provider_name = "heuristic"
 
@@ -511,6 +533,11 @@ def get_model_client(
     provider = str(flags_model.provider or "").casefold()
     if provider in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
         return OpenCodeDylanModelClient(flags_model, workspace=workspace)
+    if provider in {"codex", "codex_cli", "codex-cli"}:
+        from agents.runtime.codex_runtime import find_codex_bin
+
+        if find_codex_bin():
+            return CodexDylanModelClient(flags_model, workspace=workspace)
     if provider in {"openai", "openai_compatible"}:
         return OpenAICompatibleDylanModelClient(flags_model, workspace=workspace)
     if provider in {"cursor", "cursor_cli"} and shutil.which("agent"):

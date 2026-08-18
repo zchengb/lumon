@@ -113,12 +113,21 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
     app_secret = read_lumen_env_var(app_secret_env) if app_secret_env else ""
     provider_type = str(provider.get("type") or "cursor_cli").strip().casefold()
     model_configured = True
-    if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
+    if provider_type in {"codex", "codex_cli", "codex-cli", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
+        if provider_type in {"codex", "codex_cli", "codex-cli"}:
+            from agents.runtime.codex_runtime import codex_account_status, find_codex_bin
+
+            account = codex_account_status(provider.get("account_email") or "kuoyio0820@gmail.com")
+            model_configured = bool(find_codex_bin()) and bool(account["matches"])
+            model_key_env = "ChatGPT login"
+        else:
+            model_key_env = ""
         from agents.runtime.openai_compatible import default_api_key_env
         from agents.runtime.opencode_runtime import is_local_opencode_provider
 
-        model_key_env = str(provider.get("api_key_env") or ("DEEPSEEK_API_KEY" if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"} else default_api_key_env(provider_type))).strip()
-        model_configured = is_local_opencode_provider(provider.get("model", ""), provider.get("base_url", "")) or bool(os.environ.get(model_key_env, "").strip() or read_lumen_env_var(model_key_env))
+        if provider_type not in {"codex", "codex_cli", "codex-cli"}:
+            model_key_env = str(provider.get("api_key_env") or ("DEEPSEEK_API_KEY" if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"} else default_api_key_env(provider_type))).strip()
+            model_configured = is_local_opencode_provider(provider.get("model", ""), provider.get("base_url", "")) or bool(os.environ.get(model_key_env, "").strip() or read_lumen_env_var(model_key_env))
     security = {
         "filesystem": "workspace_read",
         "mutations": "brokered",
@@ -446,7 +455,7 @@ def apply_agent_settings(payload: dict[str, Any]) -> dict[str, Any]:
         provider.setdefault("resume_sessions", True)
         if "provider" in item:
             provider_name = str(item.get("provider") or "").strip().casefold()
-            if provider_name not in {"cursor", "cursor_cli", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
+            if provider_name not in {"codex", "codex_cli", "codex-cli", "cursor", "cursor_cli", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}:
                 raise ValueError(f"Unsupported model provider: {provider_name}")
             provider["type"] = provider_name
             if provider_name in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
