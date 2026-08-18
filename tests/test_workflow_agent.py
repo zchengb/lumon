@@ -135,8 +135,10 @@ class WorkflowAgentTests(unittest.TestCase):
 
     def test_provider_aliases_are_normalized(self) -> None:
         self.assertEqual("cursor_cli", workflow_agent.normalize_provider("cursor"))
+        self.assertEqual("cursor_cli", workflow_agent.normalize_provider("cursor-cli"))
         self.assertEqual("opencode", workflow_agent.normalize_provider("deepseek_api"))
         self.assertEqual("openai_compatible", workflow_agent.normalize_provider("openai"))
+        self.assertEqual("openai_compatible", workflow_agent.normalize_provider("openai-compatible"))
 
 
 if __name__ == "__main__":

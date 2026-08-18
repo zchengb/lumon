@@ -175,6 +175,17 @@ class ConversationFlags:
         v4_enabled = bool(v4.get("enabled", False))
         provider_name = str(model_src.get("type") or model_src.get("provider") or "cursor").strip().casefold()
         codex_provider = provider_name in {"codex", "codex_cli", "codex-cli"}
+        opencode_provider = provider_name in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}
+        api_provider = provider_name in {"openai", "openai_compatible", "openai-compatible"}
+        default_model = (
+            "gpt-5.6-luna"
+            if codex_provider
+            else "deepseek-v4-flash"
+            if opencode_provider
+            else "gpt-4o-mini"
+            if api_provider
+            else "cursor-grok-4.5-medium"
+        )
         model = ModelConfig(
             provider=str(model_src.get("type") or model_src.get("provider") or "cursor"),
             base_url=str(model_src.get("base_url") or ""),
@@ -185,7 +196,7 @@ class ConversationFlags:
             response_timeout_seconds=int(model_src.get("response_timeout_seconds") or model_src.get("responder_timeout_seconds") or 60),
             max_router_retries=int(model_src.get("max_router_retries") or model_src.get("max_planner_retries") or 1),
             max_response_retries=int(model_src.get("max_response_retries") or model_src.get("max_responder_retries") or 1),
-            model_name=str(model_src.get("model") or model_src.get("name") or ("gpt-5.6-luna" if codex_provider else "cursor-grok-4.5-medium")),
+            model_name=str(model_src.get("model") or model_src.get("name") or default_model),
             planner_timeout_seconds=int(model_src.get("planner_timeout_seconds") or 45),
             responder_timeout_seconds=int(model_src.get("responder_timeout_seconds") or 60),
             required=bool(model_src.get("required", True if (v4_enabled or v3.get("enabled")) else False)),

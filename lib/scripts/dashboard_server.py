@@ -58,8 +58,10 @@ def dashboard_provider(value: object) -> str:
         return "codex"
     if provider in {"deepseek", "deepseek_api", "opencode_deepseek"}:
         return "opencode"
-    if provider == "cursor":
+    if provider in {"cursor", "cursor-cli", "cursor_cli"}:
         return "cursor_cli"
+    if provider in {"openai", "openai_compatible", "openai-compatible"}:
+        return "openai_compatible"
     return provider
 
 
@@ -320,7 +322,11 @@ def capture_schedule_status(func: Any, project: str) -> dict[str, Any] | None:
 def workflow_model_config(execution: object, prefix: str = "") -> dict[str, str]:
     values = execution if isinstance(execution, dict) else {}
     provider = dashboard_provider(values.get(f"{prefix}provider") or values.get("provider") or "cursor_cli")
-    default_model = "gpt-5.6-luna" if provider == "codex" else "cursor-grok-4.5-medium"
+    default_model = {
+        "codex": "gpt-5.6-luna",
+        "opencode": "deepseek-v4-flash",
+        "openai_compatible": "gpt-4o-mini",
+    }.get(provider, "cursor-grok-4.5-medium")
     model = str(values.get(f"{prefix}model") or values.get("model") or default_model).strip()
     base_url = str(values.get(f"{prefix}base_url") or values.get("base_url") or "").strip()
     api_key_env = str(values.get(f"{prefix}api_key_env") or values.get("api_key_env") or "").strip()
@@ -2226,7 +2232,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 if not isinstance(execution, dict):
                     raise ValueError("Invalid workspace execution configuration")
                 execution["scan_window_days"] = days
-                workflow_providers = {"codex", "codex_cli", "codex-cli", "cursor_cli", "cursor", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible"}
+                workflow_providers = {"codex", "codex_cli", "codex-cli", "cursor_cli", "cursor", "cursor-cli", "opencode", "opencode_deepseek", "deepseek", "deepseek_api", "openai", "openai_compatible", "openai-compatible"}
 
                 def apply_model_config(target: dict[str, Any], body_prefix: str, file_prefix: str = "") -> None:
                     provider = str(body.get(f"{body_prefix}provider") or "").strip()

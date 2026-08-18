@@ -70,6 +70,13 @@ class RepositoryGovernanceTests(unittest.TestCase):
         self.assertEqual("xhigh", config["reasoning_effort"])
         self.assertEqual("kuoyio0820@gmail.com", config["account_email"])
 
+    def test_workflow_model_config_normalizes_all_provider_aliases(self) -> None:
+        self.assertEqual("cursor_cli", workflow_model_config({"provider": "cursor-cli"})["provider"])
+        self.assertEqual("opencode", workflow_model_config({"provider": "deepseek_api"})["provider"])
+        self.assertEqual("openai_compatible", workflow_model_config({"provider": "openai-compatible"})["provider"])
+        self.assertEqual("deepseek-v4-flash", workflow_model_config({"provider": "opencode"})["model"])
+        self.assertEqual("gpt-4o-mini", workflow_model_config({"provider": "openai"})["model"])
+
     def test_payload_exposes_and_updates_lumon_provider_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace, _ = self.make_workspace(Path(directory))

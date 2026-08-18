@@ -363,6 +363,53 @@ def _serialize_repeated_actions(action_requests: list[dict[str, Any]]) -> list[d
     ] + [first]
 
 
+def _session_checkpoint_context(checkpoint: dict[str, Any] | None) -> str:
+    """Return a bounded, provider-neutral handoff for stateless/recovered turns."""
+    if not isinstance(checkpoint, dict):
+        return ""
+    summary = str(checkpoint.get("last_answer_summary") or "").strip()
+    active_loop = str(checkpoint.get("active_loop") or "").strip()
+    project_slug = str(checkpoint.get("project_slug") or "").strip()
+    if not summary and not active_loop and not project_slug:
+        return ""
+    lines = [
+        "[LUMON SESSION CHECKPOINT]",
+        "This is host-maintained continuity context, not a new user request. Use it only to preserve context and prefer the latest user message if anything conflicts.",
+    ]
+    if project_slug:
+        lines.append(f"- project: {project_slug}")
+    if active_loop:
+        lines.append(f"- active loop: {active_loop}")
+    if summary:
+        lines.append(f"- latest answer summary: {summary[:240]}")
+    return "\n".join(lines)
+
+
+def _provider_switch_handoff(
+    *,
+    previous_provider: str,
+    expected_provider: str,
+    checkpoint: dict[str, Any] | None,
+) -> str:
+    """Bridge a logical conversation without ever sharing native provider IDs."""
+    lines = [
+        "[LUMON PROVIDER SWITCH HANDOFF]",
+        "The AI provider changed during this conversation. Continue the same logical request from the latest user message.",
+        f"- previous provider: {previous_provider}",
+        f"- current provider: {expected_provider}",
+        "Native session IDs are provider-scoped: do not try to resume the previous provider's ID here. The host created a fresh native session for the current provider.",
+    ]
+    checkpoint_context = _session_checkpoint_context(checkpoint)
+    if checkpoint_context:
+        lines.extend(("", checkpoint_context))
+    return "\n".join(lines)
+
+
+def _append_session_context(prompt: str, checkpoint: dict[str, Any] | None) -> str:
+    context = _session_checkpoint_context(checkpoint)
+    return f"{prompt}\n\n{context}" if context else prompt
+
+
 def handle_autonomous_conversation(
     *,
     definition: AgentDefinition,
@@ -521,6 +568,8 @@ def handle_autonomous_conversation(
                 store.close_session(session["session_id"])
                 session = None
             checkpoint: dict[str, Any] | None = None
+            provider_switch_handoff = ""
+            provider_switch_pending: dict[str, Any] | None = None
             if session and session.get("checkpoint_json"):
                 try:
                     prior = json.loads(session["checkpoint_json"])
@@ -559,15 +608,21 @@ def handle_autonomous_conversation(
                 is_new = True
             expected_provider = canonical_agent_provider(flags.model.provider)
             if session is not None and str(session.get("provider") or "cursor_cli").strip().casefold() != expected_provider:
+                previous_provider = canonical_agent_provider(str(session.get("provider") or "cursor_cli"))
                 obs.emit(
                     trace,
                     "agent.session.provider_mismatch",
-                    previous_provider=session.get("provider"),
+                    previous_provider=previous_provider,
                     expected_provider=expected_provider,
                 )
+                provider_switch_handoff = _provider_switch_handoff(
+                    previous_provider=previous_provider,
+                    expected_provider=expected_provider,
+                    checkpoint=checkpoint,
+                )
+                provider_switch_pending = store.get_pending(session)
                 store.close_session(session["session_id"])
                 session = None
-                checkpoint = None
                 is_new = True
             inferred_test_case_action = _explicit_test_case_action(text) if agent_id == "milchick" else None
             if inferred_test_case_action and session is not None:
@@ -597,6 +652,13 @@ def handle_autonomous_conversation(
                     protocol_version=definition.protocol_version,
                     provider=canonical_agent_provider(flags.model.provider),
                 )
+                if provider_switch_pending:
+                    store.save_pending(session["session_id"], provider_switch_pending)
+                    pending = provider_switch_pending
+                if checkpoint:
+                    # Keep the handoff available if the first turn on the new
+                    # provider fails before it can write a fresh checkpoint.
+                    store.save_checkpoint(session["session_id"], checkpoint)
 
             active_loop = str((checkpoint or {}).get("active_loop") or "").strip().lower()
             if agent_id == "mark":
@@ -649,7 +711,9 @@ def handle_autonomous_conversation(
                     workspace_path=str(workspace),
                     user_message=anchored_text,
                 )
-                prompt = _prompt_with_contract(prompt)
+                if provider_switch_handoff:
+                    prompt = f"{provider_switch_handoff}\n\n{prompt}"
+                prompt = _prompt_with_contract(prompt, pending)
                 provider_session_id = None
             else:
                 choice_hint = clarification_choice_hint(text, pending)
@@ -660,6 +724,7 @@ def handle_autonomous_conversation(
                     project_slug=slug,
                     checkpoint=checkpoint,
                 )
+                prompt = _append_session_context(prompt, checkpoint)
                 prompt = _prompt_with_contract(prompt, pending)
                 provider_session_id = session.get("provider_session_id") or None
 
@@ -718,7 +783,16 @@ def handle_autonomous_conversation(
                     return runner.run(definition=definition, **run_kwargs)
                 return runner.run(**run_kwargs)
 
-            result = _run_agent_turn(prompt, provider_session_id)
+            def _run_provider_turn(turn_prompt: str, turn_provider_session_id: str | None) -> Any:
+                turn_result = _run_agent_turn(turn_prompt, turn_provider_session_id)
+                # Stateless APIs may expose request IDs, but those are not
+                # resumable conversation IDs. Never persist or return them as
+                # provider session state.
+                if not bool(getattr(cursor, "supports_resume", True)):
+                    turn_result.provider_session_id = ""
+                return turn_result
+
+            result = _run_provider_turn(prompt, provider_session_id)
 
             if (
                 provider_session_id
@@ -754,8 +828,9 @@ def handle_autonomous_conversation(
                     workspace_path=str(workspace),
                     user_message=anchored_text,
                 )
-                prompt = _prompt_with_contract(prompt)
-                result = _run_agent_turn(prompt, None)
+                prompt = _append_session_context(prompt, checkpoint)
+                prompt = _prompt_with_contract(prompt, pending)
+                result = _run_provider_turn(prompt, None)
                 is_new = True
                 provider_session_id = None
 
@@ -854,7 +929,7 @@ def handle_autonomous_conversation(
                         next_active_loop = "technical"
                     elif conversation_decision.get("mode") == "new_request":
                         next_active_loop = ""
-                if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
+                if result.status == "succeeded" and str(result.text or "").strip():
                     checkpoint_json = json.dumps(
                         {
                             "project_slug": slug,
@@ -987,13 +1062,14 @@ def handle_autonomous_conversation(
                         checkpoint=checkpoint,
                     )
                 )
+                continuation_prompt = _append_session_context(continuation_prompt, checkpoint)
                 obs.emit(
                     trace,
                     "agent.action_results.returned",
                     continuation=continuation_count,
                     action_count=len(action_receipts),
                 )
-                next_result = _run_agent_turn(
+                next_result = _run_provider_turn(
                     continuation_prompt,
                     None if supports_stateless else provider_id,
                 )

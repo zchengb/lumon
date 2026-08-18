@@ -2017,8 +2017,8 @@ function workflowModelConfig(workspace: RecordValue, key: string, fallback = "cu
   const legacyConfig = configs[key] && typeof configs[key] === "object" ? configs[key] : {};
   const config = globalConfig.provider || globalConfig.model ? globalConfig : legacyConfig;
   const rawProvider = String(config.provider || "cursor_cli").trim().toLowerCase();
-  const provider = rawProvider === "deepseek" || rawProvider === "deepseek_api" || rawProvider === "opencode_deepseek" ? "opencode" : rawProvider === "codex_cli" || rawProvider === "codex-cli" ? "codex" : rawProvider;
-  const defaultModel = provider === "codex" ? "gpt-5.6-luna" : fallback;
+  const provider = rawProvider === "deepseek" || rawProvider === "deepseek_api" || rawProvider === "opencode_deepseek" ? "opencode" : rawProvider === "codex_cli" || rawProvider === "codex-cli" ? "codex" : rawProvider === "cursor" || rawProvider === "cursor-cli" ? "cursor_cli" : rawProvider === "openai" || rawProvider === "openai-compatible" ? "openai_compatible" : rawProvider;
+  const defaultModel = provider === "codex" ? "gpt-5.6-luna" : provider === "opencode" ? "deepseek-v4-flash" : provider === "openai_compatible" ? "gpt-4o-mini" : fallback;
   return {
     provider,
     model: modelValue(config.model || workspace.models?.[key], defaultModel),
@@ -3679,7 +3679,7 @@ function WorkflowModelField({ label, provider, model, baseUrl, apiKeyEnv, reason
   const { t } = useI18n();
   const selectProvider = (value: string) => {
     onProviderChange(value);
-    onModelChange(value === "codex" ? "gpt-5.6-luna" : value === "opencode" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : model);
+    onModelChange(value === "codex" ? "gpt-5.6-luna" : value === "opencode" ? "deepseek-v4-flash" : value === "cursor_cli" ? "cursor-grok-4.5-medium" : value === "openai_compatible" ? "gpt-4o-mini" : model);
     onReasoningEffortChange(value === "codex" ? "xhigh" : "");
     onAccountEmailChange(value === "codex" ? codexAccountEmail : "");
     markDirty();

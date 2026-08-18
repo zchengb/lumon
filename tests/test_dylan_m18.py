@@ -22,7 +22,7 @@ from agents.dylan.workspace_contract import ensure_workspace_contract
 from risk.store import GlobalAgentStore
 
 
-def _v4_common() -> dict:
+def _v4_common(provider: str = "cursor_cli") -> dict:
     return {
         "project": {"slug": "mbpass"},
         "agents": {
@@ -30,7 +30,7 @@ def _v4_common() -> dict:
                 "conversation_v4": {
                     "enabled": True,
                     "mode": "autonomous_workspace",
-                    "provider": {"type": "cursor_cli", "model": "fake-model"},
+                    "provider": {"type": provider, "model": "fake-model"},
                     "session": {"scope": "thread_shared"},
                     "runtime": {"soft_timeout_seconds": 60, "hard_timeout_seconds": 180},
                     "reaction": {"enabled": True, "emoji_type": "Typing"},
@@ -57,6 +57,11 @@ class FakeRuntime(CursorAgentRuntime):
         if not self.results:
             return AgentRunResult(text="", provider_session_id="", status="failed", error="no fake result")
         return self.results.pop(0)
+
+
+class StatelessFakeRuntime(FakeRuntime):
+    supports_stateless = True
+    supports_resume = False
 
 
 class StreamJsonTests(unittest.TestCase):
@@ -228,6 +233,99 @@ class AutonomousRuntimeTests(unittest.TestCase):
                 self.assertIsNone(fake.calls[2]["provider_session_id"])
                 self.assertIn("BOOTSTRAP", fake.calls[2]["prompt"])
                 self.assertIn("Soul notes", fake.calls[2]["prompt"])
+
+    def test_provider_switch_starts_a_native_session_with_a_logical_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            (workspace / "config").mkdir()
+            (workspace / "config" / "common.json").write_text('{"project":{"slug":"mbpass"}}', encoding="utf-8")
+            cursor = FakeRuntime([
+                AgentRunResult(text="cursor answer", provider_session_id="cursor-session", status="succeeded", duration_ms=50),
+            ])
+            codex = FakeRuntime([
+                AgentRunResult(text="codex answer", provider_session_id="codex-thread-1", status="succeeded", duration_ms=50),
+                AgentRunResult(text="codex continuation", provider_session_id="codex-thread-2", status="succeeded", duration_ms=50),
+            ])
+            project = {"slug": "mbpass", "workspace": str(workspace)}
+            from unittest.mock import patch
+
+            with patch("agents.dylan.autonomous.resolve_project", return_value=project), patch(
+                "agents.dylan.autonomous.known_project_slugs", return_value={"mbpass"}
+            ), patch("agents.dylan.autonomous.load_chat_project_map", return_value={}):
+                first = handle_autonomous_conversation(
+                    text="continue the risk review",
+                    meta={"chat_id": "oc1", "chat_type": "p2p", "thread_id": "t1", "user_id": "u1", "message_id": "m1"},
+                    common=_v4_common("cursor_cli"),
+                    runtime=cursor,
+                )
+                switched = handle_autonomous_conversation(
+                    text="continue with the latest evidence",
+                    meta={"chat_id": "oc1", "chat_type": "p2p", "thread_id": "t1", "user_id": "u1", "message_id": "m2"},
+                    common=_v4_common("codex"),
+                    runtime=codex,
+                )
+                resumed = handle_autonomous_conversation(
+                    text="now summarize the conclusion",
+                    meta={"chat_id": "oc1", "chat_type": "p2p", "thread_id": "t1", "user_id": "u1", "message_id": "m3"},
+                    common=_v4_common("codex"),
+                    runtime=codex,
+                )
+
+            self.assertEqual("ok", first["status"])
+            self.assertEqual("ok", switched["status"])
+            self.assertEqual("ok", resumed["status"])
+            self.assertIsNone(cursor.calls[0]["provider_session_id"])
+            self.assertIsNone(codex.calls[0]["provider_session_id"])
+            self.assertIn("LUMON PROVIDER SWITCH HANDOFF", codex.calls[0]["prompt"])
+            self.assertIn("cursor answer", codex.calls[0]["prompt"])
+            self.assertEqual("codex-thread-1", codex.calls[1]["provider_session_id"])
+            self.assertEqual("codex-thread-2", resumed["provider_session_id"])
+
+            store = SessionStore(GlobalAgentStore(Path(tmp) / "agents.sqlite3"))
+            scope = conversation_scope_id(chat_id="oc1", thread_id="t1", project_slug="mbpass")
+            active = store.get_active(agent_id="dylan", conversation_scope_id=scope)
+            self.assertIsNotNone(active)
+            assert active is not None
+            self.assertEqual("codex", active["provider"])
+            self.assertEqual("codex-thread-2", active["provider_session_id"])
+            self.assertEqual(2, len(store.list_sessions(agent_id="dylan")))
+            store.close()
+
+    def test_stateless_provider_keeps_a_checkpoint_for_the_next_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            (workspace / "config").mkdir()
+            (workspace / "config" / "common.json").write_text('{"project":{"slug":"mbpass"}}', encoding="utf-8")
+            fake = StatelessFakeRuntime([
+                AgentRunResult(text="first stateless answer", provider_session_id="", status="succeeded", duration_ms=50),
+                AgentRunResult(text="second stateless answer", provider_session_id="", status="succeeded", duration_ms=50),
+            ])
+            project = {"slug": "mbpass", "workspace": str(workspace)}
+            from unittest.mock import patch
+
+            with patch("agents.dylan.autonomous.resolve_project", return_value=project), patch(
+                "agents.dylan.autonomous.known_project_slugs", return_value={"mbpass"}
+            ), patch("agents.dylan.autonomous.load_chat_project_map", return_value={}):
+                handle_autonomous_conversation(
+                    text="remember this result",
+                    meta={"chat_id": "oc2", "chat_type": "p2p", "thread_id": "t2", "user_id": "u1", "message_id": "m1"},
+                    common=_v4_common("openai-compatible"),
+                    runtime=fake,
+                )
+                handle_autonomous_conversation(
+                    text="continue from that result",
+                    meta={"chat_id": "oc2", "chat_type": "p2p", "thread_id": "t2", "user_id": "u1", "message_id": "m2"},
+                    common=_v4_common("openai-compatible"),
+                    runtime=fake,
+                )
+
+            self.assertIsNone(fake.calls[1]["provider_session_id"])
+            self.assertIn("LUMON SESSION CHECKPOINT", fake.calls[1]["prompt"])
+            self.assertIn("first stateless answer", fake.calls[1]["prompt"])
 
 
 class UserFacingErrorTests(unittest.TestCase):

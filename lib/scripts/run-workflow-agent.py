@@ -23,7 +23,7 @@ from agents.runner.runner_env import build_runner_env
 
 
 DEFAULT_MODEL = "cursor-grok-4.5-medium"
-PROVIDERS = {"codex", "codex_cli", "cursor_cli", "deepseek", "deepseek_api", "opencode", "opencode_deepseek", "openai", "openai_compatible"}
+PROVIDERS = {"codex", "codex_cli", "codex-cli", "cursor", "cursor-cli", "cursor_cli", "deepseek", "deepseek_api", "opencode", "opencode_deepseek", "openai", "openai-compatible", "openai_compatible"}
 # Auto Scan may inspect many repositories before it can write its result. Keep
 # a bounded budget, but leave enough turns for the configured workspace rather
 # than failing halfway through normal evidence collection.

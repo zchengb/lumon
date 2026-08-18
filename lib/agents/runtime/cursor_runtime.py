@@ -415,6 +415,8 @@ def canonical_agent_provider(provider: str) -> str:
         return "codex"
     if normalized in {"deepseek", "deepseek_api", "opencode_deepseek"}:
         return "opencode"
-    if normalized in {"cursor", "cursor-cli"}:
+    if normalized in {"cursor", "cursor-cli", "cursor_cli"}:
         return "cursor_cli"
+    if normalized in {"openai", "openai_compatible", "openai-compatible"}:
+        return "openai_compatible"
     return normalized

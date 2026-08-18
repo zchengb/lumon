@@ -19,7 +19,9 @@ from agents.runtime.codex_runtime import (  # noqa: E402
     codex_account_email,
     parse_codex_json_lines,
 )
-from agents.runtime.cursor_runtime import create_agent_runtime  # noqa: E402
+from agents.runtime.cursor_runtime import CursorAgentRuntime, canonical_agent_provider, create_agent_runtime  # noqa: E402
+from agents.runtime.openai_compatible import OpenAICompatibleAgentRuntime  # noqa: E402
+from agents.runtime.opencode_runtime import OpenCodeAgentRuntime  # noqa: E402
 
 
 def _jwt(payload: dict[str, str]) -> str:
@@ -72,6 +74,18 @@ class CodexRuntimeTests(unittest.TestCase):
         self.assertIn("--output-schema", command)
         self.assertIn(str(Path("/tmp/test-case-output-schema.json").resolve()), command)
 
+    def test_codex_resume_command_uses_the_saved_thread_id(self) -> None:
+        runtime = CodexAgentRuntime(model="gpt-5.6-luna", reasoning_effort="xhigh", account_email="kuoyio0820@gmail.com")
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(runtime, "_agent_bin", return_value="codex"):
+                command = runtime._command(Path(tmp), "continue", "thread-from-first-turn")
+        self.assertEqual("resume", command[4])
+        self.assertEqual("thread-from-first-turn", command[5])
+        self.assertIn("--json", command)
+        self.assertIn("gpt-5.6-luna", command)
+        self.assertIn('model_reasoning_effort="xhigh"', command)
+        self.assertNotIn("--cd", command)
+
     def test_account_email_is_read_without_exposing_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -87,6 +101,31 @@ class CodexRuntimeTests(unittest.TestCase):
         self.assertEqual("gpt-5.6-luna", flags.model.model_name)
         self.assertEqual("xhigh", flags.model.reasoning_effort)
         self.assertEqual("kuoyio0820@gmail.com", flags.model.account_email)
+
+    def test_conversation_flags_apply_non_codex_provider_defaults(self) -> None:
+        opencode = ConversationFlags.from_common({"execution": {"provider": "deepseek_api"}})
+        api = ConversationFlags.from_common({"execution": {"provider": "openai-compatible"}})
+        self.assertEqual("deepseek-v4-flash", opencode.model.model_name)
+        self.assertEqual("gpt-4o-mini", api.model.model_name)
+
+    def test_provider_aliases_and_session_capabilities_are_consistent(self) -> None:
+        self.assertEqual("cursor_cli", canonical_agent_provider("cursor-cli"))
+        self.assertEqual("openai_compatible", canonical_agent_provider("openai-compatible"))
+        runtimes = {
+            "cursor": create_agent_runtime(provider="cursor-cli", model="cursor-grok-4.5-medium"),
+            "opencode": create_agent_runtime(provider="deepseek_api", model="deepseek-v4-flash"),
+            "codex": create_agent_runtime(provider="codex-cli", model="gpt-5.6-luna"),
+            "api": create_agent_runtime(provider="openai-compatible", model="gpt-4o-mini"),
+        }
+        self.assertIsInstance(runtimes["cursor"], CursorAgentRuntime)
+        self.assertIsInstance(runtimes["opencode"], OpenCodeAgentRuntime)
+        self.assertIsInstance(runtimes["codex"], CodexAgentRuntime)
+        self.assertIsInstance(runtimes["api"], OpenAICompatibleAgentRuntime)
+        for name in ("cursor", "opencode", "codex"):
+            self.assertTrue(runtimes[name].supports_resume, name)
+            self.assertFalse(runtimes[name].supports_stateless, name)
+        self.assertFalse(runtimes["api"].supports_resume)
+        self.assertTrue(runtimes["api"].supports_stateless)
 
 
 if __name__ == "__main__":
