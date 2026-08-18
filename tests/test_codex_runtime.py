@@ -59,6 +59,19 @@ class CodexRuntimeTests(unittest.TestCase):
         self.assertIn("workspace-write", command)
         self.assertIn("never", command)
 
+    def test_codex_command_can_request_structured_output(self) -> None:
+        runtime = CodexAgentRuntime(
+            model="gpt-5.6-luna",
+            reasoning_effort="xhigh",
+            account_email="kuoyio0820@gmail.com",
+            output_schema=Path("/tmp/test-case-output-schema.json"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(runtime, "_agent_bin", return_value="codex"):
+                command = runtime._command(Path(tmp), "generate", None)
+        self.assertIn("--output-schema", command)
+        self.assertIn(str(Path("/tmp/test-case-output-schema.json").resolve()), command)
+
     def test_account_email_is_read_without_exposing_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

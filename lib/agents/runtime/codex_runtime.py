@@ -227,6 +227,7 @@ class CodexAgentRuntime:
         model: str = DEFAULT_MODEL,
         reasoning_effort: str = DEFAULT_REASONING_EFFORT,
         account_email: str = DEFAULT_ACCOUNT_EMAIL,
+        output_schema: Path | None = None,
         soft_timeout_seconds: int = 90,
         hard_timeout_seconds: int = 3600,
         sandbox: str = "enabled",
@@ -238,6 +239,7 @@ class CodexAgentRuntime:
         self.model = str(model or DEFAULT_MODEL).strip()
         self.reasoning_effort = str(reasoning_effort or DEFAULT_REASONING_EFFORT).strip().casefold()
         self.account_email = str(account_email or DEFAULT_ACCOUNT_EMAIL).strip().casefold()
+        self.output_schema = Path(output_schema).expanduser().resolve() if output_schema else None
         self.soft_timeout_seconds = soft_timeout_seconds
         self.hard_timeout_seconds = hard_timeout_seconds
         self.sandbox = sandbox
@@ -295,7 +297,7 @@ class CodexAgentRuntime:
         binary = self._agent_bin()
         config = f'model_reasoning_effort="{self.reasoning_effort}"'
         if provider_session_id:
-            return [
+            command = [
                 binary,
                 "--ask-for-approval",
                 "never",
@@ -307,8 +309,11 @@ class CodexAgentRuntime:
                 self.model,
                 "-c",
                 config,
-                prompt,
             ]
+            if self.output_schema:
+                command.extend(["--output-schema", str(self.output_schema)])
+            command.append(prompt)
+            return command
         command = [
             binary,
             "--ask-for-approval",
@@ -326,6 +331,8 @@ class CodexAgentRuntime:
             "--color",
             "never",
         ]
+        if self.output_schema:
+            command.extend(["--output-schema", str(self.output_schema)])
         for directory in [*self.additional_dirs, *getattr(self, "additional_directories", [])]:
             path = Path(directory).expanduser().resolve()
             if path.is_dir() and str(path) != str(workspace):

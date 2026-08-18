@@ -5,13 +5,14 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "lib"
 if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
-from skills.test_case.designer import _extract_json_object, drafts_from_payload
+from skills.test_case.designer import _extract_json_object, design_test_cases, drafts_from_payload
 from skills.test_case.localization import (
     localize_test_case_type,
     localize_verify_status_options,
@@ -49,6 +50,50 @@ class JsonExtractionTests(unittest.TestCase):
             'Here is the payload:\n```json\n{"test_cases":[{"title":"登入"}]}\n```\nDone.'
         )
         self.assertEqual(payload["test_cases"][0]["title"], "登入")
+
+
+class ProviderRoutingTests(unittest.TestCase):
+    def test_codex_provider_routes_to_codex_designer_with_account_contract(self) -> None:
+        story = StoryContext(
+            key="MBPAS-1505",
+            type="Story",
+            summary="Generate test cases",
+            description="desc",
+            acceptance_criteria=["AC1: generate executable cases"],
+        )
+        payload = {
+            "test_cases": [
+                {
+                    "ac_refs": ["AC1"],
+                    "title": "產生可執行測試案例",
+                    "preconditions": ["已取得需求內容"],
+                    "steps": ["執行測試案例生成"],
+                    "expected_results": ["產生可執行的測試案例"],
+                    "case_type": "functional",
+                    "rationale": "驗證需求指定功能",
+                }
+            ]
+        }
+        with patch(
+            "skills.test_case.designer._run_codex_agent",
+            return_value=json.dumps(payload, ensure_ascii=False),
+        ) as runner:
+            drafts = design_test_cases(
+                story,
+                agents_config={
+                    "execution": {
+                        "provider": "codex",
+                        "model": "gpt-5.6-luna",
+                        "reasoning_effort": "xhigh",
+                        "account_email": "kuoyio0820@gmail.com",
+                    }
+                },
+            )
+
+        self.assertEqual(1, len(drafts))
+        self.assertEqual("gpt-5.6-luna", runner.call_args.kwargs["model"])
+        self.assertEqual("xhigh", runner.call_args.kwargs["reasoning_effort"])
+        self.assertEqual("kuoyio0820@gmail.com", runner.call_args.kwargs["account_email"])
 
     def test_repairs_structural_model_json_errors(self) -> None:
         payload = _extract_json_object('{"test_cases":[{title: "登入", "steps": ["1."],},],}')

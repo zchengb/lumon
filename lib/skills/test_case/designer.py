@@ -154,6 +154,8 @@ def _model_config(agents_config: dict[str, Any] | None = None) -> dict[str, str]
             "model": str(execution.get("model") or execution.get("name") or "").strip(),
             "base_url": str(execution.get("base_url") or "").strip(),
             "api_key_env": str(execution.get("api_key_env") or "").strip(),
+            "reasoning_effort": str(execution.get("reasoning_effort") or "").strip(),
+            "account_email": str(execution.get("account_email") or "").strip(),
         }
     for agent_id in ("milchick", "mark", "dylan", "irving"):
         agent = data.get(agent_id) if isinstance(data.get(agent_id), dict) else {}
@@ -165,6 +167,8 @@ def _model_config(agents_config: dict[str, Any] | None = None) -> dict[str, str]
                 "model": str(provider.get("model") or provider.get("name") or "").strip(),
                 "base_url": str(provider.get("base_url") or "").strip(),
                 "api_key_env": str(provider.get("api_key_env") or "").strip(),
+                "reasoning_effort": str(provider.get("reasoning_effort") or "").strip(),
+                "account_email": str(provider.get("account_email") or "").strip(),
             }
     return {}
 
@@ -209,6 +213,32 @@ def _run_opencode_agent(prompt: str, *, model: str, workspace: Path, timeout: in
     result = runtime.run(workspace=workspace, prompt=prompt)
     if result.status != "succeeded" or not result.text.strip():
         raise TestCaseDesignUnavailable(f"OpenCode test-case designer failed: {result.error or result.status}")
+    return result.text
+
+
+def _run_codex_agent(
+    prompt: str,
+    *,
+    model: str,
+    reasoning_effort: str,
+    account_email: str,
+    workspace: Path,
+    timeout: int = 240,
+) -> str:
+    from agents.runtime.codex_runtime import CodexAgentRuntime
+
+    runtime = CodexAgentRuntime(
+        model=model,
+        reasoning_effort=reasoning_effort,
+        account_email=account_email,
+        output_schema=Path(__file__).with_name("test_case_output_schema.json"),
+        hard_timeout_seconds=timeout,
+        agent_id="milchick",
+        project="test-case",
+    )
+    result = runtime.run(workspace=workspace, prompt=prompt)
+    if result.status != "succeeded" or not result.text.strip():
+        raise TestCaseDesignUnavailable(f"Codex test-case designer failed: {result.error or result.status}")
     return result.text
 
 
@@ -308,6 +338,14 @@ def design_test_cases(
                 raw = _run_opencode_agent(
                     prompt,
                     model=selected_model or "deepseek-v4-flash",
+                    workspace=(Path(workspace).expanduser() if workspace else Path.home()),
+                )
+            elif provider in {"codex", "codex_cli", "codex-cli"}:
+                raw = _run_codex_agent(
+                    prompt,
+                    model=selected_model or "gpt-5.6-luna",
+                    reasoning_effort=configured.get("reasoning_effort") or "xhigh",
+                    account_email=configured.get("account_email") or "kuoyio0820@gmail.com",
                     workspace=(Path(workspace).expanduser() if workspace else Path.home()),
                 )
             elif provider in {"openai", "openai_compatible"}:
