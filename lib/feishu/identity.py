@@ -183,9 +183,19 @@ def discover_feishu_group_chats(*, store: Any = None, network: bool = True) -> l
             if not chat_id or not is_feishu_open_chat_id(chat_id):
                 continue
             name = str(item.get("name") or "").strip()
+            chat_mode = str(item.get("chat_mode") or item.get("chat_type") or "group").strip().lower()
+            if chat_mode in {"p2p", "private", "dm"}:
+                continue
             current = discovered.setdefault(
                 chat_id,
-                {"id": chat_id, "name": name, "kind": "chat", "agents": []},
+                {
+                    "id": chat_id,
+                    "name": name,
+                    "kind": "chat",
+                    "chat_mode": chat_mode,
+                    "context_type": "group",
+                    "agents": [],
+                },
             )
             if name and not current.get("name"):
                 current["name"] = name
@@ -194,10 +204,11 @@ def discover_feishu_group_chats(*, store: Any = None, network: bool = True) -> l
                 agents.append(agent_id)
             if store is not None:
                 try:
+                    store.record_feishu_chat_context(chat_id=chat_id, chat_type=chat_mode)
                     store.upsert_feishu_identity(
                         identity_id=chat_id,
                         identity_type="chat",
-                        display_name=name,
+                        display_name=name or store.get_feishu_display_name(chat_id),
                     )
                 except Exception:
                     pass
@@ -276,7 +287,24 @@ def enrich_feishu_identities(
                 identity_type="chat",
                 preferred_agent=agent_id,
             )
-        chats.append({"id": cid, "name": name or "", "kind": "chat", "project": project_names.get(cid) or ""})
+        context_type = ""
+        try:
+            context_type = str(store.get_feishu_chat_context(cid) or "").strip().lower()
+        except Exception:
+            context_type = ""
+        if str(name or "").strip().casefold() == "direct message":
+            context_type = "dm"
+        is_dm = context_type == "dm"
+        chats.append(
+            {
+                "id": cid,
+                "name": name or "",
+                "kind": "dm" if is_dm else "chat",
+                "chat_mode": "p2p" if is_dm else ("group" if context_type == "group" else ""),
+                "context_type": context_type,
+                "project": project_names.get(cid) or "",
+            }
+        )
         if name:
             names[cid] = name
 

@@ -195,6 +195,17 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertIn("value=1.2.4", hint)
         self.assertIn("target_version", hint)
 
+    def test_version_choices_still_render_when_full_question_differs(self) -> None:
+        choices = version_upgrade_choices("1.2.3")
+        reply = format_clarification_reply(
+            "Which version should I use?",
+            choices,
+            "1.2.3",
+            full_question="Which version should I upgrade it to?",
+        )
+        self.assertIn("Which version should I use?", reply)
+        self.assertIn("1.2.4", reply)
+
     def test_clarification_does_not_duplicate_agent_rendered_choices(self) -> None:
         choices = [
             {"value": "bug", "label": "A", "description": "Create Bug"},

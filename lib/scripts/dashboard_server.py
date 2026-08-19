@@ -1608,7 +1608,10 @@ class DashboardServer(ThreadingHTTPServer):
         try:
             from agents.soul_store import agents_settings_payload
 
-            agents_payload = agents_settings_payload(project=project)
+            # The initial page payload must use the live chat list as well as
+            # the follow-up /api/agents refresh; otherwise a newly discovered
+            # group is invisible until the async refresh completes.
+            agents_payload = agents_settings_payload(network=True, project=project)
         except Exception:
             pass
 

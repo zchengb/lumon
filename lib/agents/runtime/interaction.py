@@ -200,6 +200,13 @@ def _choice_identifier(item: Any) -> str:
     return str(item.get("id") or "").strip()[:80]
 
 
+def _has_grouped_choice_ids(items: list[Any]) -> bool:
+    """Return whether choices represent multiple A/B decisions (for example 1A, 2B)."""
+    identifiers = [_choice_identifier(item) for item in items]
+    grouped = [identifier for identifier in identifiers if re.fullmatch(r"\d+[A-D]", identifier, re.IGNORECASE)]
+    return len(grouped) >= 2
+
+
 def format_clarification_reply(
     question: str,
     choices: Any,
@@ -228,7 +235,7 @@ def format_clarification_reply(
     # a compact answer hint (for example, "1A, 2A"), while the structured
     # clarification carries the actual grouped A/B/C questions. Keep both;
     # never replace that grouped question with a flat 1..N list.
-    if canonical_question and canonical_question not in text:
+    if canonical_question and canonical_question not in text and _has_grouped_choice_ids(rows):
         blocks = []
         if str(current_version or "").strip():
             blocks.append(f"Current version: {str(current_version).strip()}")

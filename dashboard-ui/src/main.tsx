@@ -1859,6 +1859,8 @@ interface FeishuIdentityItem {
   id?: string;
   name?: string;
   kind?: string;
+  chat_mode?: string;
+  context_type?: string;
   union_id?: string;
   pending?: boolean;
   agents?: string[];
@@ -1882,6 +1884,7 @@ interface AgentsSettingsPayload {
   recent_feishu?: {
     user_ids?: string[];
     chat_ids?: string[];
+    direct_chat_ids?: string[];
     private_user_ids?: string[];
     group_chat_ids?: string[];
     users?: FeishuIdentityItem[];
@@ -3884,6 +3887,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const [recentFeishu, setRecentFeishu] = useState({
     user_ids: agentsPayload.recent_feishu?.private_user_ids || agentsPayload.recent_feishu?.user_ids || [],
     chat_ids: agentsPayload.recent_feishu?.group_chat_ids || agentsPayload.recent_feishu?.chat_ids || [],
+    direct_chat_ids: agentsPayload.recent_feishu?.direct_chat_ids || [],
     users: agentsPayload.recent_feishu?.private_users || agentsPayload.recent_feishu?.users || [],
     chats: agentsPayload.recent_feishu?.group_chats || agentsPayload.recent_feishu?.chats || [],
     names: agentsPayload.recent_feishu?.names || {},
@@ -3923,10 +3927,17 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     ? recentFeishu.users
     : recentFeishu.user_ids.map((id) => ({ id, name: feishuName(id) }))
   ).filter((item) => item.id);
+  const isDirectChat = (chat: FeishuIdentityItem) => {
+    const mode = String(chat.chat_mode || "").trim().toLowerCase();
+    const context = String(chat.context_type || "").trim().toLowerCase();
+    const kind = String(chat.kind || "").trim().toLowerCase();
+    const name = String(chat.name || "").trim().toLowerCase();
+    return context === "dm" || kind === "dm" || kind === "private" || ["p2p", "private", "dm"].includes(mode) || name === "direct message";
+  };
   const recentChats = (recentFeishu.chats?.length
     ? recentFeishu.chats
     : recentFeishu.chat_ids.map((id) => ({ id, name: feishuName(id) }))
-  ).filter((item) => item.id);
+  ).filter((item) => item.id && !isDirectChat(item));
   const configuredUserIds = Array.from(new Set([
     ...(accessDraft.allowed_user_ids || []),
     ...(accessDraft.mutation_allowed_user_ids || []),
@@ -3954,8 +3965,11 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   for (const group of accessPeopleGroups) {
     group.pending = group.ids.some((id) => !configuredUserIds.includes(id));
   }
-  const accessChatIds = Array.from(new Set([...(recentFeishu.chat_ids || []), ...(accessDraft.allowed_chat_ids || [])]));
-  const accessChats: FeishuIdentityItem[] = accessChatIds.map((id) => recentChats.find((chat) => String(chat.id) === id) || { id, name: feishuName(id), agents: [] });
+  const directChatIds = new Set((recentFeishu.direct_chat_ids || []).map(String));
+  const accessChatIds = Array.from(new Set([...(recentFeishu.chat_ids || []), ...(accessDraft.allowed_chat_ids || [])])).filter((id) => !directChatIds.has(String(id)));
+  const accessChats: FeishuIdentityItem[] = accessChatIds
+    .map((id) => recentChats.find((chat) => String(chat.id) === id) || { id, name: feishuName(id), agents: [] })
+    .filter((chat) => !isDirectChat(chat));
   const hasAccess = (field: "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids", id: string) => (accessDraft[field] || []).includes(id);
   const toggleAccess = (field: "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids" | "allowed_chat_ids", id: string, enabled: boolean) => {
     setAccessDraft((current) => {
@@ -3983,6 +3997,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     setRecentFeishu({
       user_ids: payload.recent_feishu?.private_user_ids || payload.recent_feishu?.user_ids || [],
       chat_ids: payload.recent_feishu?.group_chat_ids || payload.recent_feishu?.chat_ids || [],
+      direct_chat_ids: payload.recent_feishu?.direct_chat_ids || [],
       users: payload.recent_feishu?.private_users || payload.recent_feishu?.users || [],
       chats: payload.recent_feishu?.group_chats || payload.recent_feishu?.chats || [],
       names: payload.recent_feishu?.names || {},

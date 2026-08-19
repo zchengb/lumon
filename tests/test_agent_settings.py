@@ -14,9 +14,39 @@ if str(LIB) not in sys.path:
 
 from agents.soul_store import apply_agent_settings, agents_settings_payload, load_agent_soul
 from agents.dylan.soul_loader import load_soul as load_dylan_soul
+from risk.store import GlobalAgentStore
 
 
 class AgentSettingsTests(unittest.TestCase):
+    def test_dashboard_payload_only_uses_typed_group_chats(self) -> None:
+        group_chat = "oc_abcdef0123456789abcdef0123456789"
+        direct_chat = "oc_0123456789abcdef0123456789abcdef"
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            store = GlobalAgentStore()
+            try:
+                store.record_feishu_chat_context(chat_id=group_chat, chat_type="group")
+                store.record_feishu_chat_context(chat_id=direct_chat, chat_type="p2p")
+                store.upsert_feishu_identity(
+                    identity_id=group_chat,
+                    identity_type="chat",
+                    display_name="Visible group",
+                )
+                store.upsert_feishu_identity(
+                    identity_id=direct_chat,
+                    identity_type="chat",
+                    display_name="Direct message",
+                )
+            finally:
+                store.close()
+
+            payload = agents_settings_payload(network=False)
+            group_ids = payload["recent_feishu"]["group_chat_ids"]
+            self.assertIn(group_chat, group_ids)
+            self.assertNotIn(direct_chat, group_ids)
+            self.assertIn(direct_chat, payload["recent_feishu"]["direct_chat_ids"])
+            self.assertEqual(["Visible group"], [item["name"] for item in payload["recent_feishu"]["group_chats"]])
+
     def test_save_soul_override_and_flags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["LUMEN_AGENTS_HOME"] = tmp

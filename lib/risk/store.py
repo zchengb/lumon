@@ -639,6 +639,93 @@ class GlobalAgentStore:
         )
         self.conn.commit()
 
+    def record_feishu_chat_context(self, *, chat_id: str, chat_type: str = "") -> None:
+        """Remember whether a Feishu chat is a group or one-to-one conversation."""
+        cid = str(chat_id or "").strip()
+        if not cid:
+            return
+        kind = str(chat_type or "").strip().lower()
+        context_type = "dm" if kind in {"p2p", "private", "dm"} else "group"
+        self.conn.execute(
+            """
+            INSERT INTO feishu_chat_context(chat_id, context_type, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                context_type = excluded.context_type,
+                updated_at = excluded.updated_at
+            """,
+            (cid, context_type, utc_now()),
+        )
+        self.conn.commit()
+
+    def get_feishu_chat_context(self, chat_id: str) -> str:
+        """Return the last observed chat context, falling back to sender context."""
+        cid = str(chat_id or "").strip()
+        if not cid:
+            return ""
+        try:
+            row = self.conn.execute(
+                "SELECT context_type FROM feishu_chat_context WHERE chat_id = ?",
+                (cid,),
+            ).fetchone()
+            if row:
+                return str(row["context_type"] if isinstance(row, sqlite3.Row) else row[0] or "").strip().lower()
+            row = self.conn.execute(
+                """
+                SELECT context_type
+                FROM feishu_user_context
+                WHERE chat_id = ? AND chat_id != ''
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if row:
+                return str(row["context_type"] if isinstance(row, sqlite3.Row) else row[0] or "").strip().lower()
+        except Exception:
+            return ""
+        return ""
+
+    def _list_recent_feishu_chat_ids(self, *, context_type: str, limit: int = 100) -> list[str]:
+        cap = max(1, min(int(limit or 100), 500))
+        kind = str(context_type or "").strip().lower()
+        if kind not in {"group", "dm"}:
+            return []
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT chat_id, MAX(updated_at) AS last_seen
+                FROM (
+                    SELECT chat_id, updated_at
+                    FROM feishu_chat_context
+                    WHERE context_type = ? AND chat_id != ''
+                    UNION ALL
+                    SELECT chat_id, updated_at
+                    FROM feishu_user_context
+                    WHERE context_type = ? AND chat_id != ''
+                )
+                GROUP BY chat_id
+                ORDER BY last_seen DESC
+                LIMIT ?
+                """,
+                (kind, kind, cap),
+            ).fetchall()
+        except Exception:
+            return []
+        return [
+            str(row["chat_id"] if isinstance(row, sqlite3.Row) else row[0] or "").strip()
+            for row in rows
+            if str(row["chat_id"] if isinstance(row, sqlite3.Row) else row[0] or "").strip()
+        ]
+
+    def list_recent_feishu_group_chat_ids(self, *, limit: int = 100) -> list[str]:
+        """Return chat IDs observed as groups, never untyped identity rows."""
+        return self._list_recent_feishu_chat_ids(context_type="group", limit=limit)
+
+    def list_recent_feishu_dm_chat_ids(self, *, limit: int = 100) -> list[str]:
+        """Return chat IDs observed as one-to-one conversations."""
+        return self._list_recent_feishu_chat_ids(context_type="dm", limit=limit)
+
     def list_recent_feishu_dm_user_ids(self, *, limit: int = 50) -> list[str]:
         """Return human identities observed in one-to-one Feishu chats."""
         cap = max(1, min(int(limit or 50), 200))

@@ -257,7 +257,7 @@ def test_case_settings_view(project_slug: str = "", config: dict[str, Any] | Non
 def agents_settings_payload(*, network: bool = False, project: str = "") -> dict[str, Any]:
     config = load_agents_config()
     access = config.get("access") if isinstance(config.get("access"), dict) else {}
-    recent = {"user_ids": [], "chat_ids": [], "users": [], "chats": [], "names": {}}
+    recent = {"user_ids": [], "chat_ids": [], "direct_chat_ids": [], "users": [], "chats": [], "names": {}}
     pending_questions: list[dict[str, Any]] = []
     try:
         from risk.store import GlobalAgentStore
@@ -265,7 +265,6 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
 
         store = GlobalAgentStore()
         try:
-            recent_ids = store.list_recent_feishu_ids(limit=20)
             access_user_ids = [
                 str(x).strip()
                 for x in (
@@ -279,10 +278,16 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
             ]
             access_chat_ids = [str(x).strip() for x in (access.get("allowed_chat_ids") or []) if str(x).strip()]
             private_user_ids = store.list_recent_feishu_dm_user_ids(limit=50)
+            observed_group_chat_ids = store.list_recent_feishu_group_chat_ids(limit=100)
+            known_dm_chat_ids = set(store.list_recent_feishu_dm_chat_ids(limit=100))
             discovered_chats = discover_feishu_group_chats(store=store, network=network)
             discovered_chat_ids = [str(item.get("id") or "").strip() for item in discovered_chats if item.get("id")]
             all_users = list(dict.fromkeys([*private_user_ids, *access_user_ids]))
-            all_chats = list(dict.fromkeys([*discovered_chat_ids, *recent_ids.get("chat_ids", []), *access_chat_ids]))
+            all_chats = [
+                chat_id
+                for chat_id in list(dict.fromkeys([*discovered_chat_ids, *observed_group_chat_ids, *access_chat_ids]))
+                if chat_id not in known_dm_chat_ids
+            ]
             enriched = enrich_feishu_identities(
                 user_ids=all_users,
                 chat_ids=all_chats,
@@ -297,9 +302,23 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
             }
             recent_users = [item for item in enriched.get("users", []) if item.get("id") in private_user_set]
             recent_chats = []
+            direct_chat_ids = set(known_dm_chat_ids)
             for item in enriched.get("chats", []):
                 chat_id = str(item.get("id") or "").strip()
-                if not chat_id or str(item.get("name") or "").strip() == "Direct message":
+                name = str(item.get("name") or "").strip()
+                context_type = str(item.get("context_type") or "").strip().lower()
+                chat_mode = str(item.get("chat_mode") or "").strip().lower()
+                kind = str(item.get("kind") or "").strip().lower()
+                is_direct = (
+                    context_type == "dm"
+                    or kind in {"dm", "private"}
+                    or chat_mode in {"p2p", "private", "dm"}
+                    or name.casefold() == "direct message"
+                )
+                if not chat_id:
+                    continue
+                if is_direct:
+                    direct_chat_ids.add(chat_id)
                     continue
                 details = chat_details.get(chat_id, {})
                 recent_chats.append({**item, "agents": details.get("agents", [])})
@@ -309,6 +328,7 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
                 "users": recent_users,
                 "private_user_ids": [str(item.get("id")) for item in recent_users if item.get("id")],
                 "private_users": recent_users,
+                "direct_chat_ids": sorted(direct_chat_ids),
                 "group_chat_ids": [str(item.get("id")) for item in recent_chats if item.get("id")],
                 "group_chats": recent_chats,
                 "chats": recent_chats,

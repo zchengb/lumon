@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -401,6 +401,19 @@ CREATE TABLE IF NOT EXISTS feishu_user_context (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, chat_id, context_type)
 );
+
+-- Chat identity rows predate the Dashboard's group/private distinction and
+-- therefore cannot safely be used as group candidates on their own. Keep the
+-- observed chat type separately so stale identity names cannot turn a DM into
+-- a group in the authorization picker.
+CREATE TABLE IF NOT EXISTS feishu_chat_context (
+    chat_id TEXT PRIMARY KEY,
+    context_type TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_feishu_chat_context_type_updated
+    ON feishu_chat_context(context_type, updated_at DESC);
 """
 
 _FEISHU_IDENTITY_COLUMNS = {
@@ -524,6 +537,19 @@ def migrate_global(conn: sqlite3.Connection) -> None:
         str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }:
         _add_missing_columns(conn, "feishu_identity", _FEISHU_IDENTITY_COLUMNS)
+        # Existing versions stored private chats as ordinary chat identities.
+        # Their stable fallback label is enough to quarantine them during the
+        # first migration; future observations use feishu_chat_context.
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO feishu_chat_context(chat_id, context_type, updated_at)
+            SELECT identity_id, 'dm', updated_at
+            FROM feishu_identity
+            WHERE identity_type = 'chat'
+              AND identity_id LIKE 'oc_%'
+              AND lower(trim(display_name)) = 'direct message'
+            """
+        )
     _set_schema_version(conn, SCHEMA_VERSION)
     conn.commit()
 

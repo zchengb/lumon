@@ -162,6 +162,11 @@ def remember_message_identities(
             )
         chat_id = str(meta.get("chat_id") or "").strip()
         chat_type = str(meta.get("chat_type") or "").strip().lower()
+        if chat_id:
+            # Keep chat type independent from feishu_identity. The latter is
+            # only a display-name cache and historically contained DMs, which
+            # made them look like groups in the Dashboard.
+            store.record_feishu_chat_context(chat_id=chat_id, chat_type=chat_type)
         if chat_id and is_feishu_open_chat_id(chat_id) and chat_type not in {"p2p", "private", "dm"}:
             remember_chat_identity(store=store, chat_id=chat_id, agent_id=agent_id)
         body = event.get("event") if isinstance(event.get("event"), dict) else event

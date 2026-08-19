@@ -65,6 +65,8 @@ class FeishuIdentityTests(unittest.TestCase):
                 self.assertEqual(meta["union_id"], "on_4bf919cda0978cc8aad2abaf6535af87")
                 with mock.patch("feishu.identity._messenger_for", return_value=None):
                     remember_message_identities(event, meta)
+                self.assertEqual([CHAT], store.list_recent_feishu_group_chat_ids())
+                self.assertEqual("group", store.get_feishu_chat_context(CHAT))
                 self.assertEqual(store.get_feishu_display_name(ALICE), "Alice")
                 self.assertEqual(store.get_feishu_union_id(ALICE), "on_4bf919cda0978cc8aad2abaf6535af87")
                 self.assertEqual(store.get_feishu_display_name(BOB), "Bob")
@@ -139,6 +141,22 @@ class FeishuIdentityTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_chat_context_separates_group_and_direct_message_candidates(self) -> None:
+        group_chat = "oc_abcdef0123456789abcdef0123456789"
+        direct_chat = "oc_0123456789abcdef0123456789abcdef"
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            store = GlobalAgentStore()
+            try:
+                store.record_feishu_chat_context(chat_id=group_chat, chat_type="group")
+                store.record_feishu_chat_context(chat_id=direct_chat, chat_type="p2p")
+                self.assertEqual([group_chat], store.list_recent_feishu_group_chat_ids())
+                self.assertEqual([direct_chat], store.list_recent_feishu_dm_chat_ids())
+                self.assertEqual("group", store.get_feishu_chat_context(group_chat))
+                self.assertEqual("dm", store.get_feishu_chat_context(direct_chat))
+            finally:
+                store.close()
+
     def test_group_discovery_merges_membership_across_agent_apps(self) -> None:
         shared = "oc_abcdef0123456789abcdef0123456789"
         mark_only = "oc_0123456789abcdef0123456789abcdef"
@@ -170,6 +188,7 @@ class FeishuIdentityTests(unittest.TestCase):
                 ):
                     chats = discover_feishu_group_chats(store=store)
                 self.assertEqual([mark_only, shared], [item["id"] for item in chats])
+                self.assertEqual([mark_only, shared], sorted(store.list_recent_feishu_group_chat_ids()))
                 shared_item = next(item for item in chats if item["id"] == shared)
                 self.assertEqual(["dylan", "mark"], shared_item["agents"])
                 self.assertEqual("Shared Delivery", store.get_feishu_display_name(shared))
