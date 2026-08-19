@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from agents.dylan.model_client import _load_lumen_dotenv
 from agents.runtime.cursor_stream import AgentToolEvent, parse_stream_json_text
+from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
 from agents.runtime.observability import Observability, TraceContext
 
 
@@ -42,6 +43,8 @@ class CursorAgentRuntime:
         trust: bool = True,
         agent_id: str = "",
         project: str = "",
+        harness_mode: str = "",
+        task_mode: str = "",
     ) -> None:
         self.model = model
         self.soft_timeout_seconds = soft_timeout_seconds
@@ -51,8 +54,19 @@ class CursorAgentRuntime:
         self.trust = trust
         self.agent_id = agent_id
         self.project = project
+        self.harness_mode = str(harness_mode or configured_harness_mode()).strip().casefold()
+        self.task_mode = canonical_task_mode(task_mode) if task_mode else ""
         self.isolated_env: Optional[dict[str, str]] = None
         self.additional_dirs: list[Path] = []
+
+    @property
+    def capabilities(self) -> HarnessCapabilities:
+        return capabilities_for_provider(
+            "cursor",
+            mode=self.harness_mode,
+            sandbox=self.sandbox == "enabled" and not self.force,
+            task_mode=self.task_mode,
+        )
 
     def _agent_bin(self) -> str:
         for name in ("agent", "cursor-agent"):
@@ -349,8 +363,11 @@ def create_agent_runtime(
     trust: bool = True,
     agent_id: str = "",
     project: str = "",
+    harness_mode: str = "",
+    task_mode: str = "",
 ) -> Any:
     normalized = canonical_agent_provider(provider)
+    selected_harness_mode = str(harness_mode or configured_harness_mode()).strip().casefold()
     if normalized == "codex":
         from agents.runtime.codex_runtime import CodexAgentRuntime
 
@@ -365,6 +382,8 @@ def create_agent_runtime(
             trust=trust,
             agent_id=agent_id,
             project=project,
+            harness_mode=selected_harness_mode,
+            task_mode=task_mode,
         )
     if normalized in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"}:
         from agents.runtime.opencode_runtime import OpenCodeAgentRuntime
@@ -380,6 +399,8 @@ def create_agent_runtime(
             trust=trust,
             agent_id=agent_id,
             project=project,
+            harness_mode=selected_harness_mode,
+            task_mode=task_mode,
         )
     if normalized in {"openai", "openai_compatible"}:
         from agents.runtime.openai_compatible import OpenAICompatibleAgentRuntime
@@ -396,6 +417,8 @@ def create_agent_runtime(
             trust=trust,
             agent_id=agent_id,
             project=project,
+            harness_mode=selected_harness_mode,
+            task_mode=task_mode,
         )
     return CursorAgentRuntime(
         model=model,
@@ -406,6 +429,8 @@ def create_agent_runtime(
         trust=trust,
         agent_id=agent_id,
         project=project,
+        harness_mode=selected_harness_mode,
+        task_mode=task_mode,
     )
 
 

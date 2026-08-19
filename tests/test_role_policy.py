@@ -37,11 +37,11 @@ class RolePolicyTests(unittest.TestCase):
 
     def test_agent_ownership_is_a_negative_document_blacklist(self) -> None:
         self.assertTrue(is_action_allowed_for_agent("milchick", "test_case.generate"))
-        self.assertFalse(is_action_allowed_for_agent("milchick", "delivery.quick_change"))
+        self.assertTrue(is_action_allowed_for_agent("milchick", "delivery.quick_change"))
         self.assertTrue(is_action_allowed_for_agent("mark", "delivery.quick_change"))
         self.assertTrue(is_action_allowed_for_agent("mark", "loop.business"))
         self.assertTrue(is_action_allowed_for_agent("mark", "loop.technical"))
-        self.assertFalse(is_action_allowed_for_agent("mark", "test_case.generate"))
+        self.assertTrue(is_action_allowed_for_agent("mark", "test_case.generate"))
         self.assertTrue(is_action_allowed_for_agent("dylan", "jira.workitem.query"))
         self.assertTrue(is_action_allowed_for_agent("irving", "jira.workitem.update"))
         self.assertFalse(is_action_allowed_for_agent("unknown", "test_case.generate"))
@@ -55,7 +55,7 @@ class RolePolicyTests(unittest.TestCase):
         self.assertIn("Delete, move, or overwrite files outside", load_common_blacklist())
         self.assertIn("original user", responsibility_document("milchick"))
 
-    def test_broker_enforces_role_blacklist_before_executor(self) -> None:
+    def test_broker_keeps_host_authorization_gate_after_role_softening(self) -> None:
         calls: list[str] = []
 
         def executor(_request: ActionRequest) -> dict[str, str]:
@@ -82,8 +82,7 @@ class RolePolicyTests(unittest.TestCase):
                 )
 
         self.assertEqual(receipt.status, "denied")
-        self.assertEqual(receipt.error_code, "CAPABILITY_DENIED")
-        self.assertIn("responsibility document", receipt.error or "")
+        self.assertEqual(receipt.error_code, "AUTHORIZATION_DENIED")
         self.assertEqual(calls, [])
 
     def test_lumon_state_is_a_forbidden_host_root(self) -> None:

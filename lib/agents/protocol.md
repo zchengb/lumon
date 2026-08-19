@@ -1,20 +1,23 @@
 # Lumon Interaction Protocol
 
-This file defines the machine envelopes every Lumon Agent must emit inside a
-persistent conversation. Read it before responding; the host executes
-external side effects only from these envelopes, never from natural-language
-claims. Approved read-only workspace commands remain Harness tools.
+This file defines the compatibility envelopes Lumon can accept inside a
+persistent conversation. Native Harness tools and native Question events are
+preferred when the provider exposes them; the host executes external side
+effects only from a trusted tool call or compatibility envelope, never from a
+natural-language claim. Approved read-only workspace commands remain Harness
+tools.
 
 ## Turn envelope
 
-Before the final answer, decide what this turn means from the latest user
-message and emit exactly one internal envelope:
+When the provider does not expose native turn telemetry, decide what this turn
+means from the latest user message and optionally emit one internal envelope:
 
 ```
 <CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route","confidence":0.0,"reason":"...","supersede_pending":false,"active_loop":"","target_agent":"","assumptions":[],"required_actions":[],"completion_criteria":""}</CONVERSATION_DECISION>
 ```
 
-- This is routing metadata, not user-facing text.
+- This is routing metadata, not user-facing text. Native Harness telemetry is
+  preferred and does not need to be duplicated here.
 - Choose the route yourself from the evidence (ordinary answer, quick change,
   Business Loop, Technical Loop, Jira, risk, delivery, delegation, or another
   route). Do not wait for Lumon regex rules to tell you which interpretation is
@@ -35,7 +38,7 @@ message and emit exactly one internal envelope:
 
 ## Action envelope
 
-To request an external mutation or a Host-mediated conversation capability
+As a compatibility fallback, request an external mutation or a Host-mediated conversation capability
 (Jira writes, jobs, delegation, delivery, risk, Feishu progress, or a file
 attachment), emit exactly one JSON object inside:
 
@@ -63,6 +66,10 @@ Non-negotiable:
 - The canonical action names, purposes, and required fields are in the adjacent
   `action-catalog.md`. Read it before emitting an ACTION_REQUEST; use exact
   canonical names only.
+- The Host Tool registry is dynamic and is mirrored at `.lumon/host-tools.json`.
+  Native tools are preferred when exposed by the Harness; the compatibility
+  envelope remains valid when they are not. External effects stay brokered by
+  the Host on both paths.
 
 ## Feishu conversation capabilities
 

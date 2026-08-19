@@ -41,7 +41,8 @@ class AgentPlatformTests(unittest.TestCase):
         self.assertIn("risk.resolve", dylan.capabilities.actions)
         self.assertIn("delivery.start", mark.capabilities.actions)
         self.assertIn("delivery.quick_change", mark.capabilities.actions)
-        self.assertNotIn("test_case.generate", mark.capabilities.actions)
+        self.assertIn("test_case.generate", mark.capabilities.actions)
+        self.assertNotIn("test_case.generate", milchick.capabilities.actions)
         self.assertIn("agent.job.create", milchick.capabilities.actions)
 
     def test_unknown_agent_ignored(self) -> None:

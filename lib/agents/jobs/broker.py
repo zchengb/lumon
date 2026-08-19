@@ -16,7 +16,7 @@ TERMINAL = frozenset({"completed", "failed", "cancelled"})
 # host adapter call. Loops are conversational workspace work, so Mark decides
 # the details himself, exactly like a bounded quick change.
 MARK_AGENT_HANDOFF_CAPABILITIES = frozenset(
-    {"delivery.quick_change", "loop.business", "loop.technical"}
+    {"delivery.quick_change", "loop.business", "loop.technical", "test_case.generate"}
 )
 
 
@@ -435,7 +435,7 @@ def execute_job_action(request: ActionRequest) -> dict[str, Any]:
     args = request.arguments or {}
     resource = request.resource or {}
 
-    if action == "agent.job.create":
+    if action in {"agent.job.create", "agent.delegate"}:
         parent = broker.create_parent(
             project=request.project_slug,
             requested_by=request.actor_user_id,
@@ -470,6 +470,7 @@ def execute_job_action(request: ActionRequest) -> dict[str, Any]:
             "child": child.to_dict(),
             "summary": summary,
             "handoff_text": _job_create_handoff_text(target, capability, child),
+            "delegation": action == "agent.delegate",
             "result_delivered": child.status in {"completed", "failed"},
         }
 

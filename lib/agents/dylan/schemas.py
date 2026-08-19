@@ -117,6 +117,7 @@ class ConversationFlags:
     v4_enabled: bool = False
     autonomous_mode: str = ""
     session_scope: str = "thread_shared"
+    harness_mode: str = "unshackled"
     soft_timeout_seconds: int = 90
     hard_timeout_seconds: int = 3600
 
@@ -172,6 +173,14 @@ class ConversationFlags:
         )
         session_raw = v4.get("session") if isinstance(v4.get("session"), dict) else {}
         runtime_raw = v4.get("runtime") if isinstance(v4.get("runtime"), dict) else {}
+        harness_raw = {}
+        if isinstance(agents_config, dict):
+            configured_harness = agents_config.get("harness")
+            if isinstance(configured_harness, dict):
+                harness_raw = configured_harness
+            security_raw = agents_config.get("agent_security")
+            if not harness_raw and isinstance(security_raw, dict):
+                harness_raw = security_raw
         v4_enabled = bool(v4.get("enabled", False))
         provider_name = str(model_src.get("type") or model_src.get("provider") or "cursor").strip().casefold()
         codex_provider = provider_name in {"codex", "codex_cli", "codex-cli"}
@@ -247,6 +256,7 @@ class ConversationFlags:
             v4_enabled=v4_enabled,
             autonomous_mode=str(v4.get("mode") or ("autonomous_workspace" if v4_enabled else "")),
             session_scope=str(session_raw.get("scope") or "thread_shared"),
+            harness_mode=str(harness_raw.get("mode") or "unshackled").strip().casefold(),
             soft_timeout_seconds=int(runtime_raw.get("soft_timeout_seconds") or 90),
             hard_timeout_seconds=int(runtime_raw.get("hard_timeout_seconds") or 3600),
         )

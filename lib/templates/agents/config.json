@@ -1,7 +1,21 @@
 {
   "enabled": false,
   "agent_security": {
-    "workspace_isolation_v2": false
+    "workspace_isolation_v2": true,
+    "mode": "dedicated_machine",
+    "delete_policy": "no_irreversible_delete",
+    "network": "allow",
+    "secret_isolation": true,
+    "host_visibility": "denied"
+  },
+  "harness": {
+    "mode": "unshackled",
+    "allow_workspace_write": true,
+    "allow_shell": true,
+    "allow_web": true,
+    "allow_question": true,
+    "allow_subagents": true,
+    "allow_skills": true
   },
   "profiles": {
     "dylan": {

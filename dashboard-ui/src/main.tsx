@@ -308,6 +308,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.cliVersion": "CLI version",
     "settings.sessionMode": "Session",
     "settings.permissionProfile": "Permissions",
+    "settings.harnessStatus": "Harness readiness",
+    "settings.harnessStatusDescription": "The provider can use native tools while Lumon keeps workspace writes disposable and external mutations brokered.",
+    "settings.harnessMode": "Mode",
+    "settings.harnessCapabilities": "Capabilities",
+    "settings.harnessSecurity": "Security boundary",
+    "settings.harnessWarnings": "Warnings",
+    "settings.harnessReady": "ready",
+    "settings.harnessBlocked": "blocked",
     "settings.actionCatalog": "Action catalog",
     "settings.deepSeekCredential": "Model credentials",
     "settings.runtimeAccount": "Codex account",
@@ -882,6 +890,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.cliVersion": "CLI 版本",
     "settings.sessionMode": "会话",
     "settings.permissionProfile": "权限",
+    "settings.harnessStatus": "Harness 就绪状态",
+    "settings.harnessStatusDescription": "Provider 可以使用原生工具，同时 Lumon 保持工作区可丢弃，并通过 Broker 处理外部变更。",
+    "settings.harnessMode": "模式",
+    "settings.harnessCapabilities": "能力",
+    "settings.harnessSecurity": "安全边界",
+    "settings.harnessWarnings": "警告",
+    "settings.harnessReady": "已就绪",
+    "settings.harnessBlocked": "已阻断",
     "settings.actionCatalog": "Action 清单",
     "settings.deepSeekCredential": "模型凭证",
     "settings.runtimeAccount": "Codex 账号",
@@ -1456,6 +1472,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.cliVersion": "CLI 版本",
     "settings.sessionMode": "會話",
     "settings.permissionProfile": "權限",
+    "settings.harnessStatus": "Harness 就緒狀態",
+    "settings.harnessStatusDescription": "Provider 可以使用原生工具，同時 Lumon 保持工作區可丟棄，並透過 Broker 處理外部變更。",
+    "settings.harnessMode": "模式",
+    "settings.harnessCapabilities": "能力",
+    "settings.harnessSecurity": "安全邊界",
+    "settings.harnessWarnings": "警告",
+    "settings.harnessReady": "已就緒",
+    "settings.harnessBlocked": "已阻斷",
     "settings.actionCatalog": "Action 清單",
     "settings.deepSeekCredential": "模型憑證",
     "settings.runtimeAccount": "Codex 帳號",
@@ -3838,6 +3862,13 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const schedules = data.interactive?.schedules || {};
   const agentsPayload = data.interactive?.agents || {};
   const runtimeStatus = workspace.runtime && typeof workspace.runtime === "object" ? workspace.runtime : {};
+  const harnessProbe = runtimeStatus.harness_probe && typeof runtimeStatus.harness_probe === "object"
+    ? runtimeStatus.harness_probe
+    : workspace.harness && typeof workspace.harness === "object" ? workspace.harness : {};
+  const harnessCapabilities = harnessProbe.capabilities && typeof harnessProbe.capabilities === "object" ? harnessProbe.capabilities : {};
+  const enabledHarnessCapabilities = Object.entries(harnessCapabilities).filter(([, enabled]) => Boolean(enabled)).map(([name]) => name).join(" · ");
+  const harnessSecurity = harnessProbe.security && typeof harnessProbe.security === "object" ? harnessProbe.security : {};
+  const harnessSecuritySummary = Object.entries(harnessSecurity).map(([name, violated]) => `${name}:${violated ? "fail" : "ok"}`).join(" · ");
   const [scanWindow, setScanWindow] = useState(String(workspace.scan_window_days || 7));
   const [scanCron, setScanCron] = useState(String(schedules.scan?.cron || "0 12 * * 1-5"));
   const [scanEnabled, setScanEnabled] = useState(Boolean(schedules.scan));
@@ -4320,6 +4351,23 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
               <div><span>{t("settings.sessionMode")}</span><strong>{text(runtimeStatus.session_mode)}</strong></div>
               <div><span>{t("settings.permissionProfile")}</span><strong>{text(runtimeStatus.permission_profile)}</strong></div>
               <div className="runtime-status-wide"><span>{t("settings.actionCatalog")}</span><code>{text(runtimeStatus.action_catalog)}</code></div>
+            </div>
+          </div>
+        </div>
+      </Panel>
+      <Panel title={t("settings.harnessStatus")} action={<Badge value={harnessProbe.ready ? t("settings.harnessReady") : t("settings.harnessBlocked")} />}>
+        <div className="settings-section">
+          <div className="settings-copy">
+            <h4>{t("settings.harnessStatus")}</h4>
+            <p>{t("settings.harnessStatusDescription")}</p>
+          </div>
+          <div className="settings-control wide">
+            <div className="runtime-status-grid">
+              <div><span>{t("settings.harnessMode")}</span><strong>{text(harnessProbe.mode, "unshackled")}</strong></div>
+              <div><span>{t("settings.harness")}</span><strong>{text(harnessProbe.provider, runtimeStatus.harness || "unknown")}</strong></div>
+              <div className="runtime-status-wide"><span>{t("settings.harnessCapabilities")}</span><code>{enabledHarnessCapabilities || "—"}</code></div>
+              <div className="runtime-status-wide"><span>{t("settings.harnessSecurity")}</span><code className={Object.values(harnessSecurity).some(Boolean) ? "runtime-warning" : "runtime-ok"}>{harnessSecuritySummary || "—"}</code></div>
+              {Array.isArray(harnessProbe.warnings) && harnessProbe.warnings.length > 0 && <div className="runtime-status-wide"><span>{t("settings.harnessWarnings")}</span><strong className="runtime-warning">{harnessProbe.warnings.join(" · ")}</strong></div>}
             </div>
           </div>
         </div>

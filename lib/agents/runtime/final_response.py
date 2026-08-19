@@ -32,6 +32,11 @@ _ACTION_ENVELOPE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_NATIVE_TOOL_ENVELOPE = re.compile(
+    r"<(?:NATIVE_TOOL_CALL|TOOL_CALL)>\s*(.*?)\s*</(?:NATIVE_TOOL_CALL|TOOL_CALL)>",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _CLARIFICATION_ENVELOPE = re.compile(
     r"<CLARIFICATION_REQUEST>\s*(.*?)\s*</CLARIFICATION_REQUEST>",
     re.IGNORECASE | re.DOTALL,
@@ -150,11 +155,40 @@ def extract_action_requests(raw: str) -> list[dict[str, Any]]:
         if "arguments" not in cleaned or not isinstance(cleaned.get("arguments"), dict):
             cleaned["arguments"] = {}
         requests.append(cleaned)
+    # Provider adapters may surface a native tool call as a compact JSON event
+    # in a streamed result. Normalize it to the same host request shape while
+    # retaining the old envelope parser for older workspaces.
+    for match in _NATIVE_TOOL_ENVELOPE.finditer(text):
+        try:
+            payload = json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        cleaned = _strip_forged_identity(payload)
+        action = str(cleaned.get("name") or cleaned.get("tool") or cleaned.get("action") or "").strip().lower()
+        arguments = cleaned.get("arguments") if isinstance(cleaned.get("arguments"), dict) else {}
+        if not action:
+            continue
+        requests.append(
+            {
+                "action": _ACTION_ALIASES.get(action, action),
+                "arguments": arguments,
+                "resource": cleaned.get("resource") if isinstance(cleaned.get("resource"), dict) else {},
+            }
+        )
     return requests
 
 
 def extract_clarification_request(raw: str) -> dict[str, Any] | None:
     for match in _CLARIFICATION_ENVELOPE.finditer(str(raw or "")):
+        try:
+            payload = json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return _strip_forged_identity(payload)
+    for match in re.finditer(r"<NATIVE_QUESTION>\s*(.*?)\s*</NATIVE_QUESTION>", str(raw or ""), re.IGNORECASE | re.DOTALL):
         try:
             payload = json.loads(match.group(1).strip())
         except json.JSONDecodeError:

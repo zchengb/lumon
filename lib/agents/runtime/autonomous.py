@@ -32,12 +32,14 @@ from agents.runtime.interaction import (
     version_upgrade_choices,
 )
 from agents.runtime.loop_intent import classify_loop_intent, is_combined_plan_request, loop_gateway_prompt
+from agents.runtime.harness import infer_task_mode
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
 from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
 from agents.security.actions import FEISHU_ACTIONS
 from agents.security.flags import workspace_isolation_v2_enabled
+from agents.security.tools import write_host_tool_manifest
 from agents.security.trusted import execute_trusted_actions, trusted_context_from_meta
 from feishu.messenger import FeishuMessenger, cleanup_generated_plan_pdfs, is_pdf_output_request
 
@@ -698,6 +700,8 @@ def handle_autonomous_conversation(
                 loop_permissions_enabled = True
                 write_loop_permission_profile(workspace, force=True)
 
+            task_mode = infer_task_mode(text, pending)
+
             def _prompt_with_contract(base: str, current_pending: dict[str, Any] | None = None) -> str:
                 managed_loop = ""
                 loop_capability = str(meta.get("_loop_capability") or "").strip().lower()
@@ -752,6 +756,7 @@ def handle_autonomous_conversation(
                             agent_id=agent_id,
                             pending=current_pending,
                             workspace_path=workspace,
+                            task_mode=task_mode,
                         ),
                     )
                     if part
@@ -761,6 +766,7 @@ def handle_autonomous_conversation(
             if image_context:
                 anchored_text = f"{anchored_text}\n\n{image_context}"
 
+            write_host_tool_manifest(workspace)
             if is_new:
                 prompt = definition.build_bootstrap_prompt(
                     project_slug=slug,
@@ -798,6 +804,8 @@ def handle_autonomous_conversation(
                 trust=True,
                 agent_id=agent_id,
                 project=slug,
+                harness_mode=flags.harness_mode,
+                task_mode=task_mode,
             )
             if hasattr(cursor, "jira_read_actions"):
                 cursor.jira_read_actions = frozenset(

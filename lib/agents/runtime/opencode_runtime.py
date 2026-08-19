@@ -13,6 +13,7 @@ from typing import Any, Iterable
 from agents.dylan.model_client import _load_lumen_dotenv
 from agents.runtime.cursor_runtime import AgentRunResult
 from agents.runtime.cursor_stream import AgentToolEvent
+from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
@@ -139,6 +140,8 @@ class OpenCodeAgentRuntime:
         trust: bool = True,
         agent_id: str = "",
         project: str = "",
+        harness_mode: str = "",
+        task_mode: str = "",
         workflow_mode: bool = False,
         jira_read_actions: frozenset[str] | None = None,
     ) -> None:
@@ -153,11 +156,22 @@ class OpenCodeAgentRuntime:
         self.trust = trust
         self.agent_id = agent_id
         self.project = project
+        self.harness_mode = str(harness_mode or configured_harness_mode()).strip().casefold()
+        self.task_mode = canonical_task_mode(task_mode) if task_mode else ""
         self.workflow_mode = workflow_mode
         self.jira_read_actions = frozenset(jira_read_actions or ())
         self.isolated_env: dict[str, str] | None = None
         self.additional_files: list[Path] = []
         self.additional_directories: list[Path] = []
+
+    @property
+    def capabilities(self) -> HarnessCapabilities:
+        return capabilities_for_provider(
+            "opencode",
+            mode=self.harness_mode,
+            sandbox=self.sandbox == "enabled" and not self.force,
+            task_mode=self.task_mode,
+        )
 
     def _agent_bin(self) -> str:
         path = find_opencode_bin()
@@ -166,6 +180,84 @@ class OpenCodeAgentRuntime:
         raise RuntimeError("OpenCode CLI not found; install it with npm install -g opencode-ai")
 
     def _permission_config(self) -> dict[str, Any]:
+        if self.task_mode == "explore" and not self.workflow_mode:
+            bash_permissions: dict[str, Any] = {
+                "*": "deny",
+                "rg *": "allow",
+                "git status*": "allow",
+                "git diff*": "allow",
+                "git log*": "allow",
+            }
+            if "jira.workitem.get" in self.jira_read_actions:
+                bash_permissions["twg jira workitem get *"] = "allow"
+            if "jira.workitem.query" in self.jira_read_actions:
+                bash_permissions["twg jira workitem query *"] = "allow"
+            return {
+                "*": "deny",
+                "read": "allow",
+                "glob": "allow",
+                "grep": "allow",
+                "edit": "deny",
+                "bash": bash_permissions,
+                "task": "deny",
+                "webfetch": "allow",
+                "websearch": "allow",
+                "question": "allow",
+                "skill": "allow",
+                "lsp": "allow",
+                "external_directory": {
+                    f"{path.expanduser().resolve()}/**": "allow"
+                    for path in self.additional_directories
+                    if path.is_dir()
+                },
+                "doom_loop": "deny",
+            }
+        if self.harness_mode in {"unshackled", "dedicated_machine", "dedicated"} and not self.workflow_mode:
+            bash_permissions: dict[str, Any] = {
+                "*": "allow",
+                "sudo *": "deny",
+                "ssh *": "deny",
+                "scp *": "deny",
+                "git push*": "deny",
+                "gh pr*": "deny",
+                "twg jira *": "deny",
+                "twg feishu *": "deny",
+            }
+            if "jira.workitem.get" in self.jira_read_actions:
+                bash_permissions["twg jira workitem get *"] = "allow"
+            if "jira.workitem.query" in self.jira_read_actions:
+                bash_permissions["twg jira workitem query *"] = "allow"
+            return {
+                "*": "allow",
+                "read": {
+                    "*": "allow",
+                    "**/.env*": "deny",
+                    "**/*.pem": "deny",
+                    "**/*.key": "deny",
+                    "**/.ssh/**": "deny",
+                },
+                "glob": "allow",
+                "grep": "allow",
+                "edit": {
+                    "*": "allow",
+                    "**/.env*": "deny",
+                    "**/*.pem": "deny",
+                    "**/*.key": "deny",
+                },
+                "bash": bash_permissions,
+                "task": "allow",
+                "webfetch": "allow",
+                "websearch": "allow",
+                "question": "allow",
+                "skill": "allow",
+                "lsp": "allow",
+                "external_directory": {
+                    f"{path.expanduser().resolve()}/**": "allow"
+                    for path in self.additional_directories
+                    if path.is_dir()
+                },
+                "doom_loop": "deny",
+            }
         if self.workflow_mode:
             return {
                 "*": "deny",

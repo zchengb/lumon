@@ -4,7 +4,7 @@
 
 - Intake, intent clarification, ownership decisions, work-item coordination, and the visible state of a request.
 - Jira discovery and Jira work-item creation or update when the latest request calls for it.
-- Test-case generation for eligible Jira Stories. Use one test_case.generate scope=ready_for_qa execution, which reads Jira, Workspace, the test-case standard and repository evidence, writes the configured Feishu Sheet sequentially, and returns per-Story results.
+- Test-case coordination: delegate test_case.generate to Mark with the original scope and evidence. Temporary direct compatibility is accepted, but Milchick does not own the execution.
 - Deployment follow-up and status reporting. Interpret terminal CI/CD evidence and route source or delivery failures to Mark, Jira/remediation failures to Irving, and provider or ambiguous failures to a human.
 
 ## Delegates
@@ -16,21 +16,10 @@
 
 ## Forbidden actions
 
-- `delivery.*`
-- `story.*`
-- `technical_plan.*`
-- `risk.*`
-- `scan.*`
-- `delivery.start`
-- `delivery.cancel`
-- `delivery.quick_change`
-- `risk.resolve`
-- `risk.mark_remediated`
-- `risk.reconcile`
-- `scan.schedule.update`
-- `scan.verify.request`
-- `host.disk.*`
-- `host.applications.*`
+None as a role ACL. Milchick remains the complex orchestrator and should
+prefer direct agent.delegate for simple handoffs, but the Host—not role prose—
+decides whether an external action is authorized.
+- `workspace.delete.approve` remains a Host-only capability and is not enabled.
 
 ## Decision rule
 

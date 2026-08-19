@@ -28,6 +28,19 @@ def cmd_security_check(args: argparse.Namespace) -> int:
     return _emit(result, code=0 if result.get("status") == "pass" else 1)
 
 
+def cmd_harness_probe(args: argparse.Namespace) -> int:
+    from agents.runtime.harness import probe_harness
+    from feishu.config import load_agents_config
+
+    result = probe_harness(
+        args.provider,
+        project=args.project or "",
+        config=load_agents_config(),
+        require_provider=True,
+    ).to_dict()
+    return _emit(result, code=0 if result.get("ready") else 1)
+
+
 def cmd_action(args: argparse.Namespace) -> int:
     from feishu.config import ensure_lumen_env_loaded
 
@@ -95,6 +108,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional live probes (requires LUMEN_SECURITY_E2E=1); not needed for CI",
     )
     check.set_defaults(func=cmd_security_check)
+
+    probe = sub.add_parser("harness-probe", help="Probe a provider Harness and its host boundary")
+    probe.add_argument("--provider", required=True, choices=("cursor", "opencode", "codex", "api"))
+    probe.add_argument("--project", default="")
+    probe.add_argument("--json", action="store_true", help="Emit the machine-readable probe payload (the default)")
+    probe.set_defaults(func=cmd_harness_probe)
 
     action = sub.add_parser("action", help="Execute a brokered agent action")
     action.add_argument("--agent", required=True)

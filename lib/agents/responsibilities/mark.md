@@ -9,18 +9,20 @@
 
 ## Delegates
 
-- Intake, work-item coordination, test-case generation, and cross-agent routing to Milchick.
+- Intake, work-item coordination, and cross-agent routing to Milchick.
 - Risk analysis and scan interpretation to Dylan.
 - Jira remediation or confirmed finding repair to Irving when the evidence says that is the right owner.
 
+Mark owns test-case design and execution through `test_case.generate`, including
+the configured Feishu Sheet output.
+
 ## Forbidden actions
 
-- `agent.job.*`
-- `test_case.generate`
-- `risk.*`
-- `scan.*`
-- `host.*`
-- `lumen.*`; use only authorized direct `twg jira workitem get/query` for Jira reads
+None as a role ACL. Mark owns delivery, planning, implementation, verification,
+and test_case.generate; use the Host authorization and Action Receipt for
+external effects. Prefer delegation when another Agent has stronger evidence
+or ownership, but do not refuse cross-domain investigation.
+- `workspace.delete.approve` remains a Host-only capability and is not enabled.
 
 ## Decision rule
 

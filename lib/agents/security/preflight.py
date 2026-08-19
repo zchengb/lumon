@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from agents.dylan.permission_policy import SECURE_PERMISSIONS
+from agents.runner.isolation import protected_delete_probe
 from agents.runner.workspace_mounts import ensure_runner_dirs
 from agents.security.actions import ActionRequest
 from agents.security.broker import CapabilityBroker
@@ -119,22 +120,25 @@ def run_security_check(
     if checks["permission_profile_v2"] == "fail":
         critical_fail = True
 
-    env = build_agent_env(agent_id=agent, project=project)
+    if flags.get("workspace_isolation_v2"):
+        from agents.runner.runner_env import build_runner_env
+
+        env = build_runner_env(agent_id=agent, project=project, config=cfg)
+    else:
+        env = build_agent_env(agent_id=agent, project=project)
     leaked = env_contains_secrets(env)
     checks["secret_env"] = "isolated" if not leaked else f"leaked:{','.join(leaked)}"
     if leaked:
         critical_fail = True
     if env.get("CURSOR_API_KEY"):
-        warnings.append("CURSOR_API_KEY still present in child env (known limitation unless credential store is used)")
-        checks["cursor_api_key"] = "present"
+        warnings.append("CURSOR_API_KEY is explicitly enabled as a provider-scoped credential")
+        checks["cursor_api_key"] = "provider_scoped"
     else:
         checks["cursor_api_key"] = "absent"
 
     if flags.get("workspace_isolation_v2"):
-        from agents.runner.runner_env import build_runner_env
-
         dirs = ensure_runner_dirs(agent)
-        runner_env = build_runner_env(agent_id=agent, project=project, source={"PATH": "/usr/bin"})
+        runner_env = build_runner_env(agent_id=agent, project=project, source={"PATH": "/usr/bin"}, config=cfg)
         checks["runner"] = "local_isolated"
         checks["runner_home"] = str(dirs["home"])
         if Path(runner_env.get("HOME", "")).resolve() != dirs["home"].resolve():
@@ -192,7 +196,7 @@ def run_security_check(
         except OSError:
             checks["symlink_escape"] = "skipped"
 
-    broker = CapabilityBroker(config=cfg)
+    broker = CapabilityBroker(config=cfg, audit=False)
     denied = broker.execute(
         ActionRequest(
             agent_id=agent,
@@ -232,11 +236,21 @@ def run_security_check(
 
     access = cfg.get("access") if isinstance(cfg.get("access"), dict) else {}
     checks["authorization"] = "active"
-    checks["network"] = "blocked"
+    checks["network"] = str(flags.get("network") or "allow")
     checks["access_configured"] = bool(
         access.get("mutation_allowed_user_ids") or access.get("admin_user_ids")
     )
     checks["host_visibility"] = "denied" if flags.get("workspace_isolation_v2") else "limited"
+
+    delete_probe = protected_delete_probe()
+    checks["protected_delete"] = (
+        "blocked"
+        if delete_probe.get("status") == "blocked" and not delete_probe.get("canonical_deleted")
+        else "fail"
+    )
+    if checks["protected_delete"] != "blocked":
+        critical_fail = True
+    checks["identity_forgery"] = checks.get("trusted_context")
 
     if live:
         if os.environ.get("LUMEN_SECURITY_E2E") != "1":
@@ -260,6 +274,9 @@ def run_security_check(
         "broker": checks.get("broker"),
         "authorization": checks.get("authorization"),
         "workspace_isolation_v2": checks.get("workspace_isolation_v2"),
+        "protected_delete": checks.get("protected_delete"),
+        "identity_forgery": checks.get("identity_forgery"),
+        "harness_mode": flags.get("mode"),
         "warnings": warnings,
         "checks": checks,
         "conversation_enabled": status == "pass",

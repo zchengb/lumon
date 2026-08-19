@@ -108,6 +108,26 @@ def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_k
     }
     key_env = model.get("api_key_env") or defaults.get(provider, "")
     codex_ready = bool(command) and bool(account.get("configured")) and bool(account.get("matches")) and not login_detail.casefold().startswith("not logged in")
+    try:
+        from agents.runtime.harness import probe_harness
+        from feishu.config import load_agents_config
+
+        harness_probe = probe_harness(
+            provider,
+            project=str(workspace),
+            config=load_agents_config(),
+            require_provider=True,
+        ).to_dict()
+    except Exception as exc:
+        harness_probe = {
+            "provider": provider,
+            "mode": "unshackled",
+            "ready": False,
+            "capabilities": {},
+            "security": {},
+            "checks": {"error": str(exc)[:240]},
+            "warnings": ["Harness probe failed closed"],
+        }
     return {
         "harness": {"opencode": "OpenCode", "cursor_cli": "Cursor CLI", "codex": "Codex CLI"}.get(provider, "OpenAI-compatible API"),
         "provider": provider,
@@ -126,6 +146,7 @@ def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_k
         "session_mode": "persistent Codex session" if provider == "codex" else "persistent provider session" if provider == "opencode" else "provider managed",
         "action_catalog": str((workspace / ".lumon" / "action-catalog.md").resolve()),
         "permission_profile": "Codex danger-full-access runtime" if provider == "codex" else "workspace OpenCode permission policy" if provider == "opencode" else "provider sandbox policy",
+        "harness_probe": harness_probe,
     }
 
 if str(LIB_DIR) not in sys.path:
@@ -395,6 +416,7 @@ def workspace_payload(workspace: Path) -> dict[str, Any]:
     git_conflict = read_conflict(workspace / "state")
     if not all(str(git_conflict.get(key) or "").strip() for key in ("repo", "branch", "remote_oid", "local_oid")):
         git_conflict = None
+    runtime_status = opencode_runtime_status(workspace, workflow_model_config(common.get("execution")), sorted(set(configured_keys)))
     return {
         "path": str(workspace),
         "scan_window_days": (common.get("execution") or {}).get("scan_window_days", 7),
@@ -410,7 +432,8 @@ def workspace_payload(workspace: Path) -> dict[str, Any]:
             "patch": patch_publish_mode(workspace.parent),
         },
         "model_config": workflow_model_config(common.get("execution")),
-        "runtime": opencode_runtime_status(workspace, workflow_model_config(common.get("execution")), sorted(set(configured_keys))),
+        "runtime": runtime_status,
+        "harness": runtime_status.get("harness_probe", {}),
         # Keep the old per-workflow shape for existing dashboard clients. The
         # values intentionally all come from the one workspace-level config.
         "models": {

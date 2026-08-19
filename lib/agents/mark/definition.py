@@ -46,9 +46,9 @@ MARK_DEFINITION = AgentDefinition(
     permission_profile="delivery_conversational",
     capabilities=AgentCapabilities(
         actions=MARK_ACTIONS,
-        read_scopes=("delivery_docs", "story", "technical_plan", "jira"),
+        read_scopes=("delivery_docs", "story", "technical_plan", "test_case", "jira"),
         filesystem_mode="workspace_read",
-        network_profile="deny",
+        network_profile="allow",
         secret_profile="isolated",
         direct_workspace_write=False,
         allowed_workflows=(
@@ -59,9 +59,10 @@ MARK_DEFINITION = AgentDefinition(
             "delivery.quick_change",
             "loop.business",
             "loop.technical",
+            "test_case.generate",
             *JIRA_ACTIONS,
         ),
-        allowed_mutations=("delivery.start", "delivery.quick_change", *JIRA_MUTATION_ACTIONS),
+        allowed_mutations=("delivery.start", "delivery.quick_change", "test_case.generate", *JIRA_MUTATION_ACTIONS),
         external_side_effects=("feishu.reply", "feishu.file", "feishu.bitable.write", "jira"),
     ),
     build_bootstrap_prompt=build_bootstrap_prompt,

@@ -20,6 +20,7 @@ _ACTION_REQUIREMENTS: dict[str, tuple[tuple[str, ...], ...]] = {
     "risk.mark_remediated": (("finding_id",),),
     "risk.reconcile": (("project",),),
     "agent.job.create": (("target_agent",), ("capability",)),
+    "agent.delegate": (("target_agent",), ("capability",)),
     "agent.job.cancel": (("job_id",),),
     "agent.job.retry": (("job_id",),),
     "jira.workitem.create": (("summary",),),
@@ -500,6 +501,7 @@ def interaction_contract_prompt(
     agent_id: str,
     pending: dict[str, Any] | None = None,
     workspace_path: Path | None = None,
+    task_mode: str = "",
 ) -> str:
     protocol_path = Path(__file__).resolve().parents[1] / "protocol.md"
     action_catalog_path = Path(__file__).resolve().parents[1] / "action-catalog.md"
@@ -509,25 +511,30 @@ def interaction_contract_prompt(
         protocol_path = workspace / ".lumon" / "protocol.md"
         action_catalog_path = workspace / ".lumon" / "action-catalog.md"
         blacklist_path = workspace / ".lumon" / "blacklist.md"
+    host_tools_path = protocol_path.parent / "host-tools.json"
     lines = [
         "[LUMON INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumon conversation.",
         f"READ the interaction protocol before responding: {protocol_path}",
-        "It defines the envelope schemas (CONVERSATION_DECISION / ACTION_REQUEST / CLARIFICATION_REQUEST / FINAL_RESPONSE) and the Grill protocol.",
+        "It defines the compatibility envelope schemas (CONVERSATION_DECISION / ACTION_REQUEST / CLARIFICATION_REQUEST / FINAL_RESPONSE) and the Grill protocol.",
         "Non-negotiable:",
-        "- Before the final answer, emit exactly one CONVERSATION_DECISION envelope.",
+        "- CONVERSATION_DECISION is optional telemetry when the Harness exposes native events; do not block a normal turn just to classify it.",
         "- Before using tools, READ the common blacklist at " + str(blacklist_path) + ".",
+        "- Prefer native Host Tools and native Question events when the Harness exposes them. The compatibility envelopes remain valid fallback syntax.",
         "- For read-only Jira evidence, prefer the authorized `twg jira workitem get/query` commands described in the action catalog; do not emit ACTION_REQUEST for that read when the command succeeds.",
         "- Jira create/update and other external mutations still require exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without the host receipt.",
         "- A turn may contain multiple ACTION_REQUEST envelopes for distinct catalog capabilities, such as a progress update followed by a file attachment; use one valid envelope per action.",
         "- Put the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.",
+        f"Current task mode: {task_mode or 'explore'}. Explore is read/search/question; Build adds edit/build/test/local Git; External adds brokered Host Tools. Move modes when user intent becomes explicit.",
+        f"The live Host Tool registry is available at {host_tools_path}; inspect it when native tools are not listed directly by the Harness.",
         "Envelope schemas:",
         '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":""}</CONVERSATION_DECISION>',
         '<ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>',
         '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
-        f"If this turn needs a host action, READ the canonical action catalog before emitting ACTION_REQUEST: {action_catalog_path}",
-        "Copy the action-specific arguments shape from that catalog; put model-selected fields in arguments and leave resource empty unless its recipe says otherwise.",
-        "Use only the exact canonical action names and field names in that catalog; never invent, translate, or alias action names.",
+        f"If native Host Tools are unavailable and this turn needs a host action, use the compatibility catalog as a fallback: {action_catalog_path}",
+        "Host tools are dynamically registered with a name, description, JSON schema, risk level, default owner, and authorization class. Put model-selected fields in the tool arguments; the Host injects identity.",
+        "Use only registered canonical action names and field names; never invent, translate, or alias action names.",
+        "Use exact canonical action names and the exact arguments shape from the live registry or compatibility catalog.",
         "A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true.",
     ]
     if pending:

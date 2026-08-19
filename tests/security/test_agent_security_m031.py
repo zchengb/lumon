@@ -24,8 +24,8 @@ from agents.security.trusted import bind_action_request, trusted_context_from_me
 
 
 class AgentSecurityM031Tests(unittest.TestCase):
-    def test_workspace_isolation_flag_defaults_off(self) -> None:
-        self.assertFalse(workspace_isolation_v2_enabled({}))
+    def test_workspace_isolation_flag_defaults_on(self) -> None:
+        self.assertTrue(workspace_isolation_v2_enabled({}))
         self.assertFalse(workspace_isolation_v2_enabled({"agent_security": {"workspace_isolation_v2": False}}))
 
     def test_permission_profile_v2_denies_host_enumeration(self) -> None:
@@ -119,8 +119,9 @@ Resolved FIND-1.
                     config={"access": {"mutation_allowed_user_ids": ["ou_owner"]}},
                 )
             self.assertEqual(result["status"], "pass")
-            self.assertEqual(result["runner"], "host")
-            self.assertEqual(result["host_visibility"], "limited")
+            self.assertEqual(result["runner"], "local_isolated")
+            self.assertEqual(result["host_visibility"], "denied")
+            self.assertEqual(result["protected_delete"], "blocked")
             self.assertEqual(result["checks"]["trusted_context"], "pass")
             self.assertEqual(result["checks"]["permission_profile_v2"], "pass")
 

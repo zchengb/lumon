@@ -122,6 +122,11 @@ Attach an explicitly requested generated PDF:
 For delegation, emit one `agent.job.create` request and wait for its host
 receipt before claiming that work was assigned or started.
 
+Any Agent may also use the lightweight `agent.delegate` capability when a
+native Host Tool is available. It uses the same `target_agent` and `capability`
+fields, is resolved by the Host, and returns an Action Receipt; it is not a
+license to impersonate the target Agent or bypass user/chat authorization.
+
 ## Jira — direct read lane first; mutations through the host adapter
 
 | Canonical action | Purpose | `arguments` fields |
@@ -132,11 +137,11 @@ receipt before claiming that work was assigned or started.
 | `jira.workitem.create` | Create a Jira work item after the request calls for it. | required: `summary`; optional: `description`, `project_key`, `issue_type`, `target_version`, `priority`, `labels` (array), `parent` |
 | `jira.workitem.update` | Update an existing Jira work item. | required: `issue_key`; plus at least one of `summary`, `description`, `priority`, `labels` (array), `add_labels` (array), `comment`, `status` |
 
-## Milchick operations
+## Operations and test-case ownership
 
 | Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `test_case.generate` | Generate test cases and write the configured Sheet. | required: one of `issue_key`, `story`, `story_id`, `scope`; use `scope="ready_for_qa"` for all matching Stories; optional: `statuses` (array) |
+| `test_case.generate` | Mark-owned test-case generation that writes the configured Sheet. Milchick delegates this capability. | required: one of `issue_key`, `story`, `story_id`, `scope`; use `scope="ready_for_qa"` for all matching Stories; optional: `statuses` (array) |
 | `project.status` | Read lightweight project status. | none |
 | `workflow.status` | Read lightweight workflow status. | none |
 | `schedule.status` | Read lightweight schedule status. | none |

@@ -25,9 +25,19 @@ class CapabilityBroker:
         *,
         config: Optional[dict[str, Any]] = None,
         executors: Optional[dict[str, Executor]] = None,
+        audit: bool = True,
     ) -> None:
         self.config = config if isinstance(config, dict) else load_agents_config()
         self.executors = executors if executors is not None else default_executors()
+        self.audit = bool(audit)
+
+    def _emit_security_event(self, event: str, **fields: Any) -> None:
+        if self.audit:
+            emit_security_event(event, **fields)
+
+    def _write_receipt(self, receipt: ActionReceipt) -> None:
+        if self.audit:
+            write_receipt(receipt)
 
     def execute(self, request: ActionRequest) -> ActionReceipt:
         from agents.security.access_policy import (
@@ -43,7 +53,7 @@ class CapabilityBroker:
             if not action:
                 raise CapabilityDenied("action is required")
             if not is_action_known(action):
-                emit_security_event(
+                self._emit_security_event(
                     "security.action.unknown",
                     agent_id=agent_id,
                     action=action,
@@ -53,7 +63,7 @@ class CapabilityBroker:
                 )
                 raise CapabilityDenied(f"unknown action {action}")
             if not is_action_allowed_for_agent(agent_id, action):
-                emit_security_event(
+                self._emit_security_event(
                     "security.responsibility.denied",
                     agent_id=agent_id,
                     action=action,
@@ -79,7 +89,7 @@ class CapabilityBroker:
                 config=self.config,
             )
             if not decision.allowed:
-                emit_security_event(
+                self._emit_security_event(
                     "agent.access.denied",
                     reason=decision.reason_code,
                     agent_id=agent_id,
@@ -91,7 +101,7 @@ class CapabilityBroker:
                 raise AuthorizationDenied(decision.reason_code or "access denied")
             if action.startswith("host.") or action.startswith("lumen."):
                 if action not in decision.effective_capabilities:
-                    emit_security_event(
+                    self._emit_security_event(
                         "agent.access.host_read_denied",
                         agent_id=agent_id,
                         action=action,
@@ -102,7 +112,7 @@ class CapabilityBroker:
                     raise AuthorizationDenied(f"host capability denied in zone {decision.trust_zone}")
             if action in MUTATION_ACTIONS:
                 if not mutation_allowed_for_decision(decision, action=action):
-                    emit_security_event(
+                    self._emit_security_event(
                         "agent.access.mutation_denied",
                         agent_id=agent_id,
                         action=action,
@@ -160,11 +170,11 @@ class CapabilityBroker:
                 source_message_id=request.source_message_id,
                 arguments_hash=arguments_hash(request.arguments),
             )
-            write_receipt(receipt)
+            self._write_receipt(receipt)
             return receipt
         except SecurityError as exc:
             completed = utc_now()
-            emit_security_event(
+            self._emit_security_event(
                 "security.action.denied",
                 code=exc.code,
                 message=str(exc),
@@ -193,7 +203,7 @@ class CapabilityBroker:
                 source_message_id=request.source_message_id,
                 arguments_hash=arguments_hash(request.arguments),
             )
-            write_receipt(receipt)
+            self._write_receipt(receipt)
             return receipt
         except Exception as exc:
             completed = utc_now()
@@ -216,7 +226,7 @@ class CapabilityBroker:
                 source_message_id=request.source_message_id,
                 arguments_hash=arguments_hash(request.arguments),
             )
-            write_receipt(receipt)
+            self._write_receipt(receipt)
             return receipt
 
 
@@ -278,6 +288,7 @@ def default_executors() -> dict[str, Executor]:
         "agent.job.create",
         "agent.job.cancel",
         "agent.job.retry",
+        "agent.delegate",
         "project.status",
         "workflow.status",
         "schedule.status",

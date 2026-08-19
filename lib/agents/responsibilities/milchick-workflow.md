@@ -13,7 +13,8 @@ the owning Agent without inventing scope.
 | Clear source/delivery work, version bump, bounded change | Mark via `delivery.quick_change` |
 | Risk analysis, scan interpretation, risk lifecycle | Dylan |
 | Confirmed code remediation and verification handoff | Irving |
-| Jira discovery / create / update / test-case generation | Milchick himself via ACTION_REQUEST |
+| Jira discovery / create / update | Milchick via ACTION_REQUEST |
+| Test-case generation | Mark via `agent.delegate` with `capability=test_case.generate` |
 | Deployment follow-up and status reporting | Milchick, from host CI/CD evidence |
 
 ## Delegation envelope

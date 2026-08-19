@@ -8,6 +8,7 @@ import urllib.request
 from typing import Any
 
 from agents.runtime.cursor_runtime import AgentRunResult
+from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider
 
 
 API_PROVIDERS = frozenset({"openai", "openai_compatible"})
@@ -129,6 +130,10 @@ class OpenAICompatibleAgentRuntime:
     supports_resume = False
     uses_isolated_env = False
 
+    @property
+    def capabilities(self) -> HarnessCapabilities:
+        return capabilities_for_provider("api", mode="restricted", sandbox=False)
+
     def __init__(
         self,
         *,
@@ -143,6 +148,8 @@ class OpenAICompatibleAgentRuntime:
         trust: bool = True,
         agent_id: str = "",
         project: str = "",
+        harness_mode: str = "",
+        task_mode: str = "",
     ) -> None:
         self.provider = provider
         self.model = model
@@ -155,6 +162,8 @@ class OpenAICompatibleAgentRuntime:
         self.trust = trust
         self.agent_id = agent_id
         self.project = project
+        self.harness_mode = str(harness_mode or "restricted").strip().casefold()
+        self.task_mode = str(task_mode or "explore").strip().casefold()
 
     def run(
         self,

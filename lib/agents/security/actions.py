@@ -90,6 +90,11 @@ FEISHU_ACTIONS = (
     "feishu.send_file",
 )
 
+# Lightweight delegation is available to every Agent.  The host still
+# resolves the target, authorization, and Action Receipt through the existing
+# job broker; this action is a small native seam rather than a second planner.
+DELEGATION_ACTIONS = ("agent.delegate",)
+
 
 DYLAN_ACTIONS = (
     "risk.read",
@@ -102,6 +107,7 @@ DYLAN_ACTIONS = (
     "scan.verify.request",
     *JIRA_ACTIONS,
     *FEISHU_ACTIONS,
+    *DELEGATION_ACTIONS,
 )
 
 MARK_ACTIONS = (
@@ -115,8 +121,10 @@ MARK_ACTIONS = (
     "loop.technical",
     "story.read",
     "technical_plan.read",
+    "test_case.generate",
     *JIRA_ACTIONS,
     *FEISHU_ACTIONS,
+    *DELEGATION_ACTIONS,
 )
 
 MILCHICK_ACTIONS = (
@@ -127,7 +135,6 @@ MILCHICK_ACTIONS = (
     "agent.job.create",
     "agent.job.cancel",
     "agent.job.retry",
-    "test_case.generate",
     *JIRA_ACTIONS,
     "project.status",
     "workflow.status",
@@ -136,6 +143,7 @@ MILCHICK_ACTIONS = (
     "lumen.agent.status",
     "lumen.runner.status",
     *FEISHU_ACTIONS,
+    *DELEGATION_ACTIONS,
 )
 
 IRVING_ACTIONS = (
@@ -143,6 +151,7 @@ IRVING_ACTIONS = (
     "risk.mark_remediated",
     *JIRA_ACTIONS,
     *FEISHU_ACTIONS,
+    *DELEGATION_ACTIONS,
 )
 
 # This is the executor registry's action vocabulary, not a list of what each
@@ -173,6 +182,7 @@ MUTATION_ACTIONS = frozenset(
         "agent.job.create",
         "agent.job.cancel",
         "agent.job.retry",
+        "agent.delegate",
         *JIRA_MUTATION_ACTIONS,
     }
 )

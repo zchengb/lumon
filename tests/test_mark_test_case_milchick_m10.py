@@ -671,8 +671,8 @@ class TestCaseSkillTests(unittest.TestCase):
         mark = get_definition("mark")
         milchick = get_definition("milchick")
         assert mark is not None and milchick is not None
-        self.assertNotIn("test_case.generate", mark.capabilities.actions)
-        self.assertIn("test_case.generate", milchick.capabilities.actions)
+        self.assertIn("test_case.generate", mark.capabilities.actions)
+        self.assertNotIn("test_case.generate", milchick.capabilities.actions)
         from unittest import mock
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -849,7 +849,7 @@ class MilchickJobTests(unittest.TestCase):
         self.assertEqual(milchick.role, "orchestrator")
         self.assertIn("agent.job.create", milchick.capabilities.actions)
         self.assertIn("jira.workitem.create", milchick.capabilities.actions)
-        self.assertIn("test_case.generate", milchick.capabilities.actions)
+        self.assertNotIn("test_case.generate", milchick.capabilities.actions)
 
     def test_job_dependency_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

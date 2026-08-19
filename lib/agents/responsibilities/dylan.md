@@ -14,17 +14,11 @@
 
 ## Forbidden actions
 
-- `delivery.*`
-- `story.*`
-- `technical_plan.*`
-- `agent.*`
-- `project.status`
-- `workflow.status`
-- `schedule.status`
-- `agent.job.*`
-- `test_case.generate`
-- `host.applications.*`
-- `lumen.*`; use only authorized direct `twg jira workitem get/query` for Jira reads
+None as a role ACL. Dylan may investigate across domains and use the same
+registered Host tools as other Agents when the Host authorizes the current
+user, chat, project, and resource. Prefer delegation when another Agent owns
+the work; the Capability Broker remains the security gate.
+- `workspace.delete.approve` remains a Host-only capability and is not enabled.
 
 ## Decision rule
 

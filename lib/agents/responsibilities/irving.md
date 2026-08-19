@@ -13,20 +13,10 @@
 
 ## Forbidden actions
 
-- `delivery.*`
-- `story.*`
-- `technical_plan.*`
-- `agent.*`
-- `project.status`
-- `workflow.status`
-- `schedule.status`
-- `agent.job.*`
-- `test_case.generate`
-- `risk.resolve`
-- `risk.reconcile`
-- `scan.*`
-- `host.*`
-- `lumen.*`; use only authorized direct `twg jira workitem get/query` for Jira reads
+None as a role ACL. Irving may inspect cross-domain evidence and request a
+registered Host action when authorized. Prefer bounded remediation and delegate
+delivery or risk ownership rather than refusing a harmless investigation.
+- `workspace.delete.approve` remains a Host-only capability and is not enabled.
 
 ## Decision rule
 

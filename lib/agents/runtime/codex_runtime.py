@@ -14,6 +14,7 @@ from typing import Any, Iterable
 from agents.dylan.model_client import _load_lumen_dotenv
 from agents.runtime.cursor_runtime import AgentRunResult
 from agents.runtime.cursor_stream import AgentToolEvent
+from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
 
 
 DEFAULT_MODEL = "gpt-5.6-luna"
@@ -264,6 +265,8 @@ class CodexAgentRuntime:
         trust: bool = True,
         agent_id: str = "",
         project: str = "",
+        harness_mode: str = "",
+        task_mode: str = "",
     ) -> None:
         self.model = str(model or DEFAULT_MODEL).strip()
         self.reasoning_effort = str(reasoning_effort or DEFAULT_REASONING_EFFORT).strip().casefold()
@@ -276,9 +279,20 @@ class CodexAgentRuntime:
         self.trust = trust
         self.agent_id = agent_id
         self.project = project
+        self.harness_mode = str(harness_mode or configured_harness_mode()).strip().casefold()
+        self.task_mode = canonical_task_mode(task_mode) if task_mode else ""
         self.isolated_env: dict[str, str] | None = None
         self.additional_dirs: list[Path] = []
         self.additional_directories = self.additional_dirs
+
+    @property
+    def capabilities(self) -> HarnessCapabilities:
+        return capabilities_for_provider(
+            "codex",
+            mode=self.harness_mode,
+            sandbox=self.sandbox != "read-only" and not self.force,
+            task_mode=self.task_mode,
+        )
 
     def _codex_home(self) -> Path:
         return select_codex_home(self.account_email)

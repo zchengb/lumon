@@ -12,7 +12,7 @@ class AgentCapabilities:
     actions: tuple[str, ...] = ()
     read_scopes: tuple[str, ...] = ()
     filesystem_mode: FilesystemMode = "workspace_read"
-    network_profile: str = "deny"
+    network_profile: str = "allow"
     secret_profile: str = "isolated"
     # Legacy fields kept for gradual migration / tests.
     direct_workspace_write: bool = False
@@ -22,3 +22,8 @@ class AgentCapabilities:
 
     def allows(self, action: str) -> bool:
         return str(action or "").strip() in set(self.actions)
+
+    @property
+    def harness_mode(self) -> str:
+        """The Host mode is shared; role capabilities never widen its seam."""
+        return "unshackled"
