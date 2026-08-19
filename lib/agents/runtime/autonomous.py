@@ -1169,15 +1169,25 @@ def handle_autonomous_conversation(
                     }
                 )
             reply_text = parsed.text
-            if clarification and clarification.get("choices") and not clarification_has_rendered_choices(
-                reply_text,
-                clarification.get("choices"),
-            ):
-                reply_text = format_clarification_reply(
-                    reply_text or str(clarification.get("question") or ""),
+            if clarification and clarification.get("choices"):
+                clarification_question = str(clarification.get("question") or "").strip()
+                # Always give the formatter the canonical structured question.
+                # The model's final text may only contain a compact answer hint
+                # such as "1A, 2A" and is not sufficient to reconstruct the
+                # grouped choices on its own.
+                if (
+                    clarification_question
+                    and clarification_question not in str(reply_text or "")
+                ) or not clarification_has_rendered_choices(
+                    reply_text,
                     clarification.get("choices"),
-                    str(clarification.get("current_version") or ""),
-                )
+                ):
+                    reply_text = format_clarification_reply(
+                        reply_text or clarification_question,
+                        clarification.get("choices"),
+                        str(clarification.get("current_version") or ""),
+                        full_question=clarification_question,
+                    )
             if access.trust_zone == "SHARED" and any(
                 tok in (reply_text or "").lower()
                 for tok in ("disk space", "hostname", "/applications", "serial number", "free_gb")
@@ -1217,6 +1227,7 @@ def handle_autonomous_conversation(
                     str(clarification.get("question") or ""),
                     clarification.get("choices"),
                     str(clarification.get("current_version") or ""),
+                    full_question=str(clarification.get("question") or ""),
                 )
             if (
                 not job_create_succeeded(action_receipts)

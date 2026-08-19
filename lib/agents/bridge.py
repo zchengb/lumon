@@ -14,7 +14,13 @@ from agents.project_resolver import known_project_slugs, load_chat_project_map, 
 from agents.runtime.reply_anchor import remember_outbound
 from feishu.cards import ack_card, progress_card, scan_summary_card
 from feishu.config import load_agents_config
-from feishu.messenger import FeishuMessenger, extract_message_id, should_reply_in_thread
+from feishu.messenger import (
+    FeishuMessenger,
+    extract_message_id,
+    has_pdf_file_citation,
+    is_pdf_output_request,
+    should_reply_in_thread,
+)
 from workflows.scan_adapter import ScanAdapter
 
 
@@ -257,6 +263,7 @@ def _run_autonomous_worker(
                 success = True
                 return result
             reply_text = str(result.get("text") or "暂无数据。")
+            allow_pdf = is_pdf_output_request(text) or has_pdf_file_citation(reply_text)
             if suppress_reply:
                 obs.emit(trace, "reply.suppressed")
             else:
@@ -269,6 +276,7 @@ def _run_autonomous_worker(
                             message_id,
                             reply_text,
                             reply_in_thread=reply_in_thread,
+                            allow_pdf=allow_pdf,
                         )
                         if sent is not None:
                             break

@@ -205,7 +205,45 @@ class AgentInteractionTests(unittest.TestCase):
         agent_text = "A. Create Bug\nB. Create Story\nC. Investigate first\nD. Other"
         self.assertTrue(clarification_has_rendered_choices(agent_text, choices))
         self.assertEqual(agent_text, format_clarification_reply(agent_text, choices))
-        self.assertIn("custom answer", format_clarification_reply("What should I do?", choices))
+        self.assertIn("自訂答案", format_clarification_reply("What should I do?", choices))
+
+    def test_structured_clarification_preserves_grouped_choices(self) -> None:
+        choices = [
+            {"id": "1A", "label": "獨立收件人模型"},
+            {"id": "1B", "label": "重用 event_tickets"},
+            {"id": "2A", "label": "沿用現有容量假設"},
+            {"id": "2B", "label": "提供明確容量要求"},
+        ]
+        answer_summary = "Evidence 已完成。請回复 `1A, 2A`。"
+        full_question = (
+            "Technical Loop 需要確認兩個決定：\n\n"
+            "1. 參加名單如何建模？\n"
+            "A. 建立獨立收件人資料\n"
+            "B. 重用 event_tickets\n\n"
+            "2. 名單規模是否有額外要求？\n"
+            "A. 沿用現有容量假設\n"
+            "B. 提供明確容量要求"
+        )
+
+        reply = format_clarification_reply(
+            answer_summary,
+            choices,
+            full_question=full_question,
+        )
+
+        self.assertIn(answer_summary, reply)
+        self.assertIn(full_question, reply)
+        self.assertNotIn("建議選項（可回覆代號或完整值）：", reply)
+        self.assertNotIn("You can also reply", reply)
+
+    def test_compound_choice_reference_does_not_trigger_flat_options(self) -> None:
+        choices = [
+            {"id": "1A", "label": "獨立收件人模型"},
+            {"id": "1B", "label": "重用 event_tickets"},
+            {"id": "2A", "label": "沿用現有容量假設"},
+            {"id": "2B", "label": "提供明確容量要求"},
+        ]
+        self.assertTrue(clarification_has_rendered_choices("請回复 `1A, 2A`。", choices))
 
     def test_agent_decision_keeps_pending_context_explicit(self) -> None:
         pending = normalize_clarification(

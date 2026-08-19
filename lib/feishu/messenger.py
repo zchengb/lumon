@@ -47,8 +47,57 @@ _TRANSIENT_MARKERS = (
 _MARKDOWN_CARD_LIMIT = 12000
 _MARKDOWN_FENCE_OPEN = re.compile(r"(?m)^[ \t]*```(?:markdown|md)[ \t]*$")
 _MARKDOWN_FENCE_CLOSE = re.compile(r"(?m)^[ \t]*```[ \t]*$")
+_FILE_CITATION = re.compile(r":codex-file-citation\{(?P<body>[^{}]*)\}", re.IGNORECASE)
+_FILE_CITATION_PATH = re.compile(r"\bpath\s*=\s*(?P<quote>[\"'])(?P<path>.*?)(?P=quote)", re.IGNORECASE)
+_PDF_REQUEST = re.compile(r"(?i)(?:\bpdf\b|pdf\s*(?:file|document)|pdf(?:檔|档|文件|文檔))")
+_PDF_NEGATION = re.compile(
+    r"(?i)(?:不(?:要|需|需要)|无需|不用|no|without|don't|do not)\s*"
+    r"(?:输出|輸出|生成|提供|export|generate|send)?\s*(?:the\s*)?pdf"
+)
 _TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
 _METADATA_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$")
+
+
+def is_pdf_output_request(text: str) -> bool:
+    """Return whether the user explicitly asks for a PDF artifact."""
+    raw = str(text or "").strip()
+    return bool(_PDF_REQUEST.search(raw)) and not bool(_PDF_NEGATION.search(raw))
+
+
+def _output_pdf_path(raw_path: str) -> Path | None:
+    candidate = Path(str(raw_path or "").strip()).expanduser()
+    if not candidate.is_absolute() or candidate.suffix.casefold() != ".pdf":
+        return None
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError:
+        return None
+    parts = [part.casefold() for part in resolved.parts]
+    if not any(parts[index : index + 2] == ["output", "pdf"] for index in range(max(0, len(parts) - 1))):
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def extract_pdf_file_citation(text: str) -> Path | None:
+    """Resolve a generated PDF citation without allowing arbitrary host files."""
+    for match in _FILE_CITATION.finditer(str(text or "")):
+        path_match = _FILE_CITATION_PATH.search(match.group("body") or "")
+        if path_match is None:
+            continue
+        path = _output_pdf_path(path_match.group("path"))
+        if path is not None:
+            return path
+    return None
+
+
+def has_pdf_file_citation(text: str) -> bool:
+    return extract_pdf_file_citation(text) is not None
+
+
+def _strip_file_citations(text: str) -> str:
+    cleaned = _FILE_CITATION.sub("", str(text or ""))
+    cleaned = re.sub(r"(?im)^\s*(?:PDF|file|attachment|附件)\s*:\s*$", "", cleaned)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
 def _table_cells(line: str) -> list[str]:
@@ -668,6 +717,23 @@ class FeishuMessenger:
         """
 
         text = sanitize_feishu_answer(text)
+        cited_pdf = extract_pdf_file_citation(text)
+        if cited_pdf is not None:
+            try:
+                file_key = self.upload_file(cited_pdf)
+                clean_text = _strip_file_citations(text)
+                sent: Optional[dict[str, Any]] = None
+                if clean_text:
+                    sent = self.reply_markdown(
+                        message_id,
+                        normalize_markdown_for_feishu(clean_text),
+                        reply_in_thread=reply_in_thread,
+                    )
+                sent = self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
+                return sent
+            except Exception as exc:
+                _LOG.warning("cited PDF reply failed message_id=%s path=%s err=%s", message_id, cited_pdf, exc)
+        text = _strip_file_citations(text)
         if allow_pdf:
             prefix, document, suffix = split_plan_response(text)
             if is_plan_document(document):

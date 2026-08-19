@@ -15,6 +15,8 @@ if str(LIB) not in sys.path:
 
 from feishu.messenger import (
     FeishuMessenger,
+    has_pdf_file_citation,
+    is_pdf_output_request,
     normalize_markdown_for_feishu,
     split_markdown_for_feishu,
 )
@@ -22,6 +24,35 @@ from feishu.pdf_renderer import _parse_mermaid, is_plan_document, plan_pdf_filen
 
 
 class FeishuMessengerTests(unittest.TestCase):
+    def test_pdf_request_detection_and_citation_validation(self) -> None:
+        self.assertTrue(is_pdf_output_request("输出 Technical Plan PDF 我看看"))
+        self.assertTrue(is_pdf_output_request("Please export the PDF"))
+        self.assertFalse(is_pdf_output_request("不要输出 PDF，只回复文字"))
+        self.assertFalse(has_pdf_file_citation(':codex-file-citation{path="/tmp/secret.pdf" purpose="output"}'))
+
+    def test_existing_pdf_citation_is_uploaded_as_file_attachment(self) -> None:
+        with TemporaryDirectory() as directory:
+            pdf_path = Path(directory) / "output" / "pdf" / "MBPAS-1437-technical-plan.pdf"
+            pdf_path.parent.mkdir(parents=True)
+            pdf_path.write_bytes(b"%PDF-demo")
+            text = (
+                "Technical Plan PDF 已输出。\n\n"
+                f'PDF: :codex-file-citation{{path="{pdf_path}" purpose="output"}}'
+            )
+            messenger = FeishuMessenger("mark")
+            with patch.object(messenger, "upload_file", return_value="file_v2_plan") as upload, patch.object(
+                messenger, "reply_markdown", return_value={"data": {"message_id": "om_summary"}}
+            ) as reply_markdown, patch.object(
+                messenger, "reply_file", return_value={"data": {"message_id": "om_pdf"}}
+            ) as reply_file:
+                sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True, allow_pdf=True)
+
+            self.assertEqual("om_pdf", sent["data"]["message_id"])
+            upload.assert_called_once_with(pdf_path.resolve())
+            reply_markdown.assert_called_once()
+            self.assertNotIn("codex-file-citation", reply_markdown.call_args.args[1])
+            reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
+
     def test_long_technical_or_story_plan_is_pdf_eligible(self) -> None:
         technical = "# Technical Plan: MBPAS-1503\n\n" + ("## Section\ncontent\n\n" * 80)
         story = "# Story Plan: MBPAS-1503\n\n" + ("## Section\ncontent\n\n" * 80)

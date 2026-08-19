@@ -179,7 +179,13 @@ def current_version_for_workspace(workspace: Path, values: dict[str, Any] | None
 
 def _choice_parts(item: Any) -> tuple[str, str, str, bool]:
     if isinstance(item, dict):
-        value = str(item.get("value") or item.get("target_version") or item.get("label") or "").strip()
+        value = str(
+            item.get("id")
+            or item.get("value")
+            or item.get("target_version")
+            or item.get("label")
+            or ""
+        ).strip()
         label = str(item.get("label") or value).strip()
         description = str(item.get("description") or "").strip()
         recommended = bool(item.get("recommended"))
@@ -188,25 +194,63 @@ def _choice_parts(item: Any) -> tuple[str, str, str, bool]:
     return value[:200], value[:240], "", False
 
 
-def format_clarification_reply(question: str, choices: Any, current_version: str = "") -> str:
+def _choice_identifier(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    return str(item.get("id") or "").strip()[:80]
+
+
+def format_clarification_reply(
+    question: str,
+    choices: Any,
+    current_version: str = "",
+    *,
+    full_question: str = "",
+) -> str:
+    """Render a clarification without flattening a structured multi-question prompt."""
     text = str(question or "").strip()
+    canonical_question = str(full_question or "").strip()
     rows = choices if isinstance(choices, list) else []
-    normalized = [_choice_parts(item) for item in rows[:4]]
-    normalized = [item for item in normalized if item[0] and item[1]]
-    if not normalized:
-        return text
+    normalized_items = [
+        (item, _choice_parts(item))
+        for item in rows[:4]
+    ]
+    normalized_items = [
+        (item, parts)
+        for item, parts in normalized_items
+        if parts[0] and parts[1]
+    ]
+    normalized = [parts for _, parts in normalized_items]
+    if not normalized_items:
+        return canonical_question or text
+
+    # The Agent's final response often contains a useful evidence summary and
+    # a compact answer hint (for example, "1A, 2A"), while the structured
+    # clarification carries the actual grouped A/B/C questions. Keep both;
+    # never replace that grouped question with a flat 1..N list.
+    if canonical_question and canonical_question not in text:
+        blocks = []
+        if str(current_version or "").strip():
+            blocks.append(f"Current version: {str(current_version).strip()}")
+        if text:
+            blocks.append(text)
+        blocks.append(canonical_question)
+        return "\n\n".join(block for block in blocks if block).strip()
     if clarification_has_rendered_choices(text, rows):
         return text
     lines = []
     if str(current_version or "").strip():
         lines.extend([f"Current version: {str(current_version).strip()}", ""])
-    lines.extend([text, "", "Suggested options (reply with the number or exact value):"])
-    for index, (_, label, description, recommended) in enumerate(normalized, start=1):
+    lines.extend([text, "", "建議選項（可回覆代號或完整值）："])
+    for index, (item, (_, label, description, recommended)) in enumerate(normalized_items, start=1):
         suffix = " — Recommended" if recommended else ""
         detail = f" — {description}" if description else ""
-        lines.append(f"{index}. {label}{suffix}{detail}")
-    custom_label = "custom target version" if current_version or any(_SEMVER_RE.search(value) for value, *_ in normalized) else "custom answer"
-    lines.append(f"You can also reply with a {custom_label}.")
+        identifier = _choice_identifier(item) or str(index)
+        lines.append(f"{identifier}. {label}{suffix}{detail}")
+    if current_version or any(_SEMVER_RE.search(value) for value, *_ in normalized):
+        lines.append("也可以直接提供自訂目標版本。")
+    else:
+        lines.append("也可以直接提供自訂答案。")
     return "\n".join(line for line in lines if line is not None).strip()
 
 
@@ -218,6 +262,17 @@ def clarification_has_rendered_choices(text: str, choices: Any) -> bool:
     if not raw:
         return False
     if "suggested options" in raw.casefold():
+        return True
+    # A compact multi-decision answer such as "1A, 2A" is already an
+    # intentional choice reference. Do not append an unrelated flat list
+    # when the structured question is unavailable to this caller.
+    if re.search(r"(?<![\w])\d+[A-D](?:\s*[,，、]\s*\d+[A-D])+(?![\w])", raw, re.IGNORECASE):
+        return True
+    explicit_ids = [_choice_identifier(item) for item in choices if _choice_identifier(item)]
+    if len(explicit_ids) >= 2 and all(
+        re.search(rf"(?<![\w]){re.escape(identifier)}(?![\w])", raw, re.IGNORECASE)
+        for identifier in explicit_ids
+    ):
         return True
     expected = min(2, len(choices))
     letter_rows = len(re.findall(r"(?im)^\s*(?:[-*]\s*)?\*{0,2}[A-D]\*{0,2}(?:[.)：:、-]|\s)", raw))
