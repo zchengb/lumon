@@ -60,6 +60,9 @@ _FORGED_IDENTITY_KEYS = frozenset(
         "explicit_authorization",
         "agent_id",
         "project_slug",
+        "chat_type",
+        "workspace_path",
+        "_workspace_path",
     }
 )
 

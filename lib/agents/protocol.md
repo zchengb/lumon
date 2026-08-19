@@ -35,8 +35,9 @@ message and emit exactly one internal envelope:
 
 ## Action envelope
 
-To execute an external mutation (Jira writes, jobs, delegation, delivery,
-risk), emit exactly one JSON object inside:
+To request an external mutation or a Host-mediated conversation capability
+(Jira writes, jobs, delegation, delivery, risk, Feishu progress, or a file
+attachment), emit exactly one JSON object inside:
 
 ```
 <ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>
@@ -47,6 +48,10 @@ Non-negotiable:
 - External mutations execute only through ACTION_REQUEST envelopes. Never claim
   a mutation, deployment, Jira write, Sheet write, PR, verification,
   delegation, or job was created or executed without its host receipt.
+- A response may contain more than one ACTION_REQUEST when the current turn
+  needs distinct capabilities (for example, a progress update followed by a
+  file attachment). Emit one valid envelope per action; do not wrap several
+  actions in an invented JSON batch shape.
 - The host fills actor/chat/thread/trace identity. Never invent or forge
   identity fields.
 - Never run arbitrary host tools or shell/HTTP commands in the sandbox. For
@@ -58,6 +63,28 @@ Non-negotiable:
 - The canonical action names, purposes, and required fields are in the adjacent
   `action-catalog.md`. Read it before emitting an ACTION_REQUEST; use exact
   canonical names only.
+
+## Feishu conversation capabilities
+
+- `feishu.send_progress` sends a concise, user-visible milestone, finding,
+  blocker, or next step to the current Feishu message/thread. Use it when the
+  work has a meaningful intermediate result and the user benefits from seeing
+  progress before the final answer.
+- `feishu.send_file` uploads a regular file from the current workspace and
+  attaches it to the current Feishu message/thread. Use it when the user asks
+  for a file or when the requested workflow explicitly produces one.
+- These are Agent-selected actions. The Host supplies the current sender,
+  chat, thread, trace, and workspace context; never put identity or absolute
+  host context in the envelope. Follow the path and cleanup rules in the
+  canonical action catalog.
+- A progress update is a concise status report, not private chain-of-thought:
+  share what was found, what is blocked or being done next, and any decision
+  needed from the user. Do not expose hidden deliberation, credentials, or
+  internal tool traces.
+- Wait for the Host receipt before claiming that a progress update or file was
+  sent. After a successful receipt, continue the same session and decide
+  whether another update, another action, a clarification, or the final answer
+  is appropriate.
 
 ## Clarification envelope
 

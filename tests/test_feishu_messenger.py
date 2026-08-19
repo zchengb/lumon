@@ -15,6 +15,7 @@ if str(LIB) not in sys.path:
 
 from feishu.messenger import (
     FeishuMessenger,
+    cleanup_generated_plan_pdfs,
     has_pdf_file_citation,
     is_pdf_output_request,
     normalize_markdown_for_feishu,
@@ -67,6 +68,29 @@ class FeishuMessengerTests(unittest.TestCase):
                     reply_markdown.assert_called_once()
                     self.assertNotIn("file-citation", reply_markdown.call_args.args[1])
                     reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
+                    self.assertFalse(pdf_path.exists())
+
+                    if marker != ":opencode-file-citation":
+                        pdf_path.write_bytes(b"%PDF-demo")
+
+    def test_cleanup_generated_plan_pdfs_only_removes_ephemeral_pdf_files(self) -> None:
+        with TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            output_dir = workspace / "output" / "pdf"
+            output_dir.mkdir(parents=True)
+            first = output_dir / "first.pdf"
+            second = output_dir / "second.PDF"
+            keep = output_dir / "keep.txt"
+            first.write_bytes(b"%PDF-first")
+            second.write_bytes(b"%PDF-second")
+            keep.write_text("keep", encoding="utf-8")
+
+            removed = cleanup_generated_plan_pdfs(workspace)
+
+            self.assertEqual({first.resolve(), second.resolve()}, set(removed))
+            self.assertFalse(first.exists())
+            self.assertFalse(second.exists())
+            self.assertTrue(keep.exists())
 
     def test_long_technical_or_story_plan_is_pdf_eligible(self) -> None:
         technical = "# Technical Plan: MBPAS-1503\n\n" + ("## Section\ncontent\n\n" * 80)
@@ -146,12 +170,88 @@ class FeishuMessengerTests(unittest.TestCase):
         upload.assert_not_called()
         reply_markdown.assert_called()
 
+    def test_host_file_action_can_suppress_legacy_duplicate_pdf_upload(self) -> None:
+        text = (
+            "Technical Plan PDF 已附上。\n\n"
+            ':file-citation{path="/tmp/does-not-need-upload.pdf" purpose="output"}'
+        )
+        messenger = FeishuMessenger("mark")
+        with patch.object(messenger, "upload_file") as upload, patch.object(
+            messenger, "reply_markdown", return_value={"data": {"message_id": "om_text"}}
+        ) as reply_markdown:
+            sent = messenger.safe_reply_text(
+                "om_source",
+                text,
+                reply_in_thread=True,
+                allow_pdf=True,
+                suppress_pdf_artifact=True,
+            )
+
+        self.assertEqual("om_text", sent["data"]["message_id"])
+        upload.assert_not_called()
+        self.assertNotIn("file-citation", reply_markdown.call_args.args[1])
+
     def test_mermaid_flowchart_is_parsed_as_a_diagram(self) -> None:
         parsed = _parse_mermaid('flowchart TD\n  A["開始"] -->|成功| B{"判斷"}\n  B --> C["完成"]')
         self.assertIsNotNone(parsed)
         self.assertEqual("TB", parsed["direction"])
         self.assertEqual("開始", parsed["nodes"]["A"]["label"])
         self.assertIn(("A", "B", "成功"), parsed["edges"])
+
+    def test_mermaid_class_diagram_keeps_class_members_separate(self) -> None:
+        parsed = _parse_mermaid(
+            """classDiagram
+    class EventNotificationSettingController {
+        +show(eventUuid) EventNotificationSettingResource
+        +store(request, eventUuid) EventNotificationSettingResource
+    }
+    class EventNotificationSettingService {
+        +create(eventUuid, request, operatorId) CreateResult
+    }
+    EventNotificationSettingController --> EventNotificationSettingService
+"""
+        )
+        self.assertIsNotNone(parsed)
+        self.assertEqual("class", parsed["kind"])
+        self.assertEqual(
+            [
+                "+show(eventUuid) EventNotificationSettingResource",
+                "+store(request, eventUuid) EventNotificationSettingResource",
+            ],
+            parsed["nodes"]["EventNotificationSettingController"]["members"],
+        )
+        self.assertIn(
+            ("EventNotificationSettingController", "EventNotificationSettingService", ""),
+            parsed["edges"],
+        )
+
+    def test_mermaid_fence_with_attributes_is_rendered_as_a_diagram(self) -> None:
+        text = """# Technical Plan: MBPAS-1503
+
+## Design
+
+``` Mermaid {init: {"theme": "base"}}
+flowchart TB
+  A[開始] --> B[完成]
+```
+
+```mermaid
+classDiagram
+  class Worker {
+    +run()
+  }
+```
+"""
+        with TemporaryDirectory() as directory:
+            output = render_markdown_pdf(text, Path(directory) / "diagram-plan.pdf")
+            self.assertTrue(output.is_file())
+            from pypdf import PdfReader
+
+            extracted = "\n".join(page.extract_text() or "" for page in PdfReader(output).pages)
+            self.assertNotIn("flowchart TB", extracted)
+            self.assertNotIn("classDiagram", extracted)
+            self.assertIn("開始", extracted)
+            self.assertIn("Worker", extracted)
 
     def test_plan_pdf_renders_readable_document(self) -> None:
         text = """---

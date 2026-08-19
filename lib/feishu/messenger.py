@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import os
 import re
 import threading
@@ -83,6 +84,65 @@ def _output_pdf_path(raw_path: str) -> Path | None:
     if not any(parts[index : index + 2] == ["output", "pdf"] for index in range(max(0, len(parts) - 1))):
         return None
     return resolved if resolved.is_file() else None
+
+
+def cleanup_generated_plan_pdfs(workspace: str | Path) -> list[Path]:
+    """Remove ephemeral plan PDFs from a workspace's dedicated output folder.
+
+    Agent-created PDFs are transfer artifacts, not workspace documents.  Keep
+    the cleanup deliberately narrow: only regular ``*.pdf`` files directly
+    under ``<workspace>/output/pdf`` are eligible, and symlinks are ignored.
+    """
+
+    root = Path(str(workspace or "")).expanduser()
+    if not root.is_absolute():
+        return []
+    try:
+        root = root.resolve(strict=True)
+    except OSError:
+        return []
+    if not root.is_dir():
+        return []
+
+    output_dir = root / "output" / "pdf"
+    try:
+        resolved_output_dir = output_dir.resolve(strict=False)
+        resolved_output_dir.relative_to(root)
+    except OSError:
+        return []
+    except ValueError:
+        # Do not follow a workspace/output/pdf symlink outside the workspace.
+        return []
+    if not resolved_output_dir.is_dir():
+        return []
+
+    removed: list[Path] = []
+    for candidate in resolved_output_dir.iterdir():
+        if candidate.is_symlink() or not candidate.is_file() or candidate.suffix.casefold() != ".pdf":
+            continue
+        try:
+            candidate.unlink()
+            removed.append(candidate)
+        except OSError as exc:
+            _LOG.warning("plan PDF cleanup failed path=%s err=%s", candidate, exc)
+    return removed
+
+
+def _delete_generated_pdf(path: Path) -> None:
+    """Delete one cited PDF after the host has attempted to transfer it."""
+
+    candidate = Path(path)
+    if (
+        candidate.suffix.casefold() != ".pdf"
+        or candidate.parent.name.casefold() != "pdf"
+        or candidate.parent.parent.name.casefold() != "output"
+    ):
+        return
+    try:
+        if candidate.is_file():
+            candidate.unlink()
+    except OSError as exc:
+        _LOG.warning("cited PDF cleanup failed path=%s err=%s", candidate, exc)
 
 
 def extract_pdf_file_citation(text: str) -> Path | None:
@@ -403,7 +463,8 @@ class FeishuMessenger:
         field("file_name", path.name)
         body.extend(f"--{boundary}\r\n".encode())
         body.extend(f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'.encode())
-        body.extend(b"Content-Type: application/pdf\r\n\r\n")
+        mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        body.extend(f"Content-Type: {mime_type}\r\n\r\n".encode("ascii"))
         body.extend(path.read_bytes())
         body.extend(b"\r\n")
         body.extend(f"--{boundary}--\r\n".encode())
@@ -712,6 +773,7 @@ class FeishuMessenger:
         *,
         reply_in_thread: bool = False,
         allow_pdf: bool = False,
+        suppress_pdf_artifact: bool = False,
     ) -> Optional[dict[str, Any]]:
         """Send a conversational answer as text unless PDF output is explicit.
 
@@ -721,10 +783,15 @@ class FeishuMessenger:
         answer and make an unfinished Technical Plan look final.  Callers
         that explicitly need a document attachment can opt in with
         ``allow_pdf=True`` or use :meth:`safe_reply_pdf` directly.
+
+        ``suppress_pdf_artifact=True`` is used when an Agent already sent the
+        requested file through the Host Feishu action.  It keeps the final
+        conversational text while preventing a second upload from legacy
+        citation or plan-shape detection.
         """
 
         text = sanitize_feishu_answer(text)
-        cited_pdf = extract_pdf_file_citation(text)
+        cited_pdf = None if suppress_pdf_artifact else extract_pdf_file_citation(text)
         if cited_pdf is not None:
             try:
                 file_key = self.upload_file(cited_pdf)
@@ -740,8 +807,10 @@ class FeishuMessenger:
                 return sent
             except Exception as exc:
                 _LOG.warning("cited PDF reply failed message_id=%s path=%s err=%s", message_id, cited_pdf, exc)
+            finally:
+                _delete_generated_pdf(cited_pdf)
         text = _strip_file_citations(text)
-        if allow_pdf:
+        if allow_pdf and not suppress_pdf_artifact:
             prefix, document, suffix = split_plan_response(text)
             if is_plan_document(document):
                 try:

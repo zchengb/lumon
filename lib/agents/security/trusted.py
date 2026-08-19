@@ -22,6 +22,7 @@ class TrustedActionContext:
     explicit_authorization: bool = False
     user_message: str = ""
     image_keys: str = ""
+    workspace_path: str = ""
 
 
 def trusted_context_from_meta(
@@ -46,6 +47,7 @@ def trusted_context_from_meta(
         explicit_authorization=bool(explicit_authorization),
         user_message=str(meta.get("_user_message") or ""),
         image_keys=str(meta.get("image_keys") or ""),
+        workspace_path=str(meta.get("_workspace_path") or "").strip(),
     )
 
 
@@ -57,7 +59,12 @@ def bind_action_request(
     arguments: Optional[dict[str, Any]] = None,
 ) -> ActionRequest:
     args = dict(arguments or {})
-    args.setdefault("chat_type", context.chat_type)
+    # These values are transport identity, not model inputs.  Always replace
+    # them with the Host-bound context so an Agent cannot change access-zone
+    # checks or route a reply outside the current conversation.
+    args["chat_type"] = context.chat_type
+    if context.workspace_path:
+        args["_workspace_path"] = context.workspace_path
     return ActionRequest(
         agent_id=context.agent_id,
         action=str(action or "").strip(),
@@ -101,6 +108,9 @@ def execute_trusted_actions(
             "explicit_authorization",
             "agent_id",
             "project_slug",
+            "chat_type",
+            "workspace_path",
+            "_workspace_path",
         ):
             arguments.pop(key, None)
             resource.pop(key, None)

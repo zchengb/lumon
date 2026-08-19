@@ -52,7 +52,7 @@ IRVING_DEFINITION = AgentDefinition(
         direct_workspace_write=False,
         allowed_workflows=("risk.read", "risk.mark_remediated", *JIRA_ACTIONS),
         allowed_mutations=("risk.mark_remediated", *JIRA_MUTATION_ACTIONS),
-        external_side_effects=("jira",),
+        external_side_effects=("feishu.reply", "feishu.file", "jira"),
     ),
     build_bootstrap_prompt=build_bootstrap_prompt,
     build_resume_prompt=build_resume_prompt,

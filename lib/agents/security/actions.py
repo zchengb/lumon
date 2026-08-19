@@ -79,6 +79,18 @@ JIRA_MUTATION_ACTIONS = (
 JIRA_ACTIONS = JIRA_READ_ACTIONS + JIRA_MUTATION_ACTIONS
 
 
+# Feishu-facing communication is an Agent-selectable capability, while the
+# Host remains responsible for credentials, message identity, thread routing,
+# workspace boundaries, and cleanup.  These are intentionally not mutation
+# actions: sending a user-visible progress update or an explicitly requested
+# attachment is part of completing the current conversation, not an
+# authorization to change business data.
+FEISHU_ACTIONS = (
+    "feishu.send_progress",
+    "feishu.send_file",
+)
+
+
 DYLAN_ACTIONS = (
     "risk.read",
     "risk.resolve",
@@ -89,6 +101,7 @@ DYLAN_ACTIONS = (
     "scan.schedule.update",
     "scan.verify.request",
     *JIRA_ACTIONS,
+    *FEISHU_ACTIONS,
 )
 
 MARK_ACTIONS = (
@@ -103,6 +116,7 @@ MARK_ACTIONS = (
     "story.read",
     "technical_plan.read",
     *JIRA_ACTIONS,
+    *FEISHU_ACTIONS,
 )
 
 MILCHICK_ACTIONS = (
@@ -120,13 +134,15 @@ MILCHICK_ACTIONS = (
     "schedule.status",
     "lumen.system.health",
     "lumen.agent.status",
-    "lumen.runner.status"
+    "lumen.runner.status",
+    *FEISHU_ACTIONS,
 )
 
 IRVING_ACTIONS = (
     "risk.read",
     "risk.mark_remediated",
     *JIRA_ACTIONS,
+    *FEISHU_ACTIONS,
 )
 
 # This is the executor registry's action vocabulary, not a list of what each

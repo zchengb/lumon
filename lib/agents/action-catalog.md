@@ -64,6 +64,49 @@ Use the lowest-risk lane that completes the current turn:
    read/edit capabilities explicitly granted by the current Harness profile;
    read `.lumon/blacklist.md` before using them.
 
+## Feishu conversation capabilities
+
+These capabilities let the Agent choose when the user should receive an
+intermediate update or an attachment. The Host performs the actual Feishu API
+call with the current Agent's credentials and source message, then returns a
+receipt to the same provider session.
+
+| Canonical action | Purpose | `arguments` fields |
+| --- | --- | --- |
+| `feishu.send_progress` | Send a concise visible milestone, finding, blocker, or next step in the current Feishu conversation. | required: `message`; optional: `phase` |
+| `feishu.send_file` | Upload a workspace file and attach it to the current Feishu conversation. | required: `path`; optional: `caption`, `cleanup` |
+
+Rules:
+
+- Put the file path in `arguments.path`, relative to the current workspace when
+  possible. Absolute paths are accepted only when they resolve inside that
+  workspace. Do not provide identity, chat, thread, or workspace context; the
+  Host injects those fields from the trusted inbound message.
+- Only regular workspace files may be attached. Secret-like files (for
+  example `.env`, private-key files, and certificate bundles) are rejected.
+- Generated PDF transfer artifacts under `output/pdf/` are cleaned up after a
+  successful upload by default. Use `cleanup=true` only for another generated
+  PDF under that same directory; source documents are never deleted by this
+  action.
+- A successful receipt means the Host uploaded and attached the file. Do not
+  claim that a file was sent from a path alone. If the receipt is failed or
+  denied, explain the blocker and do not retry the same action indefinitely.
+- Progress updates should describe evidence, a blocker, a next step, or a
+  question. They are not a transcript of private reasoning or raw provider
+  tool output. Keep each update focused so the thread reads naturally.
+
+Send a progress update and continue the same request:
+
+```text
+<ACTION_REQUEST>{"action":"feishu.send_progress","arguments":{"phase":"Evidence","message":"我已完成 Jira 與工作區核對，接下來檢查輸出文件。"},"resource":{}}</ACTION_REQUEST>
+```
+
+Attach an explicitly requested generated PDF:
+
+```text
+<ACTION_REQUEST>{"action":"feishu.send_file","arguments":{"path":"output/pdf/MBPAS-1437-technical-plan.pdf","caption":"Technical Plan PDF 已生成，现附上文件。"},"resource":{}}</ACTION_REQUEST>
+```
+
 ## Delegation and jobs — Milchick
 
 | Canonical action | Purpose | `arguments` fields |

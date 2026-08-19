@@ -68,6 +68,8 @@ class MarkM10Tests(unittest.TestCase):
         self.assertIn("Never modify business source code", prompt)
         self.assertIn("Lumon Grill protocol", prompt)
         self.assertIn("Do not turn a bounded quick change into a Story", prompt)
+        self.assertIn("output/pdf/*.pdf as ephemeral", prompt)
+        self.assertIn("older PDF exists", prompt)
         resume = build_resume_prompt(user_message="继续", project_slug="mbpass")
         self.assertIn("Remain Mark", resume)
         self.assertIn("Relationship — Dylan", prompt)
@@ -82,6 +84,53 @@ class MarkM10Tests(unittest.TestCase):
             self.assertIn("LUMEN MARK MANAGED START", text)
             self.assertIn("Delivery Lead", text)
             self.assertIn("Do not modify business source", text)
+
+    def test_explicit_pdf_request_cleans_stale_workspace_artifacts(self) -> None:
+        from dataclasses import replace
+
+        ensure_definitions_loaded()
+        mark = get_definition("mark")
+        assert mark is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            stale_pdf = docs / "output" / "pdf" / "MBPAS-1437-technical-plan.pdf"
+            stale_pdf.parent.mkdir(parents=True)
+            stale_pdf.write_bytes(b"%PDF-stale")
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text="<FINAL_RESPONSE>已重新生成当前 PDF。</FINAL_RESPONSE>",
+                        provider_session_id="sess-mark",
+                        status="succeeded",
+                    )
+                ]
+            )
+            definition = replace(
+                mark,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", docs.resolve()),
+                ensure_workspace_contract=lambda **kwargs: docs,
+            )
+            previous = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            try:
+                with mock.patch("agents.runtime.autonomous.resolve_project", return_value={"slug": "mbpass", "workspace": str(docs)}):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            result = handle_autonomous_conversation(
+                                definition=definition,
+                                text="请重新生成 PDF",
+                                meta={"chat_id": "oc1", "thread_id": "omt1", "user_id": "ou1", "message_id": "om1"},
+                                common=_v4_common(),
+                                runtime=runtime,
+                            )
+            finally:
+                if previous is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous
+
+            self.assertEqual("ok", result.get("status"))
+            self.assertFalse(stale_pdf.exists())
 
     def test_readiness_matrix(self) -> None:
         adapter = DeliveryActionAdapter()

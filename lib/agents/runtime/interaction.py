@@ -27,6 +27,8 @@ _ACTION_REQUIREMENTS: dict[str, tuple[tuple[str, ...], ...]] = {
     "jira.workitem.get": (("issue_key", "id", "key"),),
     "jira.workitem.query": (("jql",),),
     "jira.sprint.untested.report": (),
+    "feishu.send_progress": (("message",),),
+    "feishu.send_file": (("path",),),
 }
 
 _FIELD_LABELS = {
@@ -45,6 +47,8 @@ _FIELD_LABELS = {
     "target_files": "target file(s)",
     "request": "requested change",
     "target_version": "target version",
+    "message": "progress message",
+    "path": "workspace file path",
 }
 
 _SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
@@ -242,7 +246,13 @@ def format_clarification_reply(
         if text:
             blocks.append(text)
         blocks.append(canonical_question)
-        return "\n\n".join(block for block in blocks if block).strip()
+        # A grouped question such as 1A/1B + 2A/2B already contains its own
+        # choices. Preserve that structure and do not append a flattened list.
+        # A simple question such as a version target still needs the canonical
+        # choices rendered below.
+        if clarification_has_rendered_choices(canonical_question, rows):
+            return "\n\n".join(block for block in blocks if block).strip()
+        text = "\n\n".join(block for block in (text, canonical_question) if block).strip()
     if clarification_has_rendered_choices(text, rows):
         return text
     lines = []
@@ -509,6 +519,7 @@ def interaction_contract_prompt(
         "- Before using tools, READ the common blacklist at " + str(blacklist_path) + ".",
         "- For read-only Jira evidence, prefer the authorized `twg jira workitem get/query` commands described in the action catalog; do not emit ACTION_REQUEST for that read when the command succeeds.",
         "- Jira create/update and other external mutations still require exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without the host receipt.",
+        "- A turn may contain multiple ACTION_REQUEST envelopes for distinct catalog capabilities, such as a progress update followed by a file attachment; use one valid envelope per action.",
         "- Put the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.",
         "Envelope schemas:",
         '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":""}</CONVERSATION_DECISION>',

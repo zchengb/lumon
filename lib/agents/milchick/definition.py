@@ -58,7 +58,7 @@ MILCHICK_DEFINITION = AgentDefinition(
             "test_case.generate",
             *JIRA_MUTATION_ACTIONS,
         ),
-        external_side_effects=("feishu.bitable.write", "jira"),
+        external_side_effects=("feishu.reply", "feishu.file", "feishu.bitable.write", "jira"),
     ),
     build_bootstrap_prompt=build_bootstrap_prompt,
     build_resume_prompt=build_resume_prompt,

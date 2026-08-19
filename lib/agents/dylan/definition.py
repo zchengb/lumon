@@ -44,7 +44,7 @@ DYLAN_DEFINITION = AgentDefinition(
         direct_workspace_write=False,
         allowed_workflows=("risk.query", "risk.resolve", "scan.verify", *JIRA_ACTIONS),
         allowed_mutations=("risk.mark_remediated", "risk.resolve", "scan.schedule.update", *JIRA_MUTATION_ACTIONS),
-        external_side_effects=("feishu.reply", "jira"),
+        external_side_effects=("feishu.reply", "feishu.file", "jira"),
     ),
     build_bootstrap_prompt=build_bootstrap_prompt,
     build_resume_prompt=build_resume_prompt,

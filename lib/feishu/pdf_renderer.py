@@ -9,11 +9,21 @@ from typing import Any
 _PLAN_MARKER = re.compile(r"(?:technical[- ]plan|story[- ]plan)(?:\.md)?", re.IGNORECASE)
 _PLAN_HEADING = re.compile(r"(?mi)^\s*#{1,6}\s+(story|technical)\s+plan\b")
 _TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
-_FENCE = re.compile(r"^\s*```(?:[A-Za-z0-9_+-]+)?\s*$")
-_FENCE_LANGUAGE = re.compile(r"^\s*```([A-Za-z0-9_+-]*)\s*$")
+_FENCE = re.compile(r"^\s*```\s*(?:[A-Za-z0-9_+-]+(?:\s+.*)?)?\s*$")
+_FENCE_LANGUAGE = re.compile(r"^\s*```\s*([A-Za-z0-9_+-]+)?(?:\s+.*)?\s*$", re.IGNORECASE)
 _TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
 _METADATA_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$")
 _PLAN_PROMPT = re.compile(r"(?mi)^\s*(?:以上(?:為|为)完整(?:內容|内容)|看完後請回覆|看完后请回复).*$")
+
+# Keep the export deliberately monochrome: black ink, neutral gray rules, and
+# very light gray surfaces are easier to print and read like an academic paper.
+_INK = "#111111"
+_TEXT = "#252525"
+_MUTED = "#555555"
+_RULE = "#b8b8b8"
+_LIGHT_RULE = "#d9d9d9"
+_PANEL = "#f4f4f4"
+_PANEL_ALT = "#fafafa"
 
 
 def is_plan_document(text: str) -> bool:
@@ -135,16 +145,29 @@ def _font_path(candidates: list[str]) -> str:
     return ""
 
 
-def _register_font(pdfmetrics: Any, ttfont: Any, name: str, candidates: list[str], fallback: str = "Helvetica") -> str:
+def _register_font(
+    pdfmetrics: Any,
+    ttfont: Any,
+    name: str,
+    candidates: list[str],
+    fallback: str = "Helvetica",
+    subfont_index: int | None = None,
+) -> str:
     path = _font_path(candidates)
     if not path:
         return fallback
     try:
-        pdfmetrics.registerFont(ttfont(name, path))
+        kwargs = {}
+        if subfont_index is not None and path.casefold().endswith(".ttc"):
+            kwargs["subfontIndex"] = subfont_index
+        pdfmetrics.registerFont(ttfont(name, path, **kwargs))
         return name
     except Exception:
         try:
-            pdfmetrics.registerFont(ttfont(name, path, subfontIndex=0))
+            if path.casefold().endswith(".ttc"):
+                pdfmetrics.registerFont(ttfont(name, path, subfontIndex=0))
+            else:
+                pdfmetrics.registerFont(ttfont(name, path))
             return name
         except Exception:
             return fallback
@@ -155,26 +178,30 @@ def _register_fonts(pdfmetrics: Any, ttfont: Any) -> dict[str, str]:
     body = _register_font(
         pdfmetrics,
         ttfont,
-        "LumonSans",
+        "LumonSerif",
         [
+            "/System/Library/Fonts/Supplemental/Songti.ttc",
             "~/Library/Fonts/MiSans-Regular.ttf",
             "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
             "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            f"{bundled}/NotoSans-Regular.ttf",
+            f"{bundled}/NotoSerif-Regular.ttf",
         ],
+        subfont_index=6,
     )
     bold = _register_font(
         pdfmetrics,
         ttfont,
-        "LumonSansBold",
+        "LumonSerifBold",
         [
+            "/System/Library/Fonts/Supplemental/Songti.ttc",
             "~/Library/Fonts/MiSans-Semibold.ttf",
             "~/Library/Fonts/MiSans-Bold.ttf",
             "/System/Library/Fonts/STHeiti Medium.ttc",
             "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-            f"{bundled}/NotoSans-Bold.ttf",
+            f"{bundled}/NotoSerif-Bold.ttf",
         ],
         fallback=body,
+        subfont_index=1,
     )
     mono = _register_font(
         pdfmetrics,
@@ -207,13 +234,13 @@ def _inline_markup(value: str, fonts: dict[str, str]) -> str:
     def link(match: re.Match[str]) -> str:
         label = html.escape(match.group(1), quote=False)
         url = html.escape(match.group(2), quote=True)
-        return hold(f'<link href="{url}" color="#1769aa">{label}</link>')
+        return hold(f'<link href="{url}" color="{_TEXT}">{label}</link>')
 
     raw = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", link, raw)
 
     def code(match: re.Match[str]) -> str:
         return hold(
-            f'<font name="{fonts["mono"]}" backColor="#eef2f7">'
+            f'<font name="{fonts["mono"]}" backColor="{_PANEL}">'
             f"{html.escape(match.group(1), quote=False)}"
             "</font>"
         )
@@ -252,9 +279,9 @@ def _metadata_flowable(fields: list[tuple[str, str]], styles: dict[str, Any], fo
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f5f7fa")),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d7dee8")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e2e8f0")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(_PANEL)),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor(_RULE)),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor(_LIGHT_RULE)),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 9),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 9),
@@ -278,10 +305,10 @@ def _table_flowable(rows: list[list[str]], styles: dict[str, Any], fonts: dict[s
         data.append([Paragraph(_inline_markup(cell, fonts), cell_style) for cell in row])
     table = Table(data, colWidths=[width / column_count] * column_count, repeatRows=1, hAlign="LEFT")
     commands = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(_INK)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#cbd5e1")),
-        ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe3ec")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor(_RULE)),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor(_LIGHT_RULE)),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 7),
         ("RIGHTPADDING", (0, 0), (-1, -1), 7),
@@ -290,7 +317,7 @@ def _table_flowable(rows: list[list[str]], styles: dict[str, Any], fonts: dict[s
     ]
     for row_index in range(1, len(normalized)):
         if row_index % 2 == 0:
-            commands.append(("BACKGROUND", (0, row_index), (-1, row_index), colors.HexColor("#f8fafc")))
+            commands.append(("BACKGROUND", (0, row_index), (-1, row_index), colors.HexColor(_PANEL_ALT)))
     table.setStyle(TableStyle(commands))
     return table
 
@@ -302,15 +329,19 @@ def _mermaid_label(value: str) -> str:
     return label.replace("\\n", "\n").replace("<br/>", "\n").replace("<br>", "\n")
 
 
+def _is_mermaid_language(language: str) -> bool:
+    return str(language or "").strip().casefold() in {"mermaid", "mmd"}
+
+
 def _parse_mermaid(source: str) -> dict[str, Any] | None:
     lines = [line.rstrip() for line in str(source or "").splitlines()]
     header = next((line.strip() for line in lines if line.strip() and not line.strip().startswith("%%")), "")
     header_match = re.match(r"^(flowchart|graph)\s+(TB|TD|BT|LR|RL)\b", header, re.IGNORECASE)
-    class_mode = header.lower().startswith("classdiagram")
+    class_mode = bool(re.match(r"^classdiagram\b", header, re.IGNORECASE))
     if not header_match and not class_mode:
         return None
 
-    nodes: dict[str, dict[str, str]] = {}
+    nodes: dict[str, dict[str, Any]] = {}
     edges: list[tuple[str, str, str]] = []
     node_pattern = re.compile(
         r"(?P<id>[A-Za-z_][\w-]*)\s*(?P<open>\[|\{|\()(?P<label>.*?)(?P<close>\]|\}|\))"
@@ -345,15 +376,24 @@ def _parse_mermaid(source: str) -> dict[str, Any] | None:
 
     current_class = ""
     relation_pattern = re.compile(r"^\s*([A-Za-z_][\w-]*)\s+(<\|--|--\|>|\*--|o--|-->|<--)\s+([A-Za-z_][\w-]*)(?:\s*:\s*(.*))?$")
-    class_pattern = re.compile(r"^\s*class\s+([A-Za-z_][\w-]*)\s*\{")
+    class_pattern = re.compile(
+        r"^\s*class\s+(?P<id>[A-Za-z_][\w-]*)(?:\s*\[(?P<label>.*?)\])?\s*\{?\s*$"
+    )
     for line in lines[1:]:
         stripped = line.strip()
         if not stripped or stripped.startswith("%%"):
             continue
         class_match = class_pattern.match(line)
         if class_match:
-            current_class = class_match.group(1)
-            nodes.setdefault(current_class, {"label": current_class, "shape": "["})
+            current_class = class_match.group("id")
+            nodes.setdefault(
+                current_class,
+                {
+                    "label": _mermaid_label(class_match.group("label") or current_class),
+                    "shape": "[",
+                    "members": [],
+                },
+            )
             continue
         if stripped == "}":
             current_class = ""
@@ -366,7 +406,7 @@ def _parse_mermaid(source: str) -> dict[str, Any] | None:
             edges.append((source_id, target_id, _mermaid_label(label or "")))
             continue
         if current_class:
-            nodes[current_class]["label"] += "\n" + stripped
+            nodes[current_class].setdefault("members", []).append(_mermaid_label(stripped))
     return {"direction": "LR", "nodes": nodes, "edges": edges, "kind": "class"} if nodes else None
 
 
@@ -377,17 +417,25 @@ def _mermaid_flowable(source: str, fonts: dict[str, str], width: float, styles: 
 
     import math
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import Flowable, Paragraph
 
     label_style = ParagraphStyle(
         "LumonDiagramLabel", fontName=fonts["body"], fontSize=7.2, leading=9.2,
-        alignment=TA_CENTER, textColor=colors.HexColor("#203040"), wordWrap="CJK",
+        alignment=TA_CENTER, textColor=colors.HexColor(_TEXT), wordWrap="CJK",
     )
     edge_style = ParagraphStyle(
         "LumonDiagramEdge", fontName=fonts["body"], fontSize=6.2, leading=7.5,
-        alignment=TA_CENTER, textColor=colors.HexColor("#52606d"), wordWrap="CJK",
+        alignment=TA_CENTER, textColor=colors.HexColor(_MUTED), wordWrap="CJK",
+    )
+    class_title_style = ParagraphStyle(
+        "LumonClassTitle", fontName=fonts["bold"], fontSize=7.1, leading=8.8,
+        alignment=TA_CENTER, textColor=colors.HexColor(_TEXT), wordWrap="CJK",
+    )
+    class_member_style = ParagraphStyle(
+        "LumonClassMember", fontName=fonts["body"], fontSize=6.4, leading=8.0,
+        alignment=TA_LEFT, textColor=colors.HexColor(_MUTED), wordWrap="CJK",
     )
 
     class MermaidFlowable(Flowable):
@@ -399,6 +447,7 @@ def _mermaid_flowable(source: str, fonts: dict[str, str], width: float, styles: 
             self._positions: dict[str, tuple[float, float, float, float]] = {}
             self._levels: dict[str, int] = {}
             self._node_width = 120.0
+            self._is_class = parsed["kind"] == "class"
 
         def _build_levels(self) -> list[list[str]]:
             node_ids = list(parsed["nodes"])
@@ -433,26 +482,53 @@ def _mermaid_flowable(source: str, fonts: dict[str, str], width: float, styles: 
 
         def _layout(self, available_width: float) -> None:
             self._positions = {}
-            groups = self._build_levels()
+            node_ids = list(parsed["nodes"])
+            if self._is_class:
+                column_count = min(3, max(1, math.ceil(math.sqrt(max(1, len(node_ids))))))
+                groups = [node_ids[index::column_count] for index in range(column_count)]
+                groups = [group for group in groups if group]
+            else:
+                groups = self._build_levels()
             max_group = max((len(group) for group in groups), default=1)
-            horizontal = parsed["direction"] in {"LR", "RL"}
+            horizontal = self._is_class or parsed["direction"] in {"LR", "RL"}
             if horizontal:
-                node_width = 150.0
+                if self._is_class:
+                    node_width = min(
+                        190.0,
+                        max(125.0, (available_width - 24.0 - (len(groups) - 1) * 26.0) / max(len(groups), 1)),
+                    )
+                else:
+                    node_width = 150.0
             else:
                 node_width = min(165.0, max(96.0, (available_width - (max_group - 1) * 18) / max_group))
             self._node_width = node_width
             heights: dict[str, float] = {}
             paragraphs: dict[str, Any] = {}
             for node_id, node in parsed["nodes"].items():
-                paragraph = Paragraph(_inline_markup(node["label"], fonts), label_style)
-                _, paragraph_height = paragraph.wrap(node_width - 14, 2000)
-                paragraphs[node_id] = paragraph
-                heights[node_id] = max(30.0, paragraph_height + 14.0)
+                if self._is_class:
+                    title = Paragraph(_inline_markup(node.get("label", node_id), fonts), class_title_style)
+                    _, title_height = title.wrap(node_width - 14, 2000)
+                    members = [str(member) for member in node.get("members", []) if str(member).strip()]
+                    member = Paragraph(_inline_markup("\n".join(members), fonts), class_member_style) if members else None
+                    member_height = 0.0
+                    if member is not None:
+                        _, member_height = member.wrap(node_width - 14, 2000)
+                    header_height = max(18.0, title_height + 8.0)
+                    paragraphs[node_id] = (title, member, header_height)
+                    heights[node_id] = max(34.0, header_height + member_height + 12.0)
+                else:
+                    paragraph = Paragraph(_inline_markup(node["label"], fonts), label_style)
+                    _, paragraph_height = paragraph.wrap(node_width - 14, 2000)
+                    paragraphs[node_id] = paragraph
+                    heights[node_id] = max(30.0, paragraph_height + 14.0)
             gap = 26.0 if horizontal else 34.0
             margin = 12.0
             if horizontal:
                 rank_heights = [sum(heights[node_id] for node_id in group) + max(0, len(group) - 1) * 16 for group in groups]
-                self._natural_width = margin * 2 + len(groups) * node_width + max(0, len(groups) - 1) * gap
+                if self._is_class:
+                    self._natural_width = available_width
+                else:
+                    self._natural_width = margin * 2 + len(groups) * node_width + max(0, len(groups) - 1) * gap
                 self._natural_height = margin * 2 + max(rank_heights, default=30.0)
                 x = margin
                 for group, rank_height in zip(groups, rank_heights):
@@ -495,8 +571,8 @@ def _mermaid_flowable(source: str, fonts: dict[str, str], width: float, styles: 
             size = 5.0
             left = (ex - size * math.cos(angle - math.pi / 6), ey - size * math.sin(angle - math.pi / 6))
             right = (ex - size * math.cos(angle + math.pi / 6), ey - size * math.sin(angle + math.pi / 6))
-            canvas.setFillColor(colors.HexColor("#55738f"))
-            canvas.setStrokeColor(colors.HexColor("#55738f"))
+            canvas.setFillColor(colors.HexColor(_TEXT))
+            canvas.setStrokeColor(colors.HexColor(_TEXT))
             canvas.line(ex, ey, left[0], left[1])
             canvas.line(ex, ey, right[0], right[1])
 
@@ -504,21 +580,24 @@ def _mermaid_flowable(source: str, fonts: dict[str, str], width: float, styles: 
             canvas = self.canv
             canvas.saveState()
             canvas.scale(self._scale, self._scale)
-            canvas.setFillColor(colors.HexColor("#f6f8fb"))
-            canvas.setStrokeColor(colors.HexColor("#d3dce7"))
+            canvas.setFillColor(colors.HexColor(_PANEL))
+            canvas.setStrokeColor(colors.HexColor(_RULE))
             canvas.roundRect(0, 0, self._natural_width, self._natural_height, 6, fill=1, stroke=1)
             for source_id, target_id, edge_label in parsed["edges"]:
                 if source_id not in self._positions or target_id not in self._positions:
                     continue
                 sx, sy, sw, sh = self._positions[source_id]
                 tx, ty, tw, th = self._positions[target_id]
-                if parsed["direction"] in {"LR", "RL"}:
+                if parsed["direction"] == "RL":
+                    start = (sx, sy + sh / 2)
+                    end = (tx + tw, ty + th / 2)
+                elif parsed["direction"] == "LR" or self._is_class:
                     start = (sx + sw, sy + sh / 2)
                     end = (tx, ty + th / 2)
                 else:
                     start = (sx + sw / 2, sy)
                     end = (tx + tw / 2, ty + th)
-                canvas.setStrokeColor(colors.HexColor("#55738f"))
+                canvas.setStrokeColor(colors.HexColor(_TEXT))
                 self._arrow(canvas, start, end)
                 if edge_label:
                     edge = Paragraph(_inline_markup(edge_label, fonts), edge_style)
@@ -526,10 +605,26 @@ def _mermaid_flowable(source: str, fonts: dict[str, str], width: float, styles: 
                     edge.drawOn(canvas, (start[0] + end[0] - ew) / 2, (start[1] + end[1]) / 2 - eh / 2)
             for node_id, node in parsed["nodes"].items():
                 x, y, node_width, node_height = self._positions[node_id]
-                canvas.setFillColor(colors.HexColor("#eaf3fb" if node["shape"] != "{" else "#fff6df"))
-                canvas.setStrokeColor(colors.HexColor("#2d628f"))
+                if self._is_class:
+                    title, member, header_height = self._paragraphs[node_id]
+                    canvas.setFillColor(colors.white)
+                    canvas.setStrokeColor(colors.HexColor(_INK))
+                    canvas.roundRect(x, y, node_width, node_height, 5, fill=1, stroke=1)
+                    header_y = y + node_height - header_height
+                    canvas.setFillColor(colors.HexColor("#e7e7e7"))
+                    canvas.rect(x + 0.5, header_y, node_width - 1, header_height, fill=1, stroke=0)
+                    canvas.setStrokeColor(colors.HexColor(_RULE))
+                    canvas.line(x, header_y, x + node_width, header_y)
+                    _, title_height = title.wrap(node_width - 14, header_height)
+                    title.drawOn(canvas, x + 7, header_y + (header_height - title_height) / 2)
+                    if member is not None:
+                        _, member_height = member.wrap(node_width - 14, max(1.0, header_y - y - 8))
+                        member.drawOn(canvas, x + 7, y + 6)
+                    continue
+                canvas.setFillColor(colors.HexColor("#eeeeee" if node["shape"] != "{" else "#e2e2e2"))
+                canvas.setStrokeColor(colors.HexColor(_INK))
                 if node["shape"] == "{":
-                    canvas.setFillColor(colors.HexColor("#fff7df"))
+                    canvas.setFillColor(colors.HexColor("#e2e2e2"))
                     canvas.roundRect(x, y, node_width, node_height, 4, fill=1, stroke=1)
                 elif node["shape"] == "(":
                     canvas.roundRect(x, y, node_width, node_height, min(12, node_height / 2), fill=1, stroke=1)
@@ -556,23 +651,23 @@ def _styles(fonts: dict[str, str]) -> dict[str, Any]:
 
     return {
         "body": ParagraphStyle(
-            "LumonBody", fontName=fonts["body"], fontSize=9.6, leading=14.5, textColor=colors.HexColor("#273444"),
+            "LumonBody", fontName=fonts["body"], fontSize=9.6, leading=14.5, textColor=colors.HexColor(_TEXT),
             spaceAfter=7, wordWrap="CJK",
         ),
         "title": ParagraphStyle(
             "LumonTitle", parent=None, fontName=fonts["bold"], fontSize=23, leading=29,
-            textColor=colors.HexColor("#132238"), spaceBefore=3, spaceAfter=16, wordWrap="CJK",
+            textColor=colors.HexColor(_INK), spaceBefore=3, spaceAfter=16, wordWrap="CJK",
         ),
         "h1": ParagraphStyle(
-            "LumonH1", fontName=fonts["bold"], fontSize=17, leading=22, textColor=colors.HexColor("#173b63"),
+            "LumonH1", fontName=fonts["bold"], fontSize=17, leading=22, textColor=colors.HexColor(_INK),
             spaceBefore=16, spaceAfter=8, keepWithNext=True, wordWrap="CJK",
         ),
         "h2": ParagraphStyle(
-            "LumonH2", fontName=fonts["bold"], fontSize=13, leading=18, textColor=colors.HexColor("#245b87"),
+            "LumonH2", fontName=fonts["bold"], fontSize=13, leading=18, textColor=colors.HexColor(_TEXT),
             spaceBefore=12, spaceAfter=5, keepWithNext=True, wordWrap="CJK",
         ),
         "h3": ParagraphStyle(
-            "LumonH3", fontName=fonts["bold"], fontSize=10.5, leading=15, textColor=colors.HexColor("#334e68"),
+            "LumonH3", fontName=fonts["bold"], fontSize=10.5, leading=15, textColor=colors.HexColor(_MUTED),
             spaceBefore=9, spaceAfter=4, keepWithNext=True, wordWrap="CJK",
         ),
         "bullet": ParagraphStyle(
@@ -585,30 +680,30 @@ def _styles(fonts: dict[str, str]) -> dict[str, Any]:
         ),
         "quote": ParagraphStyle(
             "LumonQuote", parent=None, fontName=fonts["body"], fontSize=9.2, leading=13.5,
-            leftIndent=16, rightIndent=8, borderColor=colors.HexColor("#9fb3c8"), borderWidth=2,
-            borderPadding=7, textColor=colors.HexColor("#52606d"), spaceAfter=7, wordWrap="CJK",
+            leftIndent=16, rightIndent=8, borderColor=colors.HexColor(_RULE), borderWidth=2,
+            borderPadding=7, textColor=colors.HexColor(_MUTED), spaceAfter=7, wordWrap="CJK",
         ),
         "code": ParagraphStyle(
-            "LumonCode", fontName=fonts["mono"], fontSize=7.7, leading=10.2, textColor=colors.HexColor("#263238"),
-            backColor=colors.HexColor("#f3f5f7"), borderColor=colors.HexColor("#d7dee8"), borderWidth=0.5,
+            "LumonCode", fontName=fonts["mono"], fontSize=7.7, leading=10.2, textColor=colors.HexColor(_TEXT),
+            backColor=colors.HexColor(_PANEL), borderColor=colors.HexColor(_RULE), borderWidth=0.5,
             borderPadding=8, spaceBefore=4, spaceAfter=9, wordWrap="CJK",
         ),
         "metadata_heading": ParagraphStyle(
             "LumonMetadataHeading", fontName=fonts["bold"], fontSize=11.5, leading=15,
-            textColor=colors.HexColor("#245b87"), spaceBefore=2, spaceAfter=6, keepWithNext=True,
+            textColor=colors.HexColor(_TEXT), spaceBefore=2, spaceAfter=6, keepWithNext=True,
         ),
         "metadata_label": ParagraphStyle(
-            "LumonMetadataLabel", fontName=fonts["bold"], fontSize=8.7, leading=12, textColor=colors.HexColor("#52606d"),
+            "LumonMetadataLabel", fontName=fonts["bold"], fontSize=8.7, leading=12, textColor=colors.HexColor(_MUTED),
         ),
         "metadata_value": ParagraphStyle(
-            "LumonMetadataValue", fontName=fonts["body"], fontSize=8.7, leading=12, textColor=colors.HexColor("#273444"),
+            "LumonMetadataValue", fontName=fonts["body"], fontSize=8.7, leading=12, textColor=colors.HexColor(_TEXT),
             wordWrap="CJK",
         ),
         "table_header": ParagraphStyle(
             "LumonTableHeader", fontName=fonts["bold"], fontSize=7.8, leading=10, textColor=colors.white, wordWrap="CJK",
         ),
         "table_body": ParagraphStyle(
-            "LumonTableBody", fontName=fonts["body"], fontSize=7.8, leading=10.5, textColor=colors.HexColor("#273444"),
+            "LumonTableBody", fontName=fonts["body"], fontSize=7.8, leading=10.5, textColor=colors.HexColor(_TEXT),
             wordWrap="CJK",
         ),
     }
@@ -644,7 +739,7 @@ def _parse_markdown(
         if in_code:
             if _FENCE.match(line):
                 code = "\n".join(code_lines)
-                story.append(_mermaid_flowable(code, fonts, width, styles) if code_language == "mermaid" else _code_flowable(code, styles))
+                story.append(_mermaid_flowable(code, fonts, width, styles) if _is_mermaid_language(code_language) else _code_flowable(code, styles))
                 code_lines.clear()
                 in_code = False
                 code_language = ""
@@ -677,7 +772,7 @@ def _parse_markdown(
                 index = cursor + 1
                 continue
             flush_paragraph()
-            story.append(HRFlowable(width="100%", thickness=0.7, color=colors.HexColor("#cbd5e1"), spaceBefore=5, spaceAfter=9))
+            story.append(HRFlowable(width="100%", thickness=0.7, color=colors.HexColor(_RULE), spaceBefore=5, spaceAfter=9))
             index += 1
             continue
         heading = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
@@ -735,7 +830,7 @@ def _parse_markdown(
         index += 1
     if in_code:
         code = "\n".join(code_lines)
-        story.append(_mermaid_flowable(code, fonts, width, styles) if code_language == "mermaid" else _code_flowable(code, styles))
+        story.append(_mermaid_flowable(code, fonts, width, styles) if _is_mermaid_language(code_language) else _code_flowable(code, styles))
     flush_paragraph()
     return story
 
@@ -759,7 +854,7 @@ def render_markdown_pdf(markdown: str, output_path: str | Path, *, title: str = 
     styles = _styles(fonts)
     styles["cover"] = ParagraphStyle(
         "LumonCover", parent=styles["body"], alignment=TA_LEFT, fontName=fonts["body"],
-        fontSize=9, leading=13, textColor=colors.HexColor("#52606d"), spaceAfter=5,
+        fontSize=9, leading=13, textColor=colors.HexColor(_MUTED), spaceAfter=5,
     )
     width, _ = A4
     left = 48
@@ -769,11 +864,11 @@ def render_markdown_pdf(markdown: str, output_path: str | Path, *, title: str = 
 
     def draw_page(canvas: Any, doc: Any) -> None:
         canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor("#d7dee8"))
+        canvas.setStrokeColor(colors.HexColor(_LIGHT_RULE))
         canvas.setLineWidth(0.5)
         canvas.line(left, 34, width - right, 34)
         canvas.setFont(fonts["body"], 7.5)
-        canvas.setFillColor(colors.HexColor("#7b8794"))
+        canvas.setFillColor(colors.HexColor(_MUTED))
         canvas.drawString(left, 22, "LUMON · ENGINEERING DOCUMENT")
         canvas.drawRightString(width - right, 22, f"Page {doc.page}")
         canvas.restoreState()

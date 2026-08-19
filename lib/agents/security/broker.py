@@ -222,6 +222,7 @@ class CapabilityBroker:
 
 def default_executors() -> dict[str, Executor]:
     from agents.security.adapters.delivery import execute_delivery_action
+    from agents.security.adapters.feishu import execute_feishu_action
     from agents.security.adapters.risk import execute_risk_action
     from agents.security.adapters.schedule import execute_schedule_action
 
@@ -282,4 +283,6 @@ def default_executors() -> dict[str, Executor]:
         "schedule.status",
     ):
         mapping[action] = execute_job_action
+    for action in ("feishu.send_progress", "feishu.send_file"):
+        mapping[action] = execute_feishu_action
     return mapping

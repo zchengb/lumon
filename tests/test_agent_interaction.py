@@ -324,6 +324,58 @@ class AgentInteractionTests(unittest.TestCase):
         self.assertEqual("Admin Portal 中的 Wording 改成多圖", request.arguments["user_message"])
         self.assertEqual('["img_v3"]', request.arguments["image_keys"])
 
+    def test_feishu_action_context_is_host_bound(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeBroker:
+            def execute(self, request: object) -> object:
+                captured["request"] = request
+                return object()
+
+        with tempfile.TemporaryDirectory() as directory:
+            execute_trusted_actions(
+                context=TrustedActionContext(
+                    agent_id="mark",
+                    project_slug="mbpass",
+                    actor_user_id="ou_owner",
+                    chat_id="oc1",
+                    thread_id="omt1",
+                    source_message_id="om1",
+                    trace_id="tr1",
+                    chat_type="group",
+                    workspace_path=directory,
+                ),
+                requests=[
+                    {
+                        "action": "feishu.send_file",
+                        "arguments": {
+                            "path": "output/pdf/plan.pdf",
+                            "chat_type": "p2p",
+                            "_workspace_path": "/tmp/forged",
+                        },
+                    }
+                ],
+                broker=FakeBroker(),
+            )
+
+        request = captured["request"]
+        self.assertEqual("group", request.arguments["chat_type"])
+        self.assertEqual(directory, request.arguments["_workspace_path"])
+
+    def test_feishu_action_receipt_continues_the_same_turn(self) -> None:
+        from agents.runtime.autonomous import _action_results_need_continuation
+
+        self.assertTrue(
+            _action_results_need_continuation(
+                [{"action": "feishu.send_progress", "status": "succeeded", "result": {"kind": "progress"}}]
+            )
+        )
+        self.assertTrue(
+            _action_results_need_continuation(
+                [{"action": "feishu.send_file", "status": "succeeded", "result": {"kind": "file"}}]
+            )
+        )
+
     def test_test_case_handoff_injects_original_message(self) -> None:
         captured: dict[str, object] = {}
 

@@ -16,6 +16,7 @@ from feishu.cards import ack_card, progress_card, scan_summary_card
 from feishu.config import load_agents_config
 from feishu.messenger import (
     FeishuMessenger,
+    cleanup_generated_plan_pdfs,
     extract_message_id,
     has_pdf_file_citation,
     is_pdf_output_request,
@@ -263,7 +264,14 @@ def _run_autonomous_worker(
                 success = True
                 return result
             reply_text = str(result.get("text") or "暂无数据。")
-            allow_pdf = is_pdf_output_request(text) or has_pdf_file_citation(reply_text)
+            receipts = result.get("action_receipts") if isinstance(result.get("action_receipts"), list) else []
+            host_file_sent = any(
+                isinstance(item, dict)
+                and item.get("action") == "feishu.send_file"
+                and item.get("status") == "succeeded"
+                for item in receipts
+            )
+            allow_pdf = (is_pdf_output_request(text) or has_pdf_file_citation(reply_text)) and not host_file_sent
             if suppress_reply:
                 obs.emit(trace, "reply.suppressed")
             else:
@@ -277,6 +285,7 @@ def _run_autonomous_worker(
                             reply_text,
                             reply_in_thread=reply_in_thread,
                             allow_pdf=allow_pdf,
+                            suppress_pdf_artifact=host_file_sent,
                         )
                         if sent is not None:
                             break
@@ -300,7 +309,6 @@ def _run_autonomous_worker(
                         pass
                 obs.emit(trace, "reply.succeeded")
             obs.upsert_trace(trace, reply_status="succeeded", state="completed")
-            receipts = result.get("action_receipts") if isinstance(result.get("action_receipts"), list) else []
             obs.emit(
                 trace,
                 "conversation.completed",
@@ -333,6 +341,12 @@ def _run_autonomous_worker(
                 )
             raise
         finally:
+            try:
+                if is_pdf_output_request(text):
+                    cleanup_generated_plan_pdfs(str(result.get("workspace") or ""))
+            except Exception:
+                # PDF cleanup is best effort and must never hide the turn result.
+                pass
             try:
                 reaction.finish(success=success)
             except Exception:

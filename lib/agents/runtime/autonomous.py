@@ -36,9 +36,10 @@ from agents.runtime.observability import Observability, TraceContext, new_trace_
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
 from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
+from agents.security.actions import FEISHU_ACTIONS
 from agents.security.flags import workspace_isolation_v2_enabled
 from agents.security.trusted import execute_trusted_actions, trusted_context_from_meta
-from feishu.messenger import FeishuMessenger
+from feishu.messenger import FeishuMessenger, cleanup_generated_plan_pdfs, is_pdf_output_request
 
 
 class AutonomousUnavailableError(RuntimeError):
@@ -247,6 +248,7 @@ _ACTION_RESULT_CONTINUATION_ACTIONS = frozenset(
         "jira.workitem.query",
         "jira.sprint.untested.report",
         "test_case.generate",
+        *FEISHU_ACTIONS,
     }
 )
 
@@ -305,6 +307,13 @@ def _action_results_need_continuation(
                 return True
             continue
         if action not in _ACTION_RESULT_CONTINUATION_ACTIONS:
+            continue
+        if action in FEISHU_ACTIONS:
+            # Feishu actions are deliberately conversational: after a visible
+            # progress update or file receipt, the same provider session gets
+            # another turn to decide whether to continue, ask, or finalize.
+            if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
+                return True
             continue
         if action == "test_case.generate":
             result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
@@ -455,6 +464,11 @@ def handle_autonomous_conversation(
         project_slug = known[0] if len(known) == 1 else ""
     slug, workspace = definition.resolve_workspace(project_slug, chat_id)
     definition.ensure_workspace_contract(workspace=workspace, project_slug=slug)
+    if is_pdf_output_request(text):
+        # A PDF requested in the conversation is a transfer artifact.  Remove
+        # stale artifacts before the provider sees the workspace so it cannot
+        # incorrectly answer that an older PDF is already the current result.
+        cleanup_generated_plan_pdfs(workspace)
 
     try:
         from risk.store import GlobalAgentStore
@@ -717,6 +731,8 @@ def handle_autonomous_conversation(
                         "Do not auto-generate or attach a PDF, and do not present a Technical Plan as final while the Story is not business-ready.\n"
                         "Only after story.md exists and metadata businessStatus=ready may the Technical Loop begin. "
                         "When the two stages are complete, present the final result as text unless the user explicitly asks for a file.\n"
+                        "For an explicit PDF request, always generate the current PDF even if an older output/pdf artifact exists; "
+                        "the host removes the transferred PDF afterward.\n"
                     )
                 loop_gateway = ""
                 if combined_plan_request:
@@ -1084,6 +1100,7 @@ def handle_autonomous_conversation(
 
                 action_meta = dict(meta)
                 action_meta["_user_message"] = text
+                action_meta["_workspace_path"] = str(workspace)
                 context = trusted_context_from_meta(
                     agent_id=agent_id,
                     project_slug=slug,
@@ -1222,6 +1239,22 @@ def handle_autonomous_conversation(
                 action_receipts,
                 preserve_substantive=bool(meta.get("_loop_capability")) and agent_id == "mark",
             )
+            if not str(reply_text or "").strip():
+                if any(
+                    receipt.get("action") == "feishu.send_file" and receipt.get("status") == "succeeded"
+                    for receipt in action_receipts
+                ):
+                    reply_text = "文件已附在当前 Feishu 消息中。"
+                elif any(
+                    receipt.get("action") == "feishu.send_progress" and receipt.get("status") == "succeeded"
+                    for receipt in action_receipts
+                ):
+                    reply_text = "阶段进度已发送，我会继续处理当前请求。"
+                if continuation_error:
+                    reply_text = (
+                        f"{reply_text}\n\n本轮后续会话续接失败，以上为已确认的发送结果。"
+                        f" Trace ID: {trace.trace_id}"
+                    )
             if clarification and not str(reply_text or "").strip():
                 reply_text = format_clarification_reply(
                     str(clarification.get("question") or ""),
