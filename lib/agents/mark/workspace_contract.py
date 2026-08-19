@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "4"
+MANAGED_VERSION = "5"
 _MANAGED_START = f"<!-- LUMEN MARK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MARK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MARK MANAGED START"
@@ -32,6 +32,7 @@ def _managed_block(project_slug: str) -> str:
         f"- Clear intent starts the matching Loop; ambiguous intent gets one confirmation\n"
         f"- A combined Story Plan + Technical Plan request is staged: Business/Story Loop first, Technical Loop only after `story.md` exists and `businessStatus=ready`\n"
         f"- Plan progress and final answers are Feishu text by default; attachments require an explicit user request\n"
+        f"- Technical Plan approval is Feishu text only; never write an Approval section or its choices into technical-plan.md, and keep it out of PDFs\n"
         f"- Loop entry is not delivery authorization; `delivery.start` still requires explicit authorization\n"
         f"- Business Loop owns topic/story artifacts; Technical Loop owns technical-plan.md and technicalStatus\n\n"
         f"## Commands\n"

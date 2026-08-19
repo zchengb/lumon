@@ -152,6 +152,7 @@ Rules:
 - Each question should include 2-4 concrete options.
 - Mark one option as `Recommended` when repository evidence supports it, explain the consequence, and allow a custom answer.
 - Stop grilling when no remaining unknown can change the decision; summarize the result and ask the loop's explicit approval question.
+- The Technical Loop approval question is Feishu conversation only. Never write `## Approval`, `## Technical Plan Approval`, or its answer choices into `technical-plan.md`; a requested PDF must contain the plan only.
 - Always allow the user to provide a custom answer.
 - Do not use blank placeholders as the primary interaction style.
 - After the user answers, update `topics/<slug>.md` under `Progressive Clarifications` during Topic Discovery, or `story.md` under `Clarifications` during Story Clarification, and update `technical-plan.md` for technical answers.
@@ -245,7 +246,7 @@ During the Technical Loop, the Agent should:
 7. Derive a concise, business-facing `Delivery Checklist` from confirmed Acceptance Criteria and Business Rules; do not use technical implementation language.
 8. Add an optional business flow diagram only when the flow spans systems, jobs, asynchronous steps, state transitions, or complex filtering.
 9. Produce a file-level plan detailed enough for implementation without guessing.
-10. Ask whether to approve and push the technical plan, run build/verification now, or keep refining.
+10. Save only the technical plan in `technical-plan.md`; ask whether to approve and push the plan, run build/verification now, or keep refining as ordinary Feishu text.
 11. Ask for explicit user approval before setting `technicalStatus` to `approved`.
 12. Never modify application code during the Technical Loop.
 

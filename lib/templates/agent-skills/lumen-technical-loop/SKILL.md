@@ -11,4 +11,4 @@ Read `references/workflow.md` before acting. Frontend/Web/Native UI delivery, Fi
 
 In Feishu, do not make the user name this Loop. Start directly when the Loop Gateway marks the intent clear; ask one concise confirmation when it marks the intent ambiguous. Technical Loop entry is not delivery authorization, and it requires `businessStatus: ready` before planning can proceed.
 
-If `businessStatus` is not `ready`, stop before drafting or presenting technical-plan.md, explain the Story prerequisite in Feishu text, and return to Business Loop. Keep the plan and progress as text by default; only attach a file when the user explicitly requests it.
+If `businessStatus` is not `ready`, stop before drafting or presenting technical-plan.md, explain the Story prerequisite in Feishu text, and return to Business Loop. Keep the plan and progress as text by default; only attach a file when the user explicitly requests it. The approval question is Feishu-only: never write an `Approval` or `Technical Plan Approval` section into `technical-plan.md`, and keep that section out of any exported PDF.

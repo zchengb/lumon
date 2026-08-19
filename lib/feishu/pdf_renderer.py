@@ -14,6 +14,12 @@ _FENCE_LANGUAGE = re.compile(r"^\s*```\s*([A-Za-z0-9_+-]+)?(?:\s+.*)?\s*$", re.I
 _TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
 _METADATA_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$")
 _PLAN_PROMPT = re.compile(r"(?mi)^\s*(?:以上(?:為|为)完整(?:內容|内容)|看完後請回覆|看完后请回复).*$")
+_PLAN_APPROVAL_HEADING = re.compile(
+    r"(?mi)^[ \t]{0,3}#{1,6}[ \t]+"
+    r"(?:technical[ \t_-]*plan[ \t_-]*approval|plan[ \t_-]*approval|approval|"
+    r"technical[ \t_-]*(?:plan[ \t_-]*)?(?:批准|核准|審批|审批))"
+    r"[ \t]*#*[ \t]*$"
+)
 
 # Keep the export deliberately monochrome: black ink, neutral gray rules, and
 # very light gray surfaces are easier to print and read like an academic paper.
@@ -63,6 +69,21 @@ def _trim_document_separators(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _split_plan_approval_section(text: str) -> tuple[str, str]:
+    """Separate the conversational approval prompt from the plan document."""
+    raw = str(text or "")
+    match = _PLAN_APPROVAL_HEADING.search(raw)
+    if match is None:
+        return raw, ""
+    return raw[: match.start()].rstrip(), raw[match.start() :].strip()
+
+
+def strip_plan_approval_section(text: str) -> str:
+    """Return plan Markdown without the Feishu-only approval conversation."""
+    document, _approval = _split_plan_approval_section(text)
+    return document
+
+
 def split_plan_response(text: str) -> tuple[str, str, str]:
     """Return conversation prefix, Markdown document, and conversation suffix."""
     raw = str(text or "").strip()
@@ -73,10 +94,12 @@ def split_plan_response(text: str) -> tuple[str, str, str]:
             closing = closings[-1]
             body_start = opening.end()
             body_end = opening.end() + closing.start()
+            document, approval = _split_plan_approval_section(raw[body_start:body_end].strip())
+            outside_suffix = _trim_document_separators(raw[opening.end() + closing.end() :])
             return (
                 _trim_document_separators(raw[: opening.start()]),
-                raw[body_start:body_end].strip(),
-                _trim_document_separators(raw[opening.end() + closing.end() :]),
+                document,
+                "\n\n".join(part for part in (approval, outside_suffix) if part),
             )
 
     heading = re.search(r"(?mi)^\s*#\s+(?:technical|story)\s+plan\b.*$", raw)
@@ -85,9 +108,10 @@ def split_plan_response(text: str) -> tuple[str, str, str]:
     before = raw[: heading.start()].strip()
     rest = raw[heading.start() :]
     prompt = _PLAN_PROMPT.search(rest)
-    if prompt is None:
-        return before, rest.strip(), ""
-    return before, rest[: prompt.start()].strip(), _trim_document_separators(rest[prompt.start() :])
+    document_candidate = rest if prompt is None else rest[: prompt.start()]
+    outside_suffix = "" if prompt is None else _trim_document_separators(rest[prompt.start() :])
+    document, approval = _split_plan_approval_section(document_candidate.strip())
+    return before, document, "\n\n".join(part for part in (approval, outside_suffix) if part)
 
 
 def _strip_outer_fence(text: str) -> str:
@@ -847,10 +871,11 @@ def render_markdown_pdf(markdown: str, output_path: str | Path, *, title: str = 
     except ImportError as exc:
         raise RuntimeError("PDF export requires the reportlab package") from exc
 
+    document_markdown = strip_plan_approval_section(markdown)
     destination = Path(output_path).expanduser()
     destination.parent.mkdir(parents=True, exist_ok=True)
     fonts = _register_fonts(pdfmetrics, TTFont)
-    document_title = title.strip() or _title_from_markdown(markdown)
+    document_title = title.strip() or _title_from_markdown(document_markdown)
     styles = _styles(fonts)
     styles["cover"] = ParagraphStyle(
         "LumonCover", parent=styles["body"], alignment=TA_LEFT, fontName=fonts["body"],
@@ -878,6 +903,6 @@ def render_markdown_pdf(markdown: str, output_path: str | Path, *, title: str = 
         title=document_title, author="Lumon",
     )
     story = [Paragraph(html.escape(document_title), styles["title"]), Spacer(1, 2)]
-    story.extend(_parse_markdown(markdown, styles, fonts, width - left - right, document_title))
+    story.extend(_parse_markdown(document_markdown, styles, fonts, width - left - right, document_title))
     document.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
     return destination

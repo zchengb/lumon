@@ -24,7 +24,7 @@ If repository facts expose a business ambiguity affecting ACs, rules, user-visib
 
 For a Story that cites a Figma URL or requires frontend/UI work, do not inspect or implement the UI in this loop. Record the frontend portion as out of scope or blocked; do not create a Visual Delivery Contract or approve a plan that includes it.
 
-Before approval, complete repository investigation, selected profile, questions, concrete verification, and the quality bar; no blocking TBD. Present profile/reason, repositories, approach, architecture/domain decisions, applicable data/API/permission/integration/runtime impact, verification, risks, and out-of-scope. Ask exactly:
+Before approval, complete repository investigation, selected profile, questions, concrete verification, and the quality bar; no blocking TBD. Present profile/reason, repositories, approach, architecture/domain decisions, applicable data/API/permission/integration/runtime impact, verification, risks, and out-of-scope. The following is a conversational Feishu prompt, not Markdown document content. Do not append it to `technical-plan.md`; after saving the plan, send it separately as text. A PDF export must contain the plan only. Ask exactly:
 
 ```text
 A. Approve this Technical Plan

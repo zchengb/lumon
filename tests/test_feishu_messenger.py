@@ -158,6 +158,68 @@ class FeishuMessengerTests(unittest.TestCase):
         self.assertEqual(suffix, reply_markdown.call_args_list[1].args[1])
         reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
 
+    def test_technical_plan_approval_is_conversation_text_not_document_content(self) -> None:
+        text = (
+            "# Technical Plan: MBPAS-1503\n\n"
+            "## Design\n\nThe plan body.\n\n"
+            "## Technical Plan Approval\n\n"
+            "technicalStatus remains draft until explicit approval.\n\n"
+            "A. Approve this Technical Plan\n"
+            "B. Continue refining\n"
+            "C. Keep it as draft\n"
+            "D. Request a Business Loop revision"
+        )
+
+        prefix, body, suffix = split_plan_response(text)
+
+        self.assertEqual("", prefix)
+        self.assertIn("The plan body.", body)
+        self.assertNotIn("Technical Plan Approval", body)
+        self.assertIn("Technical Plan Approval", suffix)
+        self.assertIn("A. Approve this Technical Plan", suffix)
+
+    def test_pdf_export_excludes_technical_plan_approval_section(self) -> None:
+        text = (
+            "# Technical Plan: MBPAS-1503\n\n"
+            "## Design\n\nThe plan body.\n\n"
+            "## Technical Plan Approval\n\n"
+            "technicalStatus remains draft until explicit approval.\n\n"
+            "A. Approve this Technical Plan\n"
+            "B. Continue refining"
+        )
+        with TemporaryDirectory() as directory:
+            output = render_markdown_pdf(text, Path(directory) / "plan.pdf")
+            from pypdf import PdfReader
+
+            extracted = "\n".join(page.extract_text() or "" for page in PdfReader(output).pages)
+
+        self.assertIn("The plan body.", extracted)
+        self.assertNotIn("Technical Plan Approval", extracted)
+        self.assertNotIn("technicalStatus remains draft", extracted)
+        self.assertNotIn("Approve this Technical Plan", extracted)
+
+    def test_plan_pdf_reply_sends_approval_as_text_after_file(self) -> None:
+        text = (
+            "# Technical Plan: MBPAS-1503\n\n"
+            + ("## Section\ncontent\n\n" * 80)
+            + "## Technical Plan Approval\n\n"
+            + "A. Approve this Technical Plan\nB. Continue refining"
+        )
+        messenger = FeishuMessenger("mark")
+        with patch.object(messenger, "_upload_plan_pdf", return_value="file_v2_plan"), patch.object(
+            messenger, "reply_file", return_value={"data": {"message_id": "om_pdf"}}
+        ) as reply_file, patch.object(
+            messenger, "reply_markdown", return_value={"data": {"message_id": "om_approval"}}
+        ) as reply_markdown:
+            sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True, allow_pdf=True)
+
+        self.assertEqual("om_approval", sent["data"]["message_id"])
+        reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
+        reply_markdown.assert_called_once()
+        approval_text = reply_markdown.call_args.args[1]
+        self.assertIn("Technical Plan Approval", approval_text)
+        self.assertIn("A. Approve this Technical Plan", approval_text)
+
     def test_long_plan_is_text_by_default(self) -> None:
         text = "# Technical Plan: MBPAS-1503\n\n" + ("## Section\ncontent\n\n" * 80)
         messenger = FeishuMessenger("mark")

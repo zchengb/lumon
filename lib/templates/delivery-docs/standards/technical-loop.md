@@ -195,7 +195,9 @@ Reject your own draft and keep refining when:
 - The plan assumes Docker commands when the repository does not provide or reference a usable Dockerfile/profile.
 - The plan asks App/PHP projects to run heavy environment-dependent builds when only syntax/light checks are expected.
 
-## Approval
+## Approval (Feishu conversation only)
+
+The approval prompt is an interaction with the user, not a section of the technical plan. Never write `## Approval`, `## Technical Plan Approval`, the approval status explanation, or the A-F choices into `technical-plan.md`. Save only the plan content in that file, then send the approval question as ordinary Feishu text. If the user requests a PDF, attach the plan without this conversational approval block.
 
 Before setting `technicalStatus` to `approved`, ask:
 
