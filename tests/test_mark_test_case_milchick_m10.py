@@ -23,7 +23,7 @@ from agents.security.broker import CapabilityBroker
 from skills.test_case.dedupe import partition_new_cases
 from skills.test_case.generator import generate_test_cases
 from skills.test_case.models import StoryContext, TestCase
-from skills.test_case.skill import generate_test_cases_for_issue, story_sheet_name
+from skills.test_case.skill import generate_test_cases_for_issue, pk03_path_for_case_type, story_sheet_name
 
 
 class FakeBitable:
@@ -328,6 +328,12 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertTrue(any("正常路徑" in c.title for c in zh))
         self.assertEqual(story_sheet_name("MBPAS-1", "Hello"), "MBPAS-1 · Hello")
 
+    def test_pk03_path_uses_case_type_categories(self) -> None:
+        self.assertEqual(pk03_path_for_case_type("functional"), "Happy")
+        self.assertEqual(pk03_path_for_case_type("filter"), "Alternative")
+        self.assertEqual(pk03_path_for_case_type("validation"), "Sad")
+        self.assertEqual(pk03_path_for_case_type("boundary"), "Sad(Edge)")
+
     def test_jira_ac_blocks_ignore_summary_header(self) -> None:
         from skills.test_case.jira_read import _extract_acceptance_criteria
 
@@ -429,15 +435,25 @@ class TestCaseSkillTests(unittest.TestCase):
             self.assertEqual(len(row), 15)
             self.assertEqual(row[0], "https://inspire.atlassian.net/browse/MBPAS-1601")
             self.assertEqual(row[1], "MBPAS-1601 · Login flow")
-            self.assertEqual(row[4], "")
+            expected_path = {
+                "使用 Email 成功登入": "Happy",
+                "錯誤密碼時顯示登入失敗": "Sad",
+                "登入頁顯示登入表單": "Happy",
+            }[row[5]]
+            self.assertEqual(row[4], expected_path)
             self.assertTrue(row[5])
             self.assertEqual(row[11], "待驗證")
-            self.assertTrue(row[13].startswith("Type: "))
+            self.assertEqual(row[13], "")
         self.assertEqual(fake.dropdowns[0]["options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])
         self.assertEqual(fake.dropdowns[0]["colors"], ["#bacefd", "#fed4a4", "#b1e8fc", "#7edafb"])
         self.assertEqual("E2:E4", fake.dropdowns[0]["range_a1"])
+        self.assertEqual(fake.dropdowns[1]["options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
+        self.assertEqual(fake.dropdowns[1]["colors"], ["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"])
+        self.assertEqual("L2:L4", fake.dropdowns[1]["range_a1"])
         self.assertEqual(fake.verified[0]["freeze_rows"], 1)
         self.assertEqual(fake.verified[0]["validation_options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])
+        self.assertEqual(fake.verified[1]["validation_range"], "L2:L4")
+        self.assertEqual(fake.verified[1]["validation_options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
         self.assertIn("/sheets/test-a-spreadsheet?sheet=sht1", result["sheet_url"])
 
     def test_skill_reuses_existing_card_sheet_and_deduplicates_rows(self) -> None:

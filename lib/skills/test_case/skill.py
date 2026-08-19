@@ -18,8 +18,8 @@ from skills.test_case.designer import TestCaseDesignUnavailable, design_test_cas
 from skills.test_case.jira_read import read_jira_issue
 from skills.test_case.localization import (
     localize_test_case_type,
-    localize_verify_status,
     localize_verify_status_options,
+    normalize_case_type,
 )
 from skills.test_case.models import format_ac_refs
 from skills.test_case.validator import TestCaseDesignQualityError, validate_test_cases
@@ -27,6 +27,21 @@ from skills.test_case.workspace_context import enrich_story_from_workspace, load
 
 PK03_PATH_OPTIONS = ("Happy", "Alternative", "Sad", "Sad(Edge)")
 PK03_PATH_COLORS = ("#bacefd", "#fed4a4", "#b1e8fc", "#7edafb")
+PK03_VERIFY_STATUS_OPTIONS = ("待驗證", "驗證成功", "驗證失敗", "忽略")
+PK03_VERIFY_STATUS_COLORS = ("#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284")
+
+PK03_PATH_BY_CASE_TYPE = {
+    "functional": "Happy",
+    "navigation": "Happy",
+    "ui": "Happy",
+    "filter": "Alternative",
+    "state_transition": "Alternative",
+    "compatibility": "Alternative",
+    "permission": "Sad",
+    "validation": "Sad",
+    "empty_state": "Sad",
+    "boundary": "Sad(Edge)",
+}
 
 DesignRunner = Callable[[str], str]
 
@@ -226,6 +241,12 @@ def _pk03_next_case_number(rows: list[list[Any]]) -> int:
     return highest + 1
 
 
+def pk03_path_for_case_type(case_type: str) -> str:
+    """Map the generated case type to one of the PK03 Path values."""
+    key = normalize_case_type(case_type)
+    return PK03_PATH_BY_CASE_TYPE.get(key, "Alternative")
+
+
 def _pk03_case_row(
     case: Any,
     *,
@@ -238,22 +259,21 @@ def _pk03_case_row(
     case.ensure_meta()
     card_url = f"{str(jira_base_url or 'https://inspire.atlassian.net').rstrip('/')}/browse/{story_key}"
     card_title = story_sheet_name(story_key, story_title)
-    type_label = localize_test_case_type(case.case_type, language)
     return [
         card_url,
         card_title,
         format_ac_refs(case.ac_refs),
         f"TC-{case_number:03d}",
-        "",
+        pk03_path_for_case_type(case.case_type),
         str(case.title or ""),
         str(case.preconditions or ""),
         "",
         str(case.steps or ""),
         str(case.expected_result or ""),
         "",
-        localize_verify_status("pending", language),
+        PK03_VERIFY_STATUS_OPTIONS[0],
         "",
-        f"Type: {type_label}",
+        "",
         "",
     ]
 
@@ -367,14 +387,22 @@ def _write_cases_to_sheet(
         if created_sheet
         else _last_nonempty_row(rows) + len(values),
     )
-    validation_range = f"E2:E{body_end_row}"
+    path_validation_range = f"E2:E{body_end_row}"
+    result_validation_range = f"L2:L{body_end_row}"
     try:
         client.set_dropdown(
             spreadsheet_token,
             sheet_id=sheet_id,
-            range_a1=validation_range,
+            range_a1=path_validation_range,
             options=list(PK03_PATH_OPTIONS),
             colors=list(PK03_PATH_COLORS),
+        )
+        client.set_dropdown(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            range_a1=result_validation_range,
+            options=list(PK03_VERIFY_STATUS_OPTIONS),
+            colors=list(PK03_VERIFY_STATUS_COLORS),
         )
     except Exception as exc:
         raise RuntimeError(f"Feishu Sheet dropdown setup failed: {exc}") from exc
@@ -383,8 +411,15 @@ def _write_cases_to_sheet(
             spreadsheet_token,
             sheet_id=sheet_id,
             freeze_rows=1,
-            validation_range=validation_range,
+            validation_range=path_validation_range,
             validation_options=list(PK03_PATH_OPTIONS),
+        )
+        client.verify_sheet_format(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            freeze_rows=1,
+            validation_range=result_validation_range,
+            validation_options=list(PK03_VERIFY_STATUS_OPTIONS),
         )
     except Exception as exc:
         raise RuntimeError(f"Feishu Sheet read-back verification failed: {exc}") from exc
