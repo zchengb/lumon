@@ -315,7 +315,6 @@ def drafts_from_payload(data: dict[str, Any]) -> list[TestCaseDraft]:
                     or item.get("device_feature")
                     or ""
                 ).strip(),
-                test_data=_as_str_list(item.get("test_data") or item.get("testData")),
             )
         )
     if not drafts:

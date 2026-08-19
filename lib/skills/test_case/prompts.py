@@ -21,8 +21,8 @@ For each requirement:
 5. Each case must be executable without rereading Jira.
 6. One case should verify one primary behavior.
 7. Preconditions must identify required account/data/state.
-8. `feature_point` must be a concise module, screen, device, or functional point for the PK03 C column.
-9. `test_data` must list only concrete fixtures or input values needed by this case; return an empty list when no specific data is required.
+8. `feature_point` must be a concise, project-agnostic product surface or functional point for the PK03 C column. Analyze the current Story, technical plan, and repository evidence; use the surface terminology actually supported by that project (for example Admin Portal, App, Web, Mobile App, or API/Backend). Do not assume mbpass-specific labels and do not use a project/brand name as the category.
+9. Do not return a Test Data field. PK03 H must remain blank; keep required account, state, and fixture information in `preconditions` or concrete action steps instead.
 10. Steps must be concrete actions.
 11. Expected results must be observable and pass/fail decidable.
 12. Return canonical test type keys only.
@@ -31,7 +31,7 @@ Negative scenarios only when failure behavior, permission, validation, empty sta
 Boundary scenarios only when a real boundary dimension exists (length, count, date, size, pagination, frequency, etc.).
 
 Return ONLY compact JSON with this shape:
-{"test_cases":[{"ac_refs":["AC1"],"title":"...","feature_point":"...","preconditions":["..."],"test_data":["..."],"steps":["..."],"expected_results":["..."],"case_type":"navigation","rationale":"..."}]}
+{"test_cases":[{"ac_refs":["AC1"],"title":"...","feature_point":"...","preconditions":["..."],"steps":["..."],"expected_results":["..."],"case_type":"navigation","rationale":"..."}]}
 """
 
 

@@ -21,6 +21,7 @@ from agents.jobs.store import AgentJobStore
 from agents.security.actions import ActionRequest
 from agents.security.broker import CapabilityBroker
 from skills.test_case.dedupe import partition_new_cases
+from skills.test_case.feature_point import infer_common_surface, normalize_feature_point
 from skills.test_case.generator import generate_test_cases
 from skills.test_case.models import StoryContext, TestCase
 from skills.test_case.skill import generate_test_cases_for_issue, pk03_path_for_case_type, story_sheet_name
@@ -201,8 +202,7 @@ LOGIN_DESIGN = {
             "steps": ["開啟登入頁。", "輸入正確 Email 與密碼並提交。"],
             "expected_results": ["成功進入首頁。"],
             "case_type": "functional",
-            "feature_point": "登入頁",
-            "test_data": ["有效 Email 與密碼"],
+            "feature_point": "App",
             "rationale": "login happy path",
         },
         {
@@ -212,8 +212,7 @@ LOGIN_DESIGN = {
             "steps": ["開啟登入頁。", "輸入正確 Email 與錯誤密碼並提交。"],
             "expected_results": ["顯示登入失敗提示且不進入首頁。"],
             "case_type": "validation",
-            "feature_point": "登入頁",
-            "test_data": ["有效 Email、錯誤密碼"],
+            "feature_point": "App",
             "rationale": "invalid password",
         },
         {
@@ -223,8 +222,7 @@ LOGIN_DESIGN = {
             "steps": ["開啟登入頁。"],
             "expected_results": ["顯示 Email、密碼欄位與提交按鈕。"],
             "case_type": "ui",
-            "feature_point": "登入頁",
-            "test_data": [],
+            "feature_point": "App",
             "rationale": "login form visible",
         },
     ]
@@ -340,6 +338,25 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertEqual(pk03_path_for_case_type("validation"), "Sad")
         self.assertEqual(pk03_path_for_case_type("boundary"), "Sad(Edge)")
 
+    def test_pk03_feature_point_uses_project_agnostic_surface_evidence(self) -> None:
+        self.assertEqual(infer_common_surface("後台管理頁面"), "Admin Portal")
+        self.assertEqual(infer_common_surface("App article detail"), "App")
+        self.assertEqual(infer_common_surface("mobile client"), "Mobile App")
+        self.assertEqual(infer_common_surface("audience count API"), "API/Backend")
+        self.assertEqual(normalize_feature_point("project-specific console", "unknown story"), "project-specific console")
+
+    def test_generator_falls_back_to_common_surface_instead_of_story_title(self) -> None:
+        story = StoryContext(
+            key="DEMO-1",
+            type="Story",
+            summary="Admin Portal audience filter",
+            description="",
+            acceptance_criteria=["The admin portal filters the audience"],
+        )
+        cases = generate_test_cases(story)
+        self.assertTrue(cases)
+        self.assertTrue(all(case.feature_point == "Admin Portal" for case in cases))
+
     def test_jira_ac_blocks_ignore_summary_header(self) -> None:
         from skills.test_case.jira_read import _extract_acceptance_criteria
 
@@ -441,7 +458,7 @@ class TestCaseSkillTests(unittest.TestCase):
             self.assertEqual(len(row), 15)
             self.assertEqual(row[0], "https://inspire.atlassian.net/browse/MBPAS-1601")
             self.assertEqual(row[1], "MBPAS-1601 · Login flow")
-            self.assertEqual(row[2], "登入頁")
+            self.assertEqual(row[2], "App")
             expected_path = {
                 "使用 Email 成功登入": "Happy",
                 "錯誤密碼時顯示登入失敗": "Sad",
@@ -449,12 +466,7 @@ class TestCaseSkillTests(unittest.TestCase):
             }[row[5]]
             self.assertEqual(row[4], expected_path)
             self.assertTrue(row[5])
-            expected_data = {
-                "使用 Email 成功登入": "有效 Email 與密碼",
-                "錯誤密碼時顯示登入失敗": "有效 Email、錯誤密碼",
-                "登入頁顯示登入表單": "",
-            }[row[5]]
-            self.assertEqual(row[7], expected_data)
+            self.assertEqual(row[7], "")
             self.assertEqual(row[11], "待驗證")
             self.assertEqual(row[13], "")
         self.assertEqual(fake.dropdowns[0]["options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])

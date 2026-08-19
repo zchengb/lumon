@@ -71,7 +71,6 @@ class ProviderRoutingTests(unittest.TestCase):
                     "expected_results": ["產生可執行的測試案例"],
                     "case_type": "functional",
                     "feature_point": "測試案例生成",
-                    "test_data": ["Jira AC"],
                     "rationale": "驗證需求指定功能",
                 }
             ]
@@ -97,7 +96,6 @@ class ProviderRoutingTests(unittest.TestCase):
         self.assertEqual("xhigh", runner.call_args.kwargs["reasoning_effort"])
         self.assertEqual("kuoyio0820@gmail.com", runner.call_args.kwargs["account_email"])
         self.assertEqual("測試案例生成", drafts[0].feature_point)
-        self.assertEqual(["Jira AC"], drafts[0].test_data)
 
     def test_repairs_structural_model_json_errors(self) -> None:
         payload = _extract_json_object('{"test_cases":[{title: "登入", "steps": ["1."],},],}')

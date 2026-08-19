@@ -15,6 +15,7 @@ from skills.test_case.config import (
 )
 from skills.test_case.dedupe import partition_new_cases
 from skills.test_case.designer import TestCaseDesignUnavailable, design_test_cases
+from skills.test_case.feature_point import normalize_feature_point
 from skills.test_case.jira_read import read_jira_issue
 from skills.test_case.localization import (
     localize_test_case_type,
@@ -246,24 +247,16 @@ def pk03_path_for_case_type(case_type: str) -> str:
     return PK03_PATH_BY_CASE_TYPE.get(key, "Alternative")
 
 
-def _pk03_cell_text(value: Any) -> str:
-    if isinstance(value, (list, tuple)):
-        return "\n".join(str(item or "").strip() for item in value if str(item or "").strip())
-    return str(value or "").strip()
-
-
 def pk03_feature_point(case: Any, *, story_key: str, story_title: str) -> str:
-    """Return the PK03 C-column feature point, with a safe story fallback."""
-    return (
-        _pk03_cell_text(getattr(case, "feature_point", ""))
-        or str(story_title or "").strip()
-        or str(story_key or "").strip()
+    """Return a common, story-local product surface for PK03 C."""
+    return normalize_feature_point(
+        getattr(case, "feature_point", ""),
+        getattr(case, "title", ""),
+        getattr(case, "preconditions", ""),
+        getattr(case, "steps", ""),
+        story_title,
+        story_key,
     )
-
-
-def pk03_test_data(case: Any) -> str:
-    """Return concrete test data for the PK03 H column when supplied."""
-    return _pk03_cell_text(getattr(case, "test_data", ""))
 
 
 def _pk03_case_row(
@@ -286,7 +279,7 @@ def _pk03_case_row(
         pk03_path_for_case_type(case.case_type),
         str(case.title or ""),
         str(case.preconditions or ""),
-        pk03_test_data(case),
+        "",
         str(case.steps or ""),
         str(case.expected_result or ""),
         "",

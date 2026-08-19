@@ -43,7 +43,6 @@ def _blob(draft: TestCaseDraft) -> str:
         draft.title,
         draft.feature_point,
         *draft.preconditions,
-        *draft.test_data,
         *draft.steps,
         *draft.expected_results,
     ]
@@ -102,7 +101,6 @@ def validate_test_cases(
                 ac_refs=ac_refs,
                 preconditions=join_lines(list(draft.preconditions or [])),
                 feature_point=str(draft.feature_point or "").strip(),
-                test_data=join_lines(list(draft.test_data or [])),
             )
         )
     if errors:

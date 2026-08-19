@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from skills.test_case.feature_point import infer_common_surface
 from skills.test_case.models import StoryContext, TestCase
 
 _AC_TITLE = re.compile(r"^(AC\s*\d+)\s*:\s*(.+)$", re.IGNORECASE | re.DOTALL)
@@ -198,5 +199,13 @@ def generate_test_cases(
             )
     for case in cases:
         if not str(case.feature_point or "").strip():
-            case.feature_point = title
+            case.feature_point = (
+                infer_common_surface(
+                    story.summary,
+                    story.description,
+                    *criteria,
+                    (workspace_context or {}).get("technical_plan", ""),
+                )
+                or "Other"
+            )
     return cases
