@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Any, Optional
 
 from feishu.config import load_agents_config, read_lumen_env_var
@@ -23,29 +25,29 @@ REQUIRED_FIELDS = (
 
 HEADER_COLUMNS = [name for name, _ in REQUIRED_FIELDS]
 
-PK03_SHEET_HEADER_COLUMNS = (
-    "卡link",
-    "卡號標題",
-    "设备/功能点",
-    "用例 ID",
-    "Path",
-    "Test Summary",
-    "Pre-condition",
-    "Test Data",
-    "Action",
-    "Expected Result",
-    "测试人",
-    "測試結果",
-    "測試日期",
-    "備註",
-    "Follow up",
+def _load_pk03_template() -> dict[str, Any]:
+    path = Path(__file__).with_name("pk03_template.json")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"PK03 local template is unavailable: {path}") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("columns"), list):
+        raise RuntimeError(f"PK03 local template is invalid: {path}")
+    return payload
+
+
+PK03_TEMPLATE = _load_pk03_template()
+PK03_SHEET_HEADER_COLUMNS = tuple(
+    str(column.get("name") or "").strip()
+    for column in PK03_TEMPLATE["columns"]
+    if isinstance(column, dict) and str(column.get("name") or "").strip()
 )
 
 # Keep the generic name as a compatibility alias for callers that imported it
 # before the PK03 sheet became the canonical test-case layout.
 SHEET_HEADER_COLUMNS = PK03_SHEET_HEADER_COLUMNS
 
-DEFAULT_SHEET_TEMPLATE_NAME = "PK03"
+DEFAULT_SHEET_TEMPLATE_NAME = str(PK03_TEMPLATE.get("name") or "PK03").strip() or "PK03"
 
 VERIFY_STATUS_CANONICAL = ("pending", "passed", "failed", "ignored")
 
@@ -90,16 +92,12 @@ def load_test_case_config(
     base_host = str(test_case.get("feishu_base_host") or "inspiregroup.feishu.cn").strip() or "inspiregroup.feishu.cn"
     table_name = str(test_case.get("table_name") or test_case.get("sheet_name") or "Test Cases").strip() or "Test Cases"
     sheet_name = str(test_case.get("sheet_name") or test_case.get("table_name") or "Sheet1").strip() or "Sheet1"
-    sheet_template_id = str(test_case.get("sheet_template_id") or "").strip()
-    sheet_template_id_env = str(test_case.get("sheet_template_id_env") or "").strip()
-    if not sheet_template_id and sheet_template_id_env:
-        sheet_template_id = (
-            os.environ.get(sheet_template_id_env, "").strip()
-            or read_lumen_env_var(sheet_template_id_env).strip()
-        )
-    sheet_template_name = str(
-        test_case.get("sheet_template_name") or DEFAULT_SHEET_TEMPLATE_NAME
-    ).strip() or DEFAULT_SHEET_TEMPLATE_NAME
+    # PK03 is now a local, versioned layout specification.  Keep the legacy
+    # return keys for callers that still inspect them, but never read a remote
+    # template sheet ID or its environment variable again.
+    sheet_template_id = ""
+    sheet_template_id_env = ""
+    sheet_template_name = DEFAULT_SHEET_TEMPLATE_NAME
     jira_base_url = str(test_case.get("jira_base_url") or "https://inspire.atlassian.net").strip().rstrip("/")
 
     app_token = str(test_case.get("base_app_token") or "").strip()

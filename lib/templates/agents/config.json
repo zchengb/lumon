@@ -183,8 +183,6 @@
           "destination": "sheet",
           "spreadsheet_token_env": "FEISHU_MBPASS_QA_SHEET_TOKEN",
           "sheet_name": "PK03",
-          "sheet_template_id_env": "FEISHU_MBPASS_QA_PK03_SHEET_ID",
-          "sheet_template_name": "PK03",
           "table_name": "Test Cases",
           "view_strategy": "story",
           "language": "zh-Hant"
@@ -351,8 +349,6 @@
         "destination": "sheet",
         "spreadsheet_token_env": "FEISHU_MBPASS_QA_SHEET_TOKEN",
         "sheet_name": "PK03",
-        "sheet_template_id_env": "FEISHU_MBPASS_QA_PK03_SHEET_ID",
-        "sheet_template_name": "PK03",
         "table_name": "Test Cases",
         "view_strategy": "story",
         "language": "zh-Hant"

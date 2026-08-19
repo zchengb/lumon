@@ -22,6 +22,7 @@ from agents.security.actions import ActionRequest
 from agents.security.broker import CapabilityBroker
 from skills.test_case.dedupe import partition_new_cases
 from skills.test_case.feature_point import infer_common_surface, normalize_feature_point
+from skills.test_case.config import PK03_TEMPLATE, load_test_case_config
 from skills.test_case.generator import generate_test_cases
 from skills.test_case.models import StoryContext, TestCase
 from skills.test_case.skill import generate_test_cases_for_issue, pk03_path_for_case_type, story_sheet_name
@@ -86,8 +87,10 @@ class FakeBitable:
 class FakeSheets:
     def __init__(self) -> None:
         self.rows: list[list[Any]] = []
+        self.reads: list[str] = []
         self.grid_rows = 120
         self.ensured_names: list[str] = []
+        self.created: list[dict[str, Any]] = []
         self.copied: list[dict[str, Any]] = []
         self.cleared: list[dict[str, Any]] = []
         self.writes: list[dict[str, Any]] = []
@@ -98,12 +101,18 @@ class FakeSheets:
 
     def list_sheets(self, spreadsheet_token: str) -> list[dict[str, Any]]:
         sheets = [{"sheetId": "pk03", "title": "PK03"}]
+        sheets.extend(self.created)
         sheets.extend(self.copied)
         return sheets
 
     def ensure_sheet(self, spreadsheet_token: str, sheet_name: str) -> dict[str, Any]:
+        for sheet in self.created:
+            if sheet["title"] == sheet_name:
+                return sheet
         self.ensured_names.append(sheet_name)
-        return {"sheetId": "sht1", "title": sheet_name}
+        sheet = {"sheetId": f"sht{len(self.created) + 1}", "title": sheet_name}
+        self.created.append(sheet)
+        return sheet
 
     def copy_sheet(self, spreadsheet_token: str, *, source_sheet_id: str, title: str, index: int | None = None) -> dict[str, Any]:
         sheet = {"sheetId": f"sht{len(self.copied) + 1}", "title": title}
@@ -117,6 +126,7 @@ class FakeSheets:
         return self.grid_rows
 
     def get_values(self, spreadsheet_token: str, range_a1: str) -> list[list[Any]]:
+        self.reads.append(range_a1)
         return list(self.rows)
 
     def clear_values(self, spreadsheet_token: str, *, sheet_id: str, range_a1: str) -> dict[str, Any]:
@@ -230,6 +240,30 @@ LOGIN_DESIGN = {
 
 
 class TestCaseSkillTests(unittest.TestCase):
+    def test_pk03_template_is_local_and_legacy_remote_id_is_ignored(self) -> None:
+        loaded = load_test_case_config(
+            "mbpass",
+            config={
+                "projects": {
+                    "mbpass": {
+                        "test_case": {
+                            "destination": "sheet",
+                            "spreadsheet_url": "https://inspiregroup.feishu.cn/sheets/workbook",
+                            "sheet_template_id": "remote-template-id",
+                            "sheet_template_id_env": "FEISHU_MBPASS_QA_PK03_SHEET_ID",
+                            "sheet_template_name": "Remote PK03",
+                        }
+                    }
+                }
+            },
+        )
+        self.assertEqual(loaded["spreadsheet_token"], "workbook")
+        self.assertEqual(loaded["sheet_template_id"], "")
+        self.assertEqual(loaded["sheet_template_id_env"], "")
+        self.assertEqual(loaded["sheet_template_name"], "PK03")
+        self.assertEqual(PK03_TEMPLATE["name"], "PK03")
+        self.assertEqual(len(PK03_TEMPLATE["columns"]), 15)
+
     def test_workspace_layout_merges_global_ai_and_agent_sheet_config(self) -> None:
         fake = FakeSheets()
         with tempfile.TemporaryDirectory() as tmp:
@@ -250,7 +284,6 @@ class TestCaseSkillTests(unittest.TestCase):
                                     "destination": "sheet",
                                     "spreadsheet_token": "test-a-spreadsheet",
                                     "sheet_name": "PK03",
-                                    "sheet_template_id": "pk03-template",
                                 }
                             }
                         }
@@ -431,7 +464,6 @@ class TestCaseSkillTests(unittest.TestCase):
                             "destination": "sheet",
                             "spreadsheet_token": "test-a-spreadsheet",
                             "sheet_name": "PK03",
-                            "sheet_template_id": "pk03-template",
                             "language": "zh-Hant",
                         }
                     }
@@ -443,8 +475,10 @@ class TestCaseSkillTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "completed")
         self.assertGreaterEqual(result["created"], 3)
-        self.assertEqual(fake.copied, [{"sheetId": "sht1", "title": "MBPAS-1601 · Login flow"}])
-        self.assertEqual(fake.cleared, [{"sheet_id": "sht1", "range_a1": "A1:O120"}])
+        self.assertEqual(fake.ensured_names, ["MBPAS-1601 · Login flow"])
+        self.assertEqual(fake.copied, [])
+        self.assertEqual(fake.cleared, [])
+        self.assertEqual(fake.reads, [])
         self.assertEqual(result["view_name"], "MBPAS-1601 · Login flow")
         self.assertEqual(
             fake.rows[0],
@@ -471,13 +505,13 @@ class TestCaseSkillTests(unittest.TestCase):
             self.assertEqual(row[13], "")
         self.assertEqual(fake.dropdowns[0]["options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])
         self.assertEqual(fake.dropdowns[0]["colors"], ["#bacefd", "#fed4a4", "#b1e8fc", "#7edafb"])
-        self.assertEqual("E2:E4", fake.dropdowns[0]["range_a1"])
+        self.assertEqual("E2:E200", fake.dropdowns[0]["range_a1"])
         self.assertEqual(fake.dropdowns[1]["options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
         self.assertEqual(fake.dropdowns[1]["colors"], ["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"])
-        self.assertEqual("L2:L4", fake.dropdowns[1]["range_a1"])
+        self.assertEqual("L2:L200", fake.dropdowns[1]["range_a1"])
         self.assertEqual(fake.verified[0]["freeze_rows"], 1)
         self.assertEqual(fake.verified[0]["validation_options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])
-        self.assertEqual(fake.verified[1]["validation_range"], "L2:L4")
+        self.assertEqual(fake.verified[1]["validation_range"], "L2:L200")
         self.assertEqual(fake.verified[1]["validation_options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
         self.assertIn("/sheets/test-a-spreadsheet?sheet=sht1", result["sheet_url"])
 
@@ -499,7 +533,6 @@ class TestCaseSkillTests(unittest.TestCase):
                     "test_case": {
                         "destination": "sheet",
                         "spreadsheet_token": "test-a-spreadsheet",
-                        "sheet_template_id": "pk03-template",
                         "language": "zh-Hant",
                     }
                 }
@@ -524,7 +557,8 @@ class TestCaseSkillTests(unittest.TestCase):
         self.assertEqual(first["created"], 3)
         self.assertEqual(second["created"], 0)
         self.assertEqual(second["skipped_existing"], 3)
-        self.assertEqual(len(fake.copied), 1)
+        self.assertEqual(len(fake.copied), 0)
+        self.assertEqual(len(fake.ensured_names), 1)
 
     def test_feishu_sheet_format_uses_native_dimension_payload_and_readback(self) -> None:
         from feishu.sheets import FeishuSheets

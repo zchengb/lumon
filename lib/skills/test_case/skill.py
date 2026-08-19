@@ -9,6 +9,7 @@ from feishu.config import load_agents_config
 from feishu.sheets import FeishuSheets, column_letter, parse_spreadsheet_token
 from skills.test_case.config import (
     PK03_SHEET_HEADER_COLUMNS,
+    PK03_TEMPLATE,
     REQUIRED_FIELDS,
     load_test_case_config,
     normalize_test_case_language,
@@ -25,10 +26,21 @@ from skills.test_case.localization import (
 from skills.test_case.validator import TestCaseDesignQualityError, validate_test_cases
 from skills.test_case.workspace_context import enrich_story_from_workspace, load_workspace_context
 
-PK03_PATH_OPTIONS = ("Happy", "Alternative", "Sad", "Sad(Edge)")
-PK03_PATH_COLORS = ("#bacefd", "#fed4a4", "#b1e8fc", "#7edafb")
-PK03_VERIFY_STATUS_OPTIONS = ("待驗證", "驗證成功", "驗證失敗", "忽略")
-PK03_VERIFY_STATUS_COLORS = ("#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284")
+
+
+def _pk03_dropdown(column: str) -> dict[str, Any]:
+    for item in PK03_TEMPLATE.get("dropdowns", []):
+        if isinstance(item, dict) and str(item.get("column") or "").strip() == column:
+            return item
+    return {}
+
+
+_PK03_PATH_DROPDOWN = _pk03_dropdown("E")
+_PK03_RESULT_DROPDOWN = _pk03_dropdown("L")
+PK03_PATH_OPTIONS = tuple(str(item) for item in (_PK03_PATH_DROPDOWN.get("options") or []))
+PK03_PATH_COLORS = tuple(str(item) for item in (_PK03_PATH_DROPDOWN.get("colors") or []))
+PK03_VERIFY_STATUS_OPTIONS = tuple(str(item) for item in (_PK03_RESULT_DROPDOWN.get("options") or []))
+PK03_VERIFY_STATUS_COLORS = tuple(str(item) for item in (_PK03_RESULT_DROPDOWN.get("colors") or []))
 
 PK03_PATH_BY_CASE_TYPE = {
     "functional": "Happy",
@@ -259,6 +271,104 @@ def pk03_feature_point(case: Any, *, story_key: str, story_title: str) -> str:
     )
 
 
+def _pk03_template_widths() -> list[tuple[int, int]]:
+    widths: list[tuple[int, int]] = []
+    for index, column in enumerate(PK03_TEMPLATE.get("columns", [])):
+        if not isinstance(column, dict):
+            continue
+        try:
+            width = int(column.get("width") or 0)
+        except (TypeError, ValueError):
+            width = 0
+        if width > 0:
+            widths.append((index, width))
+    return widths
+
+
+def _pk03_template_row_count() -> int:
+    try:
+        return max(int(PK03_TEMPLATE.get("row_count") or 0), 2)
+    except (TypeError, ValueError):
+        return 200
+
+
+def _apply_pk03_template(
+    *,
+    client: FeishuSheets,
+    spreadsheet_token: str,
+    sheet_id: str,
+    body_end_row: int,
+) -> int:
+    """Apply the captured PK03 layout without reading the remote template tab."""
+    end_col = column_letter(len(PK03_SHEET_HEADER_COLUMNS) - 1)
+    template_end_row = max(_pk03_template_row_count(), int(body_end_row or 0), 2)
+    try:
+        freeze_rows = int(PK03_TEMPLATE.get("freeze_rows") or 1)
+    except (TypeError, ValueError):
+        freeze_rows = 1
+    try:
+        body_row_height = int(PK03_TEMPLATE.get("body_row_height") or 27)
+    except (TypeError, ValueError):
+        body_row_height = 27
+    client.format_sheet(
+        spreadsheet_token,
+        sheet_id=sheet_id,
+        column_widths=_pk03_template_widths(),
+        freeze_rows=freeze_rows,
+        bold_header=False,
+        header_end_col=end_col,
+        body_row_height=body_row_height,
+        body_end_row=template_end_row,
+    )
+    header = PK03_TEMPLATE.get("header_style") if isinstance(PK03_TEMPLATE.get("header_style"), dict) else {}
+    client.set_range_style(
+        spreadsheet_token,
+        sheet_id=sheet_id,
+        range_a1=f"A1:{end_col}1",
+        bold=str(header.get("font_weight") or "").lower() == "bold",
+        v_align=1,
+        h_align=1,
+        back_color=str(header.get("background_color") or "#2F75B5"),
+        fore_color=str(header.get("font_color") or "#FFFFFF"),
+        border_type=str(header.get("border_type") or "FULL_BORDER"),
+        border_color=str(header.get("border_color") or "#1F2329"),
+        font_size=header.get("font_size") or 14,
+    )
+    for override in PK03_TEMPLATE.get("header_overrides", []):
+        if not isinstance(override, dict):
+            continue
+        column = str(override.get("column") or "").strip()
+        if not column:
+            continue
+        client.set_range_style(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            range_a1=f"{column}1:{column}1",
+            font_size=override.get("font_size"),
+        )
+    body = PK03_TEMPLATE.get("body_style") if isinstance(PK03_TEMPLATE.get("body_style"), dict) else {}
+    client.set_range_style(
+        spreadsheet_token,
+        sheet_id=sheet_id,
+        range_a1=f"A2:{end_col}{template_end_row}",
+        v_align=0,
+        font_size=body.get("font_size") or 11,
+    )
+    for override in PK03_TEMPLATE.get("body_overrides", []):
+        if not isinstance(override, dict):
+            continue
+        column = str(override.get("column") or "").strip()
+        if not column:
+            continue
+        client.set_range_style(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            range_a1=f"{column}2:{column}{template_end_row}",
+            font_size=override.get("font_size"),
+        )
+    return template_end_row
+
+
 def _pk03_case_row(
     case: Any,
     *,
@@ -302,9 +412,6 @@ def _write_cases_to_sheet(
 ) -> dict[str, Any]:
     spreadsheet_token = str(cfg.get("spreadsheet_token") or "").strip()
     tab_name = story_sheet_name(story_key, story_title)
-    template_sheet_id = str(cfg.get("sheet_template_id") or "").strip()
-    if not template_sheet_id:
-        raise RuntimeError("PK03 sheet template is not configured (sheet_template_id is missing)")
     sheets = client.list_sheets(spreadsheet_token)
     sheet = next(
         (
@@ -316,11 +423,7 @@ def _write_cases_to_sheet(
     )
     created_sheet = sheet is None
     if sheet is None:
-        sheet = client.copy_sheet(
-            spreadsheet_token,
-            source_sheet_id=template_sheet_id,
-            title=tab_name,
-        )
+        sheet = client.ensure_sheet(spreadsheet_token, tab_name)
     sheet_id = str(sheet.get("sheetId") or sheet.get("sheet_id") or "").strip()
     if not sheet_id:
         refreshed = client.list_sheets(spreadsheet_token)
@@ -337,18 +440,13 @@ def _write_cases_to_sheet(
         raise RuntimeError(f"Feishu sheet id missing for {tab_name!r}")
     headers = list(PK03_SHEET_HEADER_COLUMNS)
     end_col = column_letter(len(headers) - 1)
-    grid_rows = client.get_sheet_row_count(spreadsheet_token, sheet_id=sheet_id)
-    if grid_rows < 2:
-        raise RuntimeError(f"Feishu Sheet grid is too small: {grid_rows} rows")
-    rows = client.get_values(spreadsheet_token, f"{sheet_id}!A1:{end_col}{grid_rows}")
     if created_sheet:
-        client.clear_values(
-            spreadsheet_token,
-            sheet_id=sheet_id,
-            range_a1=f"A1:{end_col}{grid_rows}",
-        )
         rows = [headers]
     else:
+        grid_rows = client.get_sheet_row_count(spreadsheet_token, sheet_id=sheet_id)
+        if grid_rows < 2:
+            raise RuntimeError(f"Feishu Sheet grid is too small: {grid_rows} rows")
+        rows = client.get_values(spreadsheet_token, f"{sheet_id}!A1:{end_col}{grid_rows}")
         actual_header = [str(cell or "").strip() for cell in (rows[0] if rows else [])]
         if actual_header and actual_header != headers:
             raise RuntimeError(
@@ -394,11 +492,20 @@ def _write_cases_to_sheet(
             values=values,
         )
     body_end_row = max(
-        2,
+        _pk03_template_row_count(),
         _last_nonempty_row([headers, *values])
         if created_sheet
         else _last_nonempty_row(rows) + len(values),
     )
+    try:
+        _apply_pk03_template(
+            client=client,
+            spreadsheet_token=spreadsheet_token,
+            sheet_id=sheet_id,
+            body_end_row=body_end_row,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Feishu Sheet local PK03 template formatting failed: {exc}") from exc
     path_validation_range = f"E2:E{body_end_row}"
     result_validation_range = f"L2:L{body_end_row}"
     try:

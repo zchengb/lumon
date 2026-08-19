@@ -1,0 +1,59 @@
+{
+  "name": "PK03",
+  "column_count": 15,
+  "row_count": 200,
+  "freeze_rows": 1,
+  "body_row_height": 27,
+  "columns": [
+    {"letter": "A", "name": "卡link", "width": 220, "body_font_size": 11},
+    {"letter": "B", "name": "卡號標題", "width": 308, "body_font_size": 11},
+    {"letter": "C", "name": "设备/功能点", "width": 160, "body_font_size": 11},
+    {"letter": "D", "name": "用例 ID", "width": 80, "body_font_size": 11},
+    {"letter": "E", "name": "Path", "width": 129, "body_font_size": 12},
+    {"letter": "F", "name": "Test Summary", "width": 260, "body_font_size": 11},
+    {"letter": "G", "name": "Pre-condition", "width": 220, "body_font_size": 11},
+    {"letter": "H", "name": "Test Data", "width": 160, "body_font_size": 11},
+    {"letter": "I", "name": "Action", "width": 280, "body_font_size": 11},
+    {"letter": "J", "name": "Expected Result", "width": 280, "body_font_size": 11},
+    {"letter": "K", "name": "测试人", "width": 90, "body_font_size": 11},
+    {"letter": "L", "name": "測試結果", "width": 90, "body_font_size": 11},
+    {"letter": "M", "name": "測試日期", "width": 100, "body_font_size": 11},
+    {"letter": "N", "name": "備註", "width": 120, "body_font_size": 11},
+    {"letter": "O", "name": "Follow up", "width": 120, "body_font_size": 11}
+  ],
+  "header_style": {
+    "font_family": "Calibri",
+    "font_size": 14,
+    "font_weight": "bold",
+    "font_color": "#FFFFFF",
+    "background_color": "#2F75B5",
+    "horizontal_alignment": "center",
+    "vertical_alignment": "middle",
+    "border_type": "FULL_BORDER",
+    "border_color": "#1F2329"
+  },
+  "header_overrides": [
+    {"column": "J", "font_size": 16}
+  ],
+  "body_style": {
+    "font_family": "Calibri",
+    "font_size": 11,
+    "number_format": "@",
+    "vertical_alignment": "top"
+  },
+  "body_overrides": [
+    {"column": "E", "font_size": 12}
+  ],
+  "dropdowns": [
+    {
+      "column": "E",
+      "options": ["Happy", "Alternative", "Sad", "Sad(Edge)"],
+      "colors": ["#bacefd", "#fed4a4", "#b1e8fc", "#7edafb"]
+    },
+    {
+      "column": "L",
+      "options": ["待驗證", "驗證成功", "驗證失敗", "忽略"],
+      "colors": ["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"]
+    }
+  ]
+}
