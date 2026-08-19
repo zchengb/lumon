@@ -47,7 +47,14 @@ _TRANSIENT_MARKERS = (
 _MARKDOWN_CARD_LIMIT = 12000
 _MARKDOWN_FENCE_OPEN = re.compile(r"(?m)^[ \t]*```(?:markdown|md)[ \t]*$")
 _MARKDOWN_FENCE_CLOSE = re.compile(r"(?m)^[ \t]*```[ \t]*$")
-_FILE_CITATION = re.compile(r":codex-file-citation\{(?P<body>[^{}]*)\}", re.IGNORECASE)
+# Provider-neutral citation plus backward-compatible provider-prefixed forms:
+# :file-citation, :codex-file-citation, :cursor-file-citation,
+# :opencode-file-citation, and future <provider>-file-citation markers.
+_FILE_CITATION = re.compile(
+    r":(?:(?P<provider>[a-z0-9]+(?:[-_][a-z0-9]+)*)[-_])?file-citation"
+    r"\{(?P<body>[^{}]*)\}",
+    re.IGNORECASE,
+)
 _FILE_CITATION_PATH = re.compile(r"\bpath\s*=\s*(?P<quote>[\"'])(?P<path>.*?)(?P=quote)", re.IGNORECASE)
 _PDF_REQUEST = re.compile(r"(?i)(?:\bpdf\b|pdf\s*(?:file|document)|pdf(?:檔|档|文件|文檔))")
 _PDF_NEGATION = re.compile(
