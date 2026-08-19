@@ -196,4 +196,7 @@ def generate_test_cases(
                     story_title=title,
                 )
             )
+    for case in cases:
+        if not str(case.feature_point or "").strip():
+            case.feature_point = title
     return cases

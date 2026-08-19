@@ -201,6 +201,8 @@ LOGIN_DESIGN = {
             "steps": ["開啟登入頁。", "輸入正確 Email 與密碼並提交。"],
             "expected_results": ["成功進入首頁。"],
             "case_type": "functional",
+            "feature_point": "登入頁",
+            "test_data": ["有效 Email 與密碼"],
             "rationale": "login happy path",
         },
         {
@@ -210,6 +212,8 @@ LOGIN_DESIGN = {
             "steps": ["開啟登入頁。", "輸入正確 Email 與錯誤密碼並提交。"],
             "expected_results": ["顯示登入失敗提示且不進入首頁。"],
             "case_type": "validation",
+            "feature_point": "登入頁",
+            "test_data": ["有效 Email、錯誤密碼"],
             "rationale": "invalid password",
         },
         {
@@ -219,6 +223,8 @@ LOGIN_DESIGN = {
             "steps": ["開啟登入頁。"],
             "expected_results": ["顯示 Email、密碼欄位與提交按鈕。"],
             "case_type": "ui",
+            "feature_point": "登入頁",
+            "test_data": [],
             "rationale": "login form visible",
         },
     ]
@@ -435,6 +441,7 @@ class TestCaseSkillTests(unittest.TestCase):
             self.assertEqual(len(row), 15)
             self.assertEqual(row[0], "https://inspire.atlassian.net/browse/MBPAS-1601")
             self.assertEqual(row[1], "MBPAS-1601 · Login flow")
+            self.assertEqual(row[2], "登入頁")
             expected_path = {
                 "使用 Email 成功登入": "Happy",
                 "錯誤密碼時顯示登入失敗": "Sad",
@@ -442,6 +449,12 @@ class TestCaseSkillTests(unittest.TestCase):
             }[row[5]]
             self.assertEqual(row[4], expected_path)
             self.assertTrue(row[5])
+            expected_data = {
+                "使用 Email 成功登入": "有效 Email 與密碼",
+                "錯誤密碼時顯示登入失敗": "有效 Email、錯誤密碼",
+                "登入頁顯示登入表單": "",
+            }[row[5]]
+            self.assertEqual(row[7], expected_data)
             self.assertEqual(row[11], "待驗證")
             self.assertEqual(row[13], "")
         self.assertEqual(fake.dropdowns[0]["options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])

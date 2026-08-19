@@ -82,6 +82,8 @@ class TestCaseDraft:
     expected_results: list[str]
     case_type: str
     rationale: str = ""
+    feature_point: str = ""
+    test_data: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -94,6 +96,8 @@ class TestCase:
     story_title: str
     ac_refs: list[str] = field(default_factory=list)
     preconditions: str = ""
+    feature_point: str = ""
+    test_data: str = ""
     status: str = "Active"
     source_hash: str = ""
     generated_at: str = ""

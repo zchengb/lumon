@@ -309,6 +309,13 @@ def drafts_from_payload(data: dict[str, Any]) -> list[TestCaseDraft]:
                 expected_results=_as_str_list(item.get("expected_results") or item.get("expected_result")),
                 case_type=case_type or str(item.get("case_type") or "").strip().lower(),
                 rationale=str(item.get("rationale") or "").strip(),
+                feature_point=str(
+                    item.get("feature_point")
+                    or item.get("featurePoint")
+                    or item.get("device_feature")
+                    or ""
+                ).strip(),
+                test_data=_as_str_list(item.get("test_data") or item.get("testData")),
             )
         )
     if not drafts:

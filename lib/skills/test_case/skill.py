@@ -21,7 +21,6 @@ from skills.test_case.localization import (
     localize_verify_status_options,
     normalize_case_type,
 )
-from skills.test_case.models import format_ac_refs
 from skills.test_case.validator import TestCaseDesignQualityError, validate_test_cases
 from skills.test_case.workspace_context import enrich_story_from_workspace, load_workspace_context
 
@@ -247,6 +246,26 @@ def pk03_path_for_case_type(case_type: str) -> str:
     return PK03_PATH_BY_CASE_TYPE.get(key, "Alternative")
 
 
+def _pk03_cell_text(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return "\n".join(str(item or "").strip() for item in value if str(item or "").strip())
+    return str(value or "").strip()
+
+
+def pk03_feature_point(case: Any, *, story_key: str, story_title: str) -> str:
+    """Return the PK03 C-column feature point, with a safe story fallback."""
+    return (
+        _pk03_cell_text(getattr(case, "feature_point", ""))
+        or str(story_title or "").strip()
+        or str(story_key or "").strip()
+    )
+
+
+def pk03_test_data(case: Any) -> str:
+    """Return concrete test data for the PK03 H column when supplied."""
+    return _pk03_cell_text(getattr(case, "test_data", ""))
+
+
 def _pk03_case_row(
     case: Any,
     *,
@@ -262,12 +281,12 @@ def _pk03_case_row(
     return [
         card_url,
         card_title,
-        format_ac_refs(case.ac_refs),
+        pk03_feature_point(case, story_key=story_key, story_title=story_title),
         f"TC-{case_number:03d}",
         pk03_path_for_case_type(case.case_type),
         str(case.title or ""),
         str(case.preconditions or ""),
-        "",
+        pk03_test_data(case),
         str(case.steps or ""),
         str(case.expected_result or ""),
         "",

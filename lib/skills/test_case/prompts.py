@@ -21,15 +21,17 @@ For each requirement:
 5. Each case must be executable without rereading Jira.
 6. One case should verify one primary behavior.
 7. Preconditions must identify required account/data/state.
-8. Steps must be concrete actions.
-9. Expected results must be observable and pass/fail decidable.
-10. Return canonical test type keys only.
+8. `feature_point` must be a concise module, screen, device, or functional point for the PK03 C column.
+9. `test_data` must list only concrete fixtures or input values needed by this case; return an empty list when no specific data is required.
+10. Steps must be concrete actions.
+11. Expected results must be observable and pass/fail decidable.
+12. Return canonical test type keys only.
 
 Negative scenarios only when failure behavior, permission, validation, empty state, or an explicit error path is justified.
 Boundary scenarios only when a real boundary dimension exists (length, count, date, size, pagination, frequency, etc.).
 
 Return ONLY compact JSON with this shape:
-{"test_cases":[{"ac_refs":["AC1"],"title":"...","preconditions":["..."],"steps":["..."],"expected_results":["..."],"case_type":"navigation","rationale":"..."}]}
+{"test_cases":[{"ac_refs":["AC1"],"title":"...","feature_point":"...","preconditions":["..."],"test_data":["..."],"steps":["..."],"expected_results":["..."],"case_type":"navigation","rationale":"..."}]}
 """
 
 

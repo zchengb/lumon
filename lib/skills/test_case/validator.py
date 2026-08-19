@@ -39,7 +39,14 @@ _PLACEHOLDER_RE = re.compile(
 
 
 def _blob(draft: TestCaseDraft) -> str:
-    parts = [draft.title, *draft.preconditions, *draft.steps, *draft.expected_results]
+    parts = [
+        draft.title,
+        draft.feature_point,
+        *draft.preconditions,
+        *draft.test_data,
+        *draft.steps,
+        *draft.expected_results,
+    ]
     return "\n".join(str(part or "") for part in parts)
 
 
@@ -94,6 +101,8 @@ def validate_test_cases(
                 story_title=story.summary or story.key,
                 ac_refs=ac_refs,
                 preconditions=join_lines(list(draft.preconditions or [])),
+                feature_point=str(draft.feature_point or "").strip(),
+                test_data=join_lines(list(draft.test_data or [])),
             )
         )
     if errors:
