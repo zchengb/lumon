@@ -19,6 +19,35 @@ from agents.runtime.cursor_stream import AgentToolEvent
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "xhigh"
 DEFAULT_ACCOUNT_EMAIL = "kuoyio0820@gmail.com"
+DEFAULT_CODEX_SANDBOX_MODE = "danger-full-access"
+CODEX_DANGEROUS_ACCESS_FLAG = "--dangerously-bypass-approvals-and-sandbox"
+
+
+def normalize_codex_sandbox_mode(value: str = "") -> str:
+    """Return the Codex execution mode used by Lumon's agent runner.
+
+    Lumon's generic runtime factory historically passed ``sandbox=enabled``
+    to every provider. For Codex that value now means "use the configured
+    Codex default", which is full host and network access unless the operator sets
+    ``LUMON_CODEX_SANDBOX_MODE`` to a narrower mode.
+    """
+
+    requested = str(value or "").strip().casefold()
+    if requested in {"", "enabled", "default"}:
+        requested = os.environ.get("LUMON_CODEX_SANDBOX_MODE", DEFAULT_CODEX_SANDBOX_MODE).strip().casefold()
+    aliases = {
+        "off": "disabled",
+        "none": "disabled",
+        "unrestricted": "disabled",
+        "full-access": "danger-full-access",
+        "full": "danger-full-access",
+        "dangerous": "disabled",
+        "yolo": "disabled",
+    }
+    normalized = aliases.get(requested, requested)
+    if normalized not in {"disabled", "danger-full-access", "workspace-write", "read-only"}:
+        raise ValueError(f"unsupported Codex sandbox mode: {value}")
+    return normalized
 
 
 def find_codex_bin() -> str:
@@ -230,7 +259,7 @@ class CodexAgentRuntime:
         output_schema: Path | None = None,
         soft_timeout_seconds: int = 90,
         hard_timeout_seconds: int = 3600,
-        sandbox: str = "enabled",
+        sandbox: str = "",
         force: bool = False,
         trust: bool = True,
         agent_id: str = "",
@@ -242,7 +271,7 @@ class CodexAgentRuntime:
         self.output_schema = Path(output_schema).expanduser().resolve() if output_schema else None
         self.soft_timeout_seconds = soft_timeout_seconds
         self.hard_timeout_seconds = hard_timeout_seconds
-        self.sandbox = sandbox
+        self.sandbox = normalize_codex_sandbox_mode(sandbox)
         self.force = force
         self.trust = trust
         self.agent_id = agent_id
@@ -293,6 +322,17 @@ class CodexAgentRuntime:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
 
+    def _execution_args(self, *, resume: bool) -> list[str]:
+        if self.sandbox == "disabled":
+            return [CODEX_DANGEROUS_ACCESS_FLAG]
+        if self.sandbox == "danger-full-access":
+            if resume:
+                return ["-c", 'sandbox_mode="danger-full-access"']
+            return ["--sandbox", "danger-full-access"]
+        if resume:
+            return ["-c", f'sandbox_mode="{self.sandbox}"']
+        return ["--sandbox", self.sandbox]
+
     def _command(self, workspace: Path, prompt: str, provider_session_id: str | None) -> list[str]:
         binary = self._agent_bin()
         config = f'model_reasoning_effort="{self.reasoning_effort}"'
@@ -310,6 +350,7 @@ class CodexAgentRuntime:
                 "-c",
                 config,
             ]
+            command.extend(self._execution_args(resume=True))
             if self.output_schema:
                 command.extend(["--output-schema", str(self.output_schema)])
             command.append(prompt)
@@ -324,8 +365,7 @@ class CodexAgentRuntime:
             self.model,
             "-c",
             config,
-            "--sandbox",
-            "workspace-write",
+            *self._execution_args(resume=False),
             "--cd",
             str(workspace),
             "--color",
@@ -349,7 +389,7 @@ class CodexAgentRuntime:
         trace: Any = None,
         obs: Any = None,
     ) -> AgentRunResult:
-        if self.sandbox != "enabled" or self.force:
+        if self.force:
             return AgentRunResult(text="", provider_session_id=provider_session_id or "", status="security_error", error="SANDBOX_UNAVAILABLE")
         workspace = Path(workspace).expanduser().resolve()
         self._ensure_workspace_context(workspace)

@@ -125,7 +125,7 @@ def opencode_runtime_status(workspace: Path, model: dict[str, str], configured_k
         "auth_detail": login_detail if provider == "codex" else "",
         "session_mode": "persistent Codex session" if provider == "codex" else "persistent provider session" if provider == "opencode" else "provider managed",
         "action_catalog": str((workspace / ".lumon" / "action-catalog.md").resolve()),
-        "permission_profile": "workspace Codex sandbox policy" if provider == "codex" else "workspace OpenCode permission policy" if provider == "opencode" else "provider sandbox policy",
+        "permission_profile": "Codex danger-full-access runtime" if provider == "codex" else "workspace OpenCode permission policy" if provider == "opencode" else "provider sandbox policy",
     }
 
 if str(LIB_DIR) not in sys.path:

@@ -17,6 +17,7 @@ from agents.dylan.schemas import ConversationFlags  # noqa: E402
 from agents.runtime.codex_runtime import (  # noqa: E402
     CodexAgentRuntime,
     codex_account_email,
+    normalize_codex_sandbox_mode,
     parse_codex_json_lines,
 )
 from agents.runtime.cursor_runtime import CursorAgentRuntime, canonical_agent_provider, create_agent_runtime  # noqa: E402
@@ -58,8 +59,27 @@ class CodexRuntimeTests(unittest.TestCase):
                 command = runtime._command(workspace, "hello", None)
         self.assertIn("gpt-5.6-luna", command)
         self.assertIn('model_reasoning_effort="xhigh"', command)
-        self.assertIn("workspace-write", command)
+        self.assertIn("--sandbox", command)
+        self.assertIn("danger-full-access", command)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
         self.assertIn("never", command)
+
+    def test_codex_command_can_opt_into_workspace_write_sandbox(self) -> None:
+        runtime = CodexAgentRuntime(
+            model="gpt-5.6-luna",
+            reasoning_effort="xhigh",
+            account_email="kuoyio0820@gmail.com",
+            sandbox="workspace-write",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(runtime, "_agent_bin", return_value="codex"):
+                command = runtime._command(Path(tmp), "hello", None)
+        self.assertIn("--sandbox", command)
+        self.assertIn("workspace-write", command)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
+
+    def test_codex_sandbox_legacy_enabled_uses_open_default(self) -> None:
+        self.assertEqual("danger-full-access", normalize_codex_sandbox_mode("enabled"))
 
     def test_codex_command_can_request_structured_output(self) -> None:
         runtime = CodexAgentRuntime(
@@ -84,6 +104,7 @@ class CodexRuntimeTests(unittest.TestCase):
         self.assertIn("--json", command)
         self.assertIn("gpt-5.6-luna", command)
         self.assertIn('model_reasoning_effort="xhigh"', command)
+        self.assertIn('sandbox_mode="danger-full-access"', command)
         self.assertNotIn("--cd", command)
 
     def test_account_email_is_read_without_exposing_token(self) -> None:
