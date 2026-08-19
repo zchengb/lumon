@@ -7,24 +7,26 @@ from typing import Any, Callable, Optional
 from feishu.bitable import FeishuBitable
 from feishu.config import load_agents_config
 from feishu.sheets import FeishuSheets, column_letter, parse_spreadsheet_token
-from skills.test_case.config import REQUIRED_FIELDS, SHEET_HEADER_COLUMNS, load_test_case_config, normalize_test_case_language
+from skills.test_case.config import (
+    PK03_SHEET_HEADER_COLUMNS,
+    REQUIRED_FIELDS,
+    load_test_case_config,
+    normalize_test_case_language,
+)
 from skills.test_case.dedupe import partition_new_cases
 from skills.test_case.designer import TestCaseDesignUnavailable, design_test_cases
 from skills.test_case.jira_read import read_jira_issue
-from skills.test_case.localization import localize_test_case_type, localize_verify_status_options
+from skills.test_case.localization import (
+    localize_test_case_type,
+    localize_verify_status,
+    localize_verify_status_options,
+)
+from skills.test_case.models import format_ac_refs
 from skills.test_case.validator import TestCaseDesignQualityError, validate_test_cases
 from skills.test_case.workspace_context import enrich_story_from_workspace, load_workspace_context
 
-SHEET_COLUMN_WIDTHS = (
-    (0, 80),
-    (1, 260),
-    (2, 240),
-    (3, 360),
-    (4, 360),
-    (5, 110),
-    (6, 140),
-    (7, 240),
-)
+PK03_PATH_OPTIONS = ("Happy", "Alternative", "Sad", "Sad(Edge)")
+PK03_PATH_COLORS = ("#bacefd", "#fed4a4", "#b1e8fc", "#7edafb")
 
 DesignRunner = Callable[[str], str]
 
@@ -178,47 +180,82 @@ def _existing_titles_for_story(records: list[dict[str, Any]], story_key: str) ->
     return titles
 
 
-def _existing_sheet_titles(records: list[dict[str, Any]]) -> set[str]:
+def _last_nonempty_row(rows: list[list[Any]]) -> int:
+    last = 0
+    for index, row in enumerate(rows, start=1):
+        if any(str(cell or "").strip() for cell in row):
+            last = index
+    return last
+
+
+def _pk03_existing_titles(rows: list[list[Any]]) -> set[str]:
+    if not rows:
+        return set()
+    header = [str(cell or "").strip() for cell in rows[0]]
+    try:
+        title_index = header.index("Test Summary")
+    except ValueError:
+        return set()
     titles: set[str] = set()
-    for record in records:
-        fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
-        title = str(fields.get("Title") or "").strip()
-        if title:
-            titles.add(title)
+    for row in rows[1:]:
+        if title_index < len(row):
+            title = str(row[title_index] or "").strip()
+            if title:
+                titles.add(title)
     return titles
 
 
-def _sheet_rows_to_records(rows: list[list[Any]]) -> list[dict[str, Any]]:
+def _pk03_next_case_number(rows: list[list[Any]]) -> int:
     if not rows:
-        return []
-    header = [str(cell or "").strip() for cell in (rows[0] if rows else [])]
-    if not any(header):
-        return []
-    records: list[dict[str, Any]] = []
+        return 1
+    header = [str(cell or "").strip() for cell in rows[0]]
+    try:
+        id_index = header.index("用例 ID")
+    except ValueError:
+        return 1
+    highest = 0
     for row in rows[1:]:
-        fields: dict[str, Any] = {}
-        for idx, name in enumerate(header):
-            if not name:
+        if id_index >= len(row):
+            continue
+        value = str(row[id_index] or "").strip()
+        if value.upper().startswith("TC-"):
+            try:
+                highest = max(highest, int(value[3:]))
+            except ValueError:
                 continue
-            value = row[idx] if idx < len(row) else ""
-            fields[name] = value
-        if fields:
-            records.append({"fields": fields})
-    return records
+    return highest + 1
 
 
-def _ensure_sheet_headers(client: FeishuSheets, spreadsheet_token: str, sheet_id: str, rows: list[list[Any]]) -> list[list[Any]]:
-    headers = list(SHEET_HEADER_COLUMNS)
-    if rows and any(str(cell or "").strip() for cell in rows[0]):
-        return rows
-    end_col = column_letter(len(headers) - 1)
-    client.append_values(
-        spreadsheet_token,
-        sheet_id=sheet_id,
-        values=[headers],
-        end_col=end_col,
-    )
-    return [headers]
+def _pk03_case_row(
+    case: Any,
+    *,
+    story_key: str,
+    story_title: str,
+    language: str,
+    case_number: int,
+    jira_base_url: str,
+) -> list[str]:
+    case.ensure_meta()
+    card_url = f"{str(jira_base_url or 'https://inspire.atlassian.net').rstrip('/')}/browse/{story_key}"
+    card_title = story_sheet_name(story_key, story_title)
+    type_label = localize_test_case_type(case.case_type, language)
+    return [
+        card_url,
+        card_title,
+        format_ac_refs(case.ac_refs),
+        f"TC-{case_number:03d}",
+        "",
+        str(case.title or ""),
+        str(case.preconditions or ""),
+        "",
+        str(case.steps or ""),
+        str(case.expected_result or ""),
+        "",
+        localize_verify_status("pending", language),
+        "",
+        f"Type: {type_label}",
+        "",
+    ]
 
 
 def _write_cases_to_sheet(
@@ -233,62 +270,121 @@ def _write_cases_to_sheet(
 ) -> dict[str, Any]:
     spreadsheet_token = str(cfg.get("spreadsheet_token") or "").strip()
     tab_name = story_sheet_name(story_key, story_title)
-    sheet = client.ensure_sheet(spreadsheet_token, tab_name)
+    template_sheet_id = str(cfg.get("sheet_template_id") or "").strip()
+    if not template_sheet_id:
+        raise RuntimeError("PK03 sheet template is not configured (sheet_template_id is missing)")
+    sheets = client.list_sheets(spreadsheet_token)
+    sheet = next(
+        (
+            item
+            for item in sheets
+            if str(item.get("title") or item.get("name") or "").strip() == tab_name
+        ),
+        None,
+    )
+    created_sheet = sheet is None
+    if sheet is None:
+        sheet = client.copy_sheet(
+            spreadsheet_token,
+            source_sheet_id=template_sheet_id,
+            title=tab_name,
+        )
     sheet_id = str(sheet.get("sheetId") or sheet.get("sheet_id") or "").strip()
     if not sheet_id:
-        raise RuntimeError("Feishu sheet id missing")
-    headers = list(SHEET_HEADER_COLUMNS)
+        refreshed = client.list_sheets(spreadsheet_token)
+        sheet = next(
+            (
+                item
+                for item in refreshed
+                if str(item.get("title") or item.get("name") or "").strip() == tab_name
+            ),
+            None,
+        )
+        sheet_id = str((sheet or {}).get("sheetId") or (sheet or {}).get("sheet_id") or "").strip()
+    if not sheet_id:
+        raise RuntimeError(f"Feishu sheet id missing for {tab_name!r}")
+    headers = list(PK03_SHEET_HEADER_COLUMNS)
     end_col = column_letter(len(headers) - 1)
     grid_rows = client.get_sheet_row_count(spreadsheet_token, sheet_id=sheet_id)
     if grid_rows < 2:
         raise RuntimeError(f"Feishu Sheet grid is too small: {grid_rows} rows")
     rows = client.get_values(spreadsheet_token, f"{sheet_id}!A1:{end_col}{grid_rows}")
-    rows = _ensure_sheet_headers(client, spreadsheet_token, sheet_id, rows)
-    records = _sheet_rows_to_records(rows)
-    existing = _existing_sheet_titles(records)
+    if created_sheet:
+        client.clear_values(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            range_a1=f"A1:{end_col}{grid_rows}",
+        )
+        rows = [headers]
+    else:
+        actual_header = [str(cell or "").strip() for cell in (rows[0] if rows else [])]
+        if actual_header and actual_header != headers:
+            raise RuntimeError(
+                f"Sheet {tab_name!r} does not use the PK03 header; refusing to mix layouts"
+            )
+        if not actual_header:
+            client.set_values(
+                spreadsheet_token,
+                sheet_id=sheet_id,
+                range_a1=f"A1:{end_col}1",
+                values=[headers],
+            )
+            rows = [headers]
+    existing = _pk03_existing_titles(rows)
     created, skipped = partition_new_cases(generated, existing)
+    next_case_number = _pk03_next_case_number(rows)
     values = []
-    for case in created:
+    for offset, case in enumerate(created):
         case.generated_by = generated_by
-        fields = case.to_sheet_fields(language)
-        values.append([str(fields.get(col) or "") for col in headers])
-    if values:
-        client.append_values(spreadsheet_token, sheet_id=sheet_id, values=values, end_col=end_col)
-        # INSERT_ROWS may grow the grid; use the post-write metadata for every
-        # subsequent range so validation, formatting, and read-back stay aligned.
-        grid_rows = client.get_sheet_row_count(spreadsheet_token, sheet_id=sheet_id)
-    verify_col = column_letter(headers.index("Verify Status"))
-    validation_range = f"{verify_col}2:{verify_col}{grid_rows}"
+        values.append(
+            _pk03_case_row(
+                case,
+                story_key=story_key,
+                story_title=story_title,
+                language=language,
+                case_number=next_case_number + offset,
+                jira_base_url=str(cfg.get("jira_base_url") or "https://inspire.atlassian.net"),
+            )
+        )
+    if created_sheet:
+        client.set_values(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            range_a1=f"A1:{end_col}{1 + len(values)}",
+            values=[headers, *values],
+        )
+    elif values:
+        start_row = _last_nonempty_row(rows) + 1
+        client.set_values(
+            spreadsheet_token,
+            sheet_id=sheet_id,
+            range_a1=f"A{start_row}:{end_col}{start_row + len(values) - 1}",
+            values=values,
+        )
+    body_end_row = max(
+        2,
+        _last_nonempty_row([headers, *values])
+        if created_sheet
+        else _last_nonempty_row(rows) + len(values),
+    )
+    validation_range = f"E2:E{body_end_row}"
     try:
         client.set_dropdown(
             spreadsheet_token,
             sheet_id=sheet_id,
             range_a1=validation_range,
-            options=list(localize_verify_status_options(language)),
-            colors=["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"],
+            options=list(PK03_PATH_OPTIONS),
+            colors=list(PK03_PATH_COLORS),
         )
     except Exception as exc:
         raise RuntimeError(f"Feishu Sheet dropdown setup failed: {exc}") from exc
-    try:
-        client.format_sheet(
-            spreadsheet_token,
-            sheet_id=sheet_id,
-            column_widths=list(SHEET_COLUMN_WIDTHS),
-            freeze_rows=1,
-            bold_header=True,
-            header_end_col=end_col,
-            body_row_height=96,
-            body_end_row=grid_rows,
-        )
-    except Exception as exc:
-        raise RuntimeError(f"Feishu Sheet formatting failed: {exc}") from exc
     try:
         client.verify_sheet_format(
             spreadsheet_token,
             sheet_id=sheet_id,
             freeze_rows=1,
             validation_range=validation_range,
-            validation_options=list(localize_verify_status_options(language)),
+            validation_options=list(PK03_PATH_OPTIONS),
         )
     except Exception as exc:
         raise RuntimeError(f"Feishu Sheet read-back verification failed: {exc}") from exc

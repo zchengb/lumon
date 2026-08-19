@@ -23,16 +23,29 @@ REQUIRED_FIELDS = (
 
 HEADER_COLUMNS = [name for name, _ in REQUIRED_FIELDS]
 
-SHEET_HEADER_COLUMNS = (
-    "AC",
-    "Title",
-    "Preconditions",
-    "Steps",
+PK03_SHEET_HEADER_COLUMNS = (
+    "卡link",
+    "卡號標題",
+    "设备/功能点",
+    "用例 ID",
+    "Path",
+    "Test Summary",
+    "Pre-condition",
+    "Test Data",
+    "Action",
     "Expected Result",
-    "Type",
-    "Verify Status",
-    "Note",
+    "测试人",
+    "測試結果",
+    "測試日期",
+    "備註",
+    "Follow up",
 )
+
+# Keep the generic name as a compatibility alias for callers that imported it
+# before the PK03 sheet became the canonical test-case layout.
+SHEET_HEADER_COLUMNS = PK03_SHEET_HEADER_COLUMNS
+
+DEFAULT_SHEET_TEMPLATE_NAME = "PK03"
 
 VERIFY_STATUS_CANONICAL = ("pending", "passed", "failed", "ignored")
 
@@ -77,6 +90,17 @@ def load_test_case_config(
     base_host = str(test_case.get("feishu_base_host") or "inspiregroup.feishu.cn").strip() or "inspiregroup.feishu.cn"
     table_name = str(test_case.get("table_name") or test_case.get("sheet_name") or "Test Cases").strip() or "Test Cases"
     sheet_name = str(test_case.get("sheet_name") or test_case.get("table_name") or "Sheet1").strip() or "Sheet1"
+    sheet_template_id = str(test_case.get("sheet_template_id") or "").strip()
+    sheet_template_id_env = str(test_case.get("sheet_template_id_env") or "").strip()
+    if not sheet_template_id and sheet_template_id_env:
+        sheet_template_id = (
+            os.environ.get(sheet_template_id_env, "").strip()
+            or read_lumen_env_var(sheet_template_id_env).strip()
+        )
+    sheet_template_name = str(
+        test_case.get("sheet_template_name") or DEFAULT_SHEET_TEMPLATE_NAME
+    ).strip() or DEFAULT_SHEET_TEMPLATE_NAME
+    jira_base_url = str(test_case.get("jira_base_url") or "https://inspire.atlassian.net").strip().rstrip("/")
 
     app_token = str(test_case.get("base_app_token") or "").strip()
     token_env = str(test_case.get("base_app_token_env") or "").strip()
@@ -101,6 +125,10 @@ def load_test_case_config(
         "spreadsheet_token": spreadsheet_token,
         "table_name": table_name if destination == "bitable" else sheet_name,
         "sheet_name": sheet_name,
+        "sheet_template_id": sheet_template_id,
+        "sheet_template_id_env": sheet_template_id_env,
+        "sheet_template_name": sheet_template_name,
+        "jira_base_url": jira_base_url,
         "view_strategy": str(test_case.get("view_strategy") or "story"),
         "language": language,
         "feishu_base_host": base_host,

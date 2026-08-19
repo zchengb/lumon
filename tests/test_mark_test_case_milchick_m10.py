@@ -86,16 +86,28 @@ class FakeSheets:
     def __init__(self) -> None:
         self.rows: list[list[Any]] = []
         self.grid_rows = 120
-        self.appended: list[list[Any]] = []
         self.ensured_names: list[str] = []
+        self.copied: list[dict[str, Any]] = []
+        self.cleared: list[dict[str, Any]] = []
+        self.writes: list[dict[str, Any]] = []
         self.dropdowns: list[dict[str, Any]] = []
         self.formatted: list[dict[str, Any]] = []
         self.styles: list[dict[str, Any]] = []
         self.verified: list[dict[str, Any]] = []
 
+    def list_sheets(self, spreadsheet_token: str) -> list[dict[str, Any]]:
+        sheets = [{"sheetId": "pk03", "title": "PK03"}]
+        sheets.extend(self.copied)
+        return sheets
+
     def ensure_sheet(self, spreadsheet_token: str, sheet_name: str) -> dict[str, Any]:
         self.ensured_names.append(sheet_name)
         return {"sheetId": "sht1", "title": sheet_name}
+
+    def copy_sheet(self, spreadsheet_token: str, *, source_sheet_id: str, title: str, index: int | None = None) -> dict[str, Any]:
+        sheet = {"sheetId": f"sht{len(self.copied) + 1}", "title": title}
+        self.copied.append(sheet)
+        return sheet
 
     def resolve_sheet(self, spreadsheet_token: str, sheet_name: str = "Sheet1") -> dict[str, Any]:
         return {"sheetId": "sht1", "title": sheet_name}
@@ -106,11 +118,22 @@ class FakeSheets:
     def get_values(self, spreadsheet_token: str, range_a1: str) -> list[list[Any]]:
         return list(self.rows)
 
-    def append_values(self, spreadsheet_token: str, *, sheet_id: str, values: list[list[Any]], start_col: str = "A", end_col: str = "J") -> dict[str, Any]:
-        for row in values:
-            self.rows.append(list(row))
-            self.appended.append(list(row))
-        return {"updatedRows": len(values)}
+    def clear_values(self, spreadsheet_token: str, *, sheet_id: str, range_a1: str) -> dict[str, Any]:
+        self.cleared.append({"sheet_id": sheet_id, "range_a1": range_a1})
+        self.rows = []
+        return {}
+
+    def set_values(self, spreadsheet_token: str, *, sheet_id: str, range_a1: str, values: list[list[Any]]) -> dict[str, Any]:
+        start_row = int(range_a1.split(":", 1)[0][1:])
+        while len(self.rows) < start_row - 1:
+            self.rows.append([])
+        for offset, row in enumerate(values):
+            row_index = start_row - 1 + offset
+            while len(self.rows) <= row_index:
+                self.rows.append([])
+            self.rows[row_index] = list(row)
+        self.writes.append({"sheet_id": sheet_id, "range_a1": range_a1, "values": [list(row) for row in values]})
+        return {}
 
     def set_dropdown(self, spreadsheet_token: str, *, sheet_id: str, range_a1: str, options: list[str], colors=None) -> dict[str, Any]:
         self.dropdowns.append({"sheet_id": sheet_id, "range_a1": range_a1, "options": list(options), "colors": list(colors or [])})
@@ -221,8 +244,9 @@ class TestCaseSkillTests(unittest.TestCase):
                             "mbpass": {
                                 "test_case": {
                                     "destination": "sheet",
-                                    "spreadsheet_token": "OG4Js7cIlh7d0QtHOEnc1kDfnvf",
-                                    "sheet_name": "Sheet1",
+                                    "spreadsheet_token": "test-a-spreadsheet",
+                                    "sheet_name": "PK03",
+                                    "sheet_template_id": "pk03-template",
                                 }
                             }
                         }
@@ -376,8 +400,9 @@ class TestCaseSkillTests(unittest.TestCase):
                     "mbpass": {
                         "test_case": {
                             "destination": "sheet",
-                            "spreadsheet_token": "OG4Js7cIlh7d0QtHOEnc1kDfnvf",
-                            "sheet_name": "Sheet1",
+                            "spreadsheet_token": "test-a-spreadsheet",
+                            "sheet_name": "PK03",
+                            "sheet_template_id": "pk03-template",
                             "language": "zh-Hant",
                         }
                     }
@@ -389,29 +414,76 @@ class TestCaseSkillTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "completed")
         self.assertGreaterEqual(result["created"], 3)
-        self.assertEqual(fake.ensured_names, ["MBPAS-1601 · Login flow"])
+        self.assertEqual(fake.copied, [{"sheetId": "sht1", "title": "MBPAS-1601 · Login flow"}])
+        self.assertEqual(fake.cleared, [{"sheet_id": "sht1", "range_a1": "A1:O120"}])
         self.assertEqual(result["view_name"], "MBPAS-1601 · Login flow")
         self.assertEqual(
             fake.rows[0],
-            ["AC", "Title", "Preconditions", "Steps", "Expected Result", "Type", "Verify Status", "Note"],
+            [
+                "卡link", "卡號標題", "设备/功能点", "用例 ID", "Path", "Test Summary",
+                "Pre-condition", "Test Data", "Action", "Expected Result", "测试人",
+                "測試結果", "測試日期", "備註", "Follow up",
+            ],
         )
         for row in fake.rows[1:]:
-            self.assertFalse(str(row[1]).startswith("MBPAS-1601"))
-            self.assertEqual(len(row), 8)
-            self.assertIn(row[5], {"功能", "驗證", "介面"})
-            self.assertEqual(row[6], "待驗證")
-            self.assertEqual(row[7], "")
-        self.assertEqual(fake.dropdowns[0]["options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
-        self.assertEqual(fake.dropdowns[0]["colors"], ["#A3D0D6", "#B5CFBC", "#F9B0BD", "#E6C284"])
-        self.assertEqual("G2:G120", fake.dropdowns[0]["range_a1"])
+            self.assertEqual(len(row), 15)
+            self.assertEqual(row[0], "https://inspire.atlassian.net/browse/MBPAS-1601")
+            self.assertEqual(row[1], "MBPAS-1601 · Login flow")
+            self.assertEqual(row[4], "")
+            self.assertTrue(row[5])
+            self.assertEqual(row[11], "待驗證")
+            self.assertTrue(row[13].startswith("Type: "))
+        self.assertEqual(fake.dropdowns[0]["options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])
+        self.assertEqual(fake.dropdowns[0]["colors"], ["#bacefd", "#fed4a4", "#b1e8fc", "#7edafb"])
+        self.assertEqual("E2:E4", fake.dropdowns[0]["range_a1"])
         self.assertEqual(fake.verified[0]["freeze_rows"], 1)
-        self.assertEqual(fake.verified[0]["validation_options"], ["待驗證", "驗證成功", "驗證失敗", "忽略"])
-        self.assertTrue(fake.formatted)
-        self.assertTrue(fake.formatted[0]["bold_header"])
-        self.assertEqual(fake.formatted[0]["header_end_col"], "H")
-        self.assertEqual(fake.formatted[0]["body_row_height"], 96)
-        self.assertTrue(any(s.get("bold") and s.get("range_a1") == "A1:H1" for s in fake.styles))
-        self.assertIn("/sheets/OG4Js7cIlh7d0QtHOEnc1kDfnvf?sheet=sht1", result["sheet_url"])
+        self.assertEqual(fake.verified[0]["validation_options"], ["Happy", "Alternative", "Sad", "Sad(Edge)"])
+        self.assertIn("/sheets/test-a-spreadsheet?sheet=sht1", result["sheet_url"])
+
+    def test_skill_reuses_existing_card_sheet_and_deduplicates_rows(self) -> None:
+        fake = FakeSheets()
+
+        def reader(key: str) -> StoryContext:
+            return StoryContext(
+                key=key,
+                type="Story",
+                summary="Login flow",
+                description="",
+                acceptance_criteria=["User can log in"],
+            )
+
+        config = {
+            "projects": {
+                "mbpass": {
+                    "test_case": {
+                        "destination": "sheet",
+                        "spreadsheet_token": "test-a-spreadsheet",
+                        "sheet_template_id": "pk03-template",
+                        "language": "zh-Hant",
+                    }
+                }
+            }
+        }
+        first = generate_test_cases_for_issue(
+            project="mbpass",
+            issue_key="MBPAS-1601",
+            config=config,
+            sheets_client=fake,
+            story_reader=reader,
+            designer_runner=_mock_design_runner(LOGIN_DESIGN),
+        )
+        second = generate_test_cases_for_issue(
+            project="mbpass",
+            issue_key="MBPAS-1601",
+            config=config,
+            sheets_client=fake,
+            story_reader=reader,
+            designer_runner=_mock_design_runner(LOGIN_DESIGN),
+        )
+        self.assertEqual(first["created"], 3)
+        self.assertEqual(second["created"], 0)
+        self.assertEqual(second["skipped_existing"], 3)
+        self.assertEqual(len(fake.copied), 1)
 
     def test_feishu_sheet_format_uses_native_dimension_payload_and_readback(self) -> None:
         from feishu.sheets import FeishuSheets
@@ -458,6 +530,48 @@ class TestCaseSkillTests(unittest.TestCase):
         freeze_call = next(call for call in calls if call[1].endswith("/sheets_batch_update"))
         self.assertEqual(1, freeze_call[2]["requests"][0]["updateSheet"]["properties"]["frozenRowCount"])
         self.assertTrue(any("/dataValidation?" in call[1] for call in calls))
+
+    def test_feishu_pk03_template_operations_use_editor_tools(self) -> None:
+        from feishu.sheets import FeishuSheets
+
+        client = FeishuSheets.__new__(FeishuSheets)
+        calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+        def request(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+            calls.append((method, path, payload))
+            if path.endswith("/metainfo"):
+                return {"sheets": [{"sheetId": "new1", "title": "MBPAS-1601 · Login flow"}]}
+            return {}
+
+        client._request = request
+        copied = client.copy_sheet(
+            "test-a-spreadsheet",
+            source_sheet_id="pk03-template",
+            title="MBPAS-1601 · Login flow",
+        )
+        self.assertEqual(copied["sheetId"], "new1")
+        client.clear_values(
+            "test-a-spreadsheet",
+            sheet_id="new1",
+            range_a1="A1:O37",
+        )
+        client.set_values(
+            "test-a-spreadsheet",
+            sheet_id="new1",
+            range_a1="A1:O2",
+            values=[["卡link", "卡號標題"], ["https://example.test", "Card"]],
+        )
+
+        tool_calls = [call for call in calls if "/tools/invoke_write" in call[1]]
+        self.assertEqual(len(tool_calls), 3)
+        copy_input = json.loads(tool_calls[0][2]["input"])
+        self.assertEqual(copy_input["operation"], "duplicate")
+        self.assertEqual(copy_input["sheet_id"], "pk03-template")
+        self.assertNotIn("target_index", copy_input)
+        clear_input = json.loads(tool_calls[1][2]["input"])
+        self.assertEqual(clear_input["clear_type"], "contents")
+        set_input = json.loads(tool_calls[2][2]["input"])
+        self.assertEqual(set_input["cells"][1][0]["value"], "https://example.test")
 
     def test_summary_uses_story_title_and_response_language(self) -> None:
         from skills.test_case.skill import format_summary

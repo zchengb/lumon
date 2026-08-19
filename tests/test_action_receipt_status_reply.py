@@ -238,7 +238,7 @@ def test_job_list_keeps_latest_per_issue_only() -> None:
                         "result": {
                             "status": "completed",
                             "summary": "Generated 5 test cases for MBPAS-1491.",
-                            "sheet_url": "https://inspiregroup.feishu.cn/sheets/OG4Js7cIlh7d0QtHOEnc1kDfnvf?sheet=3LwiOc",
+                            "sheet_url": "https://example.test/sheets/test-a-spreadsheet?sheet=card-1491",
                         },
                     },
                     {

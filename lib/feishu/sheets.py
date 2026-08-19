@@ -127,6 +127,120 @@ class FeishuSheets:
                     return properties
         return data if isinstance(data, dict) else {}
 
+    def _invoke_write_tool(
+        self,
+        spreadsheet_token: str,
+        *,
+        tool_name: str,
+        tool_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Call the sheet tool endpoint used by the Feishu sheet editor.
+
+        The public Sheets v2 API exposes cell values and formatting, but does
+        not expose the editor's copy/clear operations in the same shape.  The
+        official Lark CLI routes these operations through this endpoint, so
+        keep the transport here and let the caller continue to use the normal
+        Sheets client for metadata/read-back.
+        """
+        token = parse_spreadsheet_token(spreadsheet_token)
+        payload = {
+            "input": json.dumps(tool_input, ensure_ascii=False, separators=(",", ":")),
+            "tool_name": str(tool_name or "").strip(),
+        }
+        return self._request(
+            "POST",
+            f"/sheet_ai/v2/spreadsheets/{token}/tools/invoke_write",
+            payload,
+        )
+
+    def copy_sheet(
+        self,
+        spreadsheet_token: str,
+        *,
+        source_sheet_id: str,
+        title: str,
+        index: int | None = None,
+    ) -> dict[str, Any]:
+        """Copy a sheet, preserving its values, styles, validations and layout.
+
+        Omitting ``index`` is intentional: the editor appends the copy to the
+        end of the workbook, which is the test-case workflow's contract.
+        """
+        token = parse_spreadsheet_token(spreadsheet_token)
+        source = str(source_sheet_id or "").strip()
+        name = str(title or "").strip()
+        if not token or not source or not name:
+            raise ValueError("spreadsheet_token, source_sheet_id and title are required")
+        tool_input: dict[str, Any] = {
+            "excel_id": token,
+            "new_name": name,
+            "operation": "duplicate",
+            "sheet_id": source,
+        }
+        if index is not None:
+            tool_input["target_index"] = int(index)
+        result = self._invoke_write_tool(
+            token,
+            tool_name="modify_workbook_structure",
+            tool_input=tool_input,
+        )
+        for sheet in self.list_sheets(token):
+            sheet_title = str(sheet.get("title") or sheet.get("name") or "").strip()
+            if sheet_title == name:
+                return sheet
+        return result
+
+    def clear_values(
+        self,
+        spreadsheet_token: str,
+        *,
+        sheet_id: str,
+        range_a1: str,
+    ) -> dict[str, Any]:
+        """Clear cell contents while leaving the copied PK03 formatting intact."""
+        sid = str(sheet_id or "").strip()
+        target = str(range_a1 or "").strip()
+        if not sid or not target:
+            return {}
+        return self._invoke_write_tool(
+            spreadsheet_token,
+            tool_name="clear_cell_range",
+            tool_input={
+                "clear_type": "contents",
+                "excel_id": parse_spreadsheet_token(spreadsheet_token),
+                "range": target,
+                "sheet_id": sid,
+            },
+        )
+
+    def set_values(
+        self,
+        spreadsheet_token: str,
+        *,
+        sheet_id: str,
+        range_a1: str,
+        values: list[list[Any]],
+    ) -> dict[str, Any]:
+        """Write a rectangular value matrix without inserting rows."""
+        sid = str(sheet_id or "").strip()
+        target = str(range_a1 or "").strip()
+        if not sid or not target or not values:
+            return {}
+        cells = [
+            [{"value": "" if value is None else value} for value in row]
+            for row in values
+        ]
+        return self._invoke_write_tool(
+            spreadsheet_token,
+            tool_name="set_cell_range",
+            tool_input={
+                "cells": cells,
+                "excel_id": parse_spreadsheet_token(spreadsheet_token),
+                "range": target,
+                "sheet_id": sid,
+            },
+        )
+
     def ensure_sheet(self, spreadsheet_token: str, sheet_name: str) -> dict[str, Any]:
         wanted = str(sheet_name or "").strip()
         if not wanted:
