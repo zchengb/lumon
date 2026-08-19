@@ -28,6 +28,11 @@ class AgentSettingsTests(unittest.TestCase):
             payload = apply_agent_settings(
                 {
                     "enabled": True,
+                    "access": {
+                        "default_policy": "deny",
+                        "allowed_chat_ids": ["oc_abcdef0123456789abcdef0123456789"],
+                        "allowed_user_ids": ["ou_abcdef0123456789abcdef0123456789"],
+                    },
                     "agents": [
                         {
                             "id": "dylan",
@@ -77,6 +82,11 @@ class AgentSettingsTests(unittest.TestCase):
                 }
             )
             self.assertTrue(payload["enabled"])
+            self.assertEqual("deny", payload["access"]["default_policy"])
+            self.assertEqual(
+                ["oc_abcdef0123456789abcdef0123456789"],
+                payload["access"]["allowed_chat_ids"],
+            )
             dylan_after = next(agent for agent in payload["agents"] if agent["id"] == "dylan")
             self.assertTrue(dylan_after["conversation_enabled"])
             self.assertEqual(dylan_after["soft_timeout_seconds"], 80)

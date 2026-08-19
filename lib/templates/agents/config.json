@@ -22,7 +22,7 @@
     }
   },
   "access": {
-    "default_policy": "legacy_allow",
+    "default_policy": "deny",
     "owners": [],
     "admins": [],
     "agents": {

@@ -210,6 +210,33 @@ featureBranch: \"feature/MBPAS-1503\"
         self.assertIn("/messages/om_1/resources/img_1?type=image", request.full_url)
         self.assertEqual("Bearer tenant-token", request.headers["Authorization"])
 
+    def test_list_group_chats_filters_private_chats_and_paginates(self) -> None:
+        messenger = FeishuMessenger("mark")
+        responses = [
+            {
+                "code": 0,
+                "data": {
+                    "items": [
+                        {"chat_id": "oc_group_1", "name": "Delivery", "chat_mode": "group"},
+                        {"chat_id": "oc_private_1", "name": "Private", "chat_mode": "p2p"},
+                    ],
+                    "has_more": True,
+                    "page_token": "next",
+                },
+            },
+            {
+                "code": 0,
+                "data": {"items": [{"chat_id": "oc_group_2", "name": "QA", "chat_mode": "group"}]},
+            },
+        ]
+        with patch.object(messenger, "tenant_token", return_value="tenant-token"), patch.object(
+            messenger, "_request", side_effect=responses
+        ) as request:
+            chats = messenger.list_group_chats()
+        self.assertEqual(["oc_group_1", "oc_group_2"], [item["id"] for item in chats])
+        self.assertEqual(2, request.call_count)
+        self.assertIn("page_token=next", request.call_args_list[1].args[1])
+
 
 if __name__ == "__main__":
     unittest.main()

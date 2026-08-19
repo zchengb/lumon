@@ -148,6 +148,11 @@ def remember_message_identities(
     try:
         user_id = str(meta.get("user_id") or "").strip()
         if user_id:
+            store.record_feishu_user_context(
+                user_id=user_id,
+                chat_id=str(meta.get("chat_id") or ""),
+                chat_type=str(meta.get("chat_type") or ""),
+            )
             remember_user_identity(
                 store=store,
                 open_id=user_id,
@@ -206,6 +211,59 @@ def _content_targets_agent(content: str, agent_id: str) -> bool:
     return f"@{needle}" in text.lower()
 
 
+def _structured_content_mentions(message: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract Feishu rich-text @ targets when the top-level list is absent."""
+    raw = _message_content(message)
+    if isinstance(raw, (dict, list)):
+        parsed: Any = raw
+    else:
+        try:
+            parsed = json.loads(str(raw or ""))
+        except (TypeError, json.JSONDecodeError):
+            return []
+
+    found: list[dict[str, Any]] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, dict):
+            return
+        tag = str(value.get("tag") or "").strip().lower()
+        if tag in {"at", "mention"}:
+            target_id = value.get("user_id") or value.get("open_id") or ""
+            found.append(
+                {
+                    "name": str(
+                        value.get("user_name")
+                        or value.get("name")
+                        or value.get("text")
+                        or value.get("content")
+                        or ""
+                    ).strip(),
+                    "id": {"open_id": str(target_id).strip()} if target_id else {},
+                }
+            )
+            return
+        for child in value.values():
+            visit(child)
+
+    visit(parsed)
+    return found
+
+
+def _message_mentions_agent(message: dict[str, Any], agent_id: str) -> tuple[bool, bool]:
+    """Return (has_explicit_mention, targets_this_agent) for one message."""
+    listed = message.get("mentions")
+    mentions = [item for item in listed if isinstance(item, dict)] if isinstance(listed, list) else []
+    mentions.extend(_structured_content_mentions(message))
+    if mentions:
+        return True, _mention_targets_agent(mentions, agent_id)
+    return False, False
+
+
 def _waiting_loop_owner(message: dict[str, Any]) -> str:
     chat_id = str(message.get("chat_id") or "").strip()
     if not chat_id or not any(str(message.get(key) or "").strip() for key in ("thread_id", "parent_id", "root_id")):
@@ -239,11 +297,11 @@ def should_handle(event: dict[str, Any], client: FeishuClientConfig) -> bool:
         return False
     agent_id = str(client.agent_id or "").strip().lower()
     chat_type = str(message.get("chat_type") or "").strip().lower()
-    mentions = message.get("mentions")
     # An explicit target is always the latest user intent.  A pending Loop
     # must not hijack a message addressed to the host agent or another owner.
-    if isinstance(mentions, list) and len(mentions) > 0:
-        return _mention_targets_agent(mentions, agent_id)
+    has_explicit_mention, targets_agent = _message_mentions_agent(message, agent_id)
+    if has_explicit_mention:
+        return targets_agent
     content = extract_text(event)
     if _content_targets_agent(content, agent_id):
         return True

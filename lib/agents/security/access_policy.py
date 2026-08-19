@@ -211,18 +211,38 @@ def resolve_trust_zone(
     *,
     store: Any = None,
 ) -> TrustZone:
-    if policy.dm_only and not context.is_dm:
-        if not policy.allowed_chat_ids or context.chat_id not in policy.allowed_chat_ids:
-            return "DENY"
+    group_allowed = not context.is_dm and context.chat_id in policy.allowed_chat_ids
+    if policy.dm_only and not context.is_dm and not group_allowed:
+        return "DENY"
     user = context.user_id
     if not user:
         return "DENY"
+    # A missing per-agent block may still use the Dashboard's explicit global
+    # group or private-user ACL.  Owners/admins alone are not enough to turn a
+    # completely unconfigured Agent on.
     if policy.source == "missing" and policy.default_policy != "legacy_allow":
-        return "DENY"
+        if not group_allowed and not policy.allowed_user_ids:
+            return "DENY"
     allowed_users = policy.allowed_user_ids | policy.owners | policy.admins
-    if allowed_users and not _user_in(store, user, allowed_users):
+    # A whitelisted group is the authorization boundary.  Every human in the
+    # group may talk to the Agent; the private-user allowlist must not turn a
+    # group permission into a second one-to-one approval step.
+    if not group_allowed and allowed_users and not _user_in(store, user, allowed_users):
         return "DENY"
-    if not allowed_users and policy.default_policy != "legacy_allow" and policy.source != "legacy":
+    if context.is_dm and not _user_in(store, user, allowed_users):
+        # A configured ACL is authoritative: DMs must be explicitly allowed
+        # one person at a time.  Keep the historical fallback only for an
+        # untouched legacy installation so existing local runtimes continue
+        # to work until the Dashboard saves the new deny-by-default policy.
+        if (
+            policy.source == "legacy"
+            and policy.default_policy == "legacy_allow"
+            and not policy.allowed_chat_ids
+            and not allowed_users
+        ):
+            return "PRIVATE" if policy.exposure_mode in {"owner_private", "admin_private"} else "RESTRICTED"
+        return "DENY"
+    if not group_allowed and not context.is_dm and not allowed_users and policy.default_policy != "legacy_allow" and policy.source != "legacy":
         return "DENY"
 
     if context.is_dm and _user_in(store, user, policy.owners | policy.admins | policy.allowed_user_ids):
@@ -242,14 +262,12 @@ def resolve_trust_zone(
         return "DENY"
 
     if context.is_dm:
-        allow = policy.owners | policy.admins | policy.allowed_user_ids
-        if allow:
-            return "DENY"
-        if policy.source == "legacy":
-            return "PRIVATE" if policy.exposure_mode in {"owner_private", "admin_private"} else "RESTRICTED"
         return "DENY"
 
-    if policy.source == "legacy" and not policy.allowed_chat_ids:
+    # Preserve the old open-group behavior only for truly untouched legacy
+    # installations.  Once either private users or group chats are configured
+    # in Dashboard, groups become an explicit allowlist as well.
+    if policy.source == "legacy" and not policy.allowed_chat_ids and not allowed_users:
         return "RESTRICTED"
     return "DENY"
 

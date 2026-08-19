@@ -14,7 +14,12 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from feishu.handlers import extract_message_meta, remember_message_identities
-from feishu.identity import enrich_feishu_identities, is_feishu_open_chat_id, is_feishu_open_user_id
+from feishu.identity import (
+    discover_feishu_group_chats,
+    enrich_feishu_identities,
+    is_feishu_open_chat_id,
+    is_feishu_open_user_id,
+)
 from risk.store import GlobalAgentStore
 
 ALICE = "ou_4f1d9b4d016ca1a31a17f4efa6473ffd"
@@ -120,6 +125,54 @@ class FeishuIdentityTests(unittest.TestCase):
                 )
                 self.assertTrue(enriched["users"][0]["pending"])
                 self.assertEqual(enriched["users"][0]["union_id"], "on_pending_user")
+            finally:
+                store.close()
+
+    def test_recent_private_contacts_exclude_group_only_senders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            store = GlobalAgentStore()
+            try:
+                store.record_feishu_user_context(user_id="ou_dm", chat_id="oc_dm", chat_type="p2p")
+                store.record_feishu_user_context(user_id="ou_group", chat_id="oc_group", chat_type="group")
+                self.assertEqual(["ou_dm"], store.list_recent_feishu_dm_user_ids())
+            finally:
+                store.close()
+
+    def test_group_discovery_merges_membership_across_agent_apps(self) -> None:
+        shared = "oc_abcdef0123456789abcdef0123456789"
+        mark_only = "oc_0123456789abcdef0123456789abcdef"
+
+        class FakeMessenger:
+            def __init__(self, chats: list[dict[str, str]]) -> None:
+                self.chats = chats
+
+            def safe_list_group_chats(self) -> list[dict[str, str]]:
+                return self.chats
+
+        messengers = {
+            "dylan": FakeMessenger([{"id": shared, "name": "Shared Delivery"}]),
+            "mark": FakeMessenger(
+                [
+                    {"id": shared, "name": "Shared Delivery"},
+                    {"id": mark_only, "name": "Mark Only"},
+                ]
+            ),
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            store = GlobalAgentStore()
+            try:
+                with mock.patch(
+                    "feishu.identity._messenger_for",
+                    side_effect=lambda agent_id: messengers.get(agent_id),
+                ):
+                    chats = discover_feishu_group_chats(store=store)
+                self.assertEqual([mark_only, shared], [item["id"] for item in chats])
+                shared_item = next(item for item in chats if item["id"] == shared)
+                self.assertEqual(["dylan", "mark"], shared_item["agents"])
+                self.assertEqual("Shared Delivery", store.get_feishu_display_name(shared))
             finally:
                 store.close()
 

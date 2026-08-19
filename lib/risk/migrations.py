@@ -390,6 +390,17 @@ CREATE TABLE IF NOT EXISTS feishu_identity (
     union_id TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
 );
+
+-- Keep the origin of a Feishu identity separate from the identity itself.
+-- The same person can speak in a group and in a private chat; Dashboard
+-- authorization must only offer the latter as a one-to-one contact.
+CREATE TABLE IF NOT EXISTS feishu_user_context (
+    user_id TEXT NOT NULL,
+    chat_id TEXT NOT NULL DEFAULT '',
+    context_type TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, chat_id, context_type)
+);
 """
 
 _FEISHU_IDENTITY_COLUMNS = {

@@ -254,7 +254,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.operatingDetails": "04 · OPERATING DETAILS",
     "settings.globalFeishuAgents": "Global Feishu agents",
     "settings.accessControl": "Access Control",
-    "settings.accessControlDescription": "Who may talk to agents, and who may mutate (resolve findings, update schedules, start delivery). Add Allowed chat IDs to let Dylan/Milchick reply in those groups when @mentioned.",
+    "settings.accessControlDescription": "Authorize group chats as a whole, while private chats require one-to-one approval. Group membership is discovered from every configured Agent app.",
     "settings.accessPerson": "Person",
     "settings.accessChat": "Group chat",
     "settings.selectPerson": "Select a person",
@@ -273,6 +273,13 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.legacyWarning": "Legacy allow mode is unsafe for local agents. Prefer per-agent Access & Exposure with default_policy=deny.",
     "settings.recentPeople": "Recent people",
     "settings.recentChats": "Recent chats",
+    "settings.groupChats": "Authorized group chats",
+    "settings.groupChatsDescription": "Everyone in an allowed group can talk to the Agents; no per-person approval is needed.",
+    "settings.privateContacts": "Private contacts",
+    "settings.privateContactsDescription": "Private chats are authorized one person at a time. Review the display name and Feishu ID before enabling access.",
+    "settings.noGroupChats": "No Feishu group chats discovered yet.",
+    "settings.noPrivateContacts": "No private contacts discovered yet.",
+    "settings.agentMembership": "Agents: {{value}}",
     "settings.addMutationUser": "Click to add as mutation user",
     "settings.allowChat": "Click to allow the chat",
     "settings.noRecentPeople": "No recent Feishu people yet. Message Dylan or Mark once, then refresh Settings.",
@@ -334,7 +341,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.allowedUserIds": "Allowed user IDs",
     "settings.mutationUserIds": "Mutation user IDs",
     "settings.adminUserIds": "Admin user IDs",
-    "settings.allowedChatHelp": "Whitelist group chats. Dylan/Milchick stay DM-only unless a chat is listed here; @mention is still required in groups.",
+    "settings.allowedChatHelp": "Whitelist group chats as a whole. Private chats still require one-to-one approval; @mention is still required in groups.",
     "settings.allowedUserHelp": "Empty = all users may ask read-only questions.",
     "settings.mutationUserHelp": "Required for resolve / schedule update / delivery start. Fail-closed when empty.",
     "settings.adminUserHelp": "Admins can also mutate.",
@@ -821,7 +828,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.operatingDetails": "04 · 运行细节",
     "settings.globalFeishuAgents": "全局飞书 Agent",
     "settings.accessControl": "访问控制",
-    "settings.accessControlDescription": "谁可以与 Agent 对话、谁可以修改状态（解决问题、更新调度、启动交付）。添加允许的群聊 ID 后，Dylan/Milchick 才能在被 @提及时回复这些群聊。",
+    "settings.accessControlDescription": "群组按整个群授权，私聊则需要逐个授权。系统会从每个已配置的 Agent 应用发现它加入的群组。",
     "settings.accessPerson": "用户",
     "settings.accessChat": "群聊",
     "settings.selectPerson": "选择用户",
@@ -840,6 +847,13 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.legacyWarning": "旧版 allow 模式对本地 Agent 不安全。建议使用按 Agent 配置的 Access & Exposure，并将 default_policy 设为 deny。",
     "settings.recentPeople": "最近联系人",
     "settings.recentChats": "最近群聊",
+    "settings.groupChats": "已授权群组",
+    "settings.groupChatsDescription": "允许群组后，群内所有人都可以与 Agent 沟通，不需要逐一授权。",
+    "settings.privateContacts": "私聊联系人",
+    "settings.privateContactsDescription": "私聊按人员逐一授权。请确认显示名称和飞书 ID 后再开启权限。",
+    "settings.noGroupChats": "暂时没有发现飞书群组。",
+    "settings.noPrivateContacts": "暂时没有发现私聊联系人。",
+    "settings.agentMembership": "Agents：{{value}}",
     "settings.addMutationUser": "点击添加为可变更用户",
     "settings.allowChat": "点击允许此群聊",
     "settings.noRecentPeople": "暂无最近的飞书联系人。先给 Dylan 或 Mark 发一条消息，再刷新设置。",
@@ -901,7 +915,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.allowedUserIds": "允许的用户 ID",
     "settings.mutationUserIds": "可变更用户 ID",
     "settings.adminUserIds": "管理员用户 ID",
-    "settings.allowedChatHelp": "将群聊加入白名单。除非群聊已列出，否则 Dylan/Milchick 只能私聊；在群聊中仍必须 @提及。",
+    "settings.allowedChatHelp": "将群聊按整个群加入白名单。私聊仍需逐一授权；在群聊中仍必须 @提及。",
     "settings.allowedUserHelp": "为空表示所有用户都可以询问只读问题。",
     "settings.mutationUserHelp": "解决问题、更新调度和启动交付时必需。为空时默认拒绝。",
     "settings.adminUserHelp": "管理员也可以执行变更操作。",
@@ -1388,7 +1402,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.operatingDetails": "04 · 執行細節",
     "settings.globalFeishuAgents": "全域飛書 Agent",
     "settings.accessControl": "存取控制",
-    "settings.accessControlDescription": "誰可以與 Agent 對話、誰可以修改狀態（解決問題、更新排程、啟動交付）。新增允許的群組聊天 ID 後，Dylan/Milchick 才能在被 @提及時回覆這些群組。",
+    "settings.accessControlDescription": "群組按整個群組授權，私聊則需要逐一授權。系統會從每個已設定的 Agent 應用發現它加入的群組。",
     "settings.accessPerson": "使用者",
     "settings.accessChat": "群組聊天",
     "settings.selectPerson": "選擇使用者",
@@ -1407,6 +1421,13 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.legacyWarning": "舊版 allow 模式對本地 Agent 不安全。建議使用按 Agent 設定的 Access & Exposure，並將 default_policy 設為 deny。",
     "settings.recentPeople": "最近聯絡人",
     "settings.recentChats": "最近群組聊天",
+    "settings.groupChats": "已授權群組",
+    "settings.groupChatsDescription": "允許群組後，群內所有人都可以與 Agent 溝通，不需要逐一授權。",
+    "settings.privateContacts": "私聊聯絡人",
+    "settings.privateContactsDescription": "私聊按人員逐一授權。請確認顯示名稱和飛書 ID 後再開啟權限。",
+    "settings.noGroupChats": "暫時沒有發現飛書群組。",
+    "settings.noPrivateContacts": "暫時沒有發現私聊聯絡人。",
+    "settings.agentMembership": "Agents：{{value}}",
     "settings.addMutationUser": "點擊新增為可變更使用者",
     "settings.allowChat": "點擊允許此聊天",
     "settings.noRecentPeople": "目前沒有最近的飛書聯絡人。先向 Dylan 或 Mark 傳送一則訊息，再重新整理設定。",
@@ -1468,7 +1489,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.allowedUserIds": "允許的使用者 ID",
     "settings.mutationUserIds": "可變更使用者 ID",
     "settings.adminUserIds": "管理員使用者 ID",
-    "settings.allowedChatHelp": "將群組聊天加入白名單。除非群組已列出，否則 Dylan/Milchick 只能私聊；在群組中仍必須 @提及。",
+    "settings.allowedChatHelp": "將群組按整個群組加入白名單。私聊仍需逐一授權；在群組中仍必須 @提及。",
     "settings.allowedUserHelp": "為空表示所有使用者都可以詢問唯讀問題。",
     "settings.mutationUserHelp": "解決問題、更新排程和啟動交付時必需。為空時預設拒絕。",
     "settings.adminUserHelp": "管理員也可以執行變更操作。",
@@ -1840,6 +1861,7 @@ interface FeishuIdentityItem {
   kind?: string;
   union_id?: string;
   pending?: boolean;
+  agents?: string[];
 }
 
 interface TestCaseSettings {
@@ -1860,8 +1882,12 @@ interface AgentsSettingsPayload {
   recent_feishu?: {
     user_ids?: string[];
     chat_ids?: string[];
+    private_user_ids?: string[];
+    group_chat_ids?: string[];
     users?: FeishuIdentityItem[];
     chats?: FeishuIdentityItem[];
+    private_users?: FeishuIdentityItem[];
+    group_chats?: FeishuIdentityItem[];
     names?: Record<string, string>;
   };
   pending_questions?: Array<{ question_id?: string; agent_id?: string; action?: string; question?: string; missing?: string[]; created_at?: string; expires_at?: string }>;
@@ -3853,17 +3879,16 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     mutation_allowed_user_ids: agentsPayload.access?.mutation_allowed_user_ids || [],
     admin_user_ids: agentsPayload.access?.admin_user_ids || [],
     legacy_warning: Boolean(agentsPayload.access?.legacy_warning),
-    default_policy: agentsPayload.access?.default_policy || "legacy_allow",
+    default_policy: agentsPayload.access?.default_policy || "deny",
   });
   const [recentFeishu, setRecentFeishu] = useState({
-    user_ids: agentsPayload.recent_feishu?.user_ids || [],
-    chat_ids: agentsPayload.recent_feishu?.chat_ids || [],
-    users: agentsPayload.recent_feishu?.users || [],
-    chats: agentsPayload.recent_feishu?.chats || [],
+    user_ids: agentsPayload.recent_feishu?.private_user_ids || agentsPayload.recent_feishu?.user_ids || [],
+    chat_ids: agentsPayload.recent_feishu?.group_chat_ids || agentsPayload.recent_feishu?.chat_ids || [],
+    users: agentsPayload.recent_feishu?.private_users || agentsPayload.recent_feishu?.users || [],
+    chats: agentsPayload.recent_feishu?.group_chats || agentsPayload.recent_feishu?.chats || [],
     names: agentsPayload.recent_feishu?.names || {},
   });
   const [selectedPersonId, setSelectedPersonId] = useState("");
-  const [selectedChatId, setSelectedChatId] = useState("");
   const [agentsBaseline, setAgentsBaseline] = useState({
     enabled: Boolean(agentsPayload.enabled),
     agents: Array.isArray(agentsPayload.agents) ? JSON.stringify(agentsPayload.agents) : "[]",
@@ -3929,8 +3954,8 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   for (const group of accessPeopleGroups) {
     group.pending = group.ids.some((id) => !configuredUserIds.includes(id));
   }
-  const accessChatIds = Array.from(new Set([...(accessDraft.allowed_chat_ids || []), ...(recentFeishu.chat_ids || [])]));
-  const accessChats = accessChatIds.map((id) => recentChats.find((chat) => String(chat.id) === id) || { id, name: feishuName(id) });
+  const accessChatIds = Array.from(new Set([...(recentFeishu.chat_ids || []), ...(accessDraft.allowed_chat_ids || [])]));
+  const accessChats: FeishuIdentityItem[] = accessChatIds.map((id) => recentChats.find((chat) => String(chat.id) === id) || { id, name: feishuName(id), agents: [] });
   const hasAccess = (field: "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids", id: string) => (accessDraft[field] || []).includes(id);
   const toggleAccess = (field: "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids" | "allowed_chat_ids", id: string, enabled: boolean) => {
     setAccessDraft((current) => {
@@ -3950,16 +3975,16 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       mutation_allowed_user_ids: payload.access?.mutation_allowed_user_ids || [],
       admin_user_ids: payload.access?.admin_user_ids || [],
       legacy_warning: Boolean(payload.access?.legacy_warning),
-      default_policy: payload.access?.default_policy || "legacy_allow",
+      default_policy: payload.access?.default_policy || "deny",
     };
     setAgentsEnabled(Boolean(payload.enabled));
     setAgentDrafts(nextAgents);
     setAccessDraft(nextAccess);
     setRecentFeishu({
-      user_ids: payload.recent_feishu?.user_ids || [],
-      chat_ids: payload.recent_feishu?.chat_ids || [],
-      users: payload.recent_feishu?.users || [],
-      chats: payload.recent_feishu?.chats || [],
+      user_ids: payload.recent_feishu?.private_user_ids || payload.recent_feishu?.user_ids || [],
+      chat_ids: payload.recent_feishu?.group_chat_ids || payload.recent_feishu?.chat_ids || [],
+      users: payload.recent_feishu?.private_users || payload.recent_feishu?.users || [],
+      chats: payload.recent_feishu?.group_chats || payload.recent_feishu?.chats || [],
       names: payload.recent_feishu?.names || {},
     });
     setAgentsBaseline({
@@ -4149,13 +4174,32 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
         </div>
         <div className="settings-control wide access-control-panel">
           <div className="access-selector-grid">
-          <Field label={t("settings.accessPerson")} help={t("settings.selectIdentityHelp")}><select value={selectedPersonId} onChange={(event) => setSelectedPersonId(event.target.value)}><option value="">{t("settings.selectPerson")}</option>{accessPeopleGroups.map((group) => <optgroup label={`${group.name} · ${group.ids.length}${group.pending ? ` · ${t("settings.pendingAccess")}` : ""}`} key={group.key}>{group.ids.map((id) => <option value={id} key={id}>{shortFeishuId(id)}</option>)}</optgroup>)}</select></Field>
-            <Field label={t("settings.accessChat")} help={t("settings.allowedChatHelp")}><select value={selectedChatId} onChange={(event) => setSelectedChatId(event.target.value)}><option value="">{t("settings.selectChat")}</option>{accessChats.map((chat) => <option value={String(chat.id)} key={String(chat.id)}>{chat.name || feishuName(String(chat.id)) || shortFeishuId(String(chat.id))}</option>)}</select></Field>
+            <Field label={t("settings.accessPerson")} help={t("settings.selectIdentityHelp")}><select value={selectedPersonId} onChange={(event) => setSelectedPersonId(event.target.value)}><option value="">{t("settings.selectPerson")}</option>{accessPeopleGroups.map((group) => <optgroup label={`${group.name} · ${group.ids.length}${group.pending ? ` · ${t("settings.pendingAccess")}` : ""}`} key={group.key}>{group.ids.map((id) => <option value={id} key={id}>{shortFeishuId(id)}</option>)}</optgroup>)}</select></Field>
+          </div>
+          <div className="access-permission-grid">
+            <section className="access-permission-card">
+              <div className="access-permission-heading"><div><strong>{t("settings.groupChats")}</strong><span>{t("settings.groupChatsDescription")}</span></div><Badge value={`${accessChats.filter((chat) => (accessDraft.allowed_chat_ids || []).includes(String(chat.id))).length}/${accessChats.length}`} /></div>
+              <div className="access-list">
+                {accessChats.length ? accessChats.map((chat) => {
+                  const chatId = String(chat.id || "");
+                  const agentNames = (chat.agents || []).map((id) => agentDrafts.find((agent) => agent.id === id)?.display_name || id).join(", ");
+                  return <label className="access-list-row" key={chatId}><span className="access-list-main"><strong>{chat.name || feishuName(chatId) || shortFeishuId(chatId)}</strong><code>{chatId}</code>{agentNames && <small>{t("settings.agentMembership", { value: agentNames })}</small>}</span><input type="checkbox" checked={(accessDraft.allowed_chat_ids || []).includes(chatId)} onChange={(event) => toggleAccess("allowed_chat_ids", chatId, event.target.checked)} aria-label={`${t("settings.allowChat")} ${chat.name || chatId}`} /></label>;
+                }) : <p className="schedule-note access-empty-note">{t("settings.noGroupChats")}</p>}
+              </div>
+            </section>
+            <section className="access-permission-card">
+              <div className="access-permission-heading"><div><strong>{t("settings.privateContacts")}</strong><span>{t("settings.privateContactsDescription")}</span></div><Badge value={`${accessPeople.filter((person) => hasAccess("allowed_user_ids", String(person.id))).length}/${accessPeople.length}`} /></div>
+              <div className="access-list">
+                {accessPeople.length ? accessPeople.map((person) => {
+                  const personId = String(person.id || "");
+                  const name = String(person.name || feishuName(personId) || t("settings.pendingAccess"));
+                  return <label className="access-list-row" key={personId}><span className="access-list-main"><strong>{name}</strong><code>{personId}</code></span><input type="checkbox" checked={hasAccess("allowed_user_ids", personId)} onChange={(event) => toggleAccess("allowed_user_ids", personId, event.target.checked)} aria-label={`${t("settings.canTalk")} ${name}`} /></label>;
+                }) : <p className="schedule-note access-empty-note">{t("settings.noPrivateContacts")}</p>}
+              </div>
+            </section>
           </div>
           {selectedPersonId && <div className="access-identity-editor"><div className="access-identity-heading"><span>{t("settings.identityRoles")}</span><code>{shortFeishuId(selectedPersonId)}</code></div><label><input type="checkbox" checked={hasAccess("allowed_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("allowed_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canTalk")}</label><label><input type="checkbox" checked={hasAccess("mutation_allowed_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("mutation_allowed_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canMutate")}</label><label><input type="checkbox" checked={hasAccess("admin_user_ids", selectedPersonId)} onChange={(event) => toggleAccess("admin_user_ids", selectedPersonId, event.target.checked)} />{t("settings.canAdmin")}</label></div>}
-          {selectedChatId && <div className="access-identity-editor"><div className="access-identity-heading"><span>{t("settings.accessChat")}</span><code>{shortFeishuId(selectedChatId)}</code></div><label><input type="checkbox" checked={(accessDraft.allowed_chat_ids || []).includes(selectedChatId)} onChange={(event) => toggleAccess("allowed_chat_ids", selectedChatId, event.target.checked)} />{t("settings.allowChat")}</label></div>}
           {configuredPeople.length > 0 && <div className="access-summary"><div className="access-identity-heading"><span>{t("settings.accessSummary")}</span><small>{t("settings.identityCount", { count: configuredPeople.reduce((count, group) => count + group.ids.length, 0) })}</small></div>{configuredPeople.map((group) => <button type="button" className="access-summary-row" key={group.key} onClick={() => setSelectedPersonId(group.ids[0])}><strong>{group.name}</strong><span>{t("settings.identityCount", { count: group.ids.length })}</span><em>{["allowed_user_ids", "mutation_allowed_user_ids", "admin_user_ids"].filter((field) => group.ids.some((id) => hasAccess(field as "allowed_user_ids" | "mutation_allowed_user_ids" | "admin_user_ids", id))).length} {t("settings.rolesApplied")}</em></button>)}</div>}
-          {accessPeople.length === 0 && <p className="schedule-note access-empty-note">{t("settings.noRecentPeople")}</p>}
         </div>
       </div>
       {agentDrafts.map((agent) => {

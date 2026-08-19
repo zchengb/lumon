@@ -615,6 +615,53 @@ class GlobalAgentStore:
                     chats.append(value)
         return {"user_ids": users[:cap], "chat_ids": chats[:cap]}
 
+    def record_feishu_user_context(
+        self,
+        *,
+        user_id: str,
+        chat_id: str = "",
+        chat_type: str = "",
+    ) -> None:
+        """Remember whether a human identity was observed in a DM or group."""
+        uid = str(user_id or "").strip()
+        if not uid:
+            return
+        kind = str(chat_type or "").strip().lower()
+        context_type = "dm" if kind in {"p2p", "private", "dm"} else "group"
+        self.conn.execute(
+            """
+            INSERT INTO feishu_user_context(user_id, chat_id, context_type, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, chat_id, context_type) DO UPDATE SET
+                updated_at = excluded.updated_at
+            """,
+            (uid, str(chat_id or "").strip(), context_type, utc_now()),
+        )
+        self.conn.commit()
+
+    def list_recent_feishu_dm_user_ids(self, *, limit: int = 50) -> list[str]:
+        """Return human identities observed in one-to-one Feishu chats."""
+        cap = max(1, min(int(limit or 50), 200))
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT user_id, MAX(updated_at) AS last_seen
+                FROM feishu_user_context
+                WHERE context_type = 'dm' AND user_id != ''
+                GROUP BY user_id
+                ORDER BY last_seen DESC
+                LIMIT ?
+                """,
+                (cap,),
+            ).fetchall()
+        except Exception:
+            return []
+        return [
+            str(row["user_id"] if isinstance(row, sqlite3.Row) else row[0] or "").strip()
+            for row in rows
+            if str(row["user_id"] if isinstance(row, sqlite3.Row) else row[0] or "").strip()
+        ]
+
     def upsert_feishu_identity(
         self,
         *,

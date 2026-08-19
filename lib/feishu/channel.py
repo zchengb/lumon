@@ -139,9 +139,19 @@ class FeishuChannel:
         return f"{str(client.agent_id or '').strip().lower()}:{mid}"
 
     def _dispatch_event(self, event: dict[str, Any], client: FeishuClientConfig) -> None:
-        from feishu.handlers import should_handle
+        from feishu.handlers import extract_message_meta, remember_message_identities, should_handle
 
         if not should_handle(event, client):
+            # Identity discovery must not depend on routing.  A group message
+            # addressed to a human (or to another Agent) still proves that
+            # this app is present in the group and that the sender may later
+            # appear in the Dashboard's private-contact list if they DM.
+            try:
+                meta = extract_message_meta(event)
+                if str(meta.get("sender_type") or "").strip().lower() not in {"bot", "app"}:
+                    remember_message_identities(event, meta, agent_id=client.agent_id)
+            except Exception:
+                _LOG.debug("unable to record ignored Feishu identity", exc_info=True)
             event_body = event.get("event") if isinstance(event.get("event"), dict) else event
             message = event_body.get("message") if isinstance(event_body, dict) else {}
             _LOG.info(

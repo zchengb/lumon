@@ -167,6 +167,45 @@ def link_access_identities(*, store: Any, identity_ids: list[str]) -> None:
             continue
         remember_user_identity(store=store, open_id=uid)
 
+
+def discover_feishu_group_chats(*, store: Any = None, network: bool = True) -> list[dict[str, Any]]:
+    """Return the union of group chats visible to the configured Agent apps."""
+    if not network:
+        return []
+    ensure_lumen_env_loaded()
+    discovered: dict[str, dict[str, Any]] = {}
+    for agent_id in GATEWAY_AGENTS:
+        messenger = _messenger_for(agent_id)
+        if messenger is None:
+            continue
+        for item in messenger.safe_list_group_chats():
+            chat_id = str(item.get("id") or item.get("chat_id") or "").strip()
+            if not chat_id or not is_feishu_open_chat_id(chat_id):
+                continue
+            name = str(item.get("name") or "").strip()
+            current = discovered.setdefault(
+                chat_id,
+                {"id": chat_id, "name": name, "kind": "chat", "agents": []},
+            )
+            if name and not current.get("name"):
+                current["name"] = name
+            agents = current.setdefault("agents", [])
+            if agent_id not in agents:
+                agents.append(agent_id)
+            if store is not None:
+                try:
+                    store.upsert_feishu_identity(
+                        identity_id=chat_id,
+                        identity_type="chat",
+                        display_name=name,
+                    )
+                except Exception:
+                    pass
+    return sorted(
+        discovered.values(),
+        key=lambda item: (str(item.get("name") or "").casefold(), str(item.get("id") or "")),
+    )
+
 def enrich_feishu_identities(
     *,
     user_ids: list[str],

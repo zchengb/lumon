@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "lib"
@@ -122,6 +125,35 @@ class AccessZoneTests(unittest.TestCase):
         self.assertEqual(decision.trust_zone, "RESTRICTED")
         self.assertIn("delivery.readiness", decision.effective_capabilities)
         self.assertNotIn("delivery.start", decision.effective_capabilities)
+
+    def test_allowed_group_authorizes_a_user_not_in_private_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"LUMEN_AGENTS_HOME": tmp}):
+            decision = authorize_agent_interaction(
+                agent_id="mark",
+                meta={"user_id": STRANGER, "chat_id": MARK_CHAT, "chat_type": "group", "message_id": "om1"},
+                config=_config(),
+            )
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.trust_zone, "RESTRICTED")
+
+    def test_private_chat_still_requires_one_to_one_authorization(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"LUMEN_AGENTS_HOME": tmp}):
+            decision = authorize_agent_interaction(
+                agent_id="mark",
+                meta={"user_id": STRANGER, "chat_id": "oc_mark_dm", "chat_type": "p2p", "message_id": "om1"},
+                config=_config(),
+            )
+        self.assertFalse(decision.allowed)
+
+    def test_global_group_acl_works_without_per_agent_override(self) -> None:
+        config = {"access": {"default_policy": "deny", "allowed_chat_ids": [SHARED]}}
+        decision = authorize_agent_interaction(
+            agent_id="mark",
+            meta={"user_id": STRANGER, "chat_id": SHARED, "chat_type": "group", "message_id": "om1"},
+            config=config,
+        )
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.trust_zone, "RESTRICTED")
 
     def test_mark_other_chat_denied(self) -> None:
         decision = authorize_agent_interaction(

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 import os
+import json
 import shutil
 import tempfile
 import unittest
@@ -201,6 +202,74 @@ class AgentBridgeScanTests(unittest.TestCase):
         only_mark = {"event": {"message": {"chat_type": "group", "mentions": [{"name": "Mark"}]}}}
         self.assertFalse(should_handle(only_mark, dylan))
         self.assertTrue(should_handle(only_mark, mark))
+
+    def test_human_mention_in_agent_thread_does_not_reach_thread_host(self) -> None:
+        from agents.runtime.reply_anchor import remember_outbound
+
+        mark = FeishuClientConfig(
+            agent_id="mark",
+            app_id="cli_m",
+            app_secret="secret",
+            profile=PROFILES["mark"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"LUMEN_AGENTS_HOME": tmp}):
+                remember_outbound(
+                    message_id="om_mark_reply",
+                    text="請確認 Story 的業務決策。",
+                    reply_to="om_thread_root",
+                    agent_id="mark",
+                )
+                human_message = {
+                    "event": {
+                        "message": {
+                            "chat_id": "oc1",
+                            "chat_type": "group",
+                            "mentions": [],
+                            "parent_id": "om_mark_reply",
+                            "root_id": "om_thread_root",
+                            "content": json.dumps(
+                                {
+                                    "zh_cn": {
+                                        "content": [
+                                            [
+                                                {"tag": "at", "user_id": "ou_human", "user_name": "Alice"},
+                                                {"tag": "text", "text": " 請看一下"},
+                                            ]
+                                        ]
+                                    }
+                                },
+                                ensure_ascii=False,
+                            ),
+                        }
+                    }
+                }
+                self.assertFalse(should_handle(human_message, mark))
+
+    def test_structured_mentions_include_agent_when_agent_is_explicitly_tagged(self) -> None:
+        mark = FeishuClientConfig(
+            agent_id="mark",
+            app_id="cli_m",
+            app_secret="secret",
+            profile=PROFILES["mark"],
+        )
+        event = {
+            "event": {
+                "message": {
+                    "chat_type": "group",
+                    "mentions": [],
+                    "content": json.dumps(
+                        {
+                            "zh_cn": {
+                                "content": [[{"tag": "at", "user_name": "Alice"}, {"tag": "at", "user_name": "Mark"}]]
+                            }
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            }
+        }
+        self.assertTrue(should_handle(event, mark))
 
     def test_should_handle_ignores_bot_senders(self) -> None:
         milchick = FeishuClientConfig(

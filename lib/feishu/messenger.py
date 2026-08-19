@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from typing import Any, Optional
 
 from agents.registry import APP_ID_ENV
@@ -553,6 +553,54 @@ class FeishuMessenger:
         except Exception as exc:
             _LOG.warning("get_chat_name failed chat_id=%s err=%s", chat_id, exc)
             return ""
+
+    def list_group_chats(self, *, page_size: int = 100, max_pages: int = 20) -> list[dict[str, Any]]:
+        """List group chats that this Feishu app is currently a member of."""
+        token = self.tenant_token()
+        size = max(1, min(int(page_size or 100), 100))
+        pages = max(1, min(int(max_pages or 20), 50))
+        page_token = ""
+        chats: list[dict[str, Any]] = []
+        for _ in range(pages):
+            params = {"page_size": str(size)}
+            if page_token:
+                params["page_token"] = page_token
+            url = "https://open.feishu.cn/open-apis/im/v1/chats?" + urlencode(params)
+            body = self._request("GET", url, token, None, retries=2, timeout=10)
+            if int(body.get("code") or 0) != 0:
+                raise RuntimeError(f"Feishu chat list error: {body.get('msg') or body}")
+            data = body.get("data") if isinstance(body.get("data"), dict) else {}
+            items = data.get("items") if isinstance(data.get("items"), list) else []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                chat_id = str(item.get("chat_id") or item.get("id") or "").strip()
+                if not chat_id:
+                    continue
+                mode = str(item.get("chat_mode") or item.get("chat_type") or "group").strip().lower()
+                if mode in {"p2p", "private", "dm"}:
+                    continue
+                chats.append(
+                    {
+                        "id": chat_id,
+                        "name": str(item.get("name") or item.get("chat_name") or "").strip(),
+                        "kind": "chat",
+                        "chat_mode": mode,
+                    }
+                )
+            has_more = bool(data.get("has_more"))
+            next_token = str(data.get("page_token") or "").strip()
+            if not has_more or not next_token or next_token == page_token:
+                break
+            page_token = next_token
+        return chats
+
+    def safe_list_group_chats(self, *, page_size: int = 100, max_pages: int = 20) -> list[dict[str, Any]]:
+        try:
+            return self.list_group_chats(page_size=page_size, max_pages=max_pages)
+        except Exception as exc:
+            _LOG.warning("list_group_chats failed agent=%s err=%s", self.agent_id, exc)
+            return []
 
     def safe_get_message(self, message_id: str) -> Optional[dict[str, Any]]:
         try:

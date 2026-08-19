@@ -140,7 +140,7 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
         "exposure_mode": "owner_private" if agent == "dylan" else ("admin_private" if agent == "milchick" else "restricted_team"),
         "dm_only": agent in {"dylan", "milchick"},
         "host_read": "selected" if agent == "dylan" else ("system_only" if agent == "milchick" else "deny"),
-        "default_policy": "legacy_allow",
+        "default_policy": "deny",
     }
     try:
         from agents.definitions import ensure_definitions_loaded, get_definition
@@ -261,7 +261,7 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
     pending_questions: list[dict[str, Any]] = []
     try:
         from risk.store import GlobalAgentStore
-        from feishu.identity import enrich_feishu_identities
+        from feishu.identity import discover_feishu_group_chats, enrich_feishu_identities
 
         store = GlobalAgentStore()
         try:
@@ -278,28 +278,40 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
                 if str(x).strip()
             ]
             access_chat_ids = [str(x).strip() for x in (access.get("allowed_chat_ids") or []) if str(x).strip()]
-            all_users = list(dict.fromkeys([*recent_ids.get("user_ids", []), *access_user_ids]))
-            all_chats = list(dict.fromkeys([*recent_ids.get("chat_ids", []), *access_chat_ids]))
+            private_user_ids = store.list_recent_feishu_dm_user_ids(limit=50)
+            discovered_chats = discover_feishu_group_chats(store=store, network=network)
+            discovered_chat_ids = [str(item.get("id") or "").strip() for item in discovered_chats if item.get("id")]
+            all_users = list(dict.fromkeys([*private_user_ids, *access_user_ids]))
+            all_chats = list(dict.fromkeys([*discovered_chat_ids, *recent_ids.get("chat_ids", []), *access_chat_ids]))
             enriched = enrich_feishu_identities(
                 user_ids=all_users,
                 chat_ids=all_chats,
                 store=store,
                 network=network,
             )
-            recent_user_set = set(recent_ids.get("user_ids", []))
-            recent_chat_set = set(recent_ids.get("chat_ids", []))
-            recent_users = [item for item in enriched.get("users", []) if item.get("id") in recent_user_set]
+            private_user_set = set(private_user_ids) | set(access_user_ids)
+            chat_details = {
+                str(item.get("id") or ""): item
+                for item in discovered_chats
+                if str(item.get("id") or "").strip()
+            }
+            recent_users = [item for item in enriched.get("users", []) if item.get("id") in private_user_set]
+            recent_chats = []
+            for item in enriched.get("chats", []):
+                chat_id = str(item.get("id") or "").strip()
+                if not chat_id or str(item.get("name") or "").strip() == "Direct message":
+                    continue
+                details = chat_details.get(chat_id, {})
+                recent_chats.append({**item, "agents": details.get("agents", [])})
             recent = {
                 "user_ids": [str(item.get("id")) for item in recent_users if item.get("id")],
-                "chat_ids": recent_ids.get("chat_ids", []),
+                "chat_ids": [str(item.get("id")) for item in recent_chats if item.get("id")],
                 "users": recent_users,
-                "chats": [
-                    item
-                    for item in enriched.get("chats", [])
-                    if item.get("id") in recent_chat_set
-                    and str(item.get("name") or "").strip()
-                    and str(item.get("name") or "").strip() != "Direct message"
-                ],
+                "private_user_ids": [str(item.get("id")) for item in recent_users if item.get("id")],
+                "private_users": recent_users,
+                "group_chat_ids": [str(item.get("id")) for item in recent_chats if item.get("id")],
+                "group_chats": recent_chats,
+                "chats": recent_chats,
                 "names": enriched.get("names") or {},
             }
         finally:
@@ -349,7 +361,7 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
         "home": str(agents_home()),
         "config_path": str(agents_home() / "config.json"),
         "access": {
-            "default_policy": str(access.get("default_policy") or "legacy_allow"),
+            "default_policy": str(access.get("default_policy") or "deny"),
             "owners": [str(x) for x in (access.get("owners") or []) if str(x).strip()],
             "admins": [str(x) for x in (access.get("admins") or access.get("admin_user_ids") or []) if str(x).strip()],
             "allowed_chat_ids": [str(x) for x in (access.get("allowed_chat_ids") or []) if str(x).strip()],
@@ -359,7 +371,7 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
             ],
             "admin_user_ids": [str(x) for x in (access.get("admin_user_ids") or []) if str(x).strip()],
             "agents": access.get("agents") if isinstance(access.get("agents"), dict) else {},
-            "legacy_warning": str(access.get("default_policy") or "legacy_allow") == "legacy_allow",
+            "legacy_warning": str(access.get("default_policy") or "deny") == "legacy_allow",
         },
         "recent_feishu": recent,
         "pending_questions": pending_questions,
@@ -378,6 +390,11 @@ def apply_agent_settings(payload: dict[str, Any]) -> dict[str, Any]:
     if "access" in payload and isinstance(payload.get("access"), dict):
         access_in = payload["access"]
         access = _ensure_dict(config, "access")
+        if "default_policy" in access_in:
+            default_policy = str(access_in.get("default_policy") or "deny").strip().lower()
+            if default_policy not in {"deny", "legacy_allow"}:
+                raise ValueError("default_policy must be deny or legacy_allow")
+            access["default_policy"] = default_policy
         for key in ("allowed_chat_ids", "allowed_user_ids", "mutation_allowed_user_ids", "admin_user_ids"):
             if key in access_in:
                 raw = access_in.get(key)
