@@ -7,6 +7,7 @@ from typing import Any
 
 
 _PLAN_MARKER = re.compile(r"(?:technical[- ]plan|story[- ]plan)(?:\.md)?", re.IGNORECASE)
+_PLAN_HEADING = re.compile(r"(?mi)^\s*#{1,6}\s+(story|technical)\s+plan\b")
 _TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 _FENCE = re.compile(r"^\s*```(?:[A-Za-z0-9_+-]+)?\s*$")
 _FENCE_LANGUAGE = re.compile(r"^\s*```([A-Za-z0-9_+-]*)\s*$")
@@ -27,7 +28,15 @@ def is_plan_document(text: str) -> bool:
 def plan_pdf_filename(text: str) -> str:
     raw = str(text or "")
     ticket = (_TICKET.search(raw) or ["LUMON"])[0]
-    kind = "technical-plan" if "technical" in raw.lower() else "story-plan"
+    headings = {match.group(1).lower() for match in _PLAN_HEADING.finditer(raw)}
+    if headings == {"story", "technical"}:
+        kind = "story-and-technical-plan"
+    elif "technical" in headings:
+        kind = "technical-plan"
+    elif "story" in headings:
+        kind = "story-plan"
+    else:
+        kind = "technical-plan" if "technical" in raw.lower() else "story-plan"
     return f"{ticket}-{kind}.pdf"
 
 

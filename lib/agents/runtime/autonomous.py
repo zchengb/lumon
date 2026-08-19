@@ -31,6 +31,7 @@ from agents.runtime.interaction import (
     normalize_conversation_decision,
     version_upgrade_choices,
 )
+from agents.runtime.loop_intent import classify_loop_intent, is_combined_plan_request, loop_gateway_prompt
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
@@ -661,6 +662,19 @@ def handle_autonomous_conversation(
                     store.save_checkpoint(session["session_id"], checkpoint)
 
             active_loop = str((checkpoint or {}).get("active_loop") or "").strip().lower()
+            combined_plan_request = agent_id == "mark" and is_combined_plan_request(text)
+            plan_sequence = bool(
+                agent_id == "mark"
+                and (
+                    str((checkpoint or {}).get("plan_sequence") or "").strip().lower()
+                    == "story_then_technical"
+                    or is_combined_plan_request(str((checkpoint or {}).get("last_answer_summary") or ""))
+                    or combined_plan_request
+                )
+            )
+            plan_stage = str((checkpoint or {}).get("plan_stage") or "").strip().lower()
+            if plan_sequence and plan_stage not in {"story", "business", "technical"}:
+                plan_stage = "story"
             if agent_id == "mark":
                 # Agent-owned Loop decisions still need the planning-only
                 # filesystem surface during this turn. Source and publish
@@ -686,10 +700,36 @@ def handle_autonomous_conversation(
                         "if the latest message answered the previous question, continue without asking for a generic 'continue'.\n"
                         "Only finish when the Loop artifact contract is satisfied; the host verifies the artifact before marking the job completed.\n"
                     )
+                    if loop_capability == "loop.technical":
+                        managed_loop += (
+                            "Technical Loop prerequisite is strict: verify that the Story artifact exists and its metadata "
+                            "has businessStatus=ready before drafting or presenting technical-plan.md. If it is not ready, "
+                            "do not produce a Technical Plan or attachment; explain in ordinary Feishu text that the Story/Business "
+                            "Loop must finish first and keep the job waiting for that prerequisite.\n"
+                        )
+                plan_sequence_prompt = ""
+                if plan_sequence:
+                    plan_sequence_prompt = (
+                        "[LUMEN PLAN SEQUENCE]\n"
+                        "This conversation contains a combined Story Plan + Technical Plan request. It is one staged workflow: "
+                        "complete the Story/Business Plan first, then continue to the Technical Plan in the same thread/session.\n"
+                        "The first response and all intermediate progress or clarification must be ordinary Feishu text. "
+                        "Do not auto-generate or attach a PDF, and do not present a Technical Plan as final while the Story is not business-ready.\n"
+                        "Only after story.md exists and metadata businessStatus=ready may the Technical Loop begin. "
+                        "When the two stages are complete, present the final result as text unless the user explicitly asks for a file.\n"
+                    )
+                loop_gateway = ""
+                if combined_plan_request:
+                    loop_gateway = loop_gateway_prompt(
+                        classify_loop_intent(text, active_loop=active_loop, pending=current_pending),
+                        active_loop=active_loop,
+                    )
                 return "\n\n".join(
                     part
                     for part in (
                         base,
+                        loop_gateway,
+                        plan_sequence_prompt,
                         managed_loop,
                         security_block,
                         interaction_contract_prompt(
@@ -929,6 +969,33 @@ def handle_autonomous_conversation(
                         next_active_loop = "technical"
                     elif conversation_decision.get("mode") == "new_request":
                         next_active_loop = ""
+                    if plan_sequence and next_active_loop == "business":
+                        plan_stage = "business"
+                    elif plan_sequence and next_active_loop == "technical" and plan_stage == "business":
+                        plan_stage = "technical"
+                    if plan_sequence and next_active_loop == "technical" and plan_stage != "technical":
+                        # The model may repeat the Technical route from a
+                        # prior turn, but the Story stage has not been
+                        # selected in this session yet. Keep the same
+                        # provider session while correcting the checkpoint;
+                        # the plan-sequence prompt tells the model why.
+                        next_active_loop = "business"
+                        obs.emit(
+                            trace,
+                            "agent.plan_sequence.story_first_enforced",
+                            requested_loop="technical",
+                            active_loop="business",
+                        )
+                if plan_sequence and plan_stage == "story" and next_active_loop not in {"business", "technical"}:
+                    # A provider that omits a route must not leave a combined
+                    # request without a tracked first stage. The user can
+                    # still continue in the same provider session.
+                    next_active_loop = "business"
+                    obs.emit(
+                        trace,
+                        "agent.plan_sequence.story_stage_defaulted",
+                        active_loop="business",
+                    )
                 if result.status == "succeeded" and str(result.text or "").strip():
                     checkpoint_json = json.dumps(
                         {
@@ -936,6 +1003,8 @@ def handle_autonomous_conversation(
                             "last_user_message_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
                             "last_answer_summary": (result.text or "")[:240],
                             "active_loop": next_active_loop,
+                            "plan_sequence": "story_then_technical" if plan_sequence else "",
+                            "plan_stage": plan_stage if plan_sequence else "",
                             "trust_zone": access.trust_zone,
                             "exposure_mode": access.exposure_mode,
                             "policy_version": access.policy_version,

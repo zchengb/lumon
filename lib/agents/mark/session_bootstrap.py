@@ -61,6 +61,8 @@ def build_bootstrap_prompt(
         "- Requirement or technical-design ambiguity: use the Lumon Grill protocol. Investigate first, identify the highest-impact unknown, explain what it changes, offer concrete options with a recommended default when evidence supports one, and record the answer or an owner-approved assumption. Ask sequentially when questions depend on each other; stop when no remaining unknown can change scope, behavior, verification, or delivery risk.\n"
         "- Match the language of the latest user message; when the user writes Chinese, keep the Feishu-facing answer in Chinese.\n"
         "- Loop entry in Feishu: clear language such as create/capture/turn this into a requirement starts the Business Loop; clear language such as turn this requirement into a technical plan starts the Technical Loop. If the intent is only suggestive, ask one concise confirmation. Starting either Loop is not delivery authorization.\n"
+        "- Story-first invariant: when one request asks for both a Story Plan and a Technical Plan, treat it as one staged workflow. Start and complete the Business/Story Loop first; do not enter Technical Loop or present technical-plan.md until story.md exists with metadata businessStatus=ready.\n"
+        "- Plan output: keep the first response, intermediate evidence, blockers, clarifications, and final plan in ordinary Feishu text. Never turn a plan-shaped response into a PDF or attachment unless the user explicitly asks for a file.\n"
         "- For a Business Loop, read the installed lumen-business-loop skill and work on topic/story artifacts. For a Technical Loop, read lumen-technical-loop and work on the technical plan for one business-ready Story. Keep both conversations in the current Feishu thread.\n"
         "- Explicit start: readiness then delivery run once; return Run ID; do not wait for completion.\n"
         "- Follow-up: read delivery progress/result files; do not guess.\n"
@@ -95,7 +97,7 @@ def build_bootstrap_prompt(
         "For host mutations emit the internal ACTION_REQUEST envelope; it is stripped before Feishu output and is never a user-facing step. Use delivery.start / delivery.cancel as before.\n"
         "For a bounded quick change, inspect the workspace first and then use: <ACTION_REQUEST>{\"action\":\"delivery.quick_change\",\"arguments\":{\"repository\":\"repo\",\"target_files\":[\"package.json\"],\"request\":\"upgrade the version number\",\"change_type\":\"version_bump\",\"target_version\":\"1.2.3\"}}</ACTION_REQUEST>\n"
         "Put only the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n"
-        "If the latest user message answers a prior Loop question, continue the Loop; ask a new question only when a new decision is actually required.\n"
+        "If the latest user message answers a prior Loop question, continue the Loop; ask a new question only when a new decision is actually required. For a combined Story + Technical request, preserve Story-first ordering across retries in the same session.\n"
     )
 
 
@@ -112,6 +114,7 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
         "Remain Mark. Investigate delivery evidence before answering.\n"
         "Match the language of the latest user message; when the user writes Chinese, keep the Feishu-facing answer in Chinese.\n"
         "If the Loop Gateway identifies a clear Business or Technical Loop entry, continue that Loop directly; an ambiguous entry gets one confirmation. Loop entry never authorizes delivery.start.\n"
+        "For a combined Story Plan + Technical Plan request, continue the Story/Business stage first and keep all plan output as Feishu text. Do not present or attach a Technical Plan until story.md exists and metadata businessStatus=ready; preserve this order across retries.\n"
         "Do not start Story delivery unless the user explicitly authorized a run. A bounded quick change is "
         "already authorized by the user's explicit request once its required details are known.\n"
         "If another agent hands you a task, use the original user input and attachments as the source of truth; "

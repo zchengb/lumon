@@ -30,6 +30,13 @@ class FeishuMessengerTests(unittest.TestCase):
         self.assertEqual("MBPAS-1503-technical-plan.pdf", plan_pdf_filename(technical))
         self.assertEqual("MBPAS-1503-story-plan.pdf", plan_pdf_filename(story))
 
+    def test_combined_plan_filename_reflects_both_stages(self) -> None:
+        text = (
+            "# Story Plan: MBPAS-1503\n\n## Story\ncontent\n\n"
+            "# Technical Plan: MBPAS-1503\n\n## Design\ntechnical details"
+        )
+        self.assertEqual("MBPAS-1503-story-and-technical-plan.pdf", plan_pdf_filename(text))
+
     def test_safe_reply_strips_dsml_protocol_markers(self) -> None:
         messenger = FeishuMessenger("milchick")
         with patch.object(messenger, "reply_markdown", return_value={"data": {"message_id": "om_1"}}) as reply:
@@ -47,7 +54,7 @@ class FeishuMessengerTests(unittest.TestCase):
         ) as upload, patch.object(
             messenger, "reply_file", return_value={"data": {"message_id": "om_pdf"}}
         ) as reply_file:
-            sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True)
+            sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True, allow_pdf=True)
 
         self.assertEqual("om_pdf", sent["data"]["message_id"])
         render.assert_called_once()
@@ -73,13 +80,25 @@ class FeishuMessengerTests(unittest.TestCase):
         ) as reply_markdown, patch.object(
             messenger, "reply_file", return_value={"data": {"message_id": "om_pdf"}}
         ) as reply_file:
-            sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True)
+            sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True, allow_pdf=True)
 
         self.assertEqual("om_suffix", sent["data"]["message_id"])
         self.assertEqual(2, reply_markdown.call_count)
         self.assertEqual(prefix, reply_markdown.call_args_list[0].args[1])
         self.assertEqual(suffix, reply_markdown.call_args_list[1].args[1])
         reply_file.assert_called_once_with("om_source", "file_v2_plan", reply_in_thread=True)
+
+    def test_long_plan_is_text_by_default(self) -> None:
+        text = "# Technical Plan: MBPAS-1503\n\n" + ("## Section\ncontent\n\n" * 80)
+        messenger = FeishuMessenger("mark")
+        with patch.object(messenger, "_upload_plan_pdf") as upload, patch.object(
+            messenger, "reply_markdown", return_value={"data": {"message_id": "om_text"}}
+        ) as reply_markdown:
+            sent = messenger.safe_reply_text("om_source", text, reply_in_thread=True)
+
+        self.assertEqual("om_text", sent["data"]["message_id"])
+        upload.assert_not_called()
+        reply_markdown.assert_called()
 
     def test_mermaid_flowchart_is_parsed_as_a_diagram(self) -> None:
         parsed = _parse_mermaid('flowchart TD\n  A["開始"] -->|成功| B{"判斷"}\n  B --> C["完成"]')

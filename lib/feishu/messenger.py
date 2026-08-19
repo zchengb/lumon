@@ -607,29 +607,41 @@ class FeishuMessenger:
         text: str,
         *,
         reply_in_thread: bool = False,
+        allow_pdf: bool = False,
     ) -> Optional[dict[str, Any]]:
+        """Send a conversational answer as text unless PDF output is explicit.
+
+        Plan-shaped content is still valid conversation: it may be a draft,
+        a clarification, or a progress update.  Converting it to an
+        attachment based only on length and headings can hide the actual
+        answer and make an unfinished Technical Plan look final.  Callers
+        that explicitly need a document attachment can opt in with
+        ``allow_pdf=True`` or use :meth:`safe_reply_pdf` directly.
+        """
+
         text = sanitize_feishu_answer(text)
-        prefix, document, suffix = split_plan_response(text)
-        if is_plan_document(document):
-            try:
-                file_key = self._upload_plan_pdf(document)
-                sent: Optional[dict[str, Any]] = None
-                if prefix:
-                    sent = self.reply_markdown(
-                        message_id,
-                        normalize_markdown_for_feishu(prefix),
-                        reply_in_thread=reply_in_thread,
-                    )
-                sent = self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
-                if suffix:
-                    sent = self.reply_markdown(
-                        message_id,
-                        normalize_markdown_for_feishu(suffix),
-                        reply_in_thread=reply_in_thread,
-                    )
-                return sent
-            except Exception as exc:
-                _LOG.warning("PDF plan reply failed message_id=%s err=%s; falling back to card", message_id, exc)
+        if allow_pdf:
+            prefix, document, suffix = split_plan_response(text)
+            if is_plan_document(document):
+                try:
+                    file_key = self._upload_plan_pdf(document)
+                    sent: Optional[dict[str, Any]] = None
+                    if prefix:
+                        sent = self.reply_markdown(
+                            message_id,
+                            normalize_markdown_for_feishu(prefix),
+                            reply_in_thread=reply_in_thread,
+                        )
+                    sent = self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
+                    if suffix:
+                        sent = self.reply_markdown(
+                            message_id,
+                            normalize_markdown_for_feishu(suffix),
+                            reply_in_thread=reply_in_thread,
+                        )
+                    return sent
+                except Exception as exc:
+                    _LOG.warning("PDF plan reply failed message_id=%s err=%s; falling back to card", message_id, exc)
         rendered = normalize_markdown_for_feishu(text)
         parts = split_markdown_for_feishu(rendered)
         sent: Optional[dict[str, Any]] = None

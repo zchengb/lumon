@@ -18,7 +18,7 @@ if str(LIB) not in sys.path:
 from agents.definitions import ensure_definitions_loaded, get_definition
 from agents.runtime.autonomous import handle_autonomous_conversation
 from agents.runtime.cursor_runtime import AgentRunResult, CursorAgentRuntime
-from agents.runtime.loop_intent import classify_loop_intent, loop_gateway_prompt
+from agents.runtime.loop_intent import classify_loop_intent, is_combined_plan_request, loop_gateway_prompt
 from agents.dylan.permission_policy import LOOP_PERMISSIONS
 from agents.profiles import PROFILES
 from agents.security.actions import ActionReceipt
@@ -68,6 +68,18 @@ class LoopGatewayTests(unittest.TestCase):
         technical = classify_loop_intent("Please turn this requirement into a technical plan")
         self.assertEqual(("business", "direct"), (business.loop, business.decision))
         self.assertEqual(("technical", "direct"), (technical.loop, technical.decision))
+
+    def test_combined_plan_request_starts_with_story_loop(self) -> None:
+        text = "请为 MBPAS-1437 生成 Story Plan 和 Technical Plan"
+        intent = classify_loop_intent(text)
+        self.assertTrue(is_combined_plan_request(text))
+        self.assertEqual(("business", "direct"), (intent.loop, intent.decision))
+        self.assertIn("start with Story Plan", intent.reason)
+        gateway = loop_gateway_prompt(intent)
+        self.assertIn("staged workflow", gateway)
+        self.assertIn("businessStatus is ready", gateway)
+        self.assertIn("Feishu text", gateway)
+        self.assertEqual("none", classify_loop_intent("What is a Story Plan and a Technical Plan?").decision)
 
     def test_ambiguous_entry_needs_confirmation_but_explanation_does_not(self) -> None:
         ambiguous = classify_loop_intent("这个需求我们梳理一下")
@@ -165,6 +177,80 @@ class LoopGatewayTests(unittest.TestCase):
                 profile = json.loads((docs / ".cursor" / "cli.json").read_text(encoding="utf-8"))
                 self.assertIn("Write(**)", profile["permissions"]["deny"])
                 self.assertNotIn("Write(stories/**)", profile["permissions"]["allow"])
+            finally:
+                if previous is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous
+
+    def test_combined_plan_keeps_story_first_across_retry(self) -> None:
+        ensure_definitions_loaded()
+        mark = get_definition("mark")
+        assert mark is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            (docs / "stories").mkdir()
+            previous = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"normal","route":"technical_loop",'
+                            '"active_loop":"technical"}</CONVERSATION_DECISION>'
+                            "<FINAL_RESPONSE>Technical Plan draft</FINAL_RESPONSE>"
+                        ),
+                        provider_session_id="provider-mark",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"continue_pending",'
+                            '"route":"business_loop","active_loop":"business"}</CONVERSATION_DECISION>'
+                            "<FINAL_RESPONSE>先完成 Story Plan。</FINAL_RESPONSE>"
+                        ),
+                        provider_session_id="provider-mark",
+                        status="succeeded",
+                    ),
+                ]
+            )
+            definition = replace(
+                mark,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", docs.resolve()),
+                ensure_workspace_contract=lambda **kwargs: docs,
+            )
+            meta = {
+                "chat_id": "oc-combined",
+                "chat_type": "group",
+                "thread_id": "omt-combined",
+                "user_id": "ou1",
+                "message_id": "om-combined-1",
+            }
+            try:
+                with mock.patch("agents.runtime.autonomous.resolve_project", return_value={"slug": "mbpass", "workspace": str(docs)}):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            first = handle_autonomous_conversation(
+                                definition=definition,
+                                text="请为 MBPAS-1437 生成 Story Plan 和 Technical Plan",
+                                meta=meta,
+                                common=_common(),
+                                runtime=runtime,
+                            )
+                            second = handle_autonomous_conversation(
+                                definition=definition,
+                                text="请重试",
+                                meta={**meta, "message_id": "om-combined-2"},
+                                common=_common(),
+                                runtime=runtime,
+                            )
+                self.assertEqual("ok", first["status"])
+                self.assertEqual("ok", second["status"])
+                self.assertIn("[LUMEN PLAN SEQUENCE]", runtime.calls[0]["prompt"])
+                self.assertIn("complete the Story/Business Plan first", runtime.calls[0]["prompt"])
+                self.assertIn("active loop: business", runtime.calls[1]["prompt"])
+                self.assertIn("[LUMEN PLAN SEQUENCE]", runtime.calls[1]["prompt"])
+                self.assertEqual("provider-mark", runtime.calls[1]["provider_session_id"])
             finally:
                 if previous is None:
                     os.environ.pop("LUMEN_AGENTS_HOME", None)

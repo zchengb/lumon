@@ -24,7 +24,7 @@ class LoopIntent:
 
 _INFO_RE = re.compile(
     r"(?:what\s+is|what's|explain|difference|why|how\s+does|区别|差异|是什么|为什么|怎么理解|如何理解)"
-    r"[\s\S]{0,48}(?:business\s+loop|technical\s+loop|需求流程|技术流程|需求卡)",
+    r"[\s\S]{0,48}(?:business\s+loop|technical\s+loop|story\s*plan|technical\s*plan|需求流程|技术流程|需求卡)",
     re.IGNORECASE,
 )
 
@@ -46,6 +46,21 @@ _TECHNICAL_DIRECT_RE = re.compile(
     r"[\s\S]{0,42}(?:技术方案|技术计划|技术设计|实现方案|架构方案|technical\s+plan|technical\s+design|implementation\s+plan|technical\s+solution)"
     r"|(?:create|draft|turn|convert|make|open|start|begin|design|plan|need|want|please|let's)"
     r"[\s\S]{0,42}(?:a\s+)?(?:technical\s+plan|technical\s+design|implementation\s+plan|technical\s+solution|architecture)",
+    re.IGNORECASE,
+)
+
+# A request that names both artifacts is a staged workflow, not an implicit
+# Technical Loop entry.  Keep this signal narrower than a bare ``story`` or
+# ``technical-plan.md`` reference so evidence/status messages do not get
+# mistaken for a new planning request.
+_STORY_PLAN_SIGNAL_RE = re.compile(
+    r"(?:\bstory[\s_-]*plan\b|\buser[\s_-]*story\b|\bbusiness[\s_-]*(?:requirement|loop)\b|"
+    r"需求(?:方案|计划|卡)?|业务需求|故事(?:方案|计划))",
+    re.IGNORECASE,
+)
+_TECHNICAL_PLAN_SIGNAL_RE = re.compile(
+    r"(?:\btechnical[\s_-]*(?:plan|design|solution)\b|\bimplementation[\s_-]*plan\b|"
+    r"技术(?:方案|计划|设计)|实现方案|架构方案)",
     re.IGNORECASE,
 )
 
@@ -87,6 +102,18 @@ def _intent(loop: LoopName, decision: LoopDecision, confidence: float, reason: s
     return LoopIntent(loop=loop, decision=decision, confidence=confidence, reason=reason)
 
 
+def is_combined_plan_request(text: str) -> bool:
+    """Return whether a message explicitly asks for both planning stages.
+
+    Story planning owns the business-ready prerequisite for technical
+    planning.  This helper is intentionally shared by the group front door
+    and the autonomous prompt builder so the routing rule is not duplicated.
+    """
+
+    raw = _clean(text)
+    return bool(_STORY_PLAN_SIGNAL_RE.search(raw) and _TECHNICAL_PLAN_SIGNAL_RE.search(raw))
+
+
 def classify_loop_intent(
     text: str,
     *,
@@ -108,6 +135,13 @@ def classify_loop_intent(
 
     business = bool(_BUSINESS_DIRECT_RE.search(raw))
     technical = bool(_TECHNICAL_DIRECT_RE.search(raw))
+    if is_combined_plan_request(raw):
+        return _intent(
+            "business",
+            "direct",
+            0.99,
+            "combined Story and Technical Plan request must start with Story Plan",
+        )
     if technical and not business:
         return _intent("technical", "direct", 0.96, "clear request for a technical plan or design")
     if business and not technical:
@@ -159,6 +193,15 @@ def loop_gateway_prompt(intent: LoopIntent, *, active_loop: str = "") -> str:
         return ""
     name = loop_display_name(intent.loop or active_loop)
     if intent.decision == "direct":
+        if intent.loop == "business" and "combined" in intent.reason.lower():
+            return (
+                "[LUMEN LOOP GATEWAY]\n"
+                "The user requested both a Story Plan and a Technical Plan. This is a staged workflow: "
+                "start the Story/Business Loop first, finish the business-ready Story, and only then enter the Technical Loop.\n"
+                "Keep the user-facing plan and progress as Feishu text. Do not create, present, or attach a technical plan "
+                "until the Story artifact exists and metadata businessStatus is ready.\n"
+                "Starting the Business Loop is not authorization to start Development/Delivery or to emit delivery.start.\n"
+            )
         return (
             "[LUMEN LOOP GATEWAY]\n"
             f"The user has clearly entered {name} through natural language ({intent.reason}).\n"

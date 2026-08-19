@@ -2,6 +2,8 @@
 
 # Technical Loop workflow
 
+This loop is never the first stage of a combined Story Plan + Technical Plan request. It may start only after the Story/Business Loop has produced `story.md` and `metadata.json.businessStatus=ready`. If that prerequisite is absent, return to Business Loop and keep the user-facing explanation in text; do not generate a PDF or present a technical plan.
+
 The Feishu Loop Gateway is an accepted entry point. A clear natural-language request to turn a business-ready requirement or Story into a technical plan/design starts this workflow directly; an ambiguous request gets one confirmation. The gateway never authorizes delivery or code changes.
 
 Frontend delivery is disabled. Do not plan or approve Web, Native, mobile UI, frontend source, Figma-to-code, browser/device runtime, Visual Delivery Contract, or visual QA work. Keep it out of scope or blocked and return to the Business Loop if the Story cannot be delivered without frontend changes. Backend-only work may proceed only when it is independently deliverable without frontend changes.

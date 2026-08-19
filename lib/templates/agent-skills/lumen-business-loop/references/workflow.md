@@ -2,6 +2,8 @@
 
 # Business Loop workflow
 
+When the user asks for both Story Plan and Technical Plan, this Business Loop is the first stage. Complete the Story and obtain `businessStatus: ready` before Technical Loop may start. Keep the staged progress and plan in the Feishu conversation; do not emit a PDF or attachment unless the user explicitly asks for a file.
+
 The Feishu Loop Gateway is an accepted entry point. A clear natural-language request to create, capture, or turn material into a requirement or Story starts this workflow directly; an ambiguous request gets one confirmation. The gateway never authorizes technical planning or delivery.
 
 Preflight: safely refresh the docs and relevant clean repositories; stop for local changes or non-fast-forward history. For a Story with `metadata.json.jiraKey`, invoke `$lumen-jira-story-import` before reading requirements unless this turn already imported that Story. If `jiraSyncStatus` is `changed`, include reconciliation in the first question batch, then update `story.md` only after confirmation. Set `jiraSnapshotHash` to `jiraLatestSnapshotHash` and `jiraSyncStatus` to `synced` with the confirmed Story update. Never change application source code.
