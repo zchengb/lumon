@@ -294,6 +294,6 @@ def default_executors() -> dict[str, Executor]:
         "schedule.status",
     ):
         mapping[action] = execute_job_action
-    for action in ("feishu.send_progress", "feishu.send_file"):
+    for action in ("feishu.say", "feishu.send_progress", "feishu.send_file"):
         mapping[action] = execute_feishu_action
     return mapping

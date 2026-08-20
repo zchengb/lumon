@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "5"
+MANAGED_VERSION = "6"
 _MANAGED_START = f"<!-- LUMEN MARK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MARK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MARK MANAGED START"
@@ -40,25 +40,29 @@ def _managed_block(project_slug: str) -> str:
         f"- lumen delivery status --story <id> --json\n"
         f"- lumen delivery run --story <id> --actor <user> --source-message-id <mid> --trace-id <tid> --json\n"
         f"- lumen delivery result --run-id <id> --json\n"
+        f"- Native Read/Edit/Shell/Build/Test for a bounded implementation in this workspace\n"
         f"- lumen agents action --agent mark --action delivery.quick_change --json "
-        f"(bounded explicit change; no Story/technical plan required)\n"
+        f"(legacy fallback only when native editing is unavailable)\n"
         f"- lumen agents action --agent mark --action delivery.start --story <id> --json "
-        f"(host/admin only; conversational path uses the internal host execution channel)\n"
+        f"(admin-only; conversational path uses the authorized action boundary)\n"
         f"- Test-case generation is owned by Milchick; Mark only handles delivery work\n\n"
         f"## Jira\n"
-        f"- Prefer authorized `twg jira workitem get/query` for read-only Jira evidence; host reads remain the fallback\n"
-        f"- Create/update work items only through the internal <ACTION_REQUEST> channel when the latest request calls for that write\n\n"
+        f"- Prefer authorized `twg jira workitem get/query` for read-only Jira evidence; the compatibility Jira read remains the fallback\n"
+        f"- Create/update work items only through the authorized connected action when the latest request calls for that write\n\n"
         f"## Security Boundary\n"
-        f"- Conversational Mark is workspace-isolated over delivery docs\n"
-        f"- Never enumerate host apps/hardware/home; never modify business source or secrets\n"
-        f"- Start delivery / quick changes via the host-side broker; the internal <ACTION_REQUEST> envelope is never shown to users\n"
+        f"- Mark may directly inspect and modify bounded project files inside the resolved isolated workspace\n"
+        f"- Never enumerate personal apps/hardware/home; never read or write secrets\n"
+        f"- Delivery start, Jira writes, Feishu effects, and publishing still use the authorized action boundary\n"
+        f"- Internal action metadata is never shown to users\n"
         f"- Do not supply actor_user_id, chat_id, or explicit_authorization\n\n"
         f"## Rules\n"
-        f"- Do not modify business source in conversational Mark session.\n"
+        f"- For a clear bounded implementation request, inspect, edit, build, and test directly in the isolated workspace.\n"
+        f"- Do not claim a change is complete without checking the resulting files or verification output.\n"
         f"- Do not invent PR / verification / Jira status.\n"
         f"- Ordinary questions must not start delivery.\n"
-        f"- Put Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>\n"
-        f"- Mutations: internal <ACTION_REQUEST>{{action,arguments,resource}}</ACTION_REQUEST>; strip it before Feishu output\n"
+        f"- Answer naturally; use structure only when it helps the reader.\n"
+        f"- Put the final Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>\n"
+        f"- Mutations: use the connected action format with action, arguments, and resource; strip its metadata before Feishu output\n"
         f"{_MANAGED_END}\n"
     )
 
@@ -78,7 +82,7 @@ def _upsert_managed_block(existing: str, project_slug: str) -> str:
 
 
 def ensure_workspace_contract(*, workspace: Path, project_slug: str) -> Path:
-    from agents.dylan.permission_policy import write_permission_profile
+    from agents.dylan.permission_policy import write_workspace_write_permission_profile
 
     root = Path(workspace).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -87,5 +91,5 @@ def ensure_workspace_contract(*, workspace: Path, project_slug: str) -> Path:
     updated = _upsert_managed_block(current, project_slug)
     if updated != current:
         agents.write_text(updated, encoding="utf-8")
-    write_permission_profile(root, force=True)
+    write_workspace_write_permission_profile(root, force=True)
     return root

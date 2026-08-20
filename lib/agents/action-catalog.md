@@ -1,14 +1,14 @@
 # Lumon Action Catalog
 
 Read this file before emitting an `ACTION_REQUEST` when the current turn needs
-a host action. The `action` value must be copied exactly from the canonical
+a connected action. The `action` value must be copied exactly from the canonical
 name column. Do not invent names, translate names, or use compatibility aliases
-in a new request. The host still enforces role ownership, authorization, and
+in a new request. The connection still enforces role ownership, authorization, and
 resource boundaries.
 
 ## Request envelope and parameter rules
 
-Every host action must use this envelope:
+Every connected action must use this envelope:
 
 ```text
 <ACTION_REQUEST>{"action":"canonical.action","arguments":{...},"resource":{}}</ACTION_REQUEST>
@@ -19,15 +19,15 @@ Every host action must use this envelope:
 - Put every model-selected input in `arguments`. Use the exact field names and
   JSON types shown below; keep `resource` as `{}` unless an action recipe
   explicitly says otherwise.
-- `resource` is host scope/context, not a second place to invent parameters.
+- `resource` is connection scope/context, not a second place to invent parameters.
   Moving a missing field there does not make an invalid request valid.
 - `one of A, B` means provide exactly one of those fields. Prefer the first
   field listed; the remaining names are compatibility inputs accepted by the
-  host.
+  connection.
 - `required` means the field must be present before execution. Adapter config
   such as the project workspace or Jira site may still be supplied by the host.
 - Do not send identity fields such as `actor`, `agent_id`, `chat_id`,
-  `thread_id`, or `trace_id`; the host fills them.
+  `thread_id`, or `trace_id`; the connection fills them.
 - If a required value is absent, emit a `CLARIFICATION_REQUEST` instead of
   inventing a field or value.
 
@@ -53,10 +53,10 @@ Use the lowest-risk lane that completes the current turn:
    auth files or secrets. If a configured Jira site is required, read the
    non-secret workspace config and pass its site value; never invent one. Never
    run other TWG verbs, arbitrary shell, HTTP, Python, or GUI commands. If the
-   authorized command is unavailable or fails, use the canonical host read
+   authorized command is unavailable or fails, use the canonical connected read
    action as the fallback.
 
-2. **Host-gated mutation lane** — Jira create/update and every external,
+2. **Connected mutation lane** — Jira create/update and every external,
    irreversible, identity-sensitive, or audited mutation must use the exact
    `ACTION_REQUEST` recipe below. A successful read is not permission to write.
 
@@ -67,13 +67,14 @@ Use the lowest-risk lane that completes the current turn:
 ## Feishu conversation capabilities
 
 These capabilities let the Agent choose when the user should receive an
-intermediate update or an attachment. The Host performs the actual Feishu API
-call with the current Agent's credentials and source message, then returns a
+intermediate update or an attachment. The connection performs the actual Feishu API
+call with the current Agent's credentials and source message, then returns an
 receipt to the same provider session.
 
 | Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `feishu.send_progress` | Send a concise visible milestone, finding, blocker, or next step in the current Feishu conversation. | required: `message`; optional: `phase` |
+| `feishu.say` | Send a neutral visible message in the current Feishu conversation. | required: `message` |
+| `feishu.send_progress` | Compatibility action for a concise visible milestone, finding, blocker, or next step. | required: `message`; optional: `phase` |
 | `feishu.send_file` | Upload a workspace file and attach it to the current Feishu conversation. | required: `path`; optional: `caption`, `cleanup` |
 
 Rules:
@@ -81,19 +82,27 @@ Rules:
 - Put the file path in `arguments.path`, relative to the current workspace when
   possible. Absolute paths are accepted only when they resolve inside that
   workspace. Do not provide identity, chat, thread, or workspace context; the
-  Host injects those fields from the trusted inbound message.
+  The connection injects those fields from the trusted inbound message.
 - Only regular workspace files may be attached. Secret-like files (for
   example `.env`, private-key files, and certificate bundles) are rejected.
 - Generated PDF transfer artifacts under `output/pdf/` are cleaned up after a
   successful upload by default. Use `cleanup=true` only for another generated
   PDF under that same directory; source documents are never deleted by this
   action.
-- A successful receipt means the Host uploaded and attached the file. Do not
+- A successful action result means the connection uploaded and attached the file. Do not
   claim that a file was sent from a path alone. If the receipt is failed or
   denied, explain the blocker and do not retry the same action indefinitely.
-- Progress updates should describe evidence, a blocker, a next step, or a
-  question. They are not a transcript of private reasoning or raw provider
-  tool output. Keep each update focused so the thread reads naturally.
+- `feishu.say` and progress updates should describe evidence, a blocker, a next
+  step, or a question. They are not a transcript of private reasoning or raw
+  provider tool output. Use as many useful messages as the request warrants,
+  without a fixed count, and keep each update focused so the thread reads
+  naturally.
+
+Send a neutral visible update:
+
+```text
+<ACTION_REQUEST>{"action":"feishu.say","arguments":{"message":"我已定位到失败点，正在核对对应配置与测试。"},"resource":{}}</ACTION_REQUEST>
+```
 
 Send a progress update and continue the same request:
 
@@ -119,20 +128,20 @@ Attach an explicitly requested generated PDF:
 | `agent.list` | List registered Agents. | none |
 | `agent.health` | Read registered Agent health/status. | none |
 
-For delegation, emit one `agent.job.create` request and wait for its host
+For delegation, emit one `agent.job.create` request and wait for its action
 receipt before claiming that work was assigned or started.
 
 Any Agent may also use the lightweight `agent.delegate` capability when a
-native Host Tool is available. It uses the same `target_agent` and `capability`
-fields, is resolved by the Host, and returns an Action Receipt; it is not a
+native connected tool is available. It uses the same `target_agent` and `capability`
+fields, is resolved by the connection, and returns an action result; it is not a
 license to impersonate the target Agent or bypass user/chat authorization.
 
-## Jira — direct read lane first; mutations through the host adapter
+## Jira — direct read lane first; mutations through the connected adapter
 
 | Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `jira.workitem.get` | Host fallback for reading one Jira work item when the authorized TWG read command is unavailable or fails. | required: one of `issue_key`, `id`, `key`; prefer `issue_key` |
-| `jira.workitem.query` | Host fallback for querying Jira when the authorized TWG read command is unavailable or fails. | required: `jql`; optional: `limit` (number), `project_key`, `board_id`, `site` |
+| `jira.workitem.get` | Connected fallback for reading one Jira work item when the authorized TWG read command is unavailable or fails. | required: one of `issue_key`, `id`, `key`; prefer `issue_key` |
+| `jira.workitem.query` | Connected fallback for querying Jira when the authorized TWG read command is unavailable or fails. | required: `jql`; optional: `limit` (number), `project_key`, `board_id`, `site` |
 | `jira.sprint.untested.report` | Read the untested Story report. | optional: `standard` (`A`/`B`/`C`/`D`), `statuses` (array) |
 | `jira.workitem.create` | Create a Jira work item after the request calls for it. | required: `summary`; optional: `description`, `project_key`, `issue_type`, `target_version`, `priority`, `labels` (array), `parent` |
 | `jira.workitem.update` | Update an existing Jira work item. | required: `issue_key`; plus at least one of `summary`, `description`, `priority`, `labels` (array), `add_labels` (array), `comment`, `status` |
@@ -190,7 +199,7 @@ Use the canonical action name and put the routing fields in `arguments`:
 `target_agent` is an Agent ID, not a person display name. `capability` is the
 target Agent's canonical capability, not a natural-language description. For
 this workflow, `mark` + `loop.technical` is the valid Technical Plan handoff.
-After emitting this request, wait for the host receipt before saying the job
+After emitting this request, wait for the action result before saying the job
 was assigned or started.
 
 Do **not** emit either of these shapes:
@@ -279,7 +288,7 @@ When the workspace `config/common.json` enables
 `agent_collaboration.thread_native_handoff`, ordinary Agent-to-Agent
 conversation is carried by visible Feishu thread messages.  Use an exact
 mention such as `@Mark` and keep the request/evidence in that message; the
-Host records it and wakes the mentioned Agent.  Do not invent a Job ID, a
+The connection records it and wakes the mentioned Agent.  Do not invent a Job ID, a
 `[LUMEN HANDOFF]` envelope, or a `waiting_user` state for this path.  A direct
 human reply to an Agent message resumes only that Agent's provider session.
 

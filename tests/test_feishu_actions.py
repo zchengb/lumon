@@ -32,6 +32,30 @@ def _request(workspace: Path, action: str, arguments: dict[str, object]) -> Acti
 
 
 class FeishuActionTests(unittest.TestCase):
+    def test_say_action_sends_neutral_message_to_current_thread(self) -> None:
+        class FakeMessenger:
+            def __init__(self, agent_id: str) -> None:
+                self.agent_id = agent_id
+                self.calls: list[tuple[object, ...]] = []
+
+            def reply_markdown(self, *args: object, **kwargs: object) -> dict[str, object]:
+                self.calls.append((*args, kwargs))
+                return {"data": {"message_id": "om_say"}}
+
+        with patch("agents.security.adapters.feishu.FeishuMessenger", FakeMessenger):
+            result = execute_feishu_action(
+                _request(
+                    Path("/tmp/workspace"),
+                    "feishu.say",
+                    {"message": "我已定位到失败点，正在核对对应配置。"},
+                )
+            )
+
+        self.assertEqual("say", result["kind"])
+        self.assertEqual("sent", result["status"])
+        self.assertEqual("我已定位到失败点，正在核对对应配置。", result["message"])
+        self.assertEqual("om_say", result["message_id"])
+
     def test_progress_action_sends_to_current_thread(self) -> None:
         class FakeMessenger:
             def __init__(self, agent_id: str) -> None:

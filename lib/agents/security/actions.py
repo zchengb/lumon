@@ -86,6 +86,7 @@ JIRA_ACTIONS = JIRA_READ_ACTIONS + JIRA_MUTATION_ACTIONS
 # attachment is part of completing the current conversation, not an
 # authorization to change business data.
 FEISHU_ACTIONS = (
+    "feishu.say",
     "feishu.send_progress",
     "feishu.send_file",
 )

@@ -470,10 +470,10 @@ def security_context_prompt(decision: AccessDecision) -> str:
         "",
     ]
     if decision.host_read_allowed and host_caps:
-        lines.append("Host read capabilities:")
+        lines.append("Machine read capabilities:")
         lines.extend(f"- {cap}" for cap in host_caps)
     else:
-        lines.append("Host read: DENIED")
+        lines.append("Machine read: DENIED")
     lines.extend(
         [
             "",
@@ -485,7 +485,7 @@ def security_context_prompt(decision: AccessDecision) -> str:
         ]
     )
     if zone == "SHARED":
-        lines.extend(["", "Shared chat: mutations denied; private owner host data never sent."])
+        lines.extend(["", "Shared chat: mutations denied; private owner machine data never sent."])
     return "\n".join(lines)
 
 

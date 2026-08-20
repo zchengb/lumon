@@ -65,7 +65,7 @@ class MarkM10Tests(unittest.TestCase):
         self.assertIn("Mark", prompt)
         self.assertIn("Delivery Lead", prompt)
         self.assertIn("lumen delivery", prompt)
-        self.assertIn("Never modify business source code", prompt)
+        self.assertIn("native Read/Edit/Shell/Build/Test", prompt)
         self.assertIn("Lumon Grill protocol", prompt)
         self.assertIn("Do not turn a bounded quick change into a Story", prompt)
         self.assertIn("output/pdf/*.pdf as ephemeral", prompt)
@@ -73,7 +73,7 @@ class MarkM10Tests(unittest.TestCase):
         resume = build_resume_prompt(user_message="继续", project_slug="mbpass")
         self.assertIn("Remain Mark", resume)
         self.assertIn("Relationship — Dylan", prompt)
-        self.assertIn("Soul Version: **3**", prompt)
+        self.assertIn("Soul Version: **4**", prompt)
         self.assertTrue(prompt.startswith("[MARK SESSION BOOTSTRAP]"))
 
     def test_workspace_contract(self) -> None:
@@ -83,7 +83,7 @@ class MarkM10Tests(unittest.TestCase):
             text = (root / "AGENTS.md").read_text(encoding="utf-8")
             self.assertIn("LUMEN MARK MANAGED START", text)
             self.assertIn("Delivery Lead", text)
-            self.assertIn("Do not modify business source", text)
+            self.assertIn("bounded implementation request", text)
 
     def test_explicit_pdf_request_cleans_stale_workspace_artifacts(self) -> None:
         from dataclasses import replace
@@ -346,7 +346,73 @@ class MarkM10Tests(unittest.TestCase):
             self.assertEqual(result.get("agent_id"), "mark")
             self.assertIn("blocked", str(result.get("text") or "").lower())
             start_mock.assert_not_called()
-            self.assertIn("Never modify business source code", runtime.calls[0]["prompt"])
+            self.assertIn("native Read/Edit/Shell/Build/Test", runtime.calls[0]["prompt"])
+
+    def test_visible_action_can_suppress_duplicate_final_reply_after_continuation(self) -> None:
+        from dataclasses import replace
+
+        ensure_definitions_loaded()
+        mark = get_definition("mark")
+        assert mark is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            (docs / "stories").mkdir()
+            runtime = FakeRuntime(
+                [
+                    AgentRunResult(
+                        text=(
+                            '<CONVERSATION_DECISION>{"mode":"normal",'
+                            '"suppress_final_reply":true}</CONVERSATION_DECISION>'
+                            '<FINAL_RESPONSE>已通过 Feishu 消息告知用户。</FINAL_RESPONSE>'
+                            '<ACTION_REQUEST>{"action":"feishu.say","arguments":'
+                            '{"message":"已通过 Feishu 消息告知用户。"}}</ACTION_REQUEST>'
+                        ),
+                        provider_session_id="sess-mark",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text="<FINAL_RESPONSE>动作已完成。</FINAL_RESPONSE>",
+                        provider_session_id="sess-mark",
+                        status="succeeded",
+                    ),
+                ]
+            )
+            receipt = mock.Mock()
+            receipt.to_dict.return_value = {
+                "status": "succeeded",
+                "action": "feishu.say",
+                "result": {"kind": "say", "message": "已通过 Feishu 消息告知用户。"},
+            }
+            definition = replace(
+                mark,
+                resolve_workspace=lambda project_slug, chat_id: ("mbpass", docs.resolve()),
+                ensure_workspace_contract=lambda **kwargs: docs,
+            )
+            previous = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            try:
+                with mock.patch("agents.runtime.autonomous.resolve_project", return_value={"slug": "mbpass", "workspace": str(docs)}):
+                    with mock.patch("agents.runtime.autonomous.known_project_slugs", return_value={"mbpass"}):
+                        with mock.patch("agents.runtime.autonomous.load_chat_project_map", return_value={}):
+                            with mock.patch("agents.runtime.autonomous.execute_trusted_actions", return_value=[receipt]):
+                                result = handle_autonomous_conversation(
+                                    definition=definition,
+                                    text="请告诉我处理结果",
+                                    meta={"chat_id": "oc1", "thread_id": "omt1", "user_id": "ou1", "message_id": "om1"},
+                                    common=_v4_common(),
+                                    runtime=runtime,
+                                )
+            finally:
+                if previous is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous
+
+            self.assertEqual("ok", result.get("status"))
+            self.assertEqual(2, len(runtime.calls))
+            self.assertEqual(1, result.get("visible_message_count"))
+            self.assertTrue(result.get("suppress_final_reply"))
+            self.assertEqual("已通过 Feishu 消息告知用户。", result.get("terminal_visible_message"))
 
 
 if __name__ == "__main__":

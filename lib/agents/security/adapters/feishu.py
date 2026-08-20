@@ -216,6 +216,35 @@ def _send_progress(request: ActionRequest) -> dict[str, Any]:
         "kind": "progress",
         "status": "sent",
         "phase": phase,
+        "message": message,
+        "message_id": message_id,
+    }
+
+
+def _send_say(request: ActionRequest) -> dict[str, Any]:
+    """Send a neutral visible coworker message without a progress wrapper."""
+    args = dict(request.arguments or {})
+    message = str(args.get("message") or "").strip()
+    if not message:
+        raise ResourceDenied("message is required")
+    if len(message) > _MAX_PROGRESS_CHARS:
+        raise ResourceDenied(f"message exceeds {_MAX_PROGRESS_CHARS} characters")
+    messenger = FeishuMessenger(request.agent_id)
+    response = _reply_agent_text_or_markdown(
+        messenger,
+        _source_message_id(request),
+        message,
+        reply_in_thread=_reply_in_thread(request),
+        conversation_meta=_conversation_meta(request),
+        conversation_common=_optional_workspace_common(request),
+    )
+    message_id = extract_message_id(response)
+    if not message_id:
+        raise RuntimeError("Feishu say did not return a message ID")
+    return {
+        "kind": "say",
+        "status": "sent",
+        "message": message,
         "message_id": message_id,
     }
 
@@ -286,12 +315,15 @@ def _send_file(request: ActionRequest) -> dict[str, Any]:
         "file_key": file_key,
         "message_id": file_message_id,
         "caption_message_id": caption_message_id,
+        "caption": caption,
         "path": _relative_path(root, path),
         "cleaned_up": cleaned_up,
     }
 
 
 def execute_feishu_action(request: ActionRequest) -> dict[str, Any]:
+    if request.action == "feishu.say":
+        return _send_say(request)
     if request.action == "feishu.send_progress":
         return _send_progress(request)
     if request.action == "feishu.send_file":

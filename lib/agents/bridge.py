@@ -265,6 +265,12 @@ def _run_autonomous_worker(
                 return result
             reply_text = str(result.get("text") or "暂无数据。")
             receipts = result.get("action_receipts") if isinstance(result.get("action_receipts"), list) else []
+            suppress_result_reply = bool(
+                result.get("suppress_final_reply")
+                and int(result.get("visible_message_count") or 0) > 0
+                and not result.get("pending_clarification")
+            )
+            effective_suppress_reply = suppress_reply or suppress_result_reply
             host_file_sent = any(
                 isinstance(item, dict)
                 and item.get("action") == "feishu.send_file"
@@ -277,7 +283,7 @@ def _run_autonomous_worker(
                 attachment_refs = [str(item) for item in raw_attachment_refs] if isinstance(raw_attachment_refs, list) else []
             except (TypeError, json.JSONDecodeError):
                 attachment_refs = []
-            if suppress_reply:
+            if effective_suppress_reply:
                 obs.emit(trace, "reply.suppressed")
             else:
                 obs.emit(trace, "reply.started")

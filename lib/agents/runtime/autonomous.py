@@ -40,7 +40,6 @@ from agents.conversation.config import thread_native_config
 from agents.conversation.thread_context import ThreadContextLoader
 from feishu.agent_mentions import parse_agent_mentions
 from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
-from agents.security.actions import FEISHU_ACTIONS
 from agents.security.flags import workspace_isolation_v2_enabled
 from agents.security.tools import write_host_tool_manifest
 from agents.security.trusted import execute_trusted_actions, trusted_context_from_meta
@@ -248,29 +247,10 @@ def _enrich_clarification(clarification: dict[str, Any], workspace: Path) -> dic
     return enriched
 
 
-_ACTION_RESULT_CONTINUATION_ACTIONS = frozenset(
-    {
-        "jira.workitem.query",
-        "jira.sprint.untested.report",
-        "test_case.generate",
-        *FEISHU_ACTIONS,
-    }
-)
-
-_LOOP_READ_CONTINUATION_ACTIONS = frozenset(
-    {
-        "jira.workitem.get",
-        "story.read",
-        "technical_plan.read",
-        "delivery.readiness",
-        "delivery.status",
-        "delivery.result",
-    }
-)
-
 # A multi-card request is allowed to take several Agent turns. The ceiling is
 # only a runaway guard; which card comes next remains the Agent's decision.
 _MAX_ACTION_RESULT_CONTINUATIONS = 24
+_ACTION_RESULT_STATUSES = frozenset({"succeeded", "failed", "denied"})
 
 _TEST_CASE_COMMAND_RE = re.compile(
     r"(?:重新|再)?(?:生成|產生|產出|创建|創建|建立|generate|create|regenerate|retry)"
@@ -302,47 +282,36 @@ def _action_results_need_continuation(
     *,
     continue_loop_reads: bool = False,
 ) -> bool:
-    """Return whether an Agent needs another decision turn after a host action."""
+    """Return whether an Agent needs another decision turn after an action.
+
+    The action catalog is not a continuation whitelist.  A provider must see
+    every synchronous action receipt in the same session so it can interpret
+    the result, recover from a failure, or decide that the user's request is
+    complete.  An action may opt out only with an explicit terminal/detached
+    result; this also keeps newly registered actions from silently terminating
+    the conversation after execution.
+    """
+    def _enabled(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().casefold() in {"1", "true", "yes", "on"}
+        return bool(value)
+
     for receipt in receipts:
-        action = str(receipt.get("action") or "").strip()
-        if action in _LOOP_READ_CONTINUATION_ACTIONS:
-            if not continue_loop_reads:
-                continue
-            if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
-                return True
-            continue
-        if action not in _ACTION_RESULT_CONTINUATION_ACTIONS:
-            continue
-        if action in FEISHU_ACTIONS:
-            # Feishu actions are deliberately conversational: after a visible
-            # progress update or file receipt, the same provider session gets
-            # another turn to decide whether to continue, ask, or finalize.
-            if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
-                return True
-            continue
-        if action == "test_case.generate":
-            result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
-            # The trusted receipt only means the adapter ran. The nested
-            # result is the business outcome; failed generation is terminal
-            # for this turn and must not be submitted again by continuation.
-            if str(result.get("status") or "").strip().casefold() in {"failed", "error", "denied", "blocked"}:
-                continue
-            if result.get("batch") or str(result.get("scope") or "").strip():
-                continue
-            if str(receipt.get("status") or "").strip() in {"succeeded", "failed", "denied"}:
-                return True
-            continue
-        if str(receipt.get("status") or "").strip() != "succeeded":
-            continue
         result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
-        items = result.get("items")
-        if isinstance(items, list) and items:
+        status = str(receipt.get("status") or "").strip().casefold()
+        terminal = any(
+            _enabled(receipt.get(key)) or _enabled(result.get(key))
+            for key in ("terminal", "detached")
+        )
+        if status in _ACTION_RESULT_STATUSES and not terminal:
             return True
     return False
 
 
 def _action_results_for_agent(receipts: list[dict[str, Any]]) -> str:
-    """Keep the host result structured while bounding prompt growth."""
+    """Keep the action result structured while bounding prompt growth."""
     payload = [
         {
             "action": item.get("action"),
@@ -389,7 +358,7 @@ def _session_checkpoint_context(checkpoint: dict[str, Any] | None) -> str:
         return ""
     lines = [
         "[LUMON SESSION CHECKPOINT]",
-        "This is host-maintained continuity context, not a new user request. Use it only to preserve context and prefer the latest user message if anything conflicts.",
+        "This is conversation continuity context, not a new user request. Use it only to preserve context and prefer the latest user message if anything conflicts.",
     ]
     if project_slug:
         lines.append(f"- project: {project_slug}")
@@ -412,7 +381,7 @@ def _provider_switch_handoff(
         "The AI provider changed during this conversation. Continue the same logical request from the latest user message.",
         f"- previous provider: {previous_provider}",
         f"- current provider: {expected_provider}",
-        "Native session IDs are provider-scoped: do not try to resume the previous provider's ID here. The host created a fresh native session for the current provider.",
+        "Native session IDs are provider-scoped: do not try to resume the previous provider's ID here. Continue in the fresh native session for the current provider.",
     ]
     checkpoint_context = _session_checkpoint_context(checkpoint)
     if checkpoint_context:
@@ -729,10 +698,10 @@ def handle_autonomous_conversation(
             plan_stage = str((checkpoint or {}).get("plan_stage") or "").strip().lower()
             if plan_sequence and plan_stage not in {"story", "business", "technical"}:
                 plan_stage = "story"
-            if agent_id == "mark":
-                # Agent-owned Loop decisions still need the planning-only
-                # filesystem surface during this turn. Source and publish
-                # paths remain denied by this profile.
+            if agent_id == "mark" and not definition.capabilities.direct_workspace_write:
+                # Keep the old planning-only profile for legacy Mark
+                # definitions. M0.8 direct-write Mark uses the workspace-write
+                # profile installed by its workspace contract.
                 from agents.dylan.permission_policy import write_loop_permission_profile
 
                 loop_permissions_enabled = True
@@ -754,7 +723,7 @@ def handle_autonomous_conversation(
                             "This workspace uses visible Feishu thread collaboration. For a simple conversational handoff "
                             "to Mark, make the handoff visible with an exact @Mark mention and keep the original request in "
                             "the same message. Do not create a waiting_user Job or claim that a hidden AgentJob is running. "
-                            "The Host may translate a legacy delegation request into this visible handoff for compatibility.\n"
+                            "The compatibility layer may translate a legacy delegation request into this visible handoff.\n"
                         )
                     elif str(meta.get("_conversation_relay") or "") == "1":
                         thread_native_prompt = (
@@ -769,14 +738,15 @@ def handle_autonomous_conversation(
                     loop_name = "Business Loop" if loop_capability == "loop.business" else "Technical Loop"
                     managed_loop = (
                         "[LUMEN MANAGED LOOP]\n"
-                        f"You are executing {loop_name} under a host-tracked Loop job.\n"
-                        "A read action is intermediate; after the host returns its receipt, continue investigating. "
-                        "Never expose internal tool calls, planning notes, or repeated progress updates as the Feishu answer. "
-                        "Never finish with only a Jira title/status.\n"
-                        "Every turn must report: current stage, evidence completed, blocker or question, and next step.\n"
+                        f"You are executing {loop_name} under a tracked Loop job.\n"
+                        "A read action is intermediate; after its action result returns, continue investigating. "
+                        "Never expose private chain-of-thought, raw tool traces, or secrets. "
+                        "Never finish with only a Jira title/status when the loop still has work.\n"
+                        "Answer naturally; surface stage, evidence, blocker, owner, risk, or next step when it helps the current request. "
+                        "Use visible Feishu updates only for meaningful discoveries or decisions; there is no fixed message count.\n"
                         "If a decision or prerequisite is missing, emit CLARIFICATION_REQUEST and ask the user in this Feishu thread; "
                         "if the latest message answered the previous question, continue without asking for a generic 'continue'.\n"
-                        "Only finish when the Loop artifact contract is satisfied; the host verifies the artifact before marking the job completed.\n"
+                        "Only finish when the Loop artifact contract is satisfied; the runtime verifies the artifact before marking the job completed.\n"
                     )
                     if loop_capability == "loop.technical":
                         managed_loop += (
@@ -796,7 +766,7 @@ def handle_autonomous_conversation(
                         "Only after story.md exists and metadata businessStatus=ready may the Technical Loop begin. "
                         "When the two stages are complete, present the final result as text unless the user explicitly asks for a file.\n"
                         "For an explicit PDF request, always generate the current PDF even if an older output/pdf artifact exists; "
-                        "the host removes the transferred PDF afterward.\n"
+                        "the local transferred PDF is removed afterward.\n"
                     )
                 loop_gateway = ""
                 if combined_plan_request:
@@ -1014,6 +984,9 @@ def handle_autonomous_conversation(
             parsed = None
             clarification = None
             conversation_decision = None
+            visible_message_count = 0
+            last_visible_message = ""
+            suppress_final_reply = False
             next_active_loop = active_loop
             total_latency_ms = 0
             continuation_count = 0
@@ -1036,6 +1009,12 @@ def handle_autonomous_conversation(
                     parsed.conversation_decision,
                     pending=pending,
                 )
+                if conversation_decision and conversation_decision.get("suppress_final_reply"):
+                    # Suppression is a deliberate closing signal attached to a
+                    # visible Feishu action. Keep it across the mandatory
+                    # same-session receipt turn; an omitted field must not
+                    # accidentally cause a duplicate final message.
+                    suppress_final_reply = True
                 if conversation_decision and conversation_decision.get("supersede_pending") and pending:
                     obs.emit(
                         trace,
@@ -1185,6 +1164,19 @@ def handle_autonomous_conversation(
                 receipts = execute_trusted_actions(context=context, requests=action_requests)
                 new_action_receipts = [r.to_dict() for r in receipts]
                 action_receipts.extend(new_action_receipts)
+                for receipt in new_action_receipts:
+                    if (
+                        receipt.get("status") == "succeeded"
+                        and receipt.get("action") in {"feishu.say", "feishu.send_progress", "feishu.send_file"}
+                    ):
+                        result_payload = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
+                        visible_message_count += 1
+                        last_visible_message = str(
+                            result_payload.get("message")
+                            or result_payload.get("caption")
+                            or result_payload.get("path")
+                            or ""
+                        ).strip()
                 obs.emit(
                     trace,
                     "security.action_requests.executed",
@@ -1207,11 +1199,12 @@ def handle_autonomous_conversation(
                 continuation_prompt = _prompt_with_contract(
                     definition.build_resume_prompt(
                         user_message=(
-                            "[LUMEN HOST ACTION RESULTS]\n"
-                            "The host has executed your previous ACTION_REQUEST(s). These results are authoritative. "
+                            "[LUMON ACTION RESULTS]\n"
+                            "The requested action has completed. These results are authoritative. "
                             "Continue the same latest user request from the results below. Do not repeat completed reads. "
+                            "If an action result says started and includes a run_id, report that it has started and do not start it again unless the user asks or the next step requires it. "
                             "For a test-case request covering Ready for QA Stories, emit one "
-                            "test_case.generate ACTION_REQUEST with scope=ready_for_qa; that action performs the "
+                            "test_case.generate with scope=ready_for_qa; that action performs the "
                             "full per-Story workflow and returns an aggregate result. Do not stop after a Jira "
                             "discovery result. Only give the final answer when your own completion criteria are "
                             "satisfied.\n\n"
@@ -1283,7 +1276,7 @@ def handle_autonomous_conversation(
                 tok in (reply_text or "").lower()
                 for tok in ("disk space", "hostname", "/applications", "serial number", "free_gb")
             ):
-                reply_text = "Host-level information isn't available in shared conversations."
+                reply_text = "Personal machine information isn't available in shared conversations."
             if action_receipts:
                 native_handoff = next(
                     (
@@ -1383,6 +1376,14 @@ def handle_autonomous_conversation(
                 "action_receipts": action_receipts,
                 "pending_clarification": clarification,
                 "conversation_decision": conversation_decision,
+                "visible_message_count": visible_message_count,
+                "last_visible_message": last_visible_message,
+                "terminal_visible_message": (
+                    last_visible_message
+                    if suppress_final_reply and visible_message_count and not clarification
+                    else ""
+                ),
+                "suppress_final_reply": bool(suppress_final_reply and visible_message_count and not clarification),
                 "trace_id": trace.trace_id,
                 "session_id": session["session_id"],
                 "provider_session_id": result.provider_session_id,

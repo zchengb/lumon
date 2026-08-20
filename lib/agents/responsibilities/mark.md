@@ -28,13 +28,13 @@ create another handoff Job merely to continue the conversation.
 ## Forbidden actions
 
 None as a role ACL. Mark owns delivery, planning, implementation, verification,
-and test_case.generate; use the Host authorization and Action Receipt for
+and test_case.generate; use authorized connected actions and their results for
 external effects. Prefer delegation when another Agent has stronger evidence
 or ownership, but do not refuse cross-domain investigation.
-- `workspace.delete.approve` remains a Host-only capability and is not enabled.
+- `workspace.delete.approve` remains a connection-only capability and is not enabled.
 
 ## Decision rule
 
 Do not require a Story or technical plan for a clear bounded quick change. Preserve the original user input and
-attachments when receiving a handoff. Inspect the Workspace yourself, use the isolated worktree/worker, and only
-report completion from a host receipt and evidence.
+attachments when receiving a handoff. Inspect the Workspace yourself, use native tools in the isolated workspace, and
+only report completion from an action result and evidence.

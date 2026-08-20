@@ -28,6 +28,7 @@ _ACTION_REQUIREMENTS: dict[str, tuple[tuple[str, ...], ...]] = {
     "jira.workitem.get": (("issue_key", "id", "key"),),
     "jira.workitem.query": (("jql",),),
     "jira.sprint.untested.report": (),
+    "feishu.say": (("message",),),
     "feishu.send_progress": (("message",),),
     "feishu.send_file": (("path",),),
 }
@@ -482,6 +483,12 @@ def normalize_conversation_decision(
         or str(raw_supersede or "").strip().casefold() in {"1", "true", "yes"}
     )
     supersede_pending = bool(pending) and (mode == "new_request" or explicit_supersede)
+    raw_suppress = payload.get("suppress_final_reply")
+    suppress_final_reply = raw_suppress is True or str(raw_suppress or "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+    }
     return {
         "mode": mode,
         "route": route,
@@ -493,6 +500,7 @@ def normalize_conversation_decision(
         "assumptions": _safe_text_list(payload.get("assumptions"), limit=8),
         "required_actions": _safe_text_list(payload.get("required_actions"), limit=8),
         "completion_criteria": str(payload.get("completion_criteria") or "").strip()[:1000],
+        "suppress_final_reply": suppress_final_reply,
     }
 
 
@@ -520,21 +528,23 @@ def interaction_contract_prompt(
         "Non-negotiable:",
         "- CONVERSATION_DECISION is optional telemetry when the Harness exposes native events; do not block a normal turn just to classify it.",
         "- Before using tools, READ the common blacklist at " + str(blacklist_path) + ".",
-        "- Prefer native Host Tools and native Question events when the Harness exposes them. The compatibility envelopes remain valid fallback syntax.",
+        "- Prefer native connected tools and native Question events when the Harness exposes them. The compatibility envelopes remain valid fallback syntax.",
         "- For read-only Jira evidence, prefer the authorized `twg jira workitem get/query` commands described in the action catalog; do not emit ACTION_REQUEST for that read when the command succeeds.",
-        "- Jira create/update and other external mutations still require exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without the host receipt.",
+        "- Jira create/update and other external mutations still require exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without its action result.",
         "- A turn may contain multiple ACTION_REQUEST envelopes for distinct catalog capabilities, such as a progress update followed by a file attachment; use one valid envelope per action.",
         "- Put the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.",
-        f"Current task mode: {task_mode or 'explore'}. Explore is read/search/question; Build adds edit/build/test/local Git; External adds brokered Host Tools. Move modes when user intent becomes explicit.",
-        f"The live Host Tool registry is available at {host_tools_path}; inspect it when native tools are not listed directly by the Harness.",
+        f"Current task mode: {task_mode or 'explore'}. Explore is read/search/question; Build adds edit/build/test/local Git; External adds connected actions. Move modes when user intent becomes explicit.",
+        f"The live connected-tool registry is available at {host_tools_path}; inspect it when native tools are not listed directly by the Harness.",
         "Envelope schemas:",
-        '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":""}</CONVERSATION_DECISION>',
+        '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":"", "suppress_final_reply":false}</CONVERSATION_DECISION>',
         '<ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>',
         '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
-        f"If native Host Tools are unavailable and this turn needs a host action, use the compatibility catalog as a fallback: {action_catalog_path}",
-        "Host tools are dynamically registered with a name, description, JSON schema, risk level, default owner, and authorization class. Put model-selected fields in the tool arguments; the Host injects identity.",
+        f"If native connected tools are unavailable and this turn needs an external action, use the compatibility catalog as a fallback: {action_catalog_path}",
+        "Connected tools are dynamically registered with a name, description, JSON schema, risk level, default owner, and authorization class. Put model-selected fields in the tool arguments; the connection injects identity.",
         "Use only registered canonical action names and field names; never invent, translate, or alias action names.",
         "Use exact canonical action names and the exact arguments shape from the live registry or compatibility catalog.",
+        "For ordinary bounded code changes in the resolved isolated workspace, use native Read/Edit/Shell/Build/Test tools directly; do not use delivery.quick_change or hidden delegation unless native editing is unavailable.",
+        "Use feishu.say for useful visible findings, decisions, blockers, or progress when a multi-message update helps. There is no fixed message count. Working aloud must not expose private chain-of-thought, raw tool traces, or secrets. If the latest visible action already completes the request, set suppress_final_reply=true.",
         "A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true.",
     ]
     if pending:

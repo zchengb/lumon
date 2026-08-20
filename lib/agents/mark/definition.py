@@ -43,14 +43,14 @@ MARK_DEFINITION = AgentDefinition(
     protocol_version=PROTOCOL_VERSION,
     workflow="auto_delivery",
     result_contract="delivery-result.json",
-    permission_profile="delivery_conversational",
+    permission_profile="workspace_write",
     capabilities=AgentCapabilities(
         actions=MARK_ACTIONS,
         read_scopes=("delivery_docs", "story", "technical_plan", "test_case", "jira"),
-        filesystem_mode="workspace_read",
+        filesystem_mode="workspace_write",
         network_profile="allow",
         secret_profile="isolated",
-        direct_workspace_write=False,
+        direct_workspace_write=True,
         allowed_workflows=(
             "delivery.readiness",
             "delivery.status",

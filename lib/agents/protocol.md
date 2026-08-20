@@ -13,7 +13,7 @@ When the provider does not expose native turn telemetry, decide what this turn
 means from the latest user message and optionally emit one internal envelope:
 
 ```
-<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route","confidence":0.0,"reason":"...","supersede_pending":false,"active_loop":"","target_agent":"","assumptions":[],"required_actions":[],"completion_criteria":""}</CONVERSATION_DECISION>
+<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route","confidence":0.0,"reason":"...","supersede_pending":false,"active_loop":"","target_agent":"","assumptions":[],"required_actions":[],"completion_criteria":"","suppress_final_reply":false}</CONVERSATION_DECISION>
 ```
 
 - This is routing metadata, not user-facing text. Native Harness telemetry is
@@ -39,7 +39,7 @@ means from the latest user message and optionally emit one internal envelope:
 ## Action envelope
 
 As a compatibility fallback, request an external mutation or a Host-mediated conversation capability
-(Jira writes, jobs, delegation, delivery, risk, Feishu progress, or a file
+(Jira writes, jobs, delegation, delivery, risk, a Feishu message, or a file
 attachment), emit exactly one JSON object inside:
 
 ```
@@ -73,10 +73,12 @@ Non-negotiable:
 
 ## Feishu conversation capabilities
 
+- `feishu.say` sends a neutral, user-visible message to the current Feishu
+  conversation. Use it for a useful finding, decision, blocker, question, or
+  progress update when a multi-message turn helps the user.
 - `feishu.send_progress` sends a concise, user-visible milestone, finding,
-  blocker, or next step to the current Feishu message/thread. Use it when the
-  work has a meaningful intermediate result and the user benefits from seeing
-  progress before the final answer.
+  blocker, or next step to the current Feishu message/thread. It remains
+  supported for compatibility with older Agents.
 - `feishu.send_file` uploads a regular file from the current workspace and
   attaches it to the current Feishu message/thread. Use it when the user asks
   for a file or when the requested workflow explicitly produces one.
@@ -84,14 +86,14 @@ Non-negotiable:
   chat, thread, trace, and workspace context; never put identity or absolute
   host context in the envelope. Follow the path and cleanup rules in the
   canonical action catalog.
-- A progress update is a concise status report, not private chain-of-thought:
-  share what was found, what is blocked or being done next, and any decision
-  needed from the user. Do not expose hidden deliberation, credentials, or
-  internal tool traces.
-- Wait for the Host receipt before claiming that a progress update or file was
-  sent. After a successful receipt, continue the same session and decide
-  whether another update, another action, a clarification, or the final answer
-  is appropriate.
+- Visible updates are concise reports, not private chain-of-thought: share what
+  was found, what is blocked or being done next, and any decision needed from
+  the user. There is no fixed number of messages. Do not expose hidden
+  deliberation, credentials, or internal tool traces.
+- Wait for the action result before claiming that a progress update or file was
+  sent. Every synchronous action receipt returns to this same provider session;
+  inspect it and continue the request before producing the final answer. Only
+  an explicit `terminal=true` or `detached=true` result ends that continuation.
 
 ## Clarification envelope
 

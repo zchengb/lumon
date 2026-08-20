@@ -48,6 +48,7 @@ _REQUIRED = {
     "test_case.generate": ["scope"],
     "agent.delegate": ["target_agent", "capability"],
     "agent.job.create": ["target_agent", "capability"],
+    "feishu.say": ["message"],
     "feishu.send_progress": ["message"],
     "feishu.send_file": ["path"],
     "jira.workitem.get": ["issue_key"],

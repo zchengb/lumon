@@ -90,6 +90,58 @@ SECURE_PERMISSIONS = {
 
 DEFAULT_PERMISSIONS = SECURE_PERMISSIONS
 
+# M0.8 direct engineering profile.  Mark and Irving may change files in the
+# already-resolved isolated workspace and run project-local verification, but
+# they still cannot inspect the personal host, secrets, or publish from the
+# provider session.  The runner remains responsible for enforcing the
+# workspace boundary and publishing an approved result.
+WORKSPACE_WRITE_PERMISSIONS = {
+    "permissions": {
+        "allow": [
+            "Read(**)",
+            "Write(**)",
+            "Shell(lumen)",
+            "Shell(git)",
+            "Shell(rg)",
+            "Shell(cargo)",
+            "Shell(gradle)",
+            "Shell(./gradlew)",
+            "Shell(mvn)",
+            "Shell(./mvnw)",
+            "Shell(node)",
+            "Shell(npm)",
+            "Shell(pnpm)",
+            "Shell(yarn)",
+            "Shell(pytest)",
+            "Shell(python)",
+            "Shell(python3)",
+            "Shell(go)",
+            "Shell(swift)",
+            "Shell(xcodebuild)",
+        ],
+        "deny": [
+            "Delete(**)",
+            "Read(**/.env*)",
+            "Read(**/*.pem)",
+            "Read(**/*.key)",
+            "Write(**/.env*)",
+            "Write(**/*.pem)",
+            "Write(**/*.key)",
+            "Write(.cursor/**)",
+            "Write(AGENTS.md)",
+            "Write(**/.git/**)",
+            "Shell(sudo)",
+            "Shell(ssh)",
+            "Shell(scp)",
+            "Shell(rm)",
+            "Shell(curl)",
+            "Shell(wget)",
+            *HOST_INTROSPECTION_DENY,
+            *GIT_WRITE_DENY,
+        ],
+    }
+}
+
 # Loop planning needs to persist business/technical artifacts, but it must not
 # turn the conversational Agent into a source-code or publishing worker.
 LOOP_PERMISSIONS = {
@@ -161,6 +213,15 @@ def write_permission_profile(workspace: Path, *, force: bool = True) -> Path:
     path = cursor_dir / "cli.json"
     if force or not path.is_file():
         path.write_text(json.dumps(SECURE_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def write_workspace_write_permission_profile(workspace: Path, *, force: bool = True) -> Path:
+    cursor_dir = Path(workspace).expanduser().resolve() / ".cursor"
+    cursor_dir.mkdir(parents=True, exist_ok=True)
+    path = cursor_dir / "cli.json"
+    if force or not path.is_file():
+        path.write_text(json.dumps(WORKSPACE_WRITE_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
     return path
 
 

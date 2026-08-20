@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-FilesystemMode = Literal["none", "workspace_read", "worktree_rw"]
+FilesystemMode = Literal["none", "workspace_read", "workspace_write", "worktree_rw"]
 
 
 @dataclass(frozen=True)

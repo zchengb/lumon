@@ -81,9 +81,9 @@ def build_role_guidance(agent_id: str) -> str:
         f"{role_mirror} (source: {policy.path})\n\n"
         "It defines your role, owned work, delegation targets, and forbidden actions. "
         f"Also READ the common blacklist at {blacklist_mirror} before using any tool. "
-        "It is model guidance for avoiding out-of-scope work; the host still enforces "
+        "It is model guidance for avoiding out-of-scope work; the connection still enforces "
         "identity, access, resource boundaries, and irreversible external mutations; "
         "never attempt to bypass them or those controls.\n\n"
         "Never claim a mutation, deployment, Jira write, Sheet write, PR, or verification "
-        "succeeded without its host receipt and evidence.\n"
+        "succeeded without its action result and evidence.\n"
     )

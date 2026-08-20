@@ -146,7 +146,6 @@ class LoopGatewayTests(unittest.TestCase):
             definition = replace(
                 mark,
                 resolve_workspace=lambda project_slug, chat_id: ("mbpass", docs.resolve()),
-                ensure_workspace_contract=lambda **kwargs: docs,
             )
             meta = {"chat_id": "oc1", "thread_id": "omt1", "user_id": "ou1", "message_id": "om1"}
             try:
@@ -175,8 +174,8 @@ class LoopGatewayTests(unittest.TestCase):
                 self.assertIn("CONVERSATION_DECISION", runtime.calls[0]["prompt"])
                 self.assertNotIn("[LUMEN LOOP GATEWAY]", runtime.calls[0]["prompt"])
                 profile = json.loads((docs / ".cursor" / "cli.json").read_text(encoding="utf-8"))
-                self.assertIn("Write(**)", profile["permissions"]["deny"])
-                self.assertNotIn("Write(stories/**)", profile["permissions"]["allow"])
+                self.assertIn("Write(**)", profile["permissions"]["allow"])
+                self.assertNotIn("Write(**)", profile["permissions"]["deny"])
             finally:
                 if previous is None:
                     os.environ.pop("LUMEN_AGENTS_HOME", None)
@@ -331,7 +330,7 @@ class LoopGatewayTests(unittest.TestCase):
                 self.assertIn("repository", result["text"])
                 self.assertEqual(2, len(runtime.calls))
                 self.assertEqual("provider-mark", runtime.calls[1]["provider_session_id"])
-                self.assertIn("LUMEN HOST ACTION RESULTS", runtime.calls[1]["prompt"])
+                self.assertIn("[LUMON ACTION RESULTS]", runtime.calls[1]["prompt"])
                 self.assertIn("Never finish with only a Jira title/status", runtime.calls[1]["prompt"])
             finally:
                 if previous is None:

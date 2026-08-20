@@ -205,12 +205,12 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
         ]
         self.assertEqual([requests[0]], _serialize_repeated_actions(requests))
 
-    def test_failed_test_case_result_does_not_trigger_duplicate_retry(self) -> None:
+    def test_failed_test_case_result_returns_to_the_same_session(self) -> None:
         receipt = _receipt(
             "test_case.generate",
             {"status": "failed", "code": "TEST_CASE_DESIGN_UNAVAILABLE"},
         ).to_dict()
-        self.assertFalse(_action_results_need_continuation([receipt]))
+        self.assertTrue(_action_results_need_continuation([receipt]))
 
     def test_jira_results_return_to_milchick_for_per_item_generation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -325,7 +325,7 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
             self.assertEqual("ok", result["status"])
             self.assertEqual(5, execute.call_count)
             self.assertEqual(6, len(runtime.calls))
-            self.assertIn("[LUMEN HOST ACTION RESULTS]", str(runtime.calls[1]["prompt"]))
+            self.assertIn("[LUMON ACTION RESULTS]", str(runtime.calls[1]["prompt"]))
             for index, item in enumerate(items, start=1):
                 requests = execute.call_args_list[index].kwargs["requests"]
                 self.assertEqual(1, len(requests))
@@ -363,6 +363,11 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
                             '{"action":"test_case.generate","arguments":{"scope":"ready_for_qa"}}'
                             '</ACTION_REQUEST>'
                         ),
+                        provider_session_id="sess-milchick",
+                        status="succeeded",
+                    ),
+                    AgentRunResult(
+                        text="<FINAL_RESPONSE>Generated test cases for 1/1 Ready for QA Stories.</FINAL_RESPONSE>",
                         provider_session_id="sess-milchick",
                         status="succeeded",
                     ),
@@ -413,7 +418,7 @@ class MilchickTestCaseFlowTests(unittest.TestCase):
 
             self.assertEqual("ok", result["status"])
             self.assertEqual(1, execute.call_count)
-            self.assertEqual(1, len(runtime.calls))
+            self.assertEqual(2, len(runtime.calls))
             request = execute.call_args_list[0].kwargs["requests"][0]
             self.assertEqual("test_case.generate", request["action"])
             self.assertEqual("ready_for_qa", request["arguments"]["scope"])

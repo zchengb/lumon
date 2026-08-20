@@ -116,7 +116,7 @@ def infer_task_mode(user_message: str = "", pending: Optional[dict[str, Any]] = 
     text = str(user_message or "").casefold()
     if any(token in text for token in ("upload", "send", "attach", "feishu", "jira", "sheet", "pdf", "上傳", "发送", "發送", "飞书", "飛書")):
         return "external"
-    if any(token in text for token in ("implement", "fix", "edit", "change", "build", "test", "code", "修复", "修復", "修改", "实现", "實現", "生成")):
+    if any(token in text for token in ("implement", "fix", "edit", "change", "build", "test", "code", "upgrade", "bump", "version", "修复", "修復", "修改", "实现", "實現", "生成", "升级", "升級", "版本")):
         return "build"
     return "explore"
 
