@@ -266,7 +266,7 @@ SANDBOX_MODE="${CURSOR_AGENT_SANDBOX:-enabled}"
 OUTPUT_FORMAT="${CURSOR_AGENT_OUTPUT_FORMAT:-stream-json}"
 STREAM_PARTIAL="${CURSOR_AGENT_STREAM_PARTIAL:-1}"
 AGENT_TIMEOUT_SECONDS="${CURSOR_AGENT_TIMEOUT_SECONDS:-$(execution_seconds agent_timeout_seconds 3600)}"
-AGENT_IDLE_TIMEOUT_SECONDS="${CURSOR_AGENT_IDLE_TIMEOUT_SECONDS:-$(execution_seconds agent_idle_timeout_seconds 900)}"
+AGENT_IDLE_TIMEOUT_SECONDS="${CURSOR_AGENT_IDLE_TIMEOUT_SECONDS:-$(execution_seconds agent_idle_timeout_seconds 3600)}"
 
 figma_mcp_approved() {
   [[ -f "${DELIVERY_CONFIG}" ]] || return 1

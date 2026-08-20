@@ -12,7 +12,7 @@
     "sandbox": "disabled",
     "approve_mcps": false,
     "agent_timeout_seconds": 3600,
-    "agent_idle_timeout_seconds": 900
+    "agent_idle_timeout_seconds": 3600
   },
   "jira": {
     "enabled": true,

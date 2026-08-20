@@ -23,6 +23,7 @@ from format_scan_log import ScanLogFormatter, extract_assistant_text, tool_call_
 
 
 SCHEMA_VERSION = "1.0"
+DEFAULT_AGENT_IDLE_TIMEOUT_SECONDS = 3600
 CAPTURE_MODES = {"off", "metadata", "full"}
 SECRET_KEYS = re.compile(r"(?i)(authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|cookie|session|client[_-]?secret|webhook[_-]?secret)")
 ASSIGNMENT = re.compile(
@@ -552,7 +553,7 @@ def main() -> int:
         run.add_argument(f"--{name}", required=name in {"workspace-root", "docs-dir", "run-id", "stage"}, default="")
     run.add_argument("--attempt", type=int, default=1)
     run.add_argument("--timeout", type=int, default=3600)
-    run.add_argument("--idle-timeout", type=int, default=900)
+    run.add_argument("--idle-timeout", type=int, default=DEFAULT_AGENT_IDLE_TIMEOUT_SECONDS)
     run.add_argument("command", nargs=argparse.REMAINDER)
     check = sub.add_parser("doctor"); check.add_argument("--workspace-root", required=True)
     span = sub.add_parser("span")

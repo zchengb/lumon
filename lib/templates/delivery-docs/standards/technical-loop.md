@@ -4,7 +4,7 @@ The Technical Loop turns one concrete, business-ready `story.md` into one execut
 
 ## Frontend Delivery Policy
 
-Frontend delivery is disabled. The Technical Loop must not approve a plan whose delivery includes Web, Native, mobile UI, frontend source changes, Figma-to-code work, a Visual Delivery Contract, browser/device runtime work, or visual QA. Keep that portion out of scope and return to the Business Loop when the Story cannot be delivered without it. Backend-only work may proceed only when it is independently deliverable without frontend changes.
+Frontend delivery is disabled (Does not include manual execution). The Technical Loop must not approve a plan whose delivery includes Web, Native, mobile UI, frontend source changes, Figma-to-code work, a Visual Delivery Contract, browser/device runtime work, or visual QA. Keep that portion out of scope and return to the Business Loop when the Story cannot be delivered without it. Backend-only work may proceed only when it is independently deliverable without frontend changes.
 
 ## Inputs
 

@@ -231,7 +231,7 @@ Valid `businessStatus` values:
 
 The Technical Loop may run in Codex, Cursor, or another compatible Agent. Read `standards/technical-loop.md` for the full contract.
 
-Frontend delivery is disabled. Do not approve or start a Story whose delivery includes Web, Native, mobile UI, frontend source changes, Figma-to-code work, browser/device runtime work, a Visual Delivery Contract, or visual QA. Keep that part out of scope or blocked; backend-only work may proceed only when it is independently deliverable without frontend changes.
+Frontend delivery is disabled (Does not include manual execution). Do not approve or start a Story whose delivery includes Web, Native, mobile UI, frontend source changes, Figma-to-code work, browser/device runtime work, a Visual Delivery Contract, or visual QA. Keep that part out of scope or blocked; backend-only work may proceed only when it is independently deliverable without frontend changes.
 
 Before starting the Technical Loop, use the same preflight sync rules as the Business Loop.
 

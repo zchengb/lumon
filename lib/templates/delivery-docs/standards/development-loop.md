@@ -6,7 +6,7 @@ The Development Loop implements an approved `technical-plan.md` in code. It is e
 lumen delivery run --story <JIRA-KEY-or-slug>
 ```
 
-Frontend delivery is disabled. A Story linked to a Web, Native, mobile UI, or explicitly visual frontend repository is rejected before worktree creation. Do not implement frontend source, Figma-to-code work, browser/device runtime work, or visual QA; keep it out of scope or blocked. Backend-only work may proceed only when it is independently deliverable without frontend changes.
+Frontend delivery is disabled (Does not include manual execution). A Story linked to a Web, Native, mobile UI, or explicitly visual frontend repository is rejected before worktree creation. Do not implement frontend source, Figma-to-code work, browser/device runtime work, or visual QA; keep it out of scope or blocked. Backend-only work may proceed only when it is independently deliverable without frontend changes.
 
 ## Workspace Layout
 
