@@ -9,6 +9,11 @@
     "display_name": "",
     "workspace_root": ""
   },
+  "agent_collaboration": {
+    "thread_native_handoff": true,
+    "max_relay_hops": 4,
+    "context_max_chars": 24000
+  },
   "execution": {
     "mode": "lightweight_review_only",
     "provider": "opencode",

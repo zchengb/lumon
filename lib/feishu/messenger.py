@@ -12,7 +12,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from urllib.parse import quote, urlencode
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from agents.registry import APP_ID_ENV
 from agents.runtime.final_response import sanitize_feishu_answer
@@ -774,6 +774,7 @@ class FeishuMessenger:
         reply_in_thread: bool = False,
         allow_pdf: bool = False,
         suppress_pdf_artifact: bool = False,
+        _on_sent: Callable[[dict[str, Any], str, tuple[str, ...]], None] | None = None,
     ) -> Optional[dict[str, Any]]:
         """Send a conversational answer as text unless PDF output is explicit.
 
@@ -790,6 +791,16 @@ class FeishuMessenger:
         citation or plan-shape detection.
         """
 
+        def notify(response: object, visible_text: str = "", attachment_refs: tuple[str, ...] = ()) -> None:
+            if _on_sent is None or not isinstance(response, dict):
+                return
+            try:
+                _on_sent(response, visible_text, attachment_refs)
+            except Exception as exc:
+                # A transcript/relay observer must never change Feishu
+                # delivery success into a reply failure.
+                _LOG.warning("agent reply observer failed message_id=%s err=%s", message_id, exc)
+
         text = sanitize_feishu_answer(text)
         cited_pdf = None if suppress_pdf_artifact else extract_pdf_file_citation(text)
         if cited_pdf is not None:
@@ -803,7 +814,9 @@ class FeishuMessenger:
                         normalize_markdown_for_feishu(clean_text),
                         reply_in_thread=reply_in_thread,
                     )
+                    notify(sent, clean_text)
                 sent = self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
+                notify(sent, "", (f"file:{Path(cited_pdf).name}",))
                 return sent
             except Exception as exc:
                 _LOG.warning("cited PDF reply failed message_id=%s path=%s err=%s", message_id, cited_pdf, exc)
@@ -822,13 +835,16 @@ class FeishuMessenger:
                             normalize_markdown_for_feishu(prefix),
                             reply_in_thread=reply_in_thread,
                         )
+                        notify(sent, prefix)
                     sent = self.reply_file(message_id, file_key, reply_in_thread=reply_in_thread)
+                    notify(sent, "", (f"file:{plan_pdf_filename(document)}",))
                     if suffix:
                         sent = self.reply_markdown(
                             message_id,
                             normalize_markdown_for_feishu(suffix),
                             reply_in_thread=reply_in_thread,
                         )
+                        notify(sent, suffix)
                     return sent
                 except Exception as exc:
                     _LOG.warning("PDF plan reply failed message_id=%s err=%s; falling back to card", message_id, exc)
@@ -838,16 +854,98 @@ class FeishuMessenger:
         try:
             for part in parts:
                 sent = self.reply_markdown(message_id, part, reply_in_thread=reply_in_thread)
+                notify(sent, part)
             return sent
         except Exception as exc:
             _LOG.warning("reply_markdown failed message_id=%s err=%s; falling back to text", message_id, exc)
             if sent is not None:
                 return sent
             try:
-                return self.reply_text(message_id, rendered, reply_in_thread=reply_in_thread)
+                sent = self.reply_text(message_id, rendered, reply_in_thread=reply_in_thread)
+                notify(sent, rendered)
+                return sent
             except Exception as exc2:
                 _LOG.warning("reply_text failed message_id=%s err=%s", message_id, exc2)
                 return None
+
+    def reply_agent_text(
+        self,
+        message_id: str,
+        text: str,
+        *,
+        reply_in_thread: bool = False,
+        allow_pdf: bool = False,
+        suppress_pdf_artifact: bool = False,
+        conversation_meta: dict[str, Any] | None = None,
+        conversation_common: dict[str, Any] | None = None,
+        attachment_refs: list[str] | None = None,
+    ) -> Optional[dict[str, Any]]:
+        """Send and publish one visible Agent reply to the shared transcript.
+
+        The normal Feishu send path remains the source of truth for delivery.
+        Transcript recording and Agent relay happen only after that send
+        succeeds, so an unsent model response can never wake a coworker.
+        """
+
+        conversation = dict(conversation_meta or {})
+        published_ids: set[str] = set()
+
+        def publish_sent(
+            response: dict[str, Any],
+            visible_text: str,
+            sent_attachment_refs: tuple[str, ...],
+        ) -> None:
+            outbound_id = extract_message_id(response)
+            if not outbound_id or outbound_id in published_ids:
+                return
+            published_ids.add(outbound_id)
+            try:
+                from agents.runtime.reply_anchor import remember_outbound
+
+                remember_outbound(
+                    message_id=outbound_id,
+                    text=str(visible_text or ""),
+                    chat_id=str(conversation.get("chat_id") or ""),
+                    agent_id=self.agent_id,
+                    reply_to=str(conversation.get("message_id") or message_id or ""),
+                    thread_id=str(conversation.get("thread_id") or ""),
+                )
+                from agents.conversation.relay import ConversationRelay
+
+                relay = ConversationRelay()
+                try:
+                    relay.publish(
+                        source_agent_id=self.agent_id,
+                        source_message_id=outbound_id,
+                        text=str(visible_text or ""),
+                        meta=dict(conversation, message_id=str(message_id or "")),
+                        common=conversation_common,
+                        attachment_refs=[*(attachment_refs or []), *sent_attachment_refs],
+                    )
+                finally:
+                    relay.close()
+            except Exception as exc:
+                # Collaboration is additive.  A transcript/relay persistence
+                # issue must not turn an already delivered Feishu reply into
+                # a failed Agent turn.
+                _LOG.warning("agent reply publication failed message_id=%s err=%s", message_id, exc)
+
+        sent = self.safe_reply_text(
+            message_id,
+            text,
+            reply_in_thread=reply_in_thread,
+            allow_pdf=allow_pdf,
+            suppress_pdf_artifact=suppress_pdf_artifact,
+            _on_sent=publish_sent,
+        )
+        if sent is None:
+            return None
+        # Keep compatibility with tests/adapters that replace safe_reply_text
+        # and do not invoke the private observer callback.
+        if not published_ids:
+            visible_text = _strip_file_citations(sanitize_feishu_answer(text))
+            publish_sent(sent, visible_text, tuple(attachment_refs or ()))
+        return sent
 
     def safe_reply_pdf(
         self,

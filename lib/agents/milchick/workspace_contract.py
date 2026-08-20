@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "6"
+MANAGED_VERSION = "7"
 _MANAGED_START = f"<!-- LUMEN MILCHICK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MILCHICK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MILCHICK MANAGED START"
@@ -32,6 +32,7 @@ def _managed_block(project_slug: str) -> str:
         f"- Route clear source or delivery work to Mark without pre-reading the repository or inferring files\n"
         f"- The host preserves the original message and image context; Mark reads the workspace himself\n"
         f"- Requirement shaping → delegate loop.business to Mark; technical planning → delegate loop.technical to Mark with the issue key\n"
+        f"- When common.json enables `agent_collaboration.thread_native_handoff`, make simple Agent handoffs visible in the Feishu thread with an exact `@Mark`; do not create a waiting_user Job for ordinary conversation\n"
         f"- Never claim a delegation or job was created without a host receipt\n"
         f"- Ask only when the owner, capability, user intent, or outcome is genuinely unclear\n\n"
         f"## Security Boundary\n"

@@ -111,7 +111,7 @@ Attach an explicitly requested generated PDF:
 
 | Canonical action | Purpose | `arguments` fields |
 | --- | --- | --- |
-| `agent.job.create` | Delegate work to another Agent; Technical Plan uses `target_agent="mark"`, `capability="loop.technical"`. | required: `target_agent`, `capability`; optional: `issue_key`, `story`, `depends_on` (array), `execute` (boolean) |
+| `agent.job.create` | Durable/background delegation or compatibility path; simple thread handoffs use visible `@Agent` collaboration when enabled. | required: `target_agent`, `capability`; optional: `issue_key`, `story`, `depends_on` (array), `execute` (boolean) |
 | `agent.job.list` | List jobs for the current project. | optional: `limit` (number) |
 | `agent.job.show` | Show one job and its parent summary. | required: `job_id` |
 | `agent.job.cancel` | Cancel an existing job. | required: `job_id` |
@@ -272,3 +272,16 @@ from a new model response; always use the canonical name above.
 | `job.retry` | `agent.job.retry` |
 | `jira.testcase.generate` | `test_case.generate` |
 | `testcase.generate` | `test_case.generate` |
+
+# Thread-native Agent collaboration
+
+When the workspace `config/common.json` enables
+`agent_collaboration.thread_native_handoff`, ordinary Agent-to-Agent
+conversation is carried by visible Feishu thread messages.  Use an exact
+mention such as `@Mark` and keep the request/evidence in that message; the
+Host records it and wakes the mentioned Agent.  Do not invent a Job ID, a
+`[LUMEN HANDOFF]` envelope, or a `waiting_user` state for this path.  A direct
+human reply to an Agent message resumes only that Agent's provider session.
+
+`agent.job.create` remains the compatibility action for durable background
+orchestration and for workspaces where thread-native collaboration is disabled.

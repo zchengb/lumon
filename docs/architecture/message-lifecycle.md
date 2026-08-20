@@ -10,8 +10,9 @@ delivery/deployment branch.
 flowchart TD
     U[Feishu user or group] --> F[Feishu event channel\nim.message.receive_v1]
     F --> H[Extract text, thread metadata\nand image keys]
-    H --> G{Should handle?}
-    G -->|No| IGNORE[Ignore, catch up, or drop duplicate]
+    H --> CTX[Record human message in shared ThreadTranscriptStore]
+    CTX --> G{Should handle?}
+    G -->|No| IGNORE[Keep transcript, do not invoke this Agent]
     G -->|Yes| B[agents.bridge\nhandle_agent_message]
 
     B --> AUTH{Access policy\nand trust zone}
@@ -21,7 +22,8 @@ flowchart TD
 
     J --> T0[Create trace\nmessage.received → job.started]
     T0 --> S[Resolve thread anchor,\nload session/checkpoint, download images]
-    S --> PROMPT[Compose Agent prompt\nsoul + workspace contract + security context\n+ original user input + attachments]
+    S --> THREAD[Load shared thread transcript\nfull on new provider session\nincremental after session cursor]
+    THREAD --> PROMPT[Compose Agent prompt\nsoul + workspace contract + security context\n+ transcript + original user input + attachments]
     PROMPT --> CURSOR[Cursor workspace runtime\nAgent reads workspace and decides]
 
     CURSOR --> DECISION{Agent result}
@@ -37,7 +39,7 @@ flowchart TD
     ADAPTER --> TEST[Test-case generation]
     ADAPTER --> OTHER[Risk, schedule, host-read,\nand workspace actions]
 
-    JOB --> HANDOFF[Parent/child job record\noriginal user input + image keys]
+    JOB --> HANDOFF[Durable parent/child orchestration\nonly for background or legacy paths]
     HANDOFF --> MARK[Target Agent, usually Mark\nreads the workspace itself]
     MARK --> PROMPT
 
@@ -52,7 +54,12 @@ flowchart TD
     CONTINUE -->|No| REPLY
 
     REPLY --> SEND[Reply to Feishu thread\nreply.succeeded / reply.failed]
-    SEND --> END[Persist trace, events, receipts,\nsession checkpoint, and dashboard data]
+    SEND --> OUTBOUND[Record visible Agent message\nparse exact @Agent targets]
+    OUTBOUND --> RELAY{Thread-native collaboration enabled?}
+    RELAY -->|Mentioned Agent| WAKE[ConversationRelay\ntrusted origin + hop/loop guard\nwake target through normal bridge]
+    RELAY -->|No| END[Persist trace, events, receipts,\nsession checkpoint, and dashboard data]
+    WAKE --> MARK
+    WAKE --> END
 
     DELIVERY --> WORKTREE[Isolated Story/quick-change worktree]
     WORKTREE --> VERIFY[Verify, commit, push, or PR]
@@ -69,15 +76,15 @@ flowchart TD
 
 | Stage | Responsibility | Main implementation |
 | --- | --- | --- |
-| 1. Feishu ingress | Receives `im.message.receive_v1`, buffers startup catch-up events, filters messages, and deduplicates by Agent + message ID. | `lib/feishu/channel.py`, `lib/feishu/handlers.py` |
+| 1. Feishu ingress | Receives `im.message.receive_v1`, records every human message once in the shared transcript, then filters messages; bot/app events remain ignored. | `lib/feishu/channel.py`, `lib/feishu/handlers.py`, `lib/agents/conversation/thread_store.py` |
 | 2. Gateway and policy | Selects the Agent entry point, resolves the project, and applies access/trust-zone/mutation policy before work starts. | `lib/agents/bridge.py`, `lib/agents/security/access_policy.py` |
 | 3. Job and trace | Runs the turn through the conversation pool and records the trace, events, latency, and failure state. | `lib/agents/runtime/jobs_pool.py`, `lib/agents/runtime/observability.py` |
-| 4. Session context | Chooses the conversation scope, resumes or resets the Agent session, anchors replies to the latest message, and loads the mapped workspace. | `lib/agents/runtime/session_store.py`, `lib/agents/runtime/autonomous.py` |
-| 5. Prompt and workspace | Builds the Agent context from the Agent definition, soul, workspace contract, security context, original user input, and downloaded Feishu images. | `lib/agents/*/definition.py`, `lib/agents/*/session_bootstrap.py`, `lib/agents/runtime/autonomous.py` |
+| 4. Session context | Chooses an Agent-specific thread scope, resumes or resets the provider session, anchors replies to the latest message, and loads the mapped workspace. | `lib/agents/runtime/session_store.py`, `lib/agents/runtime/autonomous.py` |
+| 5. Prompt and workspace | Builds provider-neutral context from the shared thread transcript, Agent definition, soul, workspace contract, security context, original user input, and attachments. New provider sessions receive the full bounded transcript; resumed sessions use the checkpoint cursor. | `lib/agents/conversation/thread_context.py`, `lib/agents/*/definition.py`, `lib/agents/runtime/autonomous.py` |
 | 6. Agent decision | The workspace Agent reads evidence and decides whether to answer, ask one focused clarification, or request a host action. | Cursor runtime + Agent prompts |
 | 7. Action execution | The internal `ACTION_REQUEST` envelope is validated and executed by the host broker. It is never a user-facing step. | `lib/agents/runtime/final_response.py`, `lib/agents/security/broker.py` |
 | 8. Continuation | Read results are returned to the same Agent session when the user’s goal is not complete, so a Jira query can continue into test-case generation or delegation. | `lib/agents/runtime/autonomous.py` |
-| 9. Delegation | Milchick creates a parent/child job. The child handoff carries the original user text and image keys; Mark reads the workspace and decides the implementation path himself. | `lib/agents/jobs/broker.py` |
+| 9. Collaboration and delegation | With the feature flag enabled, Milchick's simple handoff is a visible exact `@Mark` message and `ConversationRelay` wakes Mark. Durable `AgentJob` parent/child records remain for background orchestration and legacy installs. | `lib/agents/conversation/relay.py`, `lib/agents/jobs/broker.py`, `lib/feishu/agent_mentions.py` |
 | 10. Reply and observability | The final reply is sent back to the same Feishu thread, then the trace, events, receipts, and session checkpoint remain available to the Dashboard. | `lib/agents/bridge.py`, `lib/scripts/dashboard_server.py` |
 
 ## Long-running delivery branch

@@ -16,8 +16,8 @@ if str(LIB) not in sys.path:
     sys.path.insert(0, str(LIB))
 
 from agents.definitions import ensure_definitions_loaded, get_definition
-from agents.jobs.broker import AgentJobBroker
-from agents.jobs.store import AgentJobStore
+from agents.jobs.broker import AgentJobBroker, execute_job_action
+from agents.jobs.store import AgentJob, AgentJobStore
 from agents.security.actions import ActionRequest
 from agents.security.broker import CapabilityBroker
 from skills.test_case.dedupe import partition_new_cases
@@ -784,6 +784,84 @@ class TestCaseSkillTests(unittest.TestCase):
 
 
 class MilchickJobTests(unittest.TestCase):
+    def test_loop_completion_recovers_story_and_workspace_from_handoff_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp)
+            story_dir = docs / "stories" / "MBPAS-1437-manual-event-notifications"
+            story_dir.mkdir(parents=True)
+            (story_dir / "story.md").write_text("# MBPAS-1437\n", encoding="utf-8")
+            (story_dir / "metadata.json").write_text(
+                json.dumps({"jiraKey": "MBPAS-1437", "businessStatus": "draft"}),
+                encoding="utf-8",
+            )
+            child = AgentJob(
+                job_id="job_loop_context",
+                type="agent_job_child",
+                status="waiting_user",
+                target_agent="mark",
+                capability="loop.business",
+                input={
+                    "_workspace_path": str(docs),
+                    "user_message": "请处理 https://inspire.atlassian.net/browse/MBPAS-1437",
+                },
+            )
+
+            complete, state = AgentJobBroker._loop_complete(child)
+
+            self.assertFalse(complete)
+            self.assertEqual("business_status_not_ready", state["reason"])
+            self.assertEqual("MBPAS-1437", state["story"])
+
+    def test_job_create_normalizes_url_story_and_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.environ.get("LUMEN_AGENTS_HOME")
+            os.environ["LUMEN_AGENTS_HOME"] = tmp
+            try:
+                request = ActionRequest(
+                    agent_id="milchick",
+                    action="agent.job.create",
+                    project_slug="mbpass",
+                    actor_user_id="ou1",
+                    chat_id="oc1",
+                    thread_id="",
+                    source_message_id="om1",
+                    trace_id="tr1",
+                    arguments={
+                        "target_agent": "mark",
+                        "capability": "loop.business",
+                        "user_message": "请处理 https://inspire.atlassian.net/browse/MBPAS-1437",
+                        "_workspace_path": tmp,
+                        "chat_type": "group",
+                    },
+                )
+                with mock.patch.object(
+                    AgentJobBroker,
+                    "_execute_mark_handoff",
+                    return_value={
+                        "status": "succeeded",
+                        "action": "agent.handoff",
+                        "result": {
+                            "summary": "请补充 Business Loop 决策。",
+                            "agent_result": {"pending_clarification": {"question_id": "q1"}},
+                        },
+                    },
+                ), mock.patch(
+                    "feishu.messenger.FeishuMessenger.safe_reply_text",
+                    return_value={"message_id": "om-question"},
+                ):
+                    result = execute_job_action(request)
+
+                child = result["child"]
+                self.assertEqual("MBPAS-1437", child["input"]["issue_key"])
+                self.assertEqual("MBPAS-1437", child["input"]["story"])
+                self.assertEqual(tmp, child["input"]["workspace"])
+                self.assertIn("MBPAS-1437", result["handoff_text"])
+            finally:
+                if previous is None:
+                    os.environ.pop("LUMEN_AGENTS_HOME", None)
+                else:
+                    os.environ["LUMEN_AGENTS_HOME"] = previous
+
     def test_technical_loop_waits_for_artifact_instead_of_claiming_completion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             docs = Path(tmp) / "docs"
@@ -974,6 +1052,7 @@ class MilchickJobTests(unittest.TestCase):
                     expected_hint = "Business Loop" if capability == "loop.business" else "Technical Loop"
                     self.assertIn(expected_hint, kwargs["text"])
                     self.assertEqual("1", kwargs["meta"]["_nested_handoff"])
+                    self.assertEqual("om1", kwargs["meta"]["root_id"])
 
 
 if __name__ == "__main__":

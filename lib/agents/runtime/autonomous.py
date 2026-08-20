@@ -36,6 +36,9 @@ from agents.runtime.harness import infer_task_mode
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
+from agents.conversation.config import thread_native_config
+from agents.conversation.thread_context import ThreadContextLoader
+from feishu.agent_mentions import parse_agent_mentions
 from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
 from agents.security.actions import FEISHU_ACTIONS
 from agents.security.flags import workspace_isolation_v2_enabled
@@ -557,6 +560,8 @@ def handle_autonomous_conversation(
     attachment_dir: Path | None = None
     cursor_for_cleanup: Any | None = None
     original_additional_dirs: list[Path] | None = None
+    thread_context_block = ""
+    thread_context_last_message_id = ""
     with lock:
         try:
             obs.emit(trace, "agent.message.received")
@@ -677,6 +682,39 @@ def handle_autonomous_conversation(
                     # provider fails before it can write a fresh checkpoint.
                     store.save_checkpoint(session["session_id"], checkpoint)
 
+            collaboration = thread_native_config(common, meta)
+            obs.emit(
+                trace,
+                "agent.thread.session.created" if is_new else "agent.thread.session.resumed",
+                conversation_scope_id=scope,
+                provider=canonical_agent_provider(flags.model.provider),
+                thread_id=thread_id or root_id,
+            )
+            if collaboration.enabled:
+                context_loader = ThreadContextLoader()
+                try:
+                    shared_context = context_loader.load(
+                        meta,
+                        # A new provider session receives the complete shared
+                        # transcript.  A resumed provider session only receives
+                        # messages after its persisted transcript cursor.
+                        checkpoint=None if is_new else checkpoint,
+                        max_chars=collaboration.context_max_chars,
+                        exclude_message_id=message_id,
+                    )
+                    thread_context_block = context_loader.prompt_block(shared_context)
+                    thread_context_last_message_id = shared_context.last_message_id
+                    obs.emit(
+                        trace,
+                        "thread.context.loaded",
+                        message_count=len(shared_context.messages),
+                        full=shared_context.full,
+                        last_message_id=shared_context.last_message_id,
+                        context_chars=len(shared_context.text),
+                    )
+                finally:
+                    context_loader.close()
+
             active_loop = str((checkpoint or {}).get("active_loop") or "").strip().lower()
             combined_plan_request = agent_id == "mark" and is_combined_plan_request(text)
             plan_sequence = bool(
@@ -702,7 +740,29 @@ def handle_autonomous_conversation(
 
             task_mode = infer_task_mode(text, pending)
 
+            def _prepend_thread_context(prompt: str) -> str:
+                if not thread_context_block:
+                    return prompt
+                return f"{thread_context_block}\n\n{prompt}"
+
             def _prompt_with_contract(base: str, current_pending: dict[str, Any] | None = None) -> str:
+                thread_native_prompt = ""
+                if collaboration.enabled:
+                    if agent_id == "milchick":
+                        thread_native_prompt = (
+                            "[LUMON THREAD-NATIVE COLLABORATION]\n"
+                            "This workspace uses visible Feishu thread collaboration. For a simple conversational handoff "
+                            "to Mark, make the handoff visible with an exact @Mark mention and keep the original request in "
+                            "the same message. Do not create a waiting_user Job or claim that a hidden AgentJob is running. "
+                            "The Host may translate a legacy delegation request into this visible handoff for compatibility.\n"
+                        )
+                    elif str(meta.get("_conversation_relay") or "") == "1":
+                        thread_native_prompt = (
+                            "[LUMON THREAD-NATIVE COLLABORATION]\n"
+                            "You were mentioned by a coworker Agent in the same Feishu thread. Treat the visible message and "
+                            "the shared transcript as a normal coworker request. Preserve the original human authority; do not "
+                            "create another hidden handoff or waiting Job just to continue this conversation.\n"
+                        )
                 managed_loop = ""
                 loop_capability = str(meta.get("_loop_capability") or "").strip().lower()
                 if agent_id == "mark" and loop_capability in {"loop.business", "loop.technical"}:
@@ -750,6 +810,7 @@ def handle_autonomous_conversation(
                         base,
                         loop_gateway,
                         plan_sequence_prompt,
+                        thread_native_prompt,
                         managed_loop,
                         security_block,
                         interaction_contract_prompt(
@@ -776,6 +837,7 @@ def handle_autonomous_conversation(
                 if provider_switch_handoff:
                     prompt = f"{provider_switch_handoff}\n\n{prompt}"
                 prompt = _prompt_with_contract(prompt, pending)
+                prompt = _prepend_thread_context(prompt)
                 provider_session_id = None
             else:
                 choice_hint = clarification_choice_hint(text, pending)
@@ -788,6 +850,7 @@ def handle_autonomous_conversation(
                 )
                 prompt = _append_session_context(prompt, checkpoint)
                 prompt = _prompt_with_contract(prompt, pending)
+                prompt = _prepend_thread_context(prompt)
                 provider_session_id = session.get("provider_session_id") or None
 
             cursor = runtime or create_agent_runtime(
@@ -894,6 +957,7 @@ def handle_autonomous_conversation(
                 )
                 prompt = _append_session_context(prompt, checkpoint)
                 prompt = _prompt_with_contract(prompt, pending)
+                prompt = _prepend_thread_context(prompt)
                 result = _run_provider_turn(prompt, None)
                 is_new = True
                 provider_session_id = None
@@ -1032,6 +1096,8 @@ def handle_autonomous_conversation(
                             "trust_zone": access.trust_zone,
                             "exposure_mode": access.exposure_mode,
                             "policy_version": access.policy_version,
+                            "thread_last_seen_message_id": message_id or thread_context_last_message_id,
+                            "thread_last_seen_at": shared_context.last_message_at if collaboration.enabled else "",
                         },
                         ensure_ascii=False,
                     )
@@ -1219,6 +1285,22 @@ def handle_autonomous_conversation(
             ):
                 reply_text = "Host-level information isn't available in shared conversations."
             if action_receipts:
+                native_handoff = next(
+                    (
+                        item.get("result")
+                        for item in action_receipts
+                        if isinstance(item, dict)
+                        and item.get("status") == "succeeded"
+                        and isinstance(item.get("result"), dict)
+                        and item.get("result", {}).get("thread_native")
+                    ),
+                    None,
+                )
+                if isinstance(native_handoff, dict) and native_handoff.get("handoff_text"):
+                    # The visible handoff is the source Agent's user-facing
+                    # answer.  reply_agent_text records it and wakes Mark;
+                    # never replace it with an internal Job summary.
+                    reply_text = str(native_handoff["handoff_text"])
                 for receipt in action_receipts:
                     result_payload = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
                     if (
@@ -1277,7 +1359,14 @@ def handle_autonomous_conversation(
             ):
                 if inferred_test_case_action and not action_receipts:
                     reply_text = "這次沒有產生測試用例執行回執，Milchick 尚未開始執行，請稍後重試。"
-                elif has_unbacked_delegation_claim(reply_text) or (
+                elif (
+                    not (
+                        collaboration.enabled
+                        and agent_id == "milchick"
+                        and any(item.agent_id == "mark" for item in parse_agent_mentions(reply_text))
+                    )
+                    and has_unbacked_delegation_claim(reply_text)
+                ) or (
                     not str(reply_text or "").strip()
                     and has_unbacked_delegation_claim(unbacked_original)
                 ):

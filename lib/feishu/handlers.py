@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
+from agents.conversation.config import thread_native_config
+from agents.conversation.relay import record_inbound_message
+from agents.conversation.thread_store import ThreadTranscriptStore
+from agents.project_resolver import load_chat_project_map, resolve_project
 from feishu.client_registry import FeishuClientConfig
+from feishu.agent_mentions import (
+    agent_ids_from_structured_mentions,
+    has_any_agent_or_user_mention,
+    parse_agent_mentions,
+)
 from feishu.messenger import FeishuMessenger
 from agents.bridge import handle_agent_message
 from agents.runtime.loop_intent import classify_loop_intent
-from agents.runtime.reply_anchor import extract_content_text, extract_feishu_image_keys
+from agents.runtime.reply_anchor import extract_content_text, extract_feishu_attachment_refs, extract_feishu_image_keys
 
 
 def _message_content(message: dict[str, Any]) -> Any:
@@ -115,6 +125,9 @@ def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
     image_keys = extract_feishu_image_keys(msg_type, content)
     if image_keys:
         meta["image_keys"] = json.dumps(image_keys, ensure_ascii=False)
+    attachment_refs = extract_feishu_attachment_refs(msg_type, content)
+    if attachment_refs:
+        meta["attachment_refs"] = json.dumps(attachment_refs, ensure_ascii=False)
     mentions = message.get("mentions") if isinstance(message.get("mentions"), list) else []
     for item in mentions:
         if not isinstance(item, dict):
@@ -269,6 +282,37 @@ def _message_mentions_agent(message: dict[str, Any], agent_id: str) -> tuple[boo
     return False, False
 
 
+def _message_agent_mention_ids(message: dict[str, Any], content: str) -> tuple[bool, list[str]]:
+    listed = message.get("mentions")
+    mentions = [item for item in listed if isinstance(item, dict)] if isinstance(listed, list) else []
+    mentions.extend(_structured_content_mentions(message))
+    target_ids = agent_ids_from_structured_mentions(mentions)
+    target_ids.extend(item.agent_id for item in parse_agent_mentions(content))
+    explicit = bool(mentions) or has_any_agent_or_user_mention(content)
+    return explicit, list(dict.fromkeys(target_ids))
+
+
+def _message_common(message: dict[str, Any]) -> dict[str, Any]:
+    chat_id = str(message.get("chat_id") or "").strip()
+    try:
+        mapped = resolve_project(chat_id=chat_id, mapping=load_chat_project_map())
+    except Exception:
+        mapped = None
+    workspace = Path(str((mapped or {}).get("workspace") or "").strip()).expanduser()
+    common_path = workspace / "config" / "common.json"
+    if not workspace.is_dir() or not common_path.is_file():
+        return {}
+    try:
+        data = json.loads(common_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _thread_native_enabled(message: dict[str, Any]) -> bool:
+    return thread_native_config(_message_common(message), message).enabled
+
+
 def _waiting_loop_owner(message: dict[str, Any]) -> str:
     chat_id = str(message.get("chat_id") or "").strip()
     if not chat_id or not any(str(message.get(key) or "").strip() for key in ("thread_id", "parent_id", "root_id")):
@@ -302,16 +346,63 @@ def should_handle(event: dict[str, Any], client: FeishuClientConfig) -> bool:
         return False
     agent_id = str(client.agent_id or "").strip().lower()
     chat_type = str(message.get("chat_type") or "").strip().lower()
+    native = _thread_native_enabled(message)
     # An explicit target is always the latest user intent.  A pending Loop
     # must not hijack a message addressed to the host agent or another owner.
     has_explicit_mention, targets_agent = _message_mentions_agent(message, agent_id)
     if has_explicit_mention:
         return targets_agent
     content = extract_text(event)
-    if _content_targets_agent(content, agent_id):
+    if native:
+        text_explicit, target_ids = _message_agent_mention_ids(message, content)
+        if text_explicit:
+            return agent_id in target_ids
+    elif _content_targets_agent(content, agent_id):
         return True
 
-    loop_owner = _waiting_loop_owner(message)
+    if native:
+        # A direct human reply to an Agent message belongs to that Agent only;
+        # a waiting Job must never hijack it.
+        parent_id = str(message.get("parent_id") or "").strip()
+        root_id = str(message.get("root_id") or "").strip()
+        thread_id = str(message.get("thread_id") or "").strip()
+        try:
+            transcript = ThreadTranscriptStore()
+            try:
+                owner = transcript.agent_for_message(parent_id) if parent_id else ""
+                owner = owner or (transcript.agent_for_message(root_id) if root_id else "")
+                if owner:
+                    return owner == agent_id
+                owners = transcript.agent_ids_in_thread(
+                    chat_id=str(message.get("chat_id") or ""),
+                    thread_id=thread_id,
+                    root_id=root_id,
+                    parent_id=parent_id,
+                    message_id=str(message.get("message_id") or ""),
+                )
+                if len(owners) == 1 and (parent_id or root_id or thread_id):
+                    return owners[0] == agent_id
+            finally:
+                transcript.close()
+        except Exception:
+            pass
+        # Messages created before M0.6 may only exist in the per-Agent
+        # reply-anchor cache.  Keep that cache as a routing compatibility
+        # fallback while the shared transcript is populated organically.
+        try:
+            from agents.runtime.reply_anchor import is_agent_thread_context
+
+            if is_agent_thread_context(
+                agent_id=agent_id,
+                parent_id=parent_id,
+                root_id=root_id,
+                thread_id=thread_id,
+            ):
+                return True
+        except Exception:
+            pass
+
+    loop_owner = "" if native else _waiting_loop_owner(message)
     if loop_owner:
         # A Loop answer belongs to the child agent only when the user replied
         # to that child's concrete question message.  Waiting status alone is
@@ -346,9 +437,59 @@ def handle_message_event(event: dict[str, Any], client: FeishuClientConfig) -> N
     import logging
 
     log = logging.getLogger("lumen.feishu.channel")
+    body = event.get("event") if isinstance(event.get("event"), dict) else {}
+    message = body.get("message") if isinstance(body, dict) else {}
+    if not isinstance(message, dict):
+        return
+    sender = body.get("sender") if isinstance(body, dict) else {}
+    sender_type = str(sender.get("sender_type") or "").strip().lower() if isinstance(sender, dict) else ""
+    if sender_type in {"bot", "app"}:
+        log.info("ignore bot/app message message_id=%s", message.get("message_id"))
+        return
+
+    # Every human message becomes shared context, even when this particular
+    # Agent is not the owner.  The transcript store is idempotent because one
+    # Feishu event is delivered to more than one Agent app.
+    meta = extract_message_meta(event)
+    text = extract_text(event)
+    text, meta = _hydrate_missing_text(text, meta, client)
+    if not meta.get("app_id"):
+        meta["app_id"] = client.app_id
+    if meta.get("message_id") and meta.get("chat_id"):
+        try:
+            message_mentions = message.get("mentions") if isinstance(message.get("mentions"), list) else []
+            structured_mentions = _structured_content_mentions(message)
+            mentioned_agents = agent_ids_from_structured_mentions([*message_mentions, *structured_mentions])
+            mentioned_agents.extend(item.agent_id for item in parse_agent_mentions(text))
+            image_keys = []
+            try:
+                raw_keys = json.loads(str(meta.get("image_keys") or "[]"))
+                image_keys = [str(item) for item in raw_keys] if isinstance(raw_keys, list) else []
+            except (TypeError, json.JSONDecodeError):
+                pass
+            try:
+                raw_refs = json.loads(str(meta.get("attachment_refs") or "[]"))
+                attachment_refs = [str(item) for item in raw_refs] if isinstance(raw_refs, list) else []
+            except (TypeError, json.JSONDecodeError):
+                attachment_refs = []
+            record_inbound_message(
+                message_id=meta["message_id"],
+                meta=meta,
+                text=text,
+                mentions=mentioned_agents,
+                attachment_refs=attachment_refs or image_keys,
+            )
+            log.info(
+                "thread.message.inbound chat_id=%s thread_id=%s message_id=%s mentions=%s",
+                meta.get("chat_id"),
+                meta.get("thread_id") or meta.get("root_id") or meta.get("parent_id"),
+                meta.get("message_id"),
+                ",".join(dict.fromkeys(mentioned_agents)),
+            )
+        except Exception as exc:
+            log.warning("thread inbound record failed message_id=%s err=%s", meta.get("message_id"), exc)
+
     if not should_handle(event, client):
-        body = event.get("event") if isinstance(event.get("event"), dict) else {}
-        message = body.get("message") if isinstance(body, dict) else {}
         log.info(
             "ignore message chat_type=%s mentions=%s parent_id=%s thread_id=%s",
             (message.get("chat_type") if isinstance(message, dict) else None),
@@ -357,11 +498,6 @@ def handle_message_event(event: dict[str, Any], client: FeishuClientConfig) -> N
             (message.get("thread_id") if isinstance(message, dict) else None),
         )
         return
-    meta = extract_message_meta(event)
-    text = extract_text(event)
-    text, meta = _hydrate_missing_text(text, meta, client)
-    if not meta.get("app_id"):
-        meta["app_id"] = client.app_id
     remember_message_identities(event, meta, agent_id=client.agent_id)
     log.info(
         "handle text=%r meta=%s",

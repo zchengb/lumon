@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,12 +14,94 @@ from agents.security.trusted import TrustedActionContext, bind_action_request
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 
 
+_ISSUE_KEY_RE = re.compile(
+    r"(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]+-\d+)(?![A-Za-z0-9])"
+)
+
+
 # Capabilities that hand the original turn to Mark as an agent instead of a
 # host adapter call. Loops are conversational workspace work, so Mark decides
 # the details himself, exactly like a bounded quick change.
 MARK_AGENT_HANDOFF_CAPABILITIES = frozenset(
     {"delivery.quick_change", "loop.business", "loop.technical", "test_case.generate"}
 )
+
+
+def _extract_issue_key(*values: Any) -> str:
+    """Return the first explicit or embedded Jira key from job context."""
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        match = _ISSUE_KEY_RE.search(text)
+        if match:
+            return match.group(1).upper()
+    return ""
+
+
+def _job_story(child: AgentJob) -> str:
+    """Resolve a Story reference, including URL-only original requests."""
+    input_data = child.input if isinstance(child.input, dict) else {}
+    explicit = (
+        input_data.get("story")
+        or input_data.get("story_id")
+        or input_data.get("issue_key")
+    )
+    if str(explicit or "").strip():
+        return str(explicit).strip()
+    return _extract_issue_key(input_data.get("user_message"))
+
+
+def _job_workspace(child: AgentJob) -> str:
+    input_data = child.input if isinstance(child.input, dict) else {}
+    return str(input_data.get("workspace") or input_data.get("_workspace_path") or "").strip()
+
+
+def _workspace_common(workspace: str) -> dict[str, Any]:
+    root = Path(str(workspace or "").strip()).expanduser()
+    path = root / "config" / "common.json"
+    if not root.is_dir() or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _native_thread_handoff(request: ActionRequest, *, target: str, capability: str, args: dict[str, Any], resource: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a visible handoff receipt without creating an AgentJob."""
+
+    if str(request.agent_id or "").strip().lower() != "milchick":
+        return None
+    if target != "mark" or capability not in MARK_AGENT_HANDOFF_CAPABILITIES:
+        return None
+    workspace = str(args.get("_workspace_path") or resource.get("_workspace_path") or "").strip()
+    from agents.conversation.config import thread_native_config
+
+    if not thread_native_config(_workspace_common(workspace), args).enabled:
+        return None
+    user_message = str(args.get("user_message") or resource.get("user_message") or "").strip()
+    phrases = {
+        "delivery.quick_change": "the bounded delivery change",
+        "loop.business": "the Business Loop",
+        "loop.technical": "the Technical Loop",
+        "test_case.generate": "test-case generation",
+    }
+    phrase = phrases.get(capability, capability.replace(".", " "))
+    handoff = f"@Mark\nI’m handing this thread to Mark for {phrase}."
+    if user_message:
+        handoff += f"\n\nOriginal request:\n{user_message}"
+    return {
+        "status": "succeeded",
+        "thread_native": True,
+        "target_agent": target,
+        "capability": capability,
+        "handoff_text": handoff,
+        "summary": handoff,
+        "result_delivered": False,
+        "job_created": False,
+    }
 
 
 class AgentJobBroker:
@@ -251,12 +335,12 @@ class AgentJobBroker:
         result = latest.get("result") if isinstance(latest.get("result"), dict) else latest
         agent_result = result.get("agent_result") if isinstance(result.get("agent_result"), dict) else {}
         workspace = str(
-            child.input.get("workspace")
+            _job_workspace(child)
             or agent_result.get("workspace")
             or latest.get("workspace")
             or ""
         ).strip()
-        story = str(child.input.get("issue_key") or child.input.get("story") or "").strip()
+        story = _job_story(child)
         if not workspace or not story:
             return False, {"complete": False, "reason": "loop_context_missing"}
         from agents.mark.delivery_adapter import DeliveryActionAdapter
@@ -271,7 +355,7 @@ class AgentJobBroker:
     @staticmethod
     def _loop_question(child: AgentJob, state: dict[str, Any]) -> str:
         reason = str(state.get("reason") or "").strip()
-        story = str(child.input.get("issue_key") or child.input.get("story") or "").strip()
+        story = _job_story(child)
         if reason == "story_not_found":
             return (
                 f"{story} 目前沒有對應的本地 Story artifact。要先匯入 Jira Story 並進入 Business Loop 嗎？\n"
@@ -318,6 +402,10 @@ class AgentJobBroker:
             "message_id": child.source_message_id,
             "chat_id": child.chat_id,
             "thread_id": child.thread_id,
+            # Keep the first delegated turn and every question reply on one
+            # stable session scope even when Feishu does not provide a topic
+            # id for a normal group message.
+            "root_id": str(child.source_message_id or "").strip(),
             "chat_type": str(child.input.get("chat_type") or "group"),
             "user_id": child.requested_by,
             "_project_slug": child.project,
@@ -370,25 +458,24 @@ class AgentJobBroker:
         try:
             from feishu.messenger import FeishuMessenger
 
-            sent = FeishuMessenger(child.target_agent).safe_reply_text(
+            sent = FeishuMessenger(child.target_agent).reply_agent_text(
                 child.source_message_id,
                 text,
                 reply_in_thread=bool(child.thread_id)
                 or str(child.chat_id or "").startswith("oc_"),
+                conversation_meta={
+                    "message_id": child.source_message_id,
+                    "chat_id": child.chat_id,
+                    "thread_id": child.thread_id,
+                    "root_id": child.source_message_id,
+                    "user_id": child.requested_by,
+                    "_project_slug": child.project,
+                },
             )
             if sent:
-                from agents.runtime.reply_anchor import remember_outbound
                 from feishu.messenger import extract_message_id
 
                 outbound_id = extract_message_id(sent)
-                remember_outbound(
-                    message_id=outbound_id,
-                    text=text,
-                    chat_id=child.chat_id,
-                    agent_id=child.target_agent,
-                    reply_to=child.source_message_id,
-                    thread_id=child.thread_id,
-                )
                 result = receipt.get("result") if isinstance(receipt.get("result"), dict) else {}
                 result["outbound_message_id"] = outbound_id
                 receipt["result"] = result
@@ -405,9 +492,7 @@ def _job_create_handoff_text(target: str, capability: str, child: AgentJob) -> s
         "loop.technical": "Technical Loop",
     }
     phrase = phrases.get(capability, (capability or "work").replace(".", " ").replace("_", " "))
-    issue = ""
-    if isinstance(child.input, dict):
-        issue = str(child.input.get("issue_key") or child.input.get("story") or "").strip()
+    issue = _job_story(child)
     subject = f"{phrase} for {issue}" if issue else phrase
     status = str(child.status or "").strip().lower()
     if status == "completed":
@@ -436,6 +521,19 @@ def execute_job_action(request: ActionRequest) -> dict[str, Any]:
     resource = request.resource or {}
 
     if action in {"agent.job.create", "agent.delegate"}:
+        target = str(args.get("target_agent") or resource.get("target_agent") or "mark").strip().lower()
+        capability = str(args.get("capability") or resource.get("capability") or "").strip()
+        if not capability:
+            raise ValueError("capability required")
+        native = _native_thread_handoff(
+            request,
+            target=target,
+            capability=capability,
+            args=args,
+            resource=resource,
+        )
+        if native is not None:
+            return native
         parent = broker.create_parent(
             project=request.project_slug,
             requested_by=request.actor_user_id,
@@ -446,17 +544,29 @@ def execute_job_action(request: ActionRequest) -> dict[str, Any]:
             trace_id=request.trace_id,
             input_data=args,
         )
-        target = str(args.get("target_agent") or resource.get("target_agent") or "mark").strip().lower()
-        capability = str(args.get("capability") or resource.get("capability") or "").strip()
-        if not capability:
-            raise ValueError("capability required")
+        user_message = str(args.get("user_message") or resource.get("user_message") or "").strip()
+        explicit_story = str(
+            args.get("story")
+            or resource.get("story")
+            or args.get("story_id")
+            or resource.get("story_id")
+            or ""
+        ).strip()
+        explicit_issue_key = str(
+            args.get("issue_key") or resource.get("issue_key") or ""
+        ).strip()
+        story_reference = explicit_story or explicit_issue_key or _extract_issue_key(user_message)
+        workspace_path = str(
+            args.get("_workspace_path") or resource.get("_workspace_path") or ""
+        ).strip()
         child = broker.create_child(
             parent=parent,
             target_agent=target,
             capability=capability,
             input_data={
-                "issue_key": args.get("issue_key") or resource.get("issue_key") or "",
-                "story": args.get("story") or resource.get("story") or "",
+                "issue_key": explicit_issue_key or (_extract_issue_key(user_message) if not explicit_story else ""),
+                "story": story_reference,
+                "workspace": workspace_path,
                 "project": request.project_slug,
                 **{k: v for k, v in args.items() if k not in {"target_agent", "capability", "depends_on"}},
             },

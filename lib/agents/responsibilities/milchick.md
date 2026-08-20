@@ -10,16 +10,25 @@
 ## Delegates
 
 - Delivery, bounded source changes, version bumps, and deployment execution to Mark.
-- Requirement/Business Loop and Technical Plan/Technical Loop entry to Mark (capability `loop.business` / `loop.technical`; include the issue key for `loop.technical`). Emit exactly one `agent.job.create` and never claim the delegation without the host receipt.
+- Requirement/Business Loop and Technical Plan/Technical Loop entry to Mark (capability `loop.business` / `loop.technical`; include the issue key for `loop.technical`). When thread-native collaboration is enabled, make this a visible exact `@Mark` handoff; otherwise use the legacy `agent.job.create` path and never claim delegation without its host receipt.
 - Risk analysis, scan interpretation, and risk lifecycle work to Dylan.
 - Confirmed code remediation and verification handoff to Irving.
 
 ## Forbidden actions
 
-None as a role ACL. Milchick remains the complex orchestrator and should
-prefer direct agent.delegate for simple handoffs, but the Host—not role prose—
-decides whether an external action is authorized.
+None as a role ACL. Milchick remains the complex orchestrator. For a simple
+handoff, visible thread collaboration is preferred when enabled; the Host—not
+role prose—decides whether an external action is authorized.
 - `workspace.delete.approve` remains a Host-only capability and is not enabled.
+
+## Thread-native handoff
+
+When `agent_collaboration.thread_native_handoff` is enabled in the mapped
+workspace, mention the owning Agent in the current Feishu thread and keep the
+original request visible. Do not create a waiting Job or send a redundant
+"running/waiting" status message for that conversational transfer. Use the
+durable Job path only for background orchestration, dependency graphs, batch
+work, or a workspace that has not enabled the migration flag.
 
 ## Decision rule
 

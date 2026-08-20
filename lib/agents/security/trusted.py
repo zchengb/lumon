@@ -17,12 +17,23 @@ class TrustedActionContext:
     thread_id: str
     source_message_id: str
     trace_id: str
+    root_id: str = ""
     chat_type: str = ""
     access_decision: AccessDecision | None = None
     explicit_authorization: bool = False
     user_message: str = ""
     image_keys: str = ""
     workspace_path: str = ""
+    # Conversation identity is separate from the acting Agent identity.  A
+    # relay may change the target Agent, but it never changes the originating
+    # human authority or the bounded relay chain.
+    origin_user_id: str = ""
+    source_agent_id: str = ""
+    target_agent_id: str = ""
+    relay_id: str = ""
+    relay_hop: int = 0
+    relay_visited: str = ""
+    thread_native_handoff: str = ""
 
 
 def trusted_context_from_meta(
@@ -34,12 +45,17 @@ def trusted_context_from_meta(
     access_decision: AccessDecision | None = None,
     explicit_authorization: bool | None = None,
 ) -> TrustedActionContext:
+    try:
+        relay_hop = max(0, int(str(meta.get("_relay_hop") or "0") or 0))
+    except (TypeError, ValueError):
+        relay_hop = 0
     return TrustedActionContext(
         agent_id=str(agent_id or "").strip().lower(),
         project_slug=str(project_slug or "").strip(),
         actor_user_id=str(meta.get("user_id") or "").strip(),
         chat_id=str(meta.get("chat_id") or "").strip(),
         thread_id=str(meta.get("thread_id") or "").strip(),
+        root_id=str(meta.get("root_id") or meta.get("parent_id") or "").strip(),
         source_message_id=str(meta.get("message_id") or "").strip(),
         trace_id=str(trace_id or "").strip(),
         chat_type=str(meta.get("chat_type") or "").strip(),
@@ -48,6 +64,13 @@ def trusted_context_from_meta(
         user_message=str(meta.get("_user_message") or ""),
         image_keys=str(meta.get("image_keys") or ""),
         workspace_path=str(meta.get("_workspace_path") or "").strip(),
+        origin_user_id=str(meta.get("_origin_user_id") or meta.get("user_id") or "").strip(),
+        source_agent_id=str(meta.get("_source_agent") or "").strip().lower(),
+        target_agent_id=str(meta.get("_target_agent") or agent_id or "").strip().lower(),
+        relay_id=str(meta.get("_relay_id") or "").strip(),
+        relay_hop=relay_hop,
+        relay_visited=str(meta.get("_relay_visited") or "").strip(),
+        thread_native_handoff=str(meta.get("_thread_native_handoff") or "").strip(),
     )
 
 
@@ -63,8 +86,22 @@ def bind_action_request(
     # them with the Host-bound context so an Agent cannot change access-zone
     # checks or route a reply outside the current conversation.
     args["chat_type"] = context.chat_type
+    if context.root_id:
+        args["_root_id"] = context.root_id
     if context.workspace_path:
         args["_workspace_path"] = context.workspace_path
+    if context.origin_user_id:
+        args["_origin_user_id"] = context.origin_user_id
+    if context.source_agent_id:
+        args["_source_agent"] = context.source_agent_id
+    if context.target_agent_id:
+        args["_target_agent"] = context.target_agent_id
+    if context.relay_id:
+        args["_relay_id"] = context.relay_id
+        args["_relay_hop"] = str(context.relay_hop)
+        args["_relay_visited"] = context.relay_visited
+    if context.thread_native_handoff:
+        args["_thread_native_handoff"] = context.thread_native_handoff
     return ActionRequest(
         agent_id=context.agent_id,
         action=str(action or "").strip(),
@@ -103,6 +140,7 @@ def execute_trusted_actions(
             "actor",
             "chat_id",
             "thread_id",
+            "_root_id",
             "source_message_id",
             "trace_id",
             "explicit_authorization",
@@ -111,6 +149,13 @@ def execute_trusted_actions(
             "chat_type",
             "workspace_path",
             "_workspace_path",
+            "_origin_user_id",
+            "_source_agent",
+            "_target_agent",
+            "_relay_id",
+            "_relay_hop",
+            "_relay_visited",
+            "_thread_native_handoff",
         ):
             arguments.pop(key, None)
             resource.pop(key, None)

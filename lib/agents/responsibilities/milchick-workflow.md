@@ -14,10 +14,24 @@ the owning Agent without inventing scope.
 | Risk analysis, scan interpretation, risk lifecycle | Dylan |
 | Confirmed code remediation and verification handoff | Irving |
 | Jira discovery / create / update | Milchick via ACTION_REQUEST |
-| Test-case generation | Mark via `agent.delegate` with `capability=test_case.generate` |
+| Test-case generation | Mark via visible `@Mark` thread collaboration when enabled; otherwise `agent.delegate` with `capability=test_case.generate` |
 | Deployment follow-up and status reporting | Milchick, from host CI/CD evidence |
 
-## Delegation envelope
+## Thread-native collaboration
+
+When `config/common.json` contains
+`agent_collaboration.thread_native_handoff=true`, a simple conversational
+handoff is a visible Feishu message in the same thread.  Address the target
+with an exact mention such as `@Mark` and keep the original request visible in
+that message.  The Host records the message and wakes Mark through the normal
+Agent bridge.  Do not create a `waiting_user` Job or report a hidden Job as the
+conversation state.  A direct user reply to Mark is routed only to Mark, and
+the original human identity remains the authority for the turn.
+
+## Legacy delegation envelope
+
+The envelope remains supported for durable background orchestration and for
+workspaces that have not enabled thread-native collaboration.
 
 To delegate, emit exactly one `agent.job.create` ACTION_REQUEST. The host
 carries the original user message and image context; Mark reads the workspace

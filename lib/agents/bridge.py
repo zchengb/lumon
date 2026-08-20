@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from agents.actions.scan import load_recent_run, save_recent_run, scan_lock_exists
+from agents.conversation.config import thread_native_config
 from agents.definitions import ensure_definitions_loaded, get_definition
 from agents.dylan.schemas import ConversationFlags
 from agents.models import TriggerContext
 from agents.parser import parse_dylan_text
 from agents.project_resolver import known_project_slugs, load_chat_project_map, resolve_project
-from agents.runtime.reply_anchor import remember_outbound
 from feishu.cards import ack_card, progress_card, scan_summary_card
 from feishu.config import load_agents_config
 from feishu.messenger import (
@@ -272,6 +272,11 @@ def _run_autonomous_worker(
                 for item in receipts
             )
             allow_pdf = (is_pdf_output_request(text) or has_pdf_file_citation(reply_text)) and not host_file_sent
+            try:
+                raw_attachment_refs = json.loads(str(meta.get("attachment_refs") or "[]"))
+                attachment_refs = [str(item) for item in raw_attachment_refs] if isinstance(raw_attachment_refs, list) else []
+            except (TypeError, json.JSONDecodeError):
+                attachment_refs = []
             if suppress_reply:
                 obs.emit(trace, "reply.suppressed")
             else:
@@ -280,12 +285,15 @@ def _run_autonomous_worker(
                 if message_id:
                     sent = None
                     for attempt in range(4):
-                        sent = messenger.safe_reply_text(
+                        sent = messenger.reply_agent_text(
                             message_id,
                             reply_text,
                             reply_in_thread=reply_in_thread,
                             allow_pdf=allow_pdf,
                             suppress_pdf_artifact=host_file_sent,
+                            conversation_meta=meta,
+                            conversation_common=probe_common,
+                            attachment_refs=attachment_refs,
                         )
                         if sent is not None:
                             break
@@ -295,16 +303,7 @@ def _run_autonomous_worker(
                         obs.upsert_trace(trace, reply_status="failed", state="failed", error_code="reply_failed")
                         raise RuntimeError("final reply failed")
                     try:
-                        outbound_id = extract_message_id(sent)
-                        remember_outbound(
-                            message_id=outbound_id,
-                            text=reply_text,
-                            chat_id=chat_id,
-                            agent_id=agent,
-                            reply_to=message_id,
-                            thread_id=str(meta.get("thread_id") or ""),
-                        )
-                        result["outbound_message_id"] = outbound_id
+                        result["outbound_message_id"] = extract_message_id(sent)
                     except Exception:
                         pass
                 obs.emit(trace, "reply.succeeded")
@@ -402,9 +401,7 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
             messenger.safe_reply_text(message_id, reply, reply_in_thread=should_reply_in_thread(meta))
         return {"status": "denied", "detail": detail, "trust_zone": decision.trust_zone}
     meta = dict(meta)
-    waiting_job, meta = _resume_waiting_loop(agent=agent, meta=meta)
-    if waiting_job is not None:
-        meta["_loop_capability"] = waiting_job.capability
+    waiting_job = None
     meta["_trust_zone"] = str(decision.trust_zone or "")
     meta["_exposure_mode"] = str(decision.exposure_mode or "")
     meta["_policy_version"] = str(decision.policy_version or "")
@@ -423,6 +420,10 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
     )
     probe_common = _load_workspace_common(str(mapped.get("workspace") or "")) if mapped else {}
     flags = ConversationFlags.from_common(probe_common, config, agent_id=agent)
+    if not thread_native_config(probe_common, meta).enabled:
+        waiting_job, meta = _resume_waiting_loop(agent=agent, meta=meta)
+        if waiting_job is not None:
+            meta["_loop_capability"] = waiting_job.capability
 
     if _conversation_enabled(config, probe_common, agent):
         if flags.autonomous or (agent == "dylan" and flags.agent_only):

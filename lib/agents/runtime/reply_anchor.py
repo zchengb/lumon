@@ -192,6 +192,47 @@ def extract_feishu_image_keys(msg_type: str, content: Any) -> list[str]:
     return list(dict.fromkeys(keys))[:8]
 
 
+def extract_feishu_attachment_refs(msg_type: str, content: Any) -> list[str]:
+    """Return bounded file/media/image references for shared thread context."""
+
+    raw = content
+    if isinstance(content, dict):
+        raw = json.dumps(content, ensure_ascii=False)
+    try:
+        parsed = json.loads(str(raw or ""))
+    except Exception:
+        return []
+    refs: list[str] = []
+    keys = {
+        "image_key": "image",
+        "file_key": "file",
+        "media_key": "media",
+        "audio_key": "audio",
+        "video_key": "video",
+    }
+
+    def collect(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                collect(item)
+            return
+        if not isinstance(value, dict):
+            return
+        for key, kind in keys.items():
+            ref = str(value.get(key) or "").strip()
+            if ref:
+                refs.append(f"{kind}:{ref}")
+        for item in value.values():
+            collect(item)
+
+    collect(parsed)
+    if str(msg_type or "").strip().lower() in {"file", "media", "audio", "video", "image"} and not refs:
+        # Some webhook payloads omit the key but still carry an attachment
+        # message type; retain a useful provider-neutral marker.
+        refs.append(f"{str(msg_type).strip().lower()}:attached")
+    return list(dict.fromkeys(refs))[:12]
+
+
 def extract_content_text(msg_type: str, content: Any) -> str:
     raw = content
     if isinstance(content, dict):

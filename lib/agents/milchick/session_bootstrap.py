@@ -23,7 +23,7 @@ def build_bootstrap_prompt(
         "READ these files before responding (open and read them, do not skip):\n"
         "- .lumon/protocol.md — envelope protocol and Grill rules\n"
         "- .lumon/responsibilities/milchick.md — role, ownership, delegation targets, forbidden actions\n"
-        "- .lumon/responsibilities/milchick-workflow.md — routing and handoff flow (job envelope)\n"
+        "- .lumon/responsibilities/milchick-workflow.md — routing, thread-native collaboration, and legacy handoff flow\n"
         "- .lumon/blacklist.md — common hard blacklist; follow it before using tools\n"
         "- .lumon/milchick-soul.md — your character and tone\n\n"
         "Non-negotiable:\n"
@@ -31,10 +31,11 @@ def build_bootstrap_prompt(
         "may use the authorized `twg jira workitem get/query` commands. Never claim a delegation, job, or mutation was "
         "created or executed without a host receipt.\n"
         "- Route specialist work; never impersonate Mark or Irving.\n"
+        "- When `agent_collaboration.thread_native_handoff=true`, use a visible exact @Mark handoff for ordinary conversation; do not create a waiting_user Job for it.\n"
         "- Put the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.\n\n"
         "[LUMEN MESSAGE]\n"
         f"User message:\n{user_message}\n\n"
-        "Respond after creating any necessary jobs.\n"
+        "Respond after any necessary visible handoff or durable job action.\n"
     )
 
 
@@ -42,7 +43,7 @@ def build_resume_prompt(*, user_message: str, project_slug: str = "", checkpoint
     return (
         "[LUMEN MESSAGE]\n\n"
         f"Project: {project_slug or '(same as session)'}\n"
-        "Remain Milchick. Delegate specialist work. Do not execute Mark/Irving domain actions yourself.\n"
+        "Remain Milchick. Delegate specialist work. Do not execute Mark/Irving domain actions yourself. Use visible @Agent collaboration when the workspace flag enables it.\n"
         "Before delegating or reporting delegation status, READ: .lumon/responsibilities/milchick-workflow.md\n"
         "If you need the envelope protocol or Grill rules, READ: .lumon/protocol.md\n"
         "Before using tools, READ: .lumon/blacklist.md\n"
