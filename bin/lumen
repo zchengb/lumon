@@ -396,6 +396,8 @@ Usage:
                                  FEISHU_DYLAN_APP_ID / FEISHU_DYLAN_APP_SECRET.
   lumen harness probe --provider cursor|opencode|codex|api --project <slug> --json
                                  Inspect provider capabilities and Host boundary readiness.
+  lumen agent-world status|provision|certify --agent <id> [--provider <provider>] [--live]
+                                 Inspect, provision, or certify the OS-enforced Agent World.
   lumen dylan brief [--project <slug>]
                                  Generate Dylan Weekly Risk Brief from risk.sqlite3
   lumen dylan doctor [--project <slug>] [--deep]
@@ -4281,6 +4283,13 @@ cmd_harness() {
   esac
 }
 
+cmd_agent_world() {
+  local security_py="${LUMEN_LIB_DIR}/agent_security_cli.py"
+  [[ -f "${security_py}" ]] || { err "Agent security helper not found: ${security_py}"; exit 1; }
+  require_python3
+  python3 "${security_py}" agent-world "$@"
+}
+
 main() {
   local command="${1:-help}"
   shift || true
@@ -4301,6 +4310,7 @@ main() {
     workspace) cmd_workspace "$@" ;;
     agents) cmd_agents "$@" ;;
     harness) cmd_harness "$@" ;;
+    agent-world) cmd_agent_world "$@" ;;
     dylan) cmd_dylan "$@" ;;
     dashboard) cmd_dashboard "$@" ;;
     watch) cmd_watch "$@" ;;

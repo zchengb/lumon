@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import secrets
+import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
@@ -7,7 +10,7 @@ from agents.security.actions import MUTATION_ACTIONS
 from agents.security.policy import load_access_config
 from feishu.config import load_agents_config
 
-POLICY_VERSION = "m0.4.0"
+POLICY_VERSION = "m0.7.0"
 
 TrustZone = Literal["PRIVATE", "RESTRICTED", "SHARED", "DENY"]
 HostReadMode = Literal["deny", "selected", "system_only"]
@@ -69,6 +72,80 @@ class AccessDecision:
     policy_version: str = POLICY_VERSION
     context: InteractionContext | None = None
     policy: AgentAccessPolicy | None = None
+
+
+@dataclass(frozen=True)
+class EntryGate:
+    """The one business authorization decision for a conversation entry."""
+
+    token: str
+    agent_id: str
+    user_id: str
+    chat_id: str
+    thread_id: str
+    message_id: str
+    trust_zone: str
+    decision: AccessDecision
+    issued_at: float
+
+    def matches(self, *, agent_id: str, user_id: str, chat_id: str, thread_id: str = "") -> bool:
+        return (
+            self.agent_id == str(agent_id or "").strip().lower()
+            and self.user_id == str(user_id or "").strip()
+            and self.chat_id == str(chat_id or "").strip()
+            and (not thread_id or not self.thread_id or self.thread_id == str(thread_id or "").strip())
+            and self.decision.allowed
+        )
+
+
+_ENTRY_GATES: dict[str, EntryGate] = {}
+_ENTRY_GATES_LOCK = threading.RLock()
+_ENTRY_GATE_TTL_SECONDS = 2 * 60 * 60
+
+
+def issue_entry_gate(*, agent_id: str, meta: dict[str, str], decision: AccessDecision) -> EntryGate:
+    """Bind an allow decision to the inbound message without serializing it."""
+
+    if not decision.allowed:
+        raise ValueError("cannot issue an entry gate for a denied decision")
+    token = f"gate_{secrets.token_urlsafe(24)}"
+    gate = EntryGate(
+        token=token,
+        agent_id=str(agent_id or "").strip().lower(),
+        user_id=str(meta.get("user_id") or "").strip(),
+        chat_id=str(meta.get("chat_id") or "").strip(),
+        thread_id=str(meta.get("thread_id") or meta.get("root_id") or "").strip(),
+        message_id=str(meta.get("message_id") or "").strip(),
+        trust_zone=str(decision.trust_zone or ""),
+        decision=decision,
+        issued_at=time.time(),
+    )
+    with _ENTRY_GATES_LOCK:
+        now = time.time()
+        for key, item in list(_ENTRY_GATES.items()):
+            if now - item.issued_at > _ENTRY_GATE_TTL_SECONDS:
+                _ENTRY_GATES.pop(key, None)
+        _ENTRY_GATES[token] = gate
+    return gate
+
+
+def resolve_entry_gate(token: str, *, agent_id: str = "", meta: dict[str, str] | None = None) -> EntryGate | None:
+    value = str(token or "").strip()
+    if not value:
+        return None
+    with _ENTRY_GATES_LOCK:
+        gate = _ENTRY_GATES.get(value)
+    if gate is None or time.time() - gate.issued_at > _ENTRY_GATE_TTL_SECONDS:
+        return None
+    data = meta if isinstance(meta, dict) else {}
+    if not gate.matches(
+        agent_id=agent_id,
+        user_id=str(data.get("user_id") or gate.user_id),
+        chat_id=str(data.get("chat_id") or gate.chat_id),
+        thread_id=str(data.get("thread_id") or data.get("root_id") or gate.thread_id),
+    ):
+        return None
+    return gate
 
 
 def _as_set(values: Any) -> frozenset[str]:

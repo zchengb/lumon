@@ -14,6 +14,8 @@ The system is intentionally local-first. Source repositories, configuration, cre
 - **Evidence**: scan findings, verification results, pull requests, and status transitions are materialized as local records.
 - **Minimal intervention**: Lumon changes only the configured workspace and never writes directly to a default branch.
 - **Human control**: scheduling and automation are configurable; pull request review and merge remain outside the default automation boundary.
+- **Agent World**: provider CLIs run in an OS-enforced disposable world with a service identity and a Host-only canonical checkout.
+- **Native autonomy**: connected tools, live workstream events, and SessionHost lifecycle are provider-native seams; prompt text is not an action protocol.
 
 ## Installation
 
@@ -34,6 +36,10 @@ cd lumon
 ```
 
 Run `lumon doctor` after installation to inspect required and optional local dependencies.
+
+Inspect or certify the runtime boundary with `lumon agent-world status` and
+`lumon agent-world certify --provider codex --live`. Provisioning creates empty
+service directories and never copies personal provider credentials.
 
 ## Workspace Model
 

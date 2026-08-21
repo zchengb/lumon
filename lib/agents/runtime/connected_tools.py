@@ -90,7 +90,11 @@ class ConnectedToolRegistry:
                 implementation=item.name,
                 risk_level=item.risk_level,
                 default_owner=item.default_owner,
-                authorization_class=item.authorization_class,
+                authorization_class=(
+                    "entry_gate"
+                    if item.authorization_class in {"brokered_read", "brokered_mutation"}
+                    else item.authorization_class
+                ),
             )
         for alias, implementation in _NATIVE_ALIASES.items():
             if implementation in self._tools:
@@ -117,7 +121,7 @@ class ConnectedToolRegistry:
                 implementation="feishu.send_file",
                 risk_level="low",
                 default_owner="current_agent",
-                authorization_class="brokered_read",
+                authorization_class="entry_gate",
             )
         # These are real seams even when a workspace has not installed a
         # concrete Bitable adapter yet.  An injected executor can provide the
@@ -131,7 +135,7 @@ class ConnectedToolRegistry:
                     implementation=name,
                     risk_level="high" if name.endswith("write") else "low",
                     default_owner="current_agent",
-                    authorization_class="brokered_mutation" if name.endswith("write") else "brokered_read",
+                    authorization_class="entry_gate",
                 )
 
     def get(self, name: str) -> ConnectedTool | None:

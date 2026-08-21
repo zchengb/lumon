@@ -40,10 +40,7 @@ class CapabilityBroker:
             write_receipt(receipt)
 
     def execute(self, request: ActionRequest) -> ActionReceipt:
-        from agents.security.access_policy import (
-            authorize_agent_interaction,
-            mutation_allowed_for_decision,
-        )
+        from agents.security.access_policy import authorize_agent_interaction, mutation_allowed_for_decision
 
         started = utc_now()
         receipt_id = new_receipt_id()
@@ -77,7 +74,8 @@ class CapabilityBroker:
             chat_type = ""
             if isinstance(request.arguments, dict):
                 chat_type = str(request.arguments.get("chat_type") or "").strip()
-            decision = authorize_agent_interaction(
+            gate_only = bool(request.entry_gate_token and request.access_decision is not None)
+            decision = request.access_decision if gate_only else authorize_agent_interaction(
                 agent_id=agent_id,
                 meta={
                     "user_id": request.actor_user_id,
@@ -88,6 +86,17 @@ class CapabilityBroker:
                 },
                 config=self.config,
             )
+            if gate_only:
+                context = getattr(decision, "context", None)
+                if not decision.allowed or (
+                    context is not None
+                    and (
+                        str(context.agent_id or "").strip().lower() != agent_id
+                        or str(context.user_id or "").strip() != str(request.actor_user_id or "").strip()
+                        or str(context.chat_id or "").strip() != str(request.chat_id or "").strip()
+                    )
+                ):
+                    raise AuthorizationDenied("invalid or mismatched entry gate")
             if not decision.allowed:
                 self._emit_security_event(
                     "agent.access.denied",
@@ -110,7 +119,7 @@ class CapabilityBroker:
                         chat_id=request.chat_id,
                     )
                     raise AuthorizationDenied(f"host capability denied in zone {decision.trust_zone}")
-            if action in MUTATION_ACTIONS:
+            if action in MUTATION_ACTIONS and not gate_only:
                 if not mutation_allowed_for_decision(decision, action=action):
                     self._emit_security_event(
                         "agent.access.mutation_denied",
@@ -144,6 +153,8 @@ class CapabilityBroker:
                 resource=dict(request.resource or {}),
                 arguments=args,
                 explicit_authorization=request.explicit_authorization,
+                entry_gate_token=request.entry_gate_token,
+                access_decision=request.access_decision,
             )
             executor = self.executors.get(action)
             if executor is None:

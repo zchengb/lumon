@@ -45,7 +45,7 @@ from agents.conversation.output import ConversationOutput
 from agents.conversation.thread_context import ThreadContextLoader
 from agents.conversation.thread_store import ThreadTranscriptStore
 from feishu.agent_mentions import parse_agent_mentions
-from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
+from agents.security.access_policy import authorize_agent_interaction, resolve_entry_gate, security_context_prompt
 from agents.security.flags import workspace_isolation_v2_enabled
 from agents.security.tools import write_host_tool_manifest
 from agents.security.trusted import execute_trusted_actions, trusted_context_from_meta
@@ -187,6 +187,8 @@ def _publish_native_workstream_events(
         event_type = str(getattr(event, "type", "") or "").strip().lower()
         text = str(getattr(event, "text", "") or "").strip()
         payload = dict(getattr(event, "payload", {}) or {})
+        payload.setdefault("harness_event_id", str(getattr(event, "event_id", "") or ""))
+        payload.setdefault("harness_sequence", int(getattr(event, "sequence", 0) or 0))
         if event_type in {"tool_call", "tool_result", "completed", "error"}:
             if event_type == "tool_call":
                 internal_type = "tool.started"
@@ -535,7 +537,16 @@ def handle_autonomous_conversation(
     message_id = str(meta.get("message_id") or "")
     stripped = text.strip()
     reset = stripped.lower() in {"/new", "新开话题", "重新开始", "new session"}
-    access = authorize_agent_interaction(agent_id=agent_id, meta=meta, config=agents_config)
+    entry_gate = resolve_entry_gate(
+        str(meta.get("_entry_gate_token") or ""),
+        agent_id=agent_id,
+        meta=meta,
+    )
+    access = entry_gate.decision if entry_gate is not None else authorize_agent_interaction(
+        agent_id=agent_id,
+        meta=meta,
+        config=agents_config,
+    )
     if not access.allowed:
         return {
             "status": "denied",
@@ -787,6 +798,7 @@ def handle_autonomous_conversation(
                 thread_id=thread_id or root_id or scope,
                 chat_id=chat_id,
                 conversation_scope_id=scope,
+                persistent=True,
             )
             session_host.start(str(session.get("session_id") or ""))
             native_output = ConversationOutput(
@@ -1019,6 +1031,10 @@ def handle_autonomous_conversation(
                     if action in access.effective_capabilities
                 )
             cursor_for_cleanup = cursor
+            # Keep the gate on the Host-side runtime object; LocalIsolatedAgentRunner
+            # injects it into the service environment without exposing policy
+            # fields to the provider prompt.
+            cursor.entry_gate = entry_gate
             supports_stateless = bool(getattr(cursor, "supports_stateless", False))
             if not bool(getattr(cursor, "supports_resume", True)):
                 provider_session_id = None
@@ -1034,6 +1050,36 @@ def handle_autonomous_conversation(
             )
             obs.upsert_trace(trace, state="running", project_slug=slug)
 
+            live_event_count = 0
+            live_last_message = ""
+            live_question: dict[str, Any] | None = None
+            live_tool_requests: list[dict[str, Any]] = []
+
+            def _on_live_event(event: Any) -> None:
+                """Forward provider events while the provider is still running.
+
+                The final result remains the durable replay source. This
+                callback only adds low-latency delivery; ConversationOutput's
+                event idempotency key makes the later final replay harmless.
+                """
+
+                nonlocal live_event_count, live_last_message, live_question, live_tool_requests
+                if native_output is None or not collaboration.visible_workstream:
+                    return
+                live_result = type("LiveResult", (), {"harness_events": [event]})()
+                count, last, question, tool_requests = _publish_native_workstream_events(
+                    result=live_result,
+                    output=native_output,
+                    session_id=str(session.get("session_id") or ""),
+                )
+                live_event_count += count
+                if last:
+                    live_last_message = last
+                if question is not None:
+                    live_question = question
+                if tool_requests:
+                    live_tool_requests.extend(tool_requests)
+
             def _run_agent_turn(turn_prompt: str, turn_provider_session_id: str | None) -> Any:
                 run_kwargs = {
                     "workspace": workspace,
@@ -1041,6 +1087,7 @@ def handle_autonomous_conversation(
                     "provider_session_id": turn_provider_session_id,
                     "trace": trace,
                     "obs": obs,
+                    "on_event": _on_live_event,
                 }
                 obs.emit(
                     trace,
@@ -1048,9 +1095,37 @@ def handle_autonomous_conversation(
                     prompt=str(turn_prompt or "")[:20000],
                     prompt_truncated=len(str(turn_prompt or "")) > 20000,
                 )
-                if workspace_isolation_v2_enabled() and runtime is None:
-                    return runner.run(definition=definition, **run_kwargs)
-                return runner.run(**run_kwargs)
+                # Third-party/test runners may still implement the pre-M0.7
+                # signature. Keep the callback additive without forcing a
+                # second provider turn when they do not expose it.
+                import inspect
+
+                try:
+                    parameters = inspect.signature(runner.run).parameters
+                except (TypeError, ValueError):
+                    parameters = {}
+                accepts_event = "on_event" in parameters or any(
+                    parameter.kind is inspect.Parameter.VAR_KEYWORD
+                    for parameter in parameters.values()
+                )
+                if not accepts_event:
+                    run_kwargs.pop("on_event", None)
+                def provider_call() -> Any:
+                    if workspace_isolation_v2_enabled() and runtime is None:
+                        return runner.run(definition=definition, **run_kwargs)
+                    return runner.run(**run_kwargs)
+
+                # SessionHost is the lifecycle owner. The closure keeps the
+                # provider adapter private to the Host while the Host still
+                # serializes this Agent's turns and records waiting state.
+                if session_host is not None:
+                    session_id = str(session.get("session_id") or "")
+                    return session_host.enqueue(
+                        session_id,
+                        {"prompt": turn_prompt, "provider_session_id": turn_provider_session_id},
+                        runner=lambda _event, _state: provider_call(),
+                    )
+                return provider_call()
 
             def _run_provider_turn(turn_prompt: str, turn_provider_session_id: str | None) -> Any:
                 turn_result = _run_agent_turn(turn_prompt, turn_provider_session_id)
@@ -1092,6 +1167,14 @@ def handle_autonomous_conversation(
                     protocol_version=session_protocol_version,
                     provider=canonical_agent_provider(flags.model.provider),
                 )
+                session_host.register(
+                    session,
+                    thread_id=thread_id or root_id or scope,
+                    chat_id=chat_id,
+                    conversation_scope_id=scope,
+                    persistent=True,
+                )
+                session_host.start(str(session.get("session_id") or ""))
                 prompt = (
                     build_native_bootstrap_prompt(
                         definition=definition,
@@ -1191,12 +1274,21 @@ def handle_autonomous_conversation(
                         output=native_output,
                         session_id=str(session.get("session_id") or ""),
                     )
-                    visible_message_count += native_count
+                    # Live delivery may already have persisted these events;
+                    # the final pass remains useful for providers that only
+                    # expose buffered output and is deduplicated by the bus.
+                    visible_message_count += native_count + live_event_count
                     if native_last:
                         last_visible_message = native_last
-                    if native_count and (not str(result.text or "").strip() or native_question is not None):
+                    elif live_last_message:
+                        last_visible_message = live_last_message
+                    if native_question is None:
+                        native_question = live_question
+                    if not native_tool_requests:
+                        native_tool_requests = live_tool_requests
+                    if (native_count or live_event_count) and (not str(result.text or "").strip() or native_question is not None):
                         suppress_final_reply = True
-                    if native_count and _native_messages_cover_result(result):
+                    if (native_count or live_event_count) and _native_messages_cover_result(result):
                         suppress_final_reply = True
                 if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
                     store.update(

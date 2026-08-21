@@ -82,6 +82,9 @@ def ensure_workspace_context(workspace: Path, *, agent_id: str = "") -> None:
         from agents.security.tools import write_host_tool_manifest
 
         write_host_tool_manifest(root)
+        from agents.runtime.native_tool_bridge import write_native_tool_manifests
+
+        write_native_tool_manifests(root, provider=agent_id)
         return
 
     # Explicit compatibility mode preserves the pre-native contract for
@@ -99,3 +102,6 @@ def ensure_workspace_context(workspace: Path, *, agent_id: str = "") -> None:
     from agents.security.tools import write_host_tool_manifest
 
     write_host_tool_manifest(root)
+    from agents.runtime.native_tool_bridge import write_native_tool_manifests
+
+    write_native_tool_manifests(root, provider=agent_id)

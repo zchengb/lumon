@@ -5,16 +5,17 @@ import os
 import select
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from agents.dylan.model_client import _load_lumen_dotenv
 from agents.runtime.cursor_runtime import AgentRunResult
 from agents.runtime.cursor_stream import AgentToolEvent
 from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
-from agents.runtime.harness_events import normalize_provider_events
+from agents.runtime.harness_events import HarnessEvent, from_provider_event, normalize_provider_events
 from agents.runtime.native_context import ensure_workspace_context
 
 
@@ -165,6 +166,7 @@ class OpenCodeAgentRuntime:
         self.isolated_env: dict[str, str] | None = None
         self.additional_files: list[Path] = []
         self.additional_directories: list[Path] = []
+        self.command_prefix: list[str] = []
 
     @property
     def capabilities(self) -> HarnessCapabilities:
@@ -354,6 +356,13 @@ class OpenCodeAgentRuntime:
                         },
                     }
                 },
+                "mcp": {
+                    "lumon": {
+                        "type": "local",
+                        "command": [sys.executable or "python3", "-m", "agents.runtime.native_tool_server"],
+                        "enabled": True,
+                    }
+                },
                 "permission": self._permission_config(),
             },
             ensure_ascii=False,
@@ -392,6 +401,7 @@ class OpenCodeAgentRuntime:
         provider_session_id: str | None = None,
         trace: Any = None,
         obs: Any = None,
+        on_event: Callable[[HarnessEvent], Any] | None = None,
     ) -> AgentRunResult:
         workspace = Path(workspace).expanduser().resolve()
         self._ensure_workspace_context(workspace)
@@ -399,7 +409,7 @@ class OpenCodeAgentRuntime:
         try:
             env = self._env()
             provider_id = _model_provider(self.model, self.base_url)
-            command = [self._agent_bin(), "run", "--log-level", "ERROR", "--format", "json", "--dir", str(workspace), "--model", f"{provider_id}/{_model_id(self.model)}"]
+            command = [*self.command_prefix, self._agent_bin(), "run", "--log-level", "ERROR", "--format", "json", "--dir", str(workspace), "--model", f"{provider_id}/{_model_id(self.model)}"]
             if provider_session_id:
                 command.extend(["--session", str(provider_session_id)])
             for path in self.additional_files:
@@ -441,10 +451,13 @@ class OpenCodeAgentRuntime:
                     line = process.stdout.readline()
                     if line:
                         lines.append(line)
+                        self._emit_callback_event(line, on_event=on_event, sequence=len(lines) - 1)
                     elif process.poll() is not None:
                         break
                 elif process.poll() is not None:
-                    lines.extend(process.stdout.readlines())
+                    for rest in process.stdout.readlines():
+                        lines.append(rest)
+                        self._emit_callback_event(rest, on_event=on_event, sequence=len(lines) - 1)
                     break
             if process.stderr is not None:
                 stderr = process.stderr.read().strip()
@@ -496,3 +509,29 @@ class OpenCodeAgentRuntime:
             raw_event_count=len(parsed.events),
             harness_events=normalize_provider_events(parsed.events, provider="opencode"),
         )
+
+    @staticmethod
+    def _emit_callback_event(
+        line: str,
+        *,
+        on_event: Callable[[HarnessEvent], Any] | None,
+        sequence: int,
+    ) -> None:
+        if on_event is None:
+            return
+        raw = str(line or "").strip()
+        if not raw.startswith("{"):
+            return
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        if not isinstance(value, dict):
+            return
+        event = from_provider_event(value, provider="opencode", sequence=sequence)
+        if event is None:
+            return
+        try:
+            on_event(event)
+        except Exception:
+            return

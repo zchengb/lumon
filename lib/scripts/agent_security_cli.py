@@ -41,6 +41,50 @@ def cmd_harness_probe(args: argparse.Namespace) -> int:
     return _emit(result, code=0 if result.get("ready") else 1)
 
 
+def cmd_agent_world(args: argparse.Namespace) -> int:
+    from agents.runner.agent_world import available_backends, probe_agent_world
+    from agents.runner.certification import certify_provider
+    from agents.runner.service_identity import (
+        configure_provider_reference,
+        provision_service_identity,
+        service_identity_status,
+    )
+    from feishu.config import load_agents_config
+
+    action = str(args.world_action or "status").strip().casefold()
+    agent = str(args.agent or "probe").strip().lower()
+    provider = str(args.provider or "").strip().casefold()
+    config = load_agents_config()
+    if action == "status":
+        result = probe_agent_world(agent_id=agent, config=config)
+        result["backends"] = available_backends(config)
+        if provider:
+            result["service_identity"] = service_identity_status(agent, provider=provider)
+        return _emit(result, code=0 if result.get("ready") else 1)
+    if action == "provision":
+        identity = provision_service_identity(agent, provider=provider)
+        reference = configure_provider_reference(agent, provider) if provider else None
+        next_step = ""
+        if provider == "codex":
+            next_step = f"CODEX_HOME={identity.home / '.codex'} codex login"
+        elif provider == "cursor":
+            next_step = f"HOME={identity.home} agent login"
+        return _emit(
+            {
+                "status": "provisioned",
+                "identity": identity.to_dict(),
+                "provider_reference": reference,
+                "next_step": next_step,
+            }
+        )
+    if action == "certify":
+        if not provider:
+            return _emit({"status": "error", "error": "--provider is required for certification"}, code=2)
+        result = certify_provider(provider, agent_id=agent, config=config, live=bool(args.live))
+        return _emit(result, code=0 if result.get("ready") else 1)
+    return _emit({"status": "error", "error": f"unknown agent-world action: {action}"}, code=2)
+
+
 def cmd_action(args: argparse.Namespace) -> int:
     from feishu.config import ensure_lumen_env_loaded
 
@@ -114,6 +158,14 @@ def main(argv: list[str] | None = None) -> int:
     probe.add_argument("--project", default="")
     probe.add_argument("--json", action="store_true", help="Emit the machine-readable probe payload (the default)")
     probe.set_defaults(func=cmd_harness_probe)
+
+    world = sub.add_parser("agent-world", help="Inspect/provision/certify the OS Agent World")
+    world.add_argument("world_action", choices=("status", "provision", "certify"), nargs="?", default="status")
+    world.add_argument("--agent", default="probe")
+    world.add_argument("--provider", choices=("cursor", "opencode", "codex", "api"), default="")
+    world.add_argument("--live", action="store_true", help="Run disposable subprocess boundary probes")
+    world.add_argument("--json", action="store_true", default=True)
+    world.set_defaults(func=cmd_agent_world)
 
     action = sub.add_parser("action", help="Execute a brokered agent action")
     action.add_argument("--agent", required=True)

@@ -13,12 +13,22 @@
     "mode": "dedicated_agent_machine",
     "workspace_isolation_v2": true,
     "provider_sandbox": "unrestricted",
-    "canonical_workspace_access": "read_only",
+    "canonical_workspace_access": "host_only",
+    "agent_world_backend": "auto",
+    "boundary_backend": "sandbox_exec",
+    "world_contract": "agent-world/1",
     "delete_policy": "no_irreversible_delete",
     "secret_isolation": true,
     "identity_mode": "service_account",
     "host_visibility": "agent_world_only",
     "network": "allow"
+  },
+  "access": {
+    "default_policy": "deny",
+    "authorization_mode": "gate_only",
+    "allowed_chat_ids": [],
+    "allowed_user_ids": [],
+    "admin_user_ids": []
   },
   "harness": {
     "mode": "unshackled",

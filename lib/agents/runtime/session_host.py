@@ -27,6 +27,9 @@ class SessionState:
     state: str = "idle"
     provider_session_id: str = ""
     queued_events: int = 0
+    waiting_for: dict[str, Any] = field(default_factory=dict)
+    last_event_id: str = ""
+    persistent: bool = False
     updated_at: str = field(default_factory=_now)
 
     @property
@@ -43,6 +46,9 @@ class SessionState:
             "state": self.state,
             "provider_session_id": self.provider_session_id,
             "queued_events": self.queued_events,
+            "waiting_for": dict(self.waiting_for),
+            "last_event_id": self.last_event_id,
+            "persistent": self.persistent,
             "updated_at": self.updated_at,
             "waiting_for_human": self.waiting_for_human,
         }
@@ -96,6 +102,7 @@ class AgentSessionHost:
         chat_id: str = "",
         conversation_scope_id: str = "",
         provider_session_id: str = "",
+        persistent: bool = False,
         runner: Runner | None = None,
     ) -> SessionState:
         data = dict(session or {})
@@ -112,12 +119,17 @@ class AgentSessionHost:
                     chat_id=str(chat_id or data.get("chat_id") or "").strip(),
                     conversation_scope_id=str(conversation_scope_id or data.get("conversation_scope_id") or "").strip(),
                     provider_session_id=str(provider_session_id or data.get("provider_session_id") or "").strip(),
+                    waiting_for=dict(data.get("waiting_for") or {}) if isinstance(data.get("waiting_for"), Mapping) else {},
+                    last_event_id=str(data.get("last_event_id") or "").strip(),
+                    persistent=bool(persistent or data.get("persistent")),
                     state=str(data.get("runtime_state") or data.get("state") or data.get("status") or "idle").strip().lower(),
                 )
                 if state.state in {"active", "running"}:
                     state.state = "idle"
                 self._states[sid] = state
                 self._locks[sid] = threading.RLock()
+            elif persistent:
+                state.persistent = True
             if runner is not None:
                 self._runners[sid] = runner
             return state
@@ -135,13 +147,24 @@ class AgentSessionHost:
             raise KeyError(f"unknown session: {session_id}")
         return value
 
-    def _set_state(self, session_id: str, value: str, *, provider_session_id: str = "") -> SessionState:
+    def _set_state(
+        self,
+        session_id: str,
+        value: str,
+        *,
+        provider_session_id: str = "",
+        waiting_for: Mapping[str, Any] | None = None,
+    ) -> SessionState:
         with self._guard:
             state = self._states[str(session_id).strip()]
             state.state = str(value or "idle").strip().lower()
             state.updated_at = _now()
             if provider_session_id:
                 state.provider_session_id = str(provider_session_id).strip()
+            if waiting_for is not None:
+                state.waiting_for = dict(waiting_for)
+            elif state.state != "waiting_human":
+                state.waiting_for = {}
             try:
                 self.session_store.update(session_id, status=state.state)
             except Exception:
@@ -152,18 +175,49 @@ class AgentSessionHost:
         thread_id = state.thread_id or state.conversation_scope_id
         if not thread_id:
             return
-        self.event_bus.publish(
-            ConversationEvent.create(
-                thread_id=thread_id,
-                chat_id=state.chat_id,
-                agent_id=state.agent_id,
-                type=event_type,
-                visibility="internal",
-                session_id=state.session_id,
-                payload=dict(payload or {}),
-                dedupe_key=f"{state.session_id}:{event_type}:{state.updated_at}",
-            )
+        self.publish_event(
+            state.session_id,
+            event_type,
+            payload=payload,
+            visibility="internal",
+            dedupe_key=f"{state.session_id}:{event_type}:{state.updated_at}",
         )
+
+    def publish_event(
+        self,
+        session_id: str,
+        event_type: str,
+        *,
+        text: str = "",
+        payload: Mapping[str, Any] | None = None,
+        visibility: str = "internal",
+        dedupe_key: str = "",
+    ) -> ConversationEvent | None:
+        """Persist one ordered event through the Host-owned event bus."""
+
+        state = self._state_for(session_id)
+        thread_id = state.thread_id or state.conversation_scope_id
+        if not thread_id:
+            return None
+        event = ConversationEvent.create(
+            thread_id=thread_id,
+            chat_id=state.chat_id,
+            agent_id=state.agent_id,
+            type=event_type,
+            text=text,
+            visibility=visibility,
+            session_id=state.session_id,
+            payload=dict(payload or {}),
+            dedupe_key=dedupe_key,
+        )
+        stored = self.event_bus.publish(event)
+        if stored is not None:
+            with self._guard:
+                current = self._states.get(str(session_id).strip())
+                if current is not None:
+                    current.last_event_id = stored.event_id
+                    current.updated_at = _now()
+        return stored
 
     def start(
         self,
@@ -223,10 +277,44 @@ class AgentSessionHost:
                 self._publish_lifecycle(state, "session.completed", payload={"status": "failed", "error": str(exc)[:300]})
                 raise
             payload = result if isinstance(result, Mapping) else {}
-            status = str(payload.get("session_state") or payload.get("state") or payload.get("status") or "completed").strip().lower()
+            result_status = str(
+                payload.get("session_state")
+                or payload.get("state")
+                or payload.get("status")
+                or getattr(result, "status", "")
+                or "completed"
+            ).strip().lower()
+            result_provider_session_id = str(
+                payload.get("provider_session_id")
+                or getattr(result, "provider_session_id", "")
+                or ""
+            )
+            events = payload.get("conversation_events") if isinstance(payload.get("conversation_events"), list) else []
+            for item in events:
+                if not isinstance(item, Mapping):
+                    continue
+                self.publish_event(
+                    session_id,
+                    str(item.get("type") or "agent.message"),
+                    text=str(item.get("text") or ""),
+                    payload=item.get("payload") if isinstance(item.get("payload"), Mapping) else {},
+                    visibility=str(item.get("visibility") or "public"),
+                    dedupe_key=str(item.get("dedupe_key") or ""),
+                )
+            status = result_status
             if payload.get("waiting_for_human") or status in {"waiting", "waiting_human", "question"}:
-                self._set_state(session_id, "waiting_human", provider_session_id=str(payload.get("provider_session_id") or ""))
-                self._publish_lifecycle(state, "session.waiting", payload={"question": str(payload.get("question") or "")[:1000]})
+                waiting_for = payload.get("waiting_for") if isinstance(payload.get("waiting_for"), Mapping) else {
+                    "type": "human_question",
+                    "question_id": str(payload.get("question_id") or "").strip(),
+                    "question": str(payload.get("question") or "")[:1000],
+                }
+                self._set_state(
+                    session_id,
+                    "waiting_human",
+                    provider_session_id=result_provider_session_id,
+                    waiting_for=waiting_for,
+                )
+                self._publish_lifecycle(state, "session.waiting", payload=dict(waiting_for))
             elif status in {"paused", "pause"}:
                 self._set_state(session_id, "paused")
             elif status in {"failed", "error"}:
@@ -235,8 +323,17 @@ class AgentSessionHost:
             elif status in {"stopped", "stop"}:
                 self._set_state(session_id, "stopped")
             else:
-                self._set_state(session_id, "completed", provider_session_id=str(payload.get("provider_session_id") or ""))
-                self._publish_lifecycle(state, "session.completed", payload={"status": "completed"})
+                # A provider turn can complete while its logical conversation
+                # remains resumable. Keep persistent sessions discoverable by
+                # SessionStore; direct one-shot Host users retain the old
+                # terminal ``completed`` state.
+                next_state = "idle" if state.persistent else "completed"
+                self._set_state(session_id, next_state, provider_session_id=result_provider_session_id)
+                self._publish_lifecycle(
+                    state,
+                    "session.idle" if state.persistent else "session.completed",
+                    payload={"status": next_state},
+                )
             return result
 
     def resume(
@@ -251,6 +348,31 @@ class AgentSessionHost:
         self._set_state(session_id, "running")
         self._publish_lifecycle(state, "session.resumed")
         return self.enqueue(session_id, event, runner=runner, asynchronous=asynchronous)
+
+    def resume_human(
+        self,
+        session_id: str,
+        *,
+        question_id: str = "",
+        answer: Any = "",
+        runner: Runner | None = None,
+        asynchronous: bool = False,
+    ) -> Any:
+        """Resume only the Session Host that owns the outstanding question."""
+
+        state = self._state_for(session_id)
+        expected = str(state.waiting_for.get("question_id") or "").strip()
+        supplied = str(question_id or "").strip()
+        if state.state != "waiting_human":
+            raise ValueError("session is not waiting for a human answer")
+        if expected and supplied and expected != supplied:
+            raise ValueError("question_id does not match the waiting session")
+        return self.resume(
+            session_id,
+            {"type": "human_answer", "question_id": supplied or expected, "answer": answer},
+            runner=runner,
+            asynchronous=asynchronous,
+        )
 
     def pause(self, session_id: str, *, waiting_for_human: bool = False) -> SessionState:
         state = self._set_state(session_id, "waiting_human" if waiting_for_human else "paused")

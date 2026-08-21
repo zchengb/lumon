@@ -24,6 +24,7 @@ def load_access_config(config: Optional[dict[str, Any]] = None) -> dict[str, Any
         "default_policy": str(access.get("default_policy") or "legacy_allow"),
         "owners": [str(x).strip() for x in (access.get("owners") or []) if str(x).strip()],
         "admins": [str(x).strip() for x in (access.get("admins") or access.get("admin_user_ids") or []) if str(x).strip()],
+        "authorization_mode": str(access.get("authorization_mode") or "gate_only").strip().casefold(),
     }
 
 

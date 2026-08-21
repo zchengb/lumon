@@ -34,6 +34,11 @@ class TrustedActionContext:
     relay_hop: int = 0
     relay_visited: str = ""
     thread_native_handoff: str = ""
+    entry_gate_token: str = ""
+
+    @property
+    def gate_only(self) -> bool:
+        return bool(self.entry_gate_token and self.access_decision is not None and self.access_decision.allowed)
 
 
 def trusted_context_from_meta(
@@ -71,6 +76,7 @@ def trusted_context_from_meta(
         relay_hop=relay_hop,
         relay_visited=str(meta.get("_relay_visited") or "").strip(),
         thread_native_handoff=str(meta.get("_thread_native_handoff") or "").strip(),
+        entry_gate_token=str(meta.get("_entry_gate_token") or "").strip(),
     )
 
 
@@ -114,6 +120,8 @@ def bind_action_request(
         resource=dict(resource or {}),
         arguments=args,
         explicit_authorization=bool(context.explicit_authorization),
+        entry_gate_token=context.entry_gate_token if context.gate_only else "",
+        access_decision=context.access_decision if context.gate_only else None,
     )
 
 
@@ -156,6 +164,7 @@ def execute_trusted_actions(
             "_relay_hop",
             "_relay_visited",
             "_thread_native_handoff",
+            "_entry_gate_token",
         ):
             arguments.pop(key, None)
             resource.pop(key, None)

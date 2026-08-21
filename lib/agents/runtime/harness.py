@@ -196,7 +196,7 @@ def capabilities_for_provider(
             skills=True,
             subagents=True,
             multi_repo=True,
-            native_tools=False,
+            native_tools=True,
             streaming=True,
             sandbox=sandbox,
         )
@@ -346,8 +346,10 @@ def probe_harness(
     secret_escape = bool(env_contains_secrets(env))
     delete_probe = protected_delete_probe()
     from agents.runner.runner_env import build_runner_env
+    from agents.runner.agent_world import probe_agent_world
 
     runner_env = build_runner_env(agent_id="probe", project=project, config=data)
+    world_probe = probe_agent_world(agent_id="probe", config=data)
     agent_world_ok = runner_env.get("LUMEN_AGENT_WORLD") == "1"
     service_identity_ok = str(runner_env.get("LUMEN_SERVICE_IDENTITY") or "").startswith("agent:")
     root_escalation_ok = runner_env.get("LUMEN_ROOT_ESCALATION") == "disabled" and getattr(os, "geteuid", lambda: 1)() != 0
@@ -360,6 +362,10 @@ def probe_harness(
         "agent_world_escape": not agent_world_ok,
         "root_escalation": not root_escalation_ok,
         "service_identity_escape": not service_identity_ok,
+        # A sandbox-exec world has a hard file/process boundary even though
+        # it cannot change the macOS uid. Dedicated uid/container status is
+        # exposed in checks as a separate upgrade path.
+        "canonical_workspace_exposure": world_probe.get("checks", {}).get("canonical_access") != "host_only",
     }
     checks: dict[str, Any] = {
         "provider_available": available,
@@ -371,7 +377,9 @@ def probe_harness(
         "task_mode": task_mode,
         "provider_sandbox_mode": provider_mode,
         "host_boundary": "agent_world_only",
-        "agent_world": "pass" if agent_world_ok else "fail",
+        "agent_world": "pass" if world_probe.get("ready") and agent_world_ok else "fail",
+        "agent_world_backend": world_probe.get("checks", {}).get("backend", "unavailable"),
+        "agent_world_identity": world_probe.get("checks", {}).get("dedicated_unix_identity", False),
         "root_escalation": "blocked" if root_escalation_ok else "fail",
         "service_identity": "pass" if service_identity_ok else "fail",
         "delete_probe": delete_probe,
@@ -379,6 +387,7 @@ def probe_harness(
     warnings: list[str] = []
     if not checks["workspace_isolation_v2"]:
         warnings.append("workspace_isolation_v2 is disabled; readiness fails closed")
+    warnings.extend(str(item) for item in world_probe.get("warnings", []) if str(item).strip())
     if name == "codex" and not account_ok:
         warnings.append("Codex is not logged in as kuoyio0820@gmail.com")
     required_ok = all(not value for value in security.values())

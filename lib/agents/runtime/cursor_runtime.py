@@ -7,11 +7,11 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from agents.dylan.model_client import _load_lumen_dotenv
 from agents.runtime.cursor_stream import AgentToolEvent, parse_stream_json_text
-from agents.runtime.harness_events import HarnessEvent, normalize_provider_events
+from agents.runtime.harness_events import HarnessEvent, from_provider_event, normalize_provider_events
 from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
 from agents.runtime.native_context import ensure_workspace_context
 from agents.runtime.observability import Observability, TraceContext
@@ -69,6 +69,7 @@ class CursorAgentRuntime:
         self.task_mode = canonical_task_mode(task_mode) if task_mode else ""
         self.isolated_env: Optional[dict[str, str]] = None
         self.additional_dirs: list[Path] = []
+        self.command_prefix: list[str] = []
 
     @property
     def capabilities(self) -> HarnessCapabilities:
@@ -105,11 +106,12 @@ class CursorAgentRuntime:
         provider_session_id: str | None = None,
         trace: TraceContext | None = None,
         obs: Observability | None = None,
+        on_event: Callable[[HarnessEvent], Any] | None = None,
     ) -> AgentRunResult:
         workspace = Path(workspace).expanduser().resolve()
         self._ensure_workspace_context(workspace)
         agent_bin = self._agent_bin()
-        args = [agent_bin]
+        args = [*self.command_prefix, agent_bin]
         if provider_session_id:
             args.extend(["--resume", str(provider_session_id)])
         args.extend(["--workspace", str(workspace)])
@@ -185,6 +187,7 @@ class CursorAgentRuntime:
                     line = process.stdout.readline()
                     if line:
                         lines.append(line)
+                        self._emit_callback_event(line, on_event=on_event, sequence=len(lines) - 1)
                         if obs and trace:
                             self._emit_line_events(line, obs=obs, trace=trace)
                     elif process.poll() is not None:
@@ -192,6 +195,7 @@ class CursorAgentRuntime:
                 elif process.poll() is not None:
                     for rest in process.stdout:
                         lines.append(rest)
+                        self._emit_callback_event(rest, on_event=on_event, sequence=len(lines) - 1)
                         if obs and trace:
                             self._emit_line_events(rest, obs=obs, trace=trace)
                     break
@@ -322,6 +326,33 @@ class CursorAgentRuntime:
             )
         elif etype == "result":
             obs.emit(trace, "agent.final_response", subtype=subtype)
+
+    @staticmethod
+    def _emit_callback_event(
+        line: str,
+        *,
+        on_event: Callable[[HarnessEvent], Any] | None,
+        sequence: int,
+    ) -> None:
+        if on_event is None:
+            return
+        raw = str(line or "").strip()
+        if not raw.startswith("{"):
+            return
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        if not isinstance(value, dict):
+            return
+        event = from_provider_event(value, provider="cursor", sequence=sequence)
+        if event is None:
+            return
+        try:
+            on_event(event)
+        except Exception:
+            # Transport failures must not kill the provider turn.
+            return
 
 
 def _recent_cursor_provider_error(env: dict[str, str], started: float) -> str:

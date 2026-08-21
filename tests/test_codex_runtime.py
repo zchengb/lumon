@@ -59,6 +59,8 @@ class CodexRuntimeTests(unittest.TestCase):
                 command = runtime._command(workspace, "hello", None)
         self.assertIn("gpt-5.6-luna", command)
         self.assertIn('model_reasoning_effort="xhigh"', command)
+        self.assertIn("mcp_servers.lumon.command", " ".join(command))
+        self.assertIn("agents.runtime.native_tool_server", " ".join(command))
         self.assertIn("--sandbox", command)
         self.assertIn("danger-full-access", command)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)

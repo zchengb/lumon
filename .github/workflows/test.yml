@@ -21,6 +21,10 @@ jobs:
         run: |
           python -m compileall -q lib
           git diff --check
+      - name: Agent World contract report
+        run: |
+          PYTHONPATH=lib python lib/scripts/agent_security_cli.py agent-world status --agent ci || true
+          PYTHONPATH=lib python lib/scripts/agent_security_cli.py agent-world certify --agent ci --provider codex || true
 
   dashboard-build:
     runs-on: ubuntu-latest

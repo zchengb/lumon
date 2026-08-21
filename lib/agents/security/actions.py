@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-POLICY_VERSION = "m0.4.0"
+POLICY_VERSION = "m0.7.0"
 
 
 def new_receipt_id() -> str:
@@ -37,6 +37,11 @@ class ActionRequest:
     resource: dict[str, Any] = field(default_factory=dict)
     arguments: dict[str, Any] = field(default_factory=dict)
     explicit_authorization: bool = False
+    # Host-bound entry gate. Native connected tools carry this object through
+    # the trusted seam so the Broker does not re-run business authorization on
+    # every call. It is never accepted from model-supplied arguments.
+    entry_gate_token: str = ""
+    access_decision: Any = field(default=None, repr=False, compare=False)
 
 
 @dataclass

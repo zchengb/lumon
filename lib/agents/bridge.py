@@ -386,7 +386,7 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
     config = load_agents_config()
     chat_id = str(meta.get("chat_id") or "").strip()
     user_id = str(meta.get("user_id") or "").strip()
-    from agents.security.access_policy import authorize_agent_interaction
+    from agents.security.access_policy import authorize_agent_interaction, issue_entry_gate
 
     decision = authorize_agent_interaction(agent_id=agent, meta=meta, config=config)
     if not decision.allowed:
@@ -406,7 +406,12 @@ def handle_agent_message(*, agent_id: str, text: str, meta: dict[str, str]) -> d
                 )
             messenger.safe_reply_text(message_id, reply, reply_in_thread=should_reply_in_thread(meta))
         return {"status": "denied", "detail": detail, "trust_zone": decision.trust_zone}
+    entry_gate = issue_entry_gate(agent_id=agent, meta=meta, decision=decision)
     meta = dict(meta)
+    # The token is an in-process Host capability, not model-visible policy
+    # data. The Broker uses it to avoid re-running business authorization for
+    # every connected tool call in this already-authorized conversation.
+    meta["_entry_gate_token"] = entry_gate.token
     waiting_job = None
     meta["_trust_zone"] = str(decision.trust_zone or "")
     meta["_exposure_mode"] = str(decision.exposure_mode or "")

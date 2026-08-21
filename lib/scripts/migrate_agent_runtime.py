@@ -11,6 +11,76 @@ from typing import Any
 
 
 LEGACY = {"deepseek", "deepseek_api", "opencode_deepseek"}
+LEGACY_CONVERSATION_KEYS = ("conversation_runtime", "conversation_v4", "conversation_v3", "conversation_v2")
+
+
+def migrate_runtime_sections(config: dict[str, Any]) -> bool:
+    """Converge old runtime flags onto the M0.7 deep-module boundaries."""
+
+    changed = False
+    conversation = config.get("conversation")
+    if not isinstance(conversation, dict):
+        conversation = {}
+        for key in reversed(LEGACY_CONVERSATION_KEYS):
+            value = config.get(key)
+            if isinstance(value, dict):
+                conversation.update(value)
+        config["conversation"] = conversation
+        changed = True
+    defaults = {
+        "version": "3.1",
+        "native_first": True,
+        "legacy_compatibility": False,
+        "visible_workstream": True,
+        "native_tools": True,
+        "native_questions": True,
+    }
+    for key, value in defaults.items():
+        if key == "version" and str(conversation.get(key) or "") != value:
+            conversation[key] = value
+            changed = True
+        elif key != "version" and key not in conversation:
+            conversation[key] = value
+            changed = True
+    for key in LEGACY_CONVERSATION_KEYS:
+        if key in config:
+            config.pop(key, None)
+            changed = True
+    risk = config.get("risk_analyst")
+    if isinstance(risk, dict) and "conversation_v2" in risk:
+        risk.pop("conversation_v2", None)
+        changed = True
+
+    access = config.get("access")
+    if not isinstance(access, dict):
+        access = {}
+        config["access"] = access
+        changed = True
+    if access.get("authorization_mode") != "gate_only":
+        access["authorization_mode"] = "gate_only"
+        changed = True
+    if "default_policy" not in access:
+        access["default_policy"] = "deny"
+        changed = True
+
+    security = config.get("agent_security")
+    if not isinstance(security, dict):
+        security = {}
+        config["agent_security"] = security
+        changed = True
+    security_defaults = {
+        "agent_world_backend": "auto",
+        "boundary_backend": "sandbox_exec",
+        "canonical_workspace_access": "host_only",
+        "identity_mode": "service_account",
+        "world_contract": "agent-world/1",
+        "network": "allow",
+    }
+    for key, value in security_defaults.items():
+        if key not in security:
+            security[key] = value
+            changed = True
+    return changed
 
 
 def migrate_provider(provider: dict[str, Any]) -> bool:
@@ -45,7 +115,7 @@ def migrate_execution(execution: dict[str, Any]) -> bool:
 
 
 def migrate_config(config: dict[str, Any]) -> bool:
-    changed = False
+    changed = migrate_runtime_sections(config)
 
     def visit(value: Any) -> None:
         nonlocal changed

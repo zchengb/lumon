@@ -205,6 +205,11 @@ def from_provider_event(
             "call_id": str(item.get("id") or part.get("callID") or raw.get("call_id") or "")[:120],
             "status": status[:80],
         }
+        if item_type == "mcp_tool_call" or event_type in {"mcp_tool_call", "mcp.tool_call"}:
+            # The provider's native MCP client already executed the call
+            # through the Host bridge. The event is telemetry only; the
+            # autonomous compatibility loop must not execute it a second time.
+            payload["native_executed"] = True
         if arguments:
             payload["arguments"] = _safe_payload(dict(arguments))
         return HarnessEvent(
