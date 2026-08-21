@@ -43,6 +43,22 @@ _NATIVE_ENVELOPE_BODY = re.compile(
     r"ACTION_REQUEST|CLARIFICATION_REQUEST|NATIVE_TOOL_CALL|TOOL_CALL|NATIVE_QUESTION)\s*>",
     re.IGNORECASE | re.DOTALL,
 )
+_FINAL_RESPONSE_BODY = re.compile(
+    r"<FINAL_RESPONSE\b[^>]*>(.*?)</FINAL_RESPONSE\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def sanitize_public_text(raw: str) -> tuple[str, bool]:
+    """Remove provider transport syntax before any public Feishu delivery."""
+    original = str(raw or "")
+    text = original.strip()
+    text, removed = _NATIVE_ENVELOPE_BODY.subn("", text)
+    text, final_wrappers = _FINAL_RESPONSE_BODY.subn(lambda match: match.group(1), text)
+    text, markers = _NATIVE_MARKERS.subn("", text)
+    cleaned = sanitize_feishu_answer(text)
+    prevented = bool(removed or final_wrappers or markers or cleaned != original.strip())
+    return cleaned, prevented
 
 
 def parse_native_response(raw: str) -> FinalResponseParse:
@@ -54,10 +70,7 @@ def parse_native_response(raw: str) -> FinalResponseParse:
     connected-tool channel and native questions through Harness events.
     """
 
-    text = str(raw or "").strip()
-    text = _NATIVE_ENVELOPE_BODY.sub("", text)
-    text = _NATIVE_MARKERS.sub("", text)
-    text = sanitize_feishu_answer(text)
+    text, _ = sanitize_public_text(raw)
     return FinalResponseParse(
         text=text,
         mode="native",

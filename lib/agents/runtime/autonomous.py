@@ -33,12 +33,13 @@ from agents.runtime.interaction import (
     version_upgrade_choices,
 )
 from agents.runtime.loop_intent import classify_loop_intent, is_combined_plan_request, loop_gateway_prompt
-from agents.runtime.harness import infer_task_mode
+from agents.runtime.harness import infer_task_mode, native_runtime_configured, provider_sandbox_mode
+from agents.runtime.native_prompt import build_native_bootstrap_prompt, build_native_resume_prompt
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
 from agents.runtime.session_host import AgentSessionHost
-from agents.conversation.config import native_provider_contract, thread_native_config
+from agents.conversation.config import thread_native_config
 from agents.conversation.event_bus import EventBus
 from agents.conversation.output import ConversationOutput
 from agents.conversation.thread_context import ThreadContextLoader
@@ -48,6 +49,7 @@ from agents.security.access_policy import authorize_agent_interaction, security_
 from agents.security.flags import workspace_isolation_v2_enabled
 from agents.security.tools import write_host_tool_manifest
 from agents.security.trusted import execute_trusted_actions, trusted_context_from_meta
+from agents.runtime.connected_tools import ConnectedToolRegistry
 from feishu.messenger import FeishuMessenger, cleanup_generated_plan_pdfs, is_pdf_output_request
 
 
@@ -88,6 +90,11 @@ _WORKFLOW_BUDGET_ERROR_TOKENS = (
     "interaction budget",
     "bounded interaction",
 )
+
+
+def _session_protocol_version(definition: AgentDefinition, native_runtime: bool) -> str:
+    """Make old provider sessions ineligible after the native migration."""
+    return f"{definition.protocol_version}:native-3.1" if native_runtime else definition.protocol_version
 
 
 def _user_facing_agent_error(error: str, trace_id: str) -> str:
@@ -164,7 +171,7 @@ def _publish_native_workstream_events(
     result: Any,
     output: ConversationOutput,
     session_id: str,
-) -> tuple[int, str, dict[str, Any] | None]:
+) -> tuple[int, str, dict[str, Any] | None, list[dict[str, Any]]]:
     """Publish explicit Harness work events without parsing a final envelope.
 
     Provider adapters may emit multiple assistant messages, progress,
@@ -175,6 +182,7 @@ def _publish_native_workstream_events(
     count = 0
     last_text = ""
     question: dict[str, Any] | None = None
+    native_tool_requests: list[dict[str, Any]] = []
     for event in list(getattr(result, "harness_events", []) or []):
         event_type = str(getattr(event, "type", "") or "").strip().lower()
         text = str(getattr(event, "text", "") or "").strip()
@@ -200,6 +208,17 @@ def _publish_native_workstream_events(
                 **payload,
             }
             output.observe(internal_type, text, **telemetry_payload)
+            if event_type == "tool_call":
+                tool_name = str(payload.get("tool") or "").strip()
+                arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+                if tool_name and "." in tool_name:
+                    native_tool_requests.append(
+                        {
+                            "action": tool_name,
+                            "arguments": arguments,
+                            "resource": {},
+                        }
+                    )
             continue
         if event_type not in {"assistant_message", "progress", "question", "artifact"}:
             continue
@@ -227,7 +246,7 @@ def _publish_native_workstream_events(
         if receipt.status in {"succeeded", "duplicate"}:
             count += 1
             last_text = text or last_text
-    return count, last_text, question
+    return count, last_text, question, native_tool_requests
 
 
 def _native_messages_cover_result(result: Any) -> bool:
@@ -641,6 +660,8 @@ def handle_autonomous_conversation(
         try:
             obs.emit(trace, "agent.message.received")
             obs.upsert_trace(trace, state="queued", project_slug=slug)
+            native_runtime = native_runtime_configured(common)
+            session_protocol_version = _session_protocol_version(definition, native_runtime)
             session = store.get_active(agent_id=agent_id, conversation_scope_id=scope)
             if reset and session:
                 store.close_session(session["session_id"])
@@ -648,7 +669,7 @@ def handle_autonomous_conversation(
             if session and not session_contract_current(
                 session,
                 soul_version=definition.soul_version,
-                protocol_version=definition.protocol_version,
+                protocol_version=session_protocol_version,
             ):
                 obs.emit(
                     trace,
@@ -699,7 +720,7 @@ def handle_autonomous_conversation(
                     project_slug=slug,
                     user_id=user_id,
                     soul_version=definition.soul_version,
-                    protocol_version=definition.protocol_version,
+                    protocol_version=session_protocol_version,
                     provider=canonical_agent_provider(flags.model.provider),
                 )
                 is_new = True
@@ -746,7 +767,7 @@ def handle_autonomous_conversation(
                     project_slug=slug,
                     user_id=user_id,
                     soul_version=definition.soul_version,
-                    protocol_version=definition.protocol_version,
+                    protocol_version=session_protocol_version,
                     provider=canonical_agent_provider(flags.model.provider),
                 )
                 if provider_switch_pending:
@@ -861,6 +882,13 @@ def handle_autonomous_conversation(
                 loop_capability = str(meta.get("_loop_capability") or "").strip().lower()
                 if agent_id == "mark" and loop_capability in {"loop.business", "loop.technical"}:
                     loop_name = "Business Loop" if loop_capability == "loop.business" else "Technical Loop"
+                    decision_instruction = (
+                        "If a decision or prerequisite is missing, ask it through the native Question capability in this Feishu thread; "
+                        "if the latest message answered the previous question, continue without asking for a generic 'continue'."
+                        if native_runtime
+                        else "If a decision or prerequisite is missing, emit CLARIFICATION_REQUEST and ask the user in this Feishu thread; "
+                        "if the latest message answered the previous question, continue without asking for a generic 'continue'."
+                    )
                     managed_loop = (
                         "[LUMEN MANAGED LOOP]\n"
                         f"You are executing {loop_name} under a tracked Loop job.\n"
@@ -869,8 +897,7 @@ def handle_autonomous_conversation(
                         "Never finish with only a Jira title/status when the loop still has work.\n"
                         "Answer naturally; surface stage, evidence, blocker, owner, risk, or next step when it helps the current request. "
                         "Use visible Feishu updates only for meaningful discoveries or decisions; there is no fixed message count.\n"
-                        "If a decision or prerequisite is missing, emit CLARIFICATION_REQUEST and ask the user in this Feishu thread; "
-                        "if the latest message answered the previous question, continue without asking for a generic 'continue'.\n"
+                        f"{decision_instruction}\n"
                         "Only finish when the Loop artifact contract is satisfied; the runtime verifies the artifact before marking the job completed.\n"
                     )
                     if loop_capability == "loop.technical":
@@ -913,9 +940,7 @@ def handle_autonomous_conversation(
                             pending=current_pending,
                             workspace_path=workspace,
                             task_mode=task_mode,
-                            native_provider=native_provider_contract(
-                                canonical_agent_provider(flags.model.provider), collaboration
-                            ) and collaboration.enabled,
+                            native_provider=native_runtime and collaboration.enabled,
                         ),
                     )
                     if part
@@ -927,10 +952,20 @@ def handle_autonomous_conversation(
 
             write_host_tool_manifest(workspace)
             if is_new:
-                prompt = definition.build_bootstrap_prompt(
-                    project_slug=slug,
-                    workspace_path=str(workspace),
-                    user_message=anchored_text,
+                prompt = (
+                    build_native_bootstrap_prompt(
+                        definition=definition,
+                        project_slug=slug,
+                        workspace_path=str(workspace),
+                        user_message=anchored_text,
+                        checkpoint=checkpoint,
+                    )
+                    if native_runtime
+                    else definition.build_bootstrap_prompt(
+                        project_slug=slug,
+                        workspace_path=str(workspace),
+                        user_message=anchored_text,
+                    )
                 )
                 if provider_switch_handoff:
                     prompt = f"{provider_switch_handoff}\n\n{prompt}"
@@ -941,10 +976,19 @@ def handle_autonomous_conversation(
                 choice_hint = clarification_choice_hint(text, pending)
                 if choice_hint:
                     anchored_text = f"{anchored_text}\n\n{choice_hint}"
-                prompt = definition.build_resume_prompt(
-                    user_message=anchored_text,
-                    project_slug=slug,
-                    checkpoint=checkpoint,
+                prompt = (
+                    build_native_resume_prompt(
+                        definition=definition,
+                        project_slug=slug,
+                        user_message=anchored_text,
+                        checkpoint=checkpoint,
+                    )
+                    if native_runtime
+                    else definition.build_resume_prompt(
+                        user_message=anchored_text,
+                        project_slug=slug,
+                        checkpoint=checkpoint,
+                    )
                 )
                 prompt = _append_session_context(prompt, checkpoint)
                 prompt = _prompt_with_contract(prompt, pending)
@@ -960,7 +1004,7 @@ def handle_autonomous_conversation(
                 account_email=flags.model.account_email,
                 soft_timeout_seconds=flags.soft_timeout_seconds,
                 hard_timeout_seconds=flags.hard_timeout_seconds,
-                sandbox="enabled",
+                sandbox=provider_sandbox_mode(common, requested="unrestricted") if native_runtime else "enabled",
                 force=False,
                 trust=True,
                 agent_id=agent_id,
@@ -1045,13 +1089,23 @@ def handle_autonomous_conversation(
                     project_slug=slug,
                     user_id=user_id,
                     soul_version=definition.soul_version,
-                    protocol_version=definition.protocol_version,
+                    protocol_version=session_protocol_version,
                     provider=canonical_agent_provider(flags.model.provider),
                 )
-                prompt = definition.build_bootstrap_prompt(
-                    project_slug=slug,
-                    workspace_path=str(workspace),
-                    user_message=anchored_text,
+                prompt = (
+                    build_native_bootstrap_prompt(
+                        definition=definition,
+                        project_slug=slug,
+                        workspace_path=str(workspace),
+                        user_message=anchored_text,
+                        checkpoint=checkpoint,
+                    )
+                    if native_runtime
+                    else definition.build_bootstrap_prompt(
+                        project_slug=slug,
+                        workspace_path=str(workspace),
+                        user_message=anchored_text,
+                    )
                 )
                 prompt = _append_session_context(prompt, checkpoint)
                 prompt = _prompt_with_contract(prompt, pending)
@@ -1062,7 +1116,7 @@ def handle_autonomous_conversation(
 
             has_native_work_events = any(
                 str(getattr(item, "type", "") or "").strip().lower()
-                in {"assistant_message", "progress", "question", "artifact"}
+                in {"assistant_message", "progress", "question", "artifact", "tool_call"}
                 for item in list(getattr(result, "harness_events", []) or [])
             )
             if result.provider_session_id and result.status == "succeeded" and (
@@ -1122,6 +1176,7 @@ def handle_autonomous_conversation(
             visible_message_count = 0
             last_visible_message = ""
             native_question: dict[str, Any] | None = None
+            native_tool_requests: list[dict[str, Any]] = []
             suppress_final_reply = False
             next_active_loop = active_loop
             total_latency_ms = 0
@@ -1131,7 +1186,7 @@ def handle_autonomous_conversation(
             while True:
                 total_latency_ms += int(result.duration_ms or 0)
                 if native_output is not None and collaboration.visible_workstream:
-                    native_count, native_last, native_question = _publish_native_workstream_events(
+                    native_count, native_last, native_question, native_tool_requests = _publish_native_workstream_events(
                         result=result,
                         output=native_output,
                         session_id=str(session.get("session_id") or ""),
@@ -1153,9 +1208,7 @@ def handle_autonomous_conversation(
                         failure_count=0,
                     )
 
-                native_provider = native_provider_contract(
-                    canonical_agent_provider(flags.model.provider), collaboration
-                ) and collaboration.enabled
+                native_provider = native_runtime and collaboration.enabled
                 parsed = (
                     parse_native_response(result.text)
                     if native_provider and not collaboration.legacy_compatibility
@@ -1251,6 +1304,28 @@ def handle_autonomous_conversation(
                         source_message_id=message_id,
                     )
                 raw_action_requests = list(parsed.action_requests)
+                if native_tool_requests:
+                    native_registry = ConnectedToolRegistry(include_legacy=False)
+                    for native_request in native_tool_requests:
+                        tool_name = str(native_request.get("action") or "").strip()
+                        tool = native_registry.get(tool_name)
+                        if tool is None:
+                            output.observe(
+                                "tool.failed",
+                                "",
+                                provider="native",
+                                tool=tool_name[:120],
+                                status="unknown_tool",
+                            )
+                            continue
+                        raw_action_requests.append(
+                            {
+                                "action": tool.implementation,
+                                "arguments": dict(native_request.get("arguments") or {}),
+                                "resource": dict(native_request.get("resource") or {}),
+                            }
+                        )
+                    native_tool_requests = []
                 if (
                     inferred_test_case_action
                     and continuation_count == 0
@@ -1369,8 +1444,28 @@ def handle_autonomous_conversation(
                     break
                 continuation_count += 1
                 continuation_prompt = _prompt_with_contract(
-                    definition.build_resume_prompt(
-                        user_message=(
+                    (
+                        build_native_resume_prompt(
+                            definition=definition,
+                            project_slug=slug,
+                            user_message=(
+                                "[LUMON ACTION RESULTS]\n"
+                                "The requested action has completed. These results are authoritative. "
+                                "Continue the same latest user request from the results below. Do not repeat completed reads. "
+                                "If an action result says started and includes a run_id, report that it has started and do not start it again unless the user asks or the next step requires it. "
+                                "For a test-case request covering Ready for QA Stories, emit one "
+                                "test_case.generate with scope=ready_for_qa; that action performs the "
+                                "full per-Story workflow and returns an aggregate result. Do not stop after a Jira "
+                                "discovery result. Only give the final answer when your own completion criteria are "
+                                "satisfied.\n\n"
+                                f"Original user request:\n{text}\n\n"
+                                f"Executed results:\n{_action_results_for_agent(action_receipts)}"
+                            ),
+                            checkpoint=checkpoint,
+                        )
+                        if native_runtime
+                        else definition.build_resume_prompt(
+                            user_message=(
                             "[LUMON ACTION RESULTS]\n"
                             "The requested action has completed. These results are authoritative. "
                             "Continue the same latest user request from the results below. Do not repeat completed reads. "
@@ -1382,9 +1477,10 @@ def handle_autonomous_conversation(
                             "satisfied.\n\n"
                             f"Original user request:\n{text}\n\n"
                             f"Executed results:\n{_action_results_for_agent(action_receipts)}"
-                        ),
-                        project_slug=slug,
-                        checkpoint=checkpoint,
+                            ),
+                            project_slug=slug,
+                            checkpoint=checkpoint,
+                        )
                     )
                 )
                 continuation_prompt = _append_session_context(continuation_prompt, checkpoint)

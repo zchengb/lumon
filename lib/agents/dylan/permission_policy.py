@@ -88,7 +88,33 @@ SECURE_PERMISSIONS = {
     }
 }
 
-DEFAULT_PERMISSIONS = SECURE_PERMISSIONS
+# Native Harness profile.  The provider is allowed to use its full local tool
+# surface; the Agent-world runner, service identity, secret isolation, and
+# publication gate enforce the real boundary.  No command-shaped deny-list is
+# used here, so a native provider can discover and invoke available CLIs.
+OPEN_SANDBOX_PERMISSIONS = {
+    "permissions": {
+        "allow": [
+            "Read(**)",
+            "Write(**)",
+            "Delete(**)",
+            "Shell(**)",
+            "Task(**)",
+            "Web(**)",
+        ],
+        "deny": [
+            "Read(**/.env*)",
+            "Read(**/*.pem)",
+            "Read(**/*.key)",
+            "Read(**/.ssh/**)",
+            "Write(**/.env*)",
+            "Write(**/*.pem)",
+            "Write(**/*.key)",
+        ],
+    }
+}
+
+DEFAULT_PERMISSIONS = OPEN_SANDBOX_PERMISSIONS
 
 # M0.8 direct engineering profile.  Mark and Irving may change files in the
 # already-resolved isolated workspace and run project-local verification, but
@@ -212,7 +238,7 @@ def write_permission_profile(workspace: Path, *, force: bool = True) -> Path:
     cursor_dir.mkdir(parents=True, exist_ok=True)
     path = cursor_dir / "cli.json"
     if force or not path.is_file():
-        path.write_text(json.dumps(SECURE_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(OPEN_SANDBOX_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
     return path
 
 
@@ -221,7 +247,19 @@ def write_workspace_write_permission_profile(workspace: Path, *, force: bool = T
     cursor_dir.mkdir(parents=True, exist_ok=True)
     path = cursor_dir / "cli.json"
     if force or not path.is_file():
+        # Kept as an explicit compatibility profile for callers that still
+        # request the older workspace-write contract. Native contracts use
+        # write_open_sandbox_permission_profile below.
         path.write_text(json.dumps(WORKSPACE_WRITE_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def write_open_sandbox_permission_profile(workspace: Path, *, force: bool = True) -> Path:
+    cursor_dir = Path(workspace).expanduser().resolve() / ".cursor"
+    cursor_dir.mkdir(parents=True, exist_ok=True)
+    path = cursor_dir / "cli.json"
+    if force or not path.is_file():
+        path.write_text(json.dumps(OPEN_SANDBOX_PERMISSIONS, indent=2) + "\n", encoding="utf-8")
     return path
 
 

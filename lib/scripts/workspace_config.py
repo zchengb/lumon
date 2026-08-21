@@ -108,7 +108,7 @@ def default_jira_config() -> dict:
         "enabled": True,
         "project_key": "MBPAS",
         "board_id": "",
-        "assign_to_active_sprint": True,
+        "assign_to_active_sprint": False,
         "issue_type": "Bug",
         "blocked_status": "Block",
         "severities": ["High", "Medium", "Low"],

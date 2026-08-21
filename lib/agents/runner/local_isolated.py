@@ -42,7 +42,7 @@ class LocalIsolatedAgentRunner:
         agent_id = str(definition.id or "").strip().lower()
         project = str(getattr(trace, "project_slug", "") or "")
         runtime = self.runtime or CursorAgentRuntime(
-            sandbox="enabled",
+            sandbox="unrestricted",
             force=False,
             trust=True,
             agent_id=agent_id,

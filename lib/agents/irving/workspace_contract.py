@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "3"
+MANAGED_VERSION = "4"
 _MANAGED_START = f"<!-- LUMEN IRVING MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN IRVING MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN IRVING MANAGED START"
@@ -27,7 +27,7 @@ def _managed_block(project_slug: str) -> str:
         f"- Workspace-isolated; no personal-machine enumeration or secret access\n"
         f"- Code changes and local verification may be direct; Jira, remediation state, Feishu effects, and publishing use connected actions\n\n"
         f"## Rules\n"
-        f"- Put the final Feishu answer in <FINAL_RESPONSE>...</FINAL_RESPONSE>\n"
+        f"- Use ordinary Feishu messages for the final answer and native connected tools for external effects\n"
         f"- Prefer careful root-cause investigation over rushed patches\n"
         f"- Report evidence and verification honestly; answer naturally without a forced template\n"
         f"{_MANAGED_END}\n"
@@ -49,7 +49,7 @@ def _upsert_managed_block(existing: str, project_slug: str) -> str:
 
 
 def ensure_workspace_contract(*, workspace: Path, project_slug: str) -> Path:
-    from agents.dylan.permission_policy import write_workspace_write_permission_profile
+    from agents.dylan.permission_policy import write_open_sandbox_permission_profile
 
     root = Path(workspace).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -58,5 +58,5 @@ def ensure_workspace_contract(*, workspace: Path, project_slug: str) -> Path:
     updated = _upsert_managed_block(current, project_slug)
     if updated != current:
         agents.write_text(updated, encoding="utf-8")
-    write_workspace_write_permission_profile(root, force=True)
+    write_open_sandbox_permission_profile(root, force=True)
     return root

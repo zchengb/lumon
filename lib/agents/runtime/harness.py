@@ -101,6 +101,53 @@ def harness_mode(config: Optional[dict[str, Any]] = None) -> str:
     return value.casefold().replace("-", "_")
 
 
+def provider_sandbox_mode(
+    config: Optional[dict[str, Any]] = None,
+    *,
+    requested: str = "",
+) -> str:
+    """Describe the provider hint without treating it as the security boundary."""
+    data = config if isinstance(config, dict) else {}
+    security = data.get("agent_security") if isinstance(data.get("agent_security"), dict) else {}
+    value = (
+        str(requested or "").strip()
+        or os.environ.get("LUMON_PROVIDER_SANDBOX", "").strip()
+        or str(security.get("provider_sandbox") or "").strip()
+        or "unrestricted"
+    ).casefold().replace("-", "_")
+    aliases = {
+        "off": "unrestricted",
+        "none": "unrestricted",
+        "disabled": "unrestricted",
+        "full": "unrestricted",
+        "full_access": "unrestricted",
+        "danger_full_access": "unrestricted",
+        "enabled": "provider_default",
+        "default": "provider_default",
+        "provider": "provider_default",
+        "read_only": "restricted",
+        "workspace_write": "restricted",
+        "deny": "restricted",
+        "restricted": "restricted",
+    }
+    return aliases.get(value, value if value in {"unrestricted", "provider_default", "restricted"} else "unrestricted")
+
+
+def native_runtime_configured(config: Optional[dict[str, Any]] = None) -> bool:
+    """Return whether a workspace explicitly opted into native-first runtime."""
+    data = config if isinstance(config, dict) else {}
+    conversation = data.get("conversation") if isinstance(data.get("conversation"), dict) else None
+    if conversation is None and isinstance(data.get("conversation_runtime"), dict):
+        conversation = data.get("conversation_runtime")
+    if not isinstance(conversation, dict):
+        return False
+    native_first = str(conversation.get("native_first", False)).strip().casefold()
+    legacy = str(conversation.get("legacy_compatibility", False)).strip().casefold()
+    return native_first in {"1", "true", "yes", "on", "enabled"} and legacy not in {
+        "1", "true", "yes", "on", "enabled"
+    }
+
+
 def canonical_task_mode(value: str = "") -> str:
     normalized = str(value or "").strip().casefold().replace("-", "_")
     aliases = {"read": "explore", "readonly": "explore", "write": "build", "mutate": "external"}
@@ -130,7 +177,9 @@ def capabilities_for_provider(
 ) -> HarnessCapabilities:
     name = canonical_harness_provider(provider)
     open_mode = str(mode or "").casefold() in {"unshackled", "dedicated_machine", "dedicated"}
-    workspace_write = bool(open_mode and sandbox)
+    # Provider sandbox switches are advisory. Workspace write is granted by
+    # the dedicated Agent-world boundary, not by a CLI sandbox flag.
+    workspace_write = bool(open_mode)
     if name == "cursor":
         capabilities = HarnessCapabilities(
             persistent_session=True,
@@ -211,7 +260,10 @@ def capabilities_for_provider(
             streaming=False,
             sandbox=False,
         )
-    if task_mode and canonical_task_mode(task_mode) == "explore":
+    # In the unshackled native Harness task mode is a hint for planning, not a
+    # second role ACL. Restricted/legacy modes may still apply the old
+    # least-privilege capability projection.
+    if task_mode and canonical_task_mode(task_mode) == "explore" and not open_mode:
         return replace(
             capabilities,
             workspace_write=False,
@@ -264,7 +316,8 @@ def probe_harness(
     harness = data.get("harness") if isinstance(data.get("harness"), dict) else {}
     task_mode = canonical_task_mode(str(harness.get("task_mode") or "build"))
     name = canonical_harness_provider(provider)
-    capabilities = capabilities_for_provider(name, mode=mode, sandbox=True, task_mode=task_mode)
+    provider_mode = provider_sandbox_mode(data)
+    capabilities = capabilities_for_provider(name, mode=mode, sandbox=provider_mode != "restricted", task_mode=task_mode)
     available, detail = _provider_check(name)
     if name == "codex":
         from agents.runtime.codex_runtime import codex_account_status
@@ -292,12 +345,21 @@ def probe_harness(
     env = build_agent_env(agent_id="probe", project=project)
     secret_escape = bool(env_contains_secrets(env))
     delete_probe = protected_delete_probe()
+    from agents.runner.runner_env import build_runner_env
+
+    runner_env = build_runner_env(agent_id="probe", project=project, config=data)
+    agent_world_ok = runner_env.get("LUMEN_AGENT_WORLD") == "1"
+    service_identity_ok = str(runner_env.get("LUMEN_SERVICE_IDENTITY") or "").startswith("agent:")
+    root_escalation_ok = runner_env.get("LUMEN_ROOT_ESCALATION") == "disabled" and getattr(os, "geteuid", lambda: 1)() != 0
     security = {
         "secret_escape": secret_escape,
         "workspace_escape": workspace_escape or host_escape,
         "protected_delete": bool(delete_probe.get("canonical_deleted")),
         "identity_forgery": False,
         "unbrokered_external_mutation": False,
+        "agent_world_escape": not agent_world_ok,
+        "root_escalation": not root_escalation_ok,
+        "service_identity_escape": not service_identity_ok,
     }
     checks: dict[str, Any] = {
         "provider_available": available,
@@ -307,6 +369,11 @@ def probe_harness(
         "network": "allow" if mode in {"unshackled", "dedicated_machine", "dedicated"} else "deny",
         "runner": "disposable_workspace",
         "task_mode": task_mode,
+        "provider_sandbox_mode": provider_mode,
+        "host_boundary": "agent_world_only",
+        "agent_world": "pass" if agent_world_ok else "fail",
+        "root_escalation": "blocked" if root_escalation_ok else "fail",
+        "service_identity": "pass" if service_identity_ok else "fail",
         "delete_probe": delete_probe,
     }
     warnings: list[str] = []
@@ -317,7 +384,6 @@ def probe_harness(
     required_ok = all(not value for value in security.values())
     ready = bool(
         capabilities.workspace_read
-        and capabilities.sandbox
         and required_ok
         and checks["workspace_isolation_v2"]
         and (available if require_provider else True)

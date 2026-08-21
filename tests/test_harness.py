@@ -19,12 +19,20 @@ class HarnessTests(unittest.TestCase):
     def test_provider_capabilities_are_provider_neutral(self) -> None:
         codex = capabilities_for_provider("codex", mode="unshackled", sandbox=True)
         opencode = capabilities_for_provider("opencode", mode="unshackled", sandbox=True)
+        open_without_provider_sandbox = capabilities_for_provider(
+            "cursor", mode="unshackled", sandbox=False, task_mode="explore"
+        )
         api = capabilities_for_provider("api", mode="restricted", sandbox=False)
         self.assertTrue(codex.persistent_session)
         self.assertTrue(codex.native_tools)
         self.assertTrue(codex.workspace_write)
         self.assertTrue(opencode.question)
         self.assertTrue(opencode.subagents)
+        self.assertTrue(open_without_provider_sandbox.workspace_write)
+        self.assertTrue(open_without_provider_sandbox.build)
+        self.assertTrue(open_without_provider_sandbox.tests)
+        self.assertTrue(open_without_provider_sandbox.scripts)
+        self.assertTrue(open_without_provider_sandbox.subagents)
         self.assertFalse(api.workspace_write)
         self.assertFalse(api.native_tools)
 
@@ -37,7 +45,7 @@ class HarnessTests(unittest.TestCase):
                 "codex",
                 project="mbpass",
                 config={
-                    "agent_security": {"workspace_isolation_v2": True},
+                    "agent_security": {"workspace_isolation_v2": True, "provider_sandbox": "unrestricted"},
                     "harness": {"mode": "unshackled"},
                 },
                 require_provider=True,
@@ -45,6 +53,7 @@ class HarnessTests(unittest.TestCase):
         self.assertTrue(result.ready)
         self.assertEqual(result.provider, "codex")
         self.assertEqual(result.mode, "unshackled")
+        self.assertEqual(result.checks["provider_sandbox_mode"], "unrestricted")
         self.assertFalse(any(result.security.values()))
 
     def test_native_tool_call_is_compatible_with_the_action_receipt_path(self) -> None:

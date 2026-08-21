@@ -13,7 +13,7 @@ the owning Agent without inventing scope.
 | Clear source/delivery work, version bump, bounded change | Mark via `delivery.quick_change` |
 | Risk analysis, scan interpretation, risk lifecycle | Dylan |
 | Confirmed code remediation and verification handoff | Irving |
-| Jira discovery / create / update | Milchick via ACTION_REQUEST |
+| Jira discovery / create / update | Milchick via connected tools or authorized `twg` |
 | Test-case generation | Mark via visible `@Mark` thread collaboration when enabled; otherwise `agent.delegate` with `capability=test_case.generate` |
 | Deployment follow-up and status reporting | Milchick, from host CI/CD evidence |
 
@@ -28,25 +28,27 @@ Agent bridge.  Do not create a `waiting_user` Job or report a hidden Job as the
 conversation state.  A direct user reply to Mark is routed only to Mark, and
 the original human identity remains the authority for the turn.
 
-## Legacy delegation envelope
+## Connected delegation
 
-The envelope remains supported for durable background orchestration and for
-workspaces that have not enabled thread-native collaboration.
+Durable background orchestration remains available through the connected tool
+registry for workspaces that need it. Ordinary collaboration stays visible in
+the Feishu thread.
 
-To delegate, emit exactly one `agent.job.create` ACTION_REQUEST. The host
-carries the original user message and image context; Mark reads the workspace
-himself. Do not pre-analyze Mark's repository or infer target files for him.
+Call `agent.job.create` through the native connected tool when durable work is
+needed. The host carries the original user message and image context; Mark
+reads the workspace himself. Do not pre-analyze Mark's repository or infer
+target files for him.
 
 Example (Technical Loop):
 
-```
-<ACTION_REQUEST>{"action":"agent.job.create","arguments":{"target_agent":"mark","capability":"loop.technical","issue_key":"MBPAS-1503"}}</ACTION_REQUEST>
+```json
+{"action":"agent.job.create","arguments":{"target_agent":"mark","capability":"loop.technical","issue_key":"MBPAS-1503"}}
 ```
 
 Example (Business Loop):
 
-```
-<ACTION_REQUEST>{"action":"agent.job.create","arguments":{"target_agent":"mark","capability":"loop.business"}}</ACTION_REQUEST>
+```json
+{"action":"agent.job.create","arguments":{"target_agent":"mark","capability":"loop.business"}}
 ```
 
 Rules:

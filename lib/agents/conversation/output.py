@@ -12,6 +12,7 @@ from typing import Any, Mapping
 from agents.conversation.config import ThreadNativeConfig, thread_native_config
 from agents.conversation.event_bus import EventBus
 from agents.conversation.events import ConversationEvent
+from agents.compat.legacy_envelopes import sanitize_public_text
 from feishu.messenger import FeishuMessenger, extract_message_id, should_reply_in_thread
 
 
@@ -233,11 +234,31 @@ class ConversationOutput:
         visibility: str = "public",
     ) -> OutputReceipt:
         clean_text = str(text or "").strip()
+        protocol_leak_prevented = False
+        if visibility == "public":
+            clean_text, protocol_leak_prevented = sanitize_public_text(clean_text)
         values = dict(payload or {})
         path = Path(str(attachment_path or "")).expanduser() if attachment_path else None
         if path is not None:
             values.setdefault("path", self._artifact_label(path))
         event = self._event(event_type, clean_text, values, visibility=visibility)
+        if protocol_leak_prevented:
+            telemetry = self._event(
+                "conversation.protocol_leak.prevented",
+                "",
+                {
+                    "source_event_type": event_type,
+                    "removed_protocol_content": True,
+                },
+                visibility="internal",
+            )
+            try:
+                self.event_bus.publish(telemetry)
+            except Exception:
+                # Public delivery remains independent from telemetry storage.
+                pass
+            if not clean_text and path is None:
+                return OutputReceipt(status="filtered", event=telemetry)
         now = time.monotonic()
         if (
             not terminal

@@ -2,20 +2,29 @@
   "enabled": false,
   "agent_security": {
     "workspace_isolation_v2": true,
-    "mode": "dedicated_machine",
+    "mode": "dedicated_agent_machine",
+    "provider_sandbox": "unrestricted",
+    "canonical_workspace_access": "read_only",
+    "identity_mode": "service_account",
+    "host_visibility": "agent_world_only",
     "delete_policy": "no_irreversible_delete",
     "network": "allow",
-    "secret_isolation": true,
-    "host_visibility": "denied"
+    "secret_isolation": true
   },
   "harness": {
     "mode": "unshackled",
     "allow_workspace_write": true,
     "allow_shell": true,
+    "allow_build": true,
+    "allow_tests": true,
+    "allow_scripts": true,
     "allow_web": true,
     "allow_question": true,
     "allow_subagents": true,
-    "allow_skills": true
+    "allow_skills": true,
+    "allow_multi_repo": true,
+    "allow_native_tools": true,
+    "task_mode_enforcement": "advisory"
   },
   "profiles": {
     "dylan": {

@@ -137,6 +137,34 @@ class ConversationRuntimeTests(unittest.TestCase):
             bus.close()
             store.close()
 
+    def test_public_output_firewall_removes_transport_syntax_and_records_telemetry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = ThreadTranscriptStore(root / "thread.sqlite3")
+            bus = EventBus(store=store)
+            messenger = _FakeMessenger()
+            output = ConversationOutput(
+                agent_id="mark",
+                meta={"message_id": "human-1", "chat_id": "chat-1", "root_id": "human-1"},
+                messenger=messenger,
+                event_bus=bus,
+                config=ThreadNativeConfig(minimum_event_interval_seconds=0),
+            )
+            filtered = output.message(
+                '<ACTION_REQUEST>{"action":"jira.workitem.create","arguments":{}}</ACTION_REQUEST>'
+            )
+            self.assertEqual("filtered", filtered.status)
+            self.assertEqual([], messenger.calls)
+            internal = bus.replay(chat_id="chat-1", thread_id="human-1", visibility="internal")
+            self.assertTrue(any(item.type == "conversation.protocol_leak.prevented" for item in internal))
+
+            unwrapped = output.message("<FINAL_RESPONSE>Hello from the native Agent.</FINAL_RESPONSE>")
+            self.assertEqual("succeeded", unwrapped.status)
+            self.assertEqual(("reply", "Hello from the native Agent."), messenger.calls[-1])
+            output.close()
+            bus.close()
+            store.close()
+
     def test_native_artifact_requires_workspace_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -342,6 +370,23 @@ class ConversationRuntimeTests(unittest.TestCase):
         self.assertEqual("native", parsed.mode)
         self.assertEqual("Only this text is visible.", parsed.text)
         self.assertEqual([], parsed.action_requests)
+
+    def test_native_tool_events_preserve_a_safe_connected_tool_request(self) -> None:
+        event = from_provider_event(
+            {
+                "type": "tool_call",
+                "tool_call": {
+                    "name": "jira.update",
+                    "arguments": {"issue_key": "MBPAS-1", "description": "ready"},
+                },
+                "call_id": "call-1",
+            },
+            provider="codex",
+        )
+        self.assertIsNotNone(event)
+        self.assertEqual("tool_call", event.type)
+        self.assertEqual("jira.update", event.payload["tool"])
+        self.assertEqual("MBPAS-1", event.payload["arguments"]["issue_key"])
 
     def test_native_prompt_does_not_require_legacy_markers(self) -> None:
         prompt = interaction_contract_prompt(agent_id="mark", native_provider=True)

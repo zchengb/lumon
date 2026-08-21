@@ -11,8 +11,8 @@ NATIVE_PROVIDER_NAMES = frozenset({"cursor", "cursor_cli", "opencode", "codex"})
 class ThreadNativeConfig:
     """Workspace-scoped controls for visible Agent collaboration.
 
-    The migration flag deliberately defaults to disabled.  Existing workspaces
-    therefore keep their current routing until ``common.json`` opts in.
+    Native-first is the default for new workspaces. Existing sessions are
+    migrated by the runtime contract version and may opt into compatibility.
     """
 
     enabled: bool = False
@@ -22,7 +22,7 @@ class ThreadNativeConfig:
     # envelope parsing remains an explicit migration fallback so existing
     # workspaces can be upgraded without losing an in-flight conversation.
     native_first: bool = True
-    legacy_compatibility: bool = True
+    legacy_compatibility: bool = False
     visible_workstream: bool = True
     native_tools: bool = True
     native_questions: bool = True
@@ -47,7 +47,7 @@ def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int
 
 
 def native_provider_contract(provider: str, config: ThreadNativeConfig) -> bool:
-    """Whether a configured provider should use the native 3.0 contract."""
+    """Whether a configured provider should use the native 3.1 contract."""
 
     normalized = str(provider or "").strip().casefold().replace("-", "_")
     if normalized in {"deepseek", "deepseek_api", "opencode_deepseek"}:
@@ -86,7 +86,7 @@ def thread_native_config(
             data.get("context_max_chars"), default=24000, minimum=4000, maximum=100000
         ),
         native_first=_bool(runtime_data.get("native_first", True), True),
-        legacy_compatibility=_bool(runtime_data.get("legacy_compatibility", True), True),
+        legacy_compatibility=_bool(runtime_data.get("legacy_compatibility", False), False),
         visible_workstream=_bool(
             runtime_data.get("visible_workstream", data.get("visible_workstream", True)), True
         ),

@@ -9,6 +9,7 @@ from agents.compat.legacy_envelopes import (
     job_create_succeeded,
     parse_native_response,
     prefer_action_summary,
+    sanitize_public_text,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "job_create_succeeded",
     "parse_native_response",
     "prefer_action_summary",
+    "sanitize_public_text",
 ]

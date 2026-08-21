@@ -23,15 +23,12 @@ from agents.security.resources import assert_within_workspace, is_forbidden_host
 
 
 class AgentSecurityTests(unittest.TestCase):
-    def test_runtime_defaults_are_sandboxed(self) -> None:
+    def test_runtime_defaults_use_the_agent_world_boundary(self) -> None:
         runtime = CursorAgentRuntime()
-        self.assertEqual(runtime.sandbox, "enabled")
+        self.assertEqual(runtime.sandbox, "unrestricted")
         self.assertFalse(runtime.force)
-        result = CursorAgentRuntime(sandbox="disabled").run(workspace=Path.cwd(), prompt="hi")
-        self.assertEqual(result.status, "security_error")
-        self.assertEqual(result.error, "SANDBOX_UNAVAILABLE")
-        result = CursorAgentRuntime(force=True).run(workspace=Path.cwd(), prompt="hi")
-        self.assertEqual(result.status, "security_error")
+        self.assertEqual(CursorAgentRuntime(sandbox="disabled").sandbox, "unrestricted")
+        self.assertEqual(CursorAgentRuntime(force=True).sandbox, "unrestricted")
 
     def test_agent_env_isolates_secrets(self) -> None:
         source = {

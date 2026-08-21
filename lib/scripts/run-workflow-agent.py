@@ -205,13 +205,13 @@ def run_tool(name: str, arguments: dict[str, Any], roots: tuple[Path, ...], agen
 
 
 def run_cursor(config: dict[str, str], args: argparse.Namespace) -> int:
-    if args.sandbox != "enabled":
-        print("Auto workflow requires CURSOR_AGENT_SANDBOX=enabled; unsafe Cursor execution is disabled.", file=sys.stderr)
-        return 78
     if not shutil_which("agent"):
         print("Cursor CLI 'agent' was not found in PATH.", file=sys.stderr)
         return 127
-    command = ["agent", "--workspace", str(args.workspace), "--sandbox", args.sandbox, "--trust", "-p", "--output-format", args.output_format, "--model", config["model"]]
+    command = ["agent", "--workspace", str(args.workspace)]
+    if args.sandbox not in {"unrestricted", "disabled", "off", "none"}:
+        command.extend(["--sandbox", args.sandbox])
+    command.extend(["--trust", "-p", "--output-format", args.output_format, "--model", config["model"]])
     if args.stream_partial_output:
         command.append("--stream-partial-output")
     if args.approve_mcps:
@@ -351,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default="")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--api-key-env", default="")
-    parser.add_argument("--sandbox", default="enabled")
+    parser.add_argument("--sandbox", default="unrestricted")
     parser.add_argument("--output-format", default="stream-json")
     parser.add_argument("--stream-partial-output", action="store_true")
     parser.add_argument("--approve-mcps", action="store_true")

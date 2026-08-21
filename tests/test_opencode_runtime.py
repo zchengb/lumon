@@ -55,15 +55,16 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         self.assertEqual("local", config["provider"]["qwen"]["options"]["apiKey"])
         self.assertEqual({}, config["provider"]["qwen"]["models"]["qwen3.8-27b-mlx"]["options"])
 
-    def test_workspace_context_contains_readable_safety_files(self) -> None:
+    def test_workspace_context_contains_native_files_without_legacy_transport_docs(self) -> None:
         runtime = OpenCodeAgentRuntime(agent_id="mark")
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             runtime._ensure_workspace_context(workspace)
-            self.assertTrue((workspace / ".lumon" / "blacklist.md").is_file())
+            self.assertTrue((workspace / ".lumon" / "native-protocol.md").is_file())
+            self.assertTrue((workspace / ".lumon" / "connected-tools.md").is_file())
             self.assertTrue((workspace / ".lumon" / "responsibilities" / "mark.md").is_file())
-            self.assertTrue((workspace / ".lumon" / "protocol.md").is_file())
-            self.assertIn("Common hard blacklist", (workspace / ".lumon" / "blacklist.md").read_text(encoding="utf-8"))
+            self.assertFalse((workspace / ".lumon" / "protocol.md").exists())
+            self.assertFalse((workspace / ".lumon" / "blacklist.md").exists())
 
     def test_hard_timeout_discards_partial_text(self) -> None:
         class Stream:

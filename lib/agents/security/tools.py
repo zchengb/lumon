@@ -112,7 +112,7 @@ def write_host_tool_manifest(workspace: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     from agents.runtime.connected_tools import ConnectedToolRegistry
 
-    legacy_enabled = True
+    legacy_enabled = False
     common_path = target.parent.parent / "config" / "common.json"
     try:
         common = json.loads(common_path.read_text(encoding="utf-8"))
@@ -126,18 +126,20 @@ def write_host_tool_manifest(workspace: Path) -> Path:
     except (OSError, TypeError, json.JSONDecodeError):
         pass
 
+    payload: dict[str, Any] = {
+        "version": 3,
+        "protocol": "thread-native-connected-tools",
+        "tools": ConnectedToolRegistry(include_legacy=False).schemas(),
+    }
+    if legacy_enabled:
+        payload["legacy_compatibility"] = {
+            "enabled": True,
+            "protocol": "legacy-envelopes",
+            "tools": host_tool_manifest(),
+        }
     target.write_text(
         json.dumps(
-            {
-                "version": 2,
-                "protocol": "thread-native-connected-tools",
-                "tools": ConnectedToolRegistry(include_legacy=False).schemas(),
-                "legacy_compatibility": {
-                    "enabled": legacy_enabled,
-                    "protocol": "legacy-envelopes",
-                    "tools": host_tool_manifest(),
-                },
-            },
+            payload,
             ensure_ascii=False,
             indent=2,
         )

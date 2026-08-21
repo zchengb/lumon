@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
-from agents.dylan.permission_policy import SECURE_PERMISSIONS
+from agents.dylan.permission_policy import OPEN_SANDBOX_PERMISSIONS
 from agents.runner.isolation import protected_delete_probe
 from agents.runner.workspace_mounts import ensure_runner_dirs
 from agents.security.actions import ActionRequest
@@ -43,19 +43,16 @@ def _sandbox_defaults_ok() -> bool:
     from agents.runtime.cursor_runtime import CursorAgentRuntime
 
     runtime = CursorAgentRuntime()
-    return runtime.sandbox == "enabled" and runtime.force is False
+    return runtime.sandbox not in {"restricted", "read-only"}
 
 
 def _permission_profile_ok() -> bool:
-    allow = SECURE_PERMISSIONS.get("permissions", {}).get("allow") or []
-    deny = SECURE_PERMISSIONS.get("permissions", {}).get("deny") or []
-    if "Shell(ls)" not in deny or "Shell(find)" not in deny:
-        return False
-    if "Shell(system_profiler)" not in deny or "Shell(hostname)" not in deny:
-        return False
-    if "Read(**)" not in allow:
-        return False
-    return True
+    permissions = OPEN_SANDBOX_PERMISSIONS.get("permissions", {})
+    allow = permissions.get("allow") or []
+    deny = permissions.get("deny") or []
+    return "Read(**)" in allow and "Write(**)" in allow and "Shell(**)" in allow and not any(
+        item.startswith("Shell(") for item in deny
+    )
 
 
 def run_security_check(
@@ -112,8 +109,13 @@ def run_security_check(
             critical_fail = True
 
     checks["sandbox"] = _sandbox_defaults_ok()
+    checks["provider_sandbox_mode"] = str(
+        (cfg.get("agent_security") or {}).get("provider_sandbox")
+        if isinstance(cfg.get("agent_security"), dict)
+        else "unrestricted"
+    )
     if not checks["sandbox"]:
-        critical_fail = True
+        warnings.append("provider requested a restricted mode; Agent-world boundary remains authoritative")
 
     checks["workspace_isolation_v2"] = "on" if workspace_isolation_v2_enabled(cfg) else "off"
     checks["permission_profile_v2"] = "pass" if _permission_profile_ok() else "fail"
@@ -151,6 +153,15 @@ def run_security_check(
             critical_fail = True
         else:
             checks["runner_tmpdir"] = "pass"
+        checks["agent_world"] = "pass" if runner_env.get("LUMEN_AGENT_WORLD") == "1" else "fail"
+        checks["root_escalation"] = "blocked" if runner_env.get("LUMEN_ROOT_ESCALATION") == "disabled" else "fail"
+        checks["service_identity"] = "pass" if str(runner_env.get("LUMEN_SERVICE_IDENTITY") or "").startswith("agent:") else "fail"
+        if (
+            checks["agent_world"] == "fail"
+            or checks["service_identity"] == "fail"
+            or checks["root_escalation"] != "blocked"
+        ):
+            critical_fail = True
     else:
         checks["runner"] = "host"
         warnings.append("workspace_isolation_v2 disabled")

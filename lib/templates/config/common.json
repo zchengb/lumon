@@ -9,13 +9,39 @@
     "display_name": "",
     "workspace_root": ""
   },
+  "agent_security": {
+    "mode": "dedicated_agent_machine",
+    "workspace_isolation_v2": true,
+    "provider_sandbox": "unrestricted",
+    "canonical_workspace_access": "read_only",
+    "delete_policy": "no_irreversible_delete",
+    "secret_isolation": true,
+    "identity_mode": "service_account",
+    "host_visibility": "agent_world_only",
+    "network": "allow"
+  },
+  "harness": {
+    "mode": "unshackled",
+    "task_mode_enforcement": "advisory",
+    "allow_workspace_write": true,
+    "allow_shell": true,
+    "allow_build": true,
+    "allow_tests": true,
+    "allow_scripts": true,
+    "allow_web": true,
+    "allow_question": true,
+    "allow_skills": true,
+    "allow_subagents": true,
+    "allow_multi_repo": true,
+    "allow_native_tools": true
+  },
   "agent_collaboration": {
     "thread_native_handoff": true,
     "max_relay_hops": 4,
     "context_max_chars": 24000
   },
   "conversation": {
-    "version": "3.0",
+    "version": "3.1",
     "native_first": true,
     "legacy_compatibility": false,
     "visible_workstream": true,
@@ -25,16 +51,16 @@
     "dedupe_window_seconds": 10
   },
   "execution": {
-    "mode": "lightweight_review_only",
+    "mode": "harness_native",
     "provider": "opencode",
     "model": "deepseek-v4-flash",
     "base_url": "",
     "api_key_env": "DEEPSEEK_API_KEY",
     "scan_window_days": 7,
-    "run_project_commands": false,
-    "validation_policy": "skip_all_local_validation_commands",
-    "workspace_strategy": "stable_reusable_worktree_per_repo",
-    "keep_worktrees_after_run": true,
+    "run_project_commands": true,
+    "validation_policy": "agent_selected_relevant_validation",
+    "workspace_strategy": "disposable_agent_world",
+    "keep_worktrees_after_run": false,
     "max_worktrees_per_repo": 1,
     "create_pr_for_severity": ["High"]
   },
@@ -103,7 +129,7 @@
       "enabled": true,
       "project_key": "MBPAS",
       "board_id": "",
-      "assign_to_active_sprint": true,
+      "assign_to_active_sprint": false,
       "issue_type": "Bug",
       "severities": ["High", "Medium", "Low"],
       "summary_prefix": "[Lumen]"

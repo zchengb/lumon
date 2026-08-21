@@ -25,6 +25,9 @@ def build_runner_env(
         "LUMEN_AGENT_HOME": str(dirs["home"]),
         "LUMEN_AGENT_WORKSPACE": str(dirs["root"] / "workspaces"),
         "LUMEN_HOST_BOUNDARY": "closed",
+        "LUMEN_AGENT_WORLD": "1",
+        "LUMEN_ROOT_ESCALATION": "disabled",
+        "LUMEN_SERVICE_IDENTITY": f"agent:{str(agent_id or 'unknown').strip().lower()}",
     }
     env = build_agent_env(agent_id=agent_id, project=project, extra=extra, source=source)
     env["HOME"] = str(dirs["home"])

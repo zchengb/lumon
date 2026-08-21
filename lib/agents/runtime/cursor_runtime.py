@@ -13,6 +13,7 @@ from agents.dylan.model_client import _load_lumen_dotenv
 from agents.runtime.cursor_stream import AgentToolEvent, parse_stream_json_text
 from agents.runtime.harness_events import HarnessEvent, normalize_provider_events
 from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
+from agents.runtime.native_context import ensure_workspace_context
 from agents.runtime.observability import Observability, TraceContext
 
 
@@ -40,7 +41,7 @@ class CursorAgentRuntime:
         model: str = "cursor-grok-4.5-medium",
         soft_timeout_seconds: int = 90,
         hard_timeout_seconds: int = 3600,
-        sandbox: str = "enabled",
+        sandbox: str = "unrestricted",
         force: bool = False,
         trust: bool = True,
         agent_id: str = "",
@@ -51,7 +52,15 @@ class CursorAgentRuntime:
         self.model = model
         self.soft_timeout_seconds = soft_timeout_seconds
         self.hard_timeout_seconds = hard_timeout_seconds
-        self.sandbox = sandbox
+        requested_sandbox = str(sandbox or "unrestricted").strip().casefold().replace("-", "_")
+        self.sandbox = {
+            "off": "unrestricted",
+            "none": "unrestricted",
+            "disabled": "unrestricted",
+            "full": "unrestricted",
+            "full_access": "unrestricted",
+            "default": "provider_default",
+        }.get(requested_sandbox, requested_sandbox or "provider_default")
         self.force = force
         self.trust = trust
         self.agent_id = agent_id
@@ -66,7 +75,7 @@ class CursorAgentRuntime:
         return capabilities_for_provider(
             "cursor",
             mode=self.harness_mode,
-            sandbox=self.sandbox == "enabled" and not self.force,
+            sandbox=self.sandbox not in {"unrestricted", "disabled"},
             task_mode=self.task_mode,
         )
 
@@ -85,6 +94,9 @@ class CursorAgentRuntime:
         _load_lumen_dotenv()
         return build_agent_env(agent_id=self.agent_id, project=self.project)
 
+    def _ensure_workspace_context(self, workspace: Path) -> None:
+        ensure_workspace_context(workspace, agent_id=self.agent_id)
+
     def run(
         self,
         *,
@@ -94,24 +106,20 @@ class CursorAgentRuntime:
         trace: TraceContext | None = None,
         obs: Observability | None = None,
     ) -> AgentRunResult:
-        if self.sandbox != "enabled" or self.force:
-            return AgentRunResult(
-                text="",
-                provider_session_id=provider_session_id or "",
-                status="security_error",
-                error="SANDBOX_UNAVAILABLE",
-            )
-        agent_bin = self._agent_bin()
         workspace = Path(workspace).expanduser().resolve()
+        self._ensure_workspace_context(workspace)
+        agent_bin = self._agent_bin()
         args = [agent_bin]
         if provider_session_id:
             args.extend(["--resume", str(provider_session_id)])
+        args.extend(["--workspace", str(workspace)])
+        # Cursor's provider flag is advisory. In open Agent-world mode we omit
+        # the flag because CLI versions differ in the accepted "off" value;
+        # the isolated runner environment remains the actual boundary.
+        if self.sandbox not in {"unrestricted", "disabled"}:
+            args.extend(["--sandbox", self.sandbox])
         args.extend(
             [
-                "--workspace",
-                str(workspace),
-                "--sandbox",
-                "enabled",
                 "-p",
                 "--output-format",
                 "stream-json",
@@ -137,6 +145,7 @@ class CursorAgentRuntime:
         lines: list[str] = []
         stderr_chunks: list[str] = []
         run_env = self._env()
+        run_env["CURSOR_AGENT_SANDBOX"] = self.sandbox
         process = subprocess.Popen(
             args,
             stdout=subprocess.PIPE,
@@ -361,7 +370,7 @@ def create_agent_runtime(
     account_email: str = "",
     soft_timeout_seconds: int = 90,
     hard_timeout_seconds: int = 3600,
-    sandbox: str = "enabled",
+    sandbox: str = "unrestricted",
     force: bool = False,
     trust: bool = True,
     agent_id: str = "",

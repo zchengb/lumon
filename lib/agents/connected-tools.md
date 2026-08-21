@@ -3,8 +3,7 @@
 Cursor, OpenCode, and Codex receive the connected-tool registry through the
 workspace `.lumon/host-tools.json` file and the provider Harness.  A native
 tool call is named directly (for example `jira.update`, `bitable.write`, or
-`feishu.file`); it does not need an `ACTION_REQUEST` wrapper or a
-`FINAL_RESPONSE` marker.
+`feishu.file`); it does not need a provider transport envelope.
 
 The Host remains the safety boundary.  It injects the trusted conversation
 identity, workspace boundary, credentials, audit receipt, retry policy, and

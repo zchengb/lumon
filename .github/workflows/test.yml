@@ -14,23 +14,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Agent / Dylan / Mark unit tests
+      - name: Full Python test suite
         run: |
-          python -m unittest \
-            tests.test_dylan_m18 \
-            tests.test_dylan_m19 \
-            tests.test_dylan_m20 \
-            tests.test_dylan_m21 \
-            tests.test_risk_analyst \
-            tests.test_agent_bridge_scan \
-            tests.test_agent_platform \
-            tests.test_mark_m10 \
-            tests.test_agent_settings \
-            tests.security.test_agent_security_m03 \
-            tests.security.test_agent_security_m031 \
-            tests.security.test_access_zones \
-            tests.test_mark_test_case_milchick_m10 \
-            -v
+          python -m unittest discover -s tests -p 'test*.py' -v
+      - name: Python syntax and diff checks
+        run: |
+          python -m compileall -q lib
+          git diff --check
 
   dashboard-build:
     runs-on: ubuntu-latest

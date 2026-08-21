@@ -273,20 +273,29 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
 
     sprint_id = None
     sprint_name = None
+    sprint_assignment: dict[str, Any] = {"status": "not_requested"}
     if assign_to_active_sprint_enabled(cfg):
         try:
             sprint_id, sprint_name = resolve_active_sprint(cfg)
+            if sprint_id:
+                sprint_assignment = {
+                    "status": "pending",
+                    "sprint_id": sprint_id,
+                    "sprint_name": sprint_name or "",
+                }
+            else:
+                sprint_assignment = {
+                    "status": "skipped",
+                    "reason": "no_active_sprint",
+                    "message": "No active sprint found; Jira creation will continue without sprint assignment.",
+                }
         except Exception as exc:
-            return {
-                "status": "failed",
-                "code": "JIRA_SPRINT_LOOKUP_FAILED",
-                "message": truncate_error(str(exc)),
-            }
-        if not sprint_id:
-            return {
-                "status": "failed",
-                "code": "JIRA_NO_ACTIVE_SPRINT",
-                "message": "No active sprint found for the configured Jira board",
+            sprint_id = None
+            sprint_name = None
+            sprint_assignment = {
+                "status": "skipped",
+                "reason": "lookup_failed",
+                "message": f"Sprint lookup was skipped: {truncate_error(str(exc))}",
             }
 
     command = [
@@ -325,14 +334,15 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
         try:
             assign_workitem_to_sprint(key, sprint_id, cfg)
         except Exception as exc:
-            return {
-                "status": "failed",
-                "code": "JIRA_SPRINT_ASSIGN_FAILED",
-                "issue_key": key,
-                "url": url,
-                "summary": summary,
-                "message": f"Created {key}, but could not assign it to active sprint {sprint_name or sprint_id}: {truncate_error(str(exc))}",
+            sprint_assignment = {
+                "status": "warning",
+                "reason": "assignment_failed",
+                "sprint_id": sprint_id,
+                "sprint_name": sprint_name or "",
+                "message": f"Created {key}, but sprint assignment was skipped: {truncate_error(str(exc))}",
             }
+        else:
+            sprint_assignment["status"] = "assigned"
     return {
         "status": "completed",
         "issue_key": key,
@@ -343,6 +353,7 @@ def _create_workitem(request: ActionRequest) -> dict[str, Any]:
         "target_version": target_version,
         "sprint_id": sprint_id or "",
         "sprint_name": sprint_name or "",
+        "sprint_assignment": sprint_assignment,
     }
 
 

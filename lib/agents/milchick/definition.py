@@ -46,10 +46,10 @@ MILCHICK_DEFINITION = AgentDefinition(
     capabilities=AgentCapabilities(
         actions=MILCHICK_ACTIONS,
         read_scopes=("agent_jobs", "schedules", "workflow_status", "jira", "test_case_coordination"),
-        filesystem_mode="workspace_read",
+        filesystem_mode="workspace_write",
         network_profile="allow",
         secret_profile="isolated",
-        direct_workspace_write=False,
+        direct_workspace_write=True,
         allowed_workflows=("agent.job.create", "agent.job.show", "agent.health", *JIRA_ACTIONS),
         allowed_mutations=(
             "agent.job.create",

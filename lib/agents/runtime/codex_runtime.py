@@ -16,6 +16,7 @@ from agents.runtime.cursor_runtime import AgentRunResult
 from agents.runtime.cursor_stream import AgentToolEvent
 from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
 from agents.runtime.harness_events import normalize_provider_events
+from agents.runtime.native_context import ensure_workspace_context
 
 
 DEFAULT_MODEL = "gpt-5.6-luna"
@@ -291,7 +292,7 @@ class CodexAgentRuntime:
         return capabilities_for_provider(
             "codex",
             mode=self.harness_mode,
-            sandbox=self.sandbox != "read-only" and not self.force,
+            sandbox=self.sandbox != "read-only",
             task_mode=self.task_mode,
         )
 
@@ -317,27 +318,7 @@ class CodexAgentRuntime:
         return binary
 
     def _ensure_workspace_context(self, workspace: Path) -> None:
-        package_agents = Path(__file__).resolve().parents[1]
-        target = workspace / ".lumon"
-        target.mkdir(parents=True, exist_ok=True)
-        entries = [
-            ("action-catalog.md", "action-catalog.md"),
-            ("protocol.md", "protocol.md"),
-            ("native-protocol.md", "native-protocol.md"),
-            ("connected-tools.md", "connected-tools.md"),
-            ("responsibilities/blacklist.md", "blacklist.md"),
-        ]
-        if self.agent_id:
-            entries.append((f"responsibilities/{self.agent_id}.md", f"responsibilities/{self.agent_id}.md"))
-            entries.append((f"responsibilities/{self.agent_id}-workflow.md", f"responsibilities/{self.agent_id}-workflow.md"))
-        if self.agent_id == "milchick":
-            entries.append(("milchick/soul.md", "milchick-soul.md"))
-        for source_name, destination_name in entries:
-            source = package_agents / source_name
-            destination = target / destination_name
-            if source.is_file():
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, destination)
+        ensure_workspace_context(workspace, agent_id=self.agent_id)
 
     def _execution_args(self, *, resume: bool) -> list[str]:
         if self.sandbox == "disabled":
@@ -406,8 +387,6 @@ class CodexAgentRuntime:
         trace: Any = None,
         obs: Any = None,
     ) -> AgentRunResult:
-        if self.force:
-            return AgentRunResult(text="", provider_session_id=provider_session_id or "", status="security_error", error="SANDBOX_UNAVAILABLE")
         workspace = Path(workspace).expanduser().resolve()
         self._ensure_workspace_context(workspace)
         account = codex_account_status(self.account_email)

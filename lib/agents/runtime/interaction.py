@@ -526,7 +526,11 @@ def interaction_contract_prompt(
         "[LUMON INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumon conversation.",
         f"READ the {'native ' if native_provider else ''}interaction protocol before responding: {native_protocol_path if native_provider else protocol_path}",
-        "- Before using tools, READ the common blacklist at " + str(blacklist_path) + ".",
+        (
+            "- Before using tools, read the native protocol and connected-tool registry."
+            if native_provider
+            else "- Before using tools, READ the common blacklist at " + str(blacklist_path) + "."
+        ),
         f"Current task mode: {task_mode or 'explore'}. Explore is read/search/question; Build adds edit/build/test/local Git; External adds connected actions. Move modes when user intent becomes explicit.",
         f"The live connected-tool registry is available at {host_tools_path}; inspect it when native tools are not listed directly by the Harness.",
         "For ordinary bounded code changes in the resolved isolated workspace, use native Read/Edit/Shell/Build/Test tools directly.",

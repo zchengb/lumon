@@ -15,6 +15,7 @@ from agents.runtime.cursor_runtime import AgentRunResult
 from agents.runtime.cursor_stream import AgentToolEvent
 from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
 from agents.runtime.harness_events import normalize_provider_events
+from agents.runtime.native_context import ensure_workspace_context
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
@@ -136,7 +137,7 @@ class OpenCodeAgentRuntime:
         api_key_env: str = "",
         soft_timeout_seconds: int = 90,
         hard_timeout_seconds: int = 3600,
-        sandbox: str = "enabled",
+        sandbox: str = "unrestricted",
         force: bool = False,
         trust: bool = True,
         agent_id: str = "",
@@ -170,7 +171,7 @@ class OpenCodeAgentRuntime:
         return capabilities_for_provider(
             "opencode",
             mode=self.harness_mode,
-            sandbox=self.sandbox == "enabled" and not self.force,
+            sandbox=str(self.sandbox or "").strip().casefold() not in {"restricted", "read-only"},
             task_mode=self.task_mode,
         )
 
@@ -181,49 +182,12 @@ class OpenCodeAgentRuntime:
         raise RuntimeError("OpenCode CLI not found; install it with npm install -g opencode-ai")
 
     def _permission_config(self) -> dict[str, Any]:
-        if self.task_mode == "explore" and not self.workflow_mode:
-            bash_permissions: dict[str, Any] = {
-                "*": "deny",
-                "rg *": "allow",
-                "git status*": "allow",
-                "git diff*": "allow",
-                "git log*": "allow",
-            }
-            if "jira.workitem.get" in self.jira_read_actions:
-                bash_permissions["twg jira workitem get *"] = "allow"
-            if "jira.workitem.query" in self.jira_read_actions:
-                bash_permissions["twg jira workitem query *"] = "allow"
-            return {
-                "*": "deny",
-                "read": "allow",
-                "glob": "allow",
-                "grep": "allow",
-                "edit": "deny",
-                "bash": bash_permissions,
-                "task": "deny",
-                "webfetch": "allow",
-                "websearch": "allow",
-                "question": "allow",
-                "skill": "allow",
-                "lsp": "allow",
-                "external_directory": {
-                    f"{path.expanduser().resolve()}/**": "allow"
-                    for path in self.additional_directories
-                    if path.is_dir()
-                },
-                "doom_loop": "deny",
-            }
-        if self.harness_mode in {"unshackled", "dedicated_machine", "dedicated"} and not self.workflow_mode:
-            bash_permissions: dict[str, Any] = {
-                "*": "allow",
-                "sudo *": "deny",
-                "ssh *": "deny",
-                "scp *": "deny",
-                "git push*": "deny",
-                "gh pr*": "deny",
-                "twg jira *": "deny",
-                "twg feishu *": "deny",
-            }
+        if self.harness_mode in {"unshackled", "dedicated_machine", "dedicated"}:
+            # The provider is no longer the security boundary. The dedicated
+            # Agent world supplies isolation, service identity, and the
+            # publication gate, so OpenCode must be able to use its native
+            # shell/edit/task/web tools without a command deny-list.
+            bash_permissions: dict[str, Any] = {"*": "allow"}
             if "jira.workitem.get" in self.jira_read_actions:
                 bash_permissions["twg jira workitem get *"] = "allow"
             if "jira.workitem.query" in self.jira_read_actions:
@@ -247,6 +211,38 @@ class OpenCodeAgentRuntime:
                 },
                 "bash": bash_permissions,
                 "task": "allow",
+                "webfetch": "allow",
+                "websearch": "allow",
+                "question": "allow",
+                "skill": "allow",
+                "lsp": "allow",
+                "external_directory": {
+                    f"{path.expanduser().resolve()}/**": "allow"
+                    for path in self.additional_directories
+                    if path.is_dir()
+                },
+                "doom_loop": "deny",
+            }
+        if self.task_mode == "explore" and not self.workflow_mode:
+            bash_permissions: dict[str, Any] = {
+                "*": "deny",
+                "rg *": "allow",
+                "git status*": "allow",
+                "git diff*": "allow",
+                "git log*": "allow",
+            }
+            if "jira.workitem.get" in self.jira_read_actions:
+                bash_permissions["twg jira workitem get *"] = "allow"
+            if "jira.workitem.query" in self.jira_read_actions:
+                bash_permissions["twg jira workitem query *"] = "allow"
+            return {
+                "*": "deny",
+                "read": "allow",
+                "glob": "allow",
+                "grep": "allow",
+                "edit": "deny",
+                "bash": bash_permissions,
+                "task": "deny",
                 "webfetch": "allow",
                 "websearch": "allow",
                 "question": "allow",
@@ -378,6 +374,7 @@ class OpenCodeAgentRuntime:
             if key:
                 env[self.api_key_env] = key
         env["OPENCODE_CONFIG_CONTENT"] = self._config_content()
+        env["LUMON_PROVIDER_SANDBOX"] = str(self.sandbox or "provider_default")
         home = Path(env.get("HOME") or Path.home()).expanduser()
         log_file = home / ".local" / "share" / "opencode" / "log" / "opencode.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -385,27 +382,7 @@ class OpenCodeAgentRuntime:
         return env
 
     def _ensure_workspace_context(self, workspace: Path) -> None:
-        package_agents = Path(__file__).resolve().parents[1]
-        target = workspace / ".lumon"
-        target.mkdir(parents=True, exist_ok=True)
-        entries = [
-            ("action-catalog.md", "action-catalog.md"),
-            ("protocol.md", "protocol.md"),
-            ("native-protocol.md", "native-protocol.md"),
-            ("connected-tools.md", "connected-tools.md"),
-            ("responsibilities/blacklist.md", "blacklist.md"),
-        ]
-        if self.agent_id:
-            entries.append((f"responsibilities/{self.agent_id}.md", f"responsibilities/{self.agent_id}.md"))
-            entries.append((f"responsibilities/{self.agent_id}-workflow.md", f"responsibilities/{self.agent_id}-workflow.md"))
-        if self.agent_id == "milchick":
-            entries.append(("milchick/soul.md", "milchick-soul.md"))
-        for source_name, destination_name in entries:
-            source = package_agents / source_name
-            destination = target / destination_name
-            if source.is_file():
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, destination)
+        ensure_workspace_context(workspace, agent_id=self.agent_id)
 
     def run(
         self,
@@ -416,8 +393,6 @@ class OpenCodeAgentRuntime:
         trace: Any = None,
         obs: Any = None,
     ) -> AgentRunResult:
-        if self.sandbox != "enabled" or self.force:
-            return AgentRunResult(text="", provider_session_id=provider_session_id or "", status="security_error", error="SANDBOX_UNAVAILABLE")
         workspace = Path(workspace).expanduser().resolve()
         self._ensure_workspace_context(workspace)
         started = time.time()

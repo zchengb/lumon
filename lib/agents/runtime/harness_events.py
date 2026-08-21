@@ -171,19 +171,49 @@ def from_provider_event(
         "command_execution", "file_change", "mcp_tool_call", "web_search", "computer_call", "tool_call"
     } or bool(part.get("tool") or raw.get("tool")):
         status = str(item.get("status") or part.get("status") or raw.get("subtype") or "started").casefold()
-        kind = item_type or str(part.get("tool") or raw.get("tool") or event_type)
+        tool_data = raw.get("tool_call") if isinstance(raw.get("tool_call"), Mapping) else {}
+        if not tool_data and isinstance(raw.get("tool"), Mapping):
+            tool_data = raw.get("tool")
+        kind = str(
+            tool_data.get("name")
+            or tool_data.get("tool")
+            or item.get("name")
+            or item.get("tool")
+            or part.get("name")
+            or part.get("tool")
+            or raw.get("tool")
+            or item_type
+            or event_type
+        )
+        arguments: Mapping[str, Any] = {}
+        for candidate in (
+            tool_data.get("arguments"),
+            tool_data.get("input"),
+            item.get("arguments"),
+            item.get("input"),
+            part.get("arguments"),
+            part.get("input"),
+            raw.get("arguments"),
+            raw.get("input"),
+        ):
+            if isinstance(candidate, Mapping):
+                arguments = candidate
+                break
         event_kind = "tool_result" if status in {"completed", "complete", "success", "succeeded", "failed", "error"} or event_type == "tool_result" else "tool_call"
+        payload = {
+            "tool": kind[:120],
+            "call_id": str(item.get("id") or part.get("callID") or raw.get("call_id") or "")[:120],
+            "status": status[:80],
+        }
+        if arguments:
+            payload["arguments"] = _safe_payload(dict(arguments))
         return HarnessEvent(
             type=event_kind,
             provider=provider,
             provider_session_id=session_id,
             request_id=request_id,
             sequence=sequence,
-            payload={
-                "tool": kind[:120],
-                "call_id": str(item.get("id") or part.get("callID") or raw.get("call_id") or "")[:120],
-                "status": status[:80],
-            },
+            payload=payload,
         )
 
     if event_type in {"question", "native_question", "ask_user", "user_input_required"} or item_type == "question":

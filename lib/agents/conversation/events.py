@@ -71,7 +71,7 @@ def canonical_event_type(value: str, *, agent: bool = True) -> str:
         return "agent.message" if agent else ""
     if raw in _TYPE_ALIASES:
         return _TYPE_ALIASES[raw] if agent else raw
-    if raw.startswith("agent.") or raw.startswith("tool.") or raw.startswith("session."):
+    if raw.startswith("agent.") or raw.startswith("tool.") or raw.startswith("session.") or raw.startswith("conversation."):
         return raw
     if raw.startswith("human.") or raw.startswith("relay."):
         return raw

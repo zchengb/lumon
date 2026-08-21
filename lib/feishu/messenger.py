@@ -15,6 +15,7 @@ from urllib.parse import quote, urlencode
 from typing import Any, Callable, Optional
 
 from agents.registry import APP_ID_ENV
+from agents.compat.legacy_envelopes import sanitize_public_text
 from agents.runtime.final_response import sanitize_feishu_answer
 from feishu.pdf_renderer import is_plan_document, plan_pdf_filename, render_markdown_pdf, split_plan_response
 
@@ -815,7 +816,11 @@ class FeishuMessenger:
                 # delivery success into a reply failure.
                 _LOG.warning("agent reply observer failed message_id=%s err=%s", message_id, exc)
 
-        text = sanitize_feishu_answer(text)
+        text, protocol_leak_prevented = sanitize_public_text(text)
+        if protocol_leak_prevented:
+            _LOG.warning("provider transport content was filtered before Feishu delivery message_id=%s", message_id)
+        if not text.strip():
+            return None
         cited_pdf = None if suppress_pdf_artifact else extract_pdf_file_citation(text)
         if cited_pdf is not None:
             try:

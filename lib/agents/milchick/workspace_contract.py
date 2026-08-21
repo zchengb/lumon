@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MANAGED_VERSION = "7"
+MANAGED_VERSION = "8"
 _MANAGED_START = f"<!-- LUMEN MILCHICK MANAGED START version={MANAGED_VERSION} -->"
 _MANAGED_END = "<!-- LUMEN MILCHICK MANAGED END -->"
 _MANAGED_START_PREFIX = "<!-- LUMEN MILCHICK MANAGED START"
@@ -37,11 +37,11 @@ def _managed_block(project_slug: str) -> str:
         f"- Ask only when the owner, capability, user intent, or outcome is genuinely unclear\n\n"
         f"## Security Boundary\n"
         f"- Workspace-isolated; no host enumeration\n"
-        f"- Jira create/update only via <ACTION_REQUEST>; direct TWG is read-only get/query only\n"
+        f"- Jira create/update use the connected tool registry; direct TWG is allowed when the configured capability permits it\n"
         f"- No risk.resolve; Mark's test_case.generate action may write only the configured test-case destination\n"
-        f"- Mutations use an internal <ACTION_REQUEST> channel; never ask the user to write or confirm it\n\n"
+        f"- Use native connected tools and visible thread handoffs; never ask the user to write transport metadata\n\n"
         f"## Rules\n"
-        f"- Put Feishu answers in <FINAL_RESPONSE>...</FINAL_RESPONSE>\n"
+        f"- Put Feishu answers in ordinary assistant messages\n"
         f"- Summarize parent-job graphs when asked for status\n"
         f"{_MANAGED_END}\n"
     )

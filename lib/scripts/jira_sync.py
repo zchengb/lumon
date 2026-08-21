@@ -510,7 +510,13 @@ def create_workitem(
     url = url or jira_browse_url_from_config(key, config)
 
     if sprint_id:
-        assign_workitem_to_sprint(key, sprint_id, config)
+        try:
+            assign_workitem_to_sprint(key, sprint_id, config)
+        except Exception as exc:
+            # Jira creation is the durable operation. Sprint placement is a
+            # convenience and must not turn a successfully-created finding
+            # into a false sync failure.
+            print(f"Warning: created {key}, sprint assignment skipped: {truncate_error(str(exc))}", file=sys.stderr)
 
     pr_url = finding_pr_url(finding, registry_issue)
     if pr_url and registry_issue is not None:
@@ -551,6 +557,7 @@ def sync_jira_issues(
         "updated": 0,
         "failed": 0,
         "errors": [],
+        "warnings": [],
     }
 
     if not config.get("enabled"):
@@ -577,13 +584,13 @@ def sync_jira_issues(
 
     sprint_id: Optional[str] = None
     if assign_to_active_sprint_enabled(config):
-        sprint_id, _ = resolve_active_sprint(config)
+        try:
+            sprint_id, _ = resolve_active_sprint(config)
+        except Exception as exc:
+            sprint_id = None
+            summary["warnings"].append(f"Sprint lookup skipped: {truncate_error(str(exc))}")
         if not sprint_id:
-            summary["status"] = "not_configured"
-            summary["errors"].append(
-                "No active sprint found. Set notifications.jira.board_id or ensure the project has an open sprint."
-            )
-            return summary
+            summary["warnings"].append("No active sprint found; Jira findings will be created without sprint assignment.")
 
     for finding in scan.get("findings", []):
         severity = str(finding.get("severity", ""))
