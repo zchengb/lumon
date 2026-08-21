@@ -1,183 +1,128 @@
+---
+status: "draft"
+---
 # Technical Plan: <Story Title>
 
-## 1. Scope & DC Checklist
+> **Default profile: Standard.** Write this document in the primary language of `story.md`; keep repository names, code identifiers, API names, and Jira keys unchanged. Repository investigation remains mandatory, but its evidence belongs in the session/tool trace, not in this document.
+>
+> Keep the output list-first: bullets before paragraphs, code blocks before tables, and tables only for inherently two-dimensional data. Omit a conditional section instead of leaving an empty placeholder.
 
-Plan profile: `Light` / `Standard` / `Complex`
+## Goal & Scope
 
 ### Goal
 
-Describe the technical outcome in one or two sentences.
+<State the technical outcome and the user-visible result in one or two sentences.>
 
-### Acceptance Criteria Mapping
+### Acceptance Criteria
 
-| Acceptance Criterion | Technical outcome |
-|---|---|
-| AC1 | TBD |
+- **AC1 — `<short name>`:** <observable technical outcome and user-visible result.>
+- **AC2 — `<short name>`:** <observable technical outcome and user-visible result.>
 
 ### In Scope
 
-- TBD
+- <Repository/module/behavior included in this Story.>
 
-### Out of Scope
+### Out of Scope (only if needed)
 
-- TBD
+- <Only include explicit exclusions or frontend work blocked by policy.>
 
-### DC Checklist
+## Technical Decisions
 
-Write short, observable BA/QA/Developer checks derived from the confirmed Story, business rules, repository behavior, and relevant Jira context. Cover prerequisites, the primary flow, important combinations, persistence/read-back, boundaries/no-change behavior, permissions, and UI states when relevant. Do not list code edits, shell commands, or generic test tasks.
+Include this section only when a design choice needs owner confirmation. Define each decision once. Use the following four-part format, translating the labels to the Story language when necessary:
 
-- [ ] TBD
+### Decision 1: <question title>
 
-## 2. Baseline & Decisions
+**What is the problem?**
 
-### Repository Evidence
+<Describe the unresolved technical problem and its impact.>
 
-Record only facts that support a decision. Prefer `repository/path → symbol` and a short explanation over pasted code.
+**Decision content**
 
-| Repository evidence | Current behavior | Decision supported |
-|---|---|---|
-| `repository/path → symbol` | TBD | TBD |
+- <Chosen option and the boundary it establishes.>
+- <Compatibility, failure, permission, or data rule when relevant.>
 
-### Confirmed Decisions
+**Decision conclusion**
 
-Record decisions confirmed in Technical Loop. If a decision changes business behavior, return to Business Loop instead of changing `story.md` here.
+**<One clear conclusion.>**
 
-| Question / decision | Confirmed answer | Impact |
-|---|---|---|
-| TBD | TBD | TBD |
+## API & Data Design (only when applicable)
 
-### Preconditions & Assumptions
+### API / Event / Config / Command Contract
 
-| Item | Evidence / owner | Handling if false |
-|---|---|---|
-| Base branch, dependency Story, data source, or environment | TBD | TBD |
+Put machine-readable contracts in fenced code blocks. Explain compatibility, authentication/data scope, failure behavior, and idempotency in bullets immediately around the block.
 
-## 3. Design & Architecture
-
-Describe the end-to-end behavior, module placement, data hand-off, and failure boundaries. Reuse existing architecture; do not introduce a parallel layering approach.
-
-### End-to-End Flow
-
-For `Complex`, this flowchart is required. For `Standard`, include it when there is a cross-module, cross-service, scheduled, asynchronous, stateful, or filtering flow. `Light` may omit it.
-
-```mermaid
-flowchart TB
-    Entry["Entry point"] --> Application["Application / use case"]
-    Application --> Domain["Domain decision"]
-    Domain --> Data["Data / external integration"]
-    Data --> Result["Observable result"]
+```json
+{
+  "name": "<endpoint, event, config key, or command>",
+  "request": "<shape>",
+  "response": "<shape>"
+}
 ```
 
-Show success, failure, retry/fallback, and important state transitions in the diagram when they affect delivery behavior.
+### Database Design (only when persisted data changes)
 
-### Components & Class Diagram
+Ground the design in the repository's actual migrations, ORM entities, repositories/mappers, and index definitions. If the final schema cannot be proven, keep `technicalStatus` as `draft` and record the open gap instead of guessing.
 
-For `Complex`, this diagram is required. Show existing and changed components/classes, entry methods, important parameters, and data hand-off. Use a component diagram instead when classes would obscure a cross-service flow.
+#### New table: `<table_name>`
 
-```mermaid
-classDiagram
-    class ExistingEntryPoint {
-        +existingMethod(request) Result
-    }
-    class ChangedApplicationService {
-        +handle(request) Result
-    }
-    class ExistingRepository {
-        +query(criteria) Data
-    }
-    ExistingEntryPoint --> ChangedApplicationService : calls
-    ChangedApplicationService --> ExistingRepository : reads/writes
-```
+**Purpose:** <why this table exists and what it must not represent.>
 
-### Module Placement & Conventions
+| Field | Type | Length / precision | Null | Default | Key / index | Explanation |
+|---|---|---|---|---|---|---|
+| `<field>` | `<type>` | `<length or —>` | `<yes/no>` | `<value or —>` | `<key/index or —>` | `<meaning>` |
 
-| Repository | Module / layer | Existing pattern to reuse | New or changed component |
-|---|---|---|---|
-| TBD | TBD | `repository/path → symbol` | TBD |
+- **Indexes:** <only indexes supported by repository evidence.>
+- **Rules / relationship:** <application-level validation and relationship rules; do not invent database foreign keys.>
+- **Migration note:** <ordering or data treatment when relevant.>
 
-### Frontend Delivery (Disabled)
+#### Modified table: `<table_name>`
 
-Frontend/Web/Native UI delivery is disabled by policy. Do not add a Visual Delivery Contract, Figma-to-code mapping, frontend implementation steps, browser/device runtime work, or visual QA requirements to this plan. Record frontend work as out of scope or blocked and return to the Business Loop when the Story cannot be delivered without it. Backend-only work may proceed only when it is independently deliverable without frontend changes.
+**Change summary**
 
-## 4. Change Contract & Implementation
+- **Before:** <existing proven schema or field name.>
+- **After:** <final schema and field name.>
+- **Description:** <why the change is required.>
 
-This section combines naming, API, data, permission, integration, file-level change, and implementation details. Include every item that changes or could be misunderstood; write `No impact` with a reason when a contract is not affected.
+**Final schema**
 
-### Identifier Contract
+| Field | Type | Length / precision | Null | Default | Key / index | Explanation |
+|---|---|---|---|---|---|---|
+| `<field>` | `<type>` | `<length or —>` | `<yes/no>` | `<value or —>` | `<key/index or —>` | `<meaning; mark changed/deleted fields>` |
 
-Before approval, list every new or changed method, API property, persistence field, DTO property, UI state, and semantic local/query variable involved in the implementation. Reuse existing names when the concept is unchanged.
+## Implementation Plan
 
-| Location | Identifier | Kind | Type / shape | Meaning / relationship |
-|---|---|---|---|---|
-| `path/to/File` | `methodOrVariable` | method / field / state / variable | TBD | TBD |
+### Repository Responsibilities
 
-### API & Caller Contract
+- **`<repository>`:** <the responsibility and why this repository is touched.>
+- **`<repository>`:** <the responsibility, or omit when there is only one repository.>
 
-| Method | Path / event | Request / input | Response / output | Auth / scope | Compatibility |
-|---|---|---|---|---|---|
-| TBD | TBD | TBD | TBD | TBD | TBD |
+### Change Sequence
 
-### Data, Configuration & Integration Contract
+1. <Concrete module/file boundary and the change it makes.>
+2. <Dependent API, event, persistence, configuration, or integration wiring.>
+3. <Failure, retry, permission, identity, or idempotency behavior when applicable.>
+4. <Documentation or operational hand-off only when required by the Story.>
 
-| Area | Location / key | Change | Failure / retry | Migration / rollback |
-|---|---|---|---|---|
-| Data model | TBD | TBD | TBD | TBD |
-| Permission / data scope | TBD | TBD | TBD | TBD |
-| Configuration / secrets | TBD | TBD | TBD | TBD |
-| External integration | TBD | TBD | TBD | TBD |
+Name the relevant file/module and public contract when it is a design boundary. Do not inventory private methods, local variables, or unchanged files.
 
-Do not introduce database foreign keys unless the repository standard explicitly requires them. Use existing authorization, audit, migration, and integration conventions.
+## Verification
 
-### File-Level Change Plan
+- **Happy path:** <focused scenario and the repository-supported command or manual check.>
+- **Boundary/failure:** <invalid, empty, duplicate, permission, timeout, or no-change case when relevant.>
+- **API/data/integration:** <contract, persistence/read-back, or integration check when applicable.>
+- **Regression:** <existing behavior and the focused test command that protects it.>
 
-| Repository | File / module | Change | Depends on |
-|---|---|---|---|
-| TBD | `path/to/File` | TBD | TBD |
+Use only verification capabilities that the affected repository actually provides. Do not create a verification matrix for a plan that can be expressed as a short list.
 
-### Implementation Steps
+## Risks / Open Questions (only when real)
 
-1. Repository, file/module, concrete change, and expected result.
-2. Repository, file/module, concrete change, and expected result.
-3. Persistence/API/integration wiring and failure behavior.
-4. Verification and delivery boundary.
+- <Destructive, one-way, incompatible, security, dependency, or unresolved design risk.>
+- <Owner question that must be answered before approval.>
 
-Steps must be executable without guessing and must follow dependency order.
-
-## 5. Verification, Performance & Delivery
-
-### Verification Matrix
-
-| AC / area | Scenario | Existing capability / command or manual check | Expected result |
-|---|---|---|---|
-| AC1 | Main flow | TBD | TBD |
-| Boundary | Empty / invalid / no-change case | TBD | TBD |
-| Regression | Existing behavior | TBD | TBD |
-
-Include focused compile/syntax, static/architecture, unit, integration, migration, UI interaction, and visual checks only when applicable and supported by the repository.
-
-### Performance Assessment
-
-Required for any query, collection, batch, API, asynchronous job, scheduled flow, integration, or large UI list. For a simple local change, state `No material performance impact` and explain why.
-
-| Dimension | Evidence / assumption | Design response | Verification |
-|---|---|---|---|
-| Data volume and growth | Current rows, payload size, or list cardinality | Index / pagination / batching / cache / no change | Query plan, benchmark, or focused test |
-| Frequency and concurrency | Calls per request, job schedule, concurrent users | Rate limit / idempotency / queue / no change | Load or timing check |
-| Latency / timeout | Existing SLO, timeout, or user expectation | Query shape / async boundary / fallback | Timing or integration check |
-| Resource usage | Memory, CPU, network, connection pool | Bound result / stream / limit / no change | Runtime observation |
-
-Never invent precise performance numbers. If scale or SLO is unknown and could change the design, ask it in Technical Loop and keep the plan draft until resolved or explicitly recorded as an owner-approved assumption.
-
-### Risks, Rollback & Release
-
-| Risk | Impact | Mitigation | Rollback / release order |
-|---|---|---|---|
-| TBD | TBD | TBD | TBD |
-
-Include observability/support diagnostics and runtime profiles here only when they affect execution or support. Do not create separate empty sections.
-
-<!-- Profile rules:
-- Light: use Scope, Baseline & Decisions, Change Contract, and Verification. Diagrams and full identifier inventory are optional.
-- Standard: use all five sections; include diagrams and contracts when the change needs them.
-- Complex: use all five sections; end-to-end flowchart, component/class diagram, full identifier contract, performance assessment, and rollback/release order are mandatory.
+<!--
+Profile boundary:
+- Light uses the smaller Light template and must not inherit sections from this Standard template.
+- Standard includes only the API/data/diagram details required by this Story.
+- Complex uses the Complex template for multi-repository, migration, permission/data-scope, public API, integration, async, state-flow, or major placement work.
+The approval prompt is Feishu conversation text, never plan content. A PDF export contains only this plan.
 -->

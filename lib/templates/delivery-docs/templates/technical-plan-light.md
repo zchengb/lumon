@@ -3,37 +3,59 @@ status: "draft"
 ---
 # Technical Plan: <Story Title>
 
-## Plan Profile
+> **Profile: Light.** Use only for one localized repository/module change with no public API change, persisted-schema migration, authorization/data-scope change, external integration, asynchronous/scheduled flow, or material deployment risk. Write in the primary language of `story.md`. Keep repository evidence in the session/tool trace, not here.
+>
+> Prefer bullets and short paragraphs. Do not add diagrams, database sections, API tables, performance sections, evidence inventories, or approval content unless the Story is reclassified as Standard or Complex.
 
-Light — one localized repository change with no API, migration, authorization, integration, async workflow, or material rollback impact.
+## Goal & Scope
 
-## Goal and Acceptance Criteria Mapping
+### Goal
 
-| Acceptance Criterion | Technical outcome |
-|---|---|
-| AC1 | TBD |
+<State the local technical outcome and the user-visible result.>
 
-## Impacted Repository and Files
+### Acceptance Criteria
 
-| Repository | File | Change |
-|---|---|---|
-| TBD | TBD | TBD |
+- **AC1:** <observable result.>
+- **AC2:** <observable result, when applicable.>
 
-## Key Technical Decision
+### In Scope
 
-- TBD
+- <One repository/module and the behavior being changed.>
 
-## Implementation Steps
+### Out of Scope (only if needed)
 
-1. TBD
+- <Explicit exclusion.>
+
+## Technical Decision (only if needed)
+
+### Decision 1: <question title>
+
+**What is the problem?**
+
+<The local design choice that needs to be recorded.>
+
+**Decision content**
+
+- <Chosen option and local boundary.>
+
+**Decision conclusion**
+
+**<One clear conclusion.>**
+
+## Implementation Plan
+
+1. **`<repository>/<file or module>`:** <concrete change and expected result.>
+2. **`<repository>/<file or module>`:** <dependent local change, if any.>
+
+Reuse the existing layer and naming convention. List only files/modules that change or are the implementation boundary; do not enumerate private methods or local variables.
 
 ## Verification
 
-| Check | Expected result |
-|---|---|
-| TBD | TBD |
+- **Happy path:** <focused scenario and supported command/manual check.>
+- **Core regression:** <existing behavior that must remain unchanged and its focused check.>
 
-## Risks and Out of Scope
+## Risks / Out of Scope (only if needed)
 
-- Risks: TBD or `Low; local change only`
-- Out of Scope: TBD
+- <Real local risk or explicit exclusion.>
+
+<!-- The approval question is sent separately in Feishu. A PDF contains only the plan. -->

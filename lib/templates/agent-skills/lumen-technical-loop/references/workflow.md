@@ -2,29 +2,61 @@
 
 # Technical Loop workflow
 
-This loop is never the first stage of a combined Story Plan + Technical Plan request. It may start only after the Story/Business Loop has produced `story.md` and `metadata.json.businessStatus=ready`. If that prerequisite is absent, return to Business Loop and keep the user-facing explanation in text; do not generate a PDF or present a technical plan.
+This loop starts only after the Story/Business Loop has produced `story.md` with `metadata.json.businessStatus=ready`. If that prerequisite is absent, return to Business Loop, keep the explanation in Feishu text, and do not draft a Technical Plan or generate its PDF.
 
-The Feishu Loop Gateway is an accepted entry point. A clear natural-language request to turn a business-ready requirement or Story into a technical plan/design starts this workflow directly; an ambiguous request gets one confirmation. The gateway never authorizes delivery or code changes.
+The Feishu Loop Gateway is an accepted entry point. A clear request to turn one business-ready Story into a technical plan starts this workflow directly; an ambiguous request gets one concise confirmation. The gateway never authorizes delivery or application-code changes.
 
-Frontend delivery is disabled. Do not plan or approve Web, Native, mobile UI, frontend source, Figma-to-code, browser/device runtime, Visual Delivery Contract, or visual QA work. Keep it out of scope or blocked and return to the Business Loop if the Story cannot be delivered without frontend changes. Backend-only work may proceed only when it is independently deliverable without frontend changes.
+Frontend delivery is disabled. Do not plan or approve Web, Native, mobile UI, frontend source, Figma-to-code, browser/device runtime, Visual Delivery Contract, or visual QA work. Keep it out of scope or blocked; backend-only work may proceed only when independently deliverable without frontend changes.
 
-Preflight safely refreshes the docs and relevant clean repositories. For a Story with `metadata.json.jiraKey`, invoke `$lumen-jira-story-import` before reading requirements. If `jiraSyncStatus` is `changed`, ask exactly: `Jira changed since this Story was confirmed. A. Pull and reconcile the Jira changes in the Business Loop B. Keep the local Story and continue technical planning C. Review the difference first`. Only A returns to the Business Loop; B is an explicit local-source decision and may continue planning. Gate on one Story with `businessStatus: ready`; keep `technicalStatus` as `draft` until explicit approval. Inspect real repositories, build/test setup, permission patterns, and affected modules before planning. Never modify application source code.
+## Preflight and Investigation
 
-Recommend a profile, explain why, and let the user override. Use the five-section structure in `templates/technical-plan.md`: Scope & DC Checklist; Baseline & Decisions; Design & Architecture; Change Contract & Implementation; Verification, Performance & Delivery. **Light** is one localized repository change with no public API, migration, authorization/data scope, integration, async/scheduled change, or meaningful rollback risk; keep the plan short and omit diagrams when they add no clarity. **Standard** is normal moderate impact; include the diagrams, contracts, and conditional sections that the change actually needs. **Complex** applies to multi-repository, migration/backfill, permissions/data scope, public/cross-service API, integrations, async/scheduled flow, state machine, high rollback risk, or significant placement decisions. Complex plans must include an end-to-end Mermaid flowchart, a class/component diagram, the full identifier contract, dependency-ordered file changes, performance assessment, and rollback/release order. Do not add a "why this is complex" section or irrelevant boilerplate.
+Refresh the docs repository and relevant clean code repositories safely. For a Story with `metadata.json.jiraKey`, invoke `$lumen-jira-story-import` before reading requirements. If `jiraSyncStatus` is `changed`, ask exactly:
 
-Use the Lumen Grill protocol for remaining high-impact technical decisions. Ask one question at a time when the next answer depends on the previous answer; otherwise batch up to four independent questions when the user asked for a plan/checklist. Every question should state the decision impact, offer 2–4 options with one `Recommended` when reasonable, and allow a custom answer. Do not ask questions already answered by repository evidence, and record owner-approved assumptions instead of reopening settled decisions.
+```text
+Jira changed since this Story was confirmed. A. Pull and reconcile the Jira changes in the Business Loop B. Keep the local Story and continue technical planning C. Review the difference first
+```
 
-For important decisions, add concise repository evidence: decision, `repository/path → symbol` (with an optional stable line range), and what it proves. Use a 3–8 line excerpt only when path and symbol are insufficient.
+Only A returns to Business Loop. B is an explicit local-source decision. Inspect real modules, migrations, ORM entities, repositories/mappers, indexes, APIs/events, tests, architecture guards, runtime/config, permissions, and integrations before making a plan. Never modify application source code.
 
-For any query, collection, batch, API, asynchronous job, scheduled flow, integration, or large UI list, assess performance before approval: current and expected data volume, growth, call frequency, concurrency, latency/timeout expectations, result bounds, indexes, pagination, batching, caching, idempotency, resource usage, and failure behavior. Prefer existing evidence such as query plans, indexes, metrics, repository conventions, or measured timing. Never invent precise scale or latency values. If an unknown could change the design, ask a batched Technical Loop checklist question covering: (A) data volume and growth, (B) frequency/concurrency, (C) latency or SLA, and (D) available index/measurement evidence. Keep the plan draft until resolved or explicitly recorded as an owner-approved assumption. If the change is demonstrably local and performance-neutral, record `No material performance impact` with the reason.
+## Profile and Template
 
-For Complex plans, enumerate every new or changed method, API property, persistence field, DTO property, UI state, and semantic local/query variable in the Identifier Contract. Reuse existing names when the concept is unchanged. Add failure, retry, migration, permission, and rollback behavior to the same implementation contract; do not leave these decisions only in chat.
+Recommend the smallest sufficient profile and explain why; the user may override it:
 
-If repository facts expose a business ambiguity affecting ACs, rules, user-visible behavior, actors/roles, permission/data visibility, scope, failure behavior, or promised freshness/timing/availability: keep technical status draft, show evidence and business options/consequences, ask the owner/BA to run Business Loop, and resume only after `story.md` changes and business status is ready. Do not alter `story.md` yourself. Pure implementation decisions belong in the plan.
+- **Light:** read `templates/technical-plan-light.md` for one localized repository/module change with no public API, schema migration, permission/data scope, integration, async/scheduled flow, or material deployment risk.
+- **Standard:** read `templates/technical-plan-standard.md` for normal moderate work. `templates/technical-plan.md` is the compatibility/default Standard entry point.
+- **Complex:** read `templates/technical-plan-complex.md` for multi-repository/service, migration/rename, public or cross-service contract, integration, permission/data scope, async/state, or major placement work.
 
-For a Story that cites a Figma URL or requires frontend/UI work, do not inspect or implement the UI in this loop. Record the frontend portion as out of scope or blocked; do not create a Visual Delivery Contract or approve a plan that includes it.
+The profile changes output density, not correctness. Light stays concise; Standard adds only the API/data/architecture details it needs; Complex records the additional cross-boundary decisions and verification. Do not add sections merely because a profile is Complex.
 
-Before approval, complete repository investigation, selected profile, questions, concrete verification, and the quality bar; no blocking TBD. Present profile/reason, repositories, approach, architecture/domain decisions, applicable data/API/permission/integration/runtime impact, verification, risks, and out-of-scope. The following is a conversational Feishu prompt, not Markdown document content. Do not append it to `technical-plan.md`; after saving the plan, send it separately as text. A PDF export must contain the plan only. Ask exactly:
+All plans use the Story's primary language, list-first prose, fenced code blocks for API/event/config/command/payload contracts, and tables only for inherently two-dimensional data. Omit empty conditional sections. Repository evidence is required for investigation but stays in tool/session trace, git, or Jira context rather than the final plan. Do not add a mandatory class diagram, full private identifier inventory, performance matrix, release-order block, deployment recovery block, or approval block.
+
+## Decisions, Data, and Verification
+
+For each confirmed decision, use one block and define it once:
+
+```markdown
+### Decision N: <question title>
+**What is the problem?**
+<problem and impact>
+**Decision content**
+- <chosen option and boundary>
+**Decision conclusion**
+**<one clear conclusion>**
+```
+
+For a new or modified table, ground the final field-level schema in actual migrations, ORM entities, repositories/mappers, and indexes. Include field, type, length/precision, null, default, key/index, and explanation. Unknown schema facts remain a draft gap; never guess. Use application-level relationship validation and existing index conventions rather than inventing database foreign keys.
+
+Keep only design-significant identifiers: public API/event fields, persisted fields, cross-service DTOs, config/definition keys, confusing domain names, and public/shared methods when the name itself is a decision. Do not list every private method or local variable.
+
+Verification is list-first and profile-appropriate: Light covers happy path and core regression; Standard adds material boundary/API/data/integration checks; Complex adds cross-repository contract, migration, async/state/idempotency, and permission/identity checks when applicable. Name actual supported commands or scenarios and expected results.
+
+Use the Lumen Grill protocol for unresolved decisions: ask one question at a time when answers depend on each other, otherwise batch up to four independent questions. Each question has 2–4 options, a recommended option when justified, the impact, and a custom-answer path. Do not ask what repository evidence already resolves.
+
+## Business Boundary and Approval
+
+If evidence reveals a business ambiguity affecting ACs, rules, actors/roles, data visibility, scope, failure behavior, or promised timing, keep `technicalStatus=draft`, show options, and return to Business Loop. Do not alter `story.md` here.
+
+Before approval, complete investigation, profile, decisions, contracts, concrete verification, and real risks/open questions with no blocking `TBD`. Save only the Technical Plan. The following is Feishu conversation text, not Markdown content, and must not be appended to the plan or PDF:
 
 ```text
 A. Approve this Technical Plan
@@ -33,4 +65,4 @@ C. Keep it as draft
 D. Request a Business Loop revision
 ```
 
-Only explicit A may set `metadata.json.technicalStatus` to `approved`. A substantive approved-plan change returns it to draft and requires approval again; typographical or formatting-only changes do not.
+Only explicit A may set `metadata.json.technicalStatus` to `approved`. A substantive approved-plan change returns it to `draft`; formatting-only changes do not. A PDF export must contain the plan only.

@@ -146,7 +146,7 @@ During the Business Loop and Technical Loop, use the Lumen Grill protocol rather
 
 Rules:
 
-- Ask only unresolved questions that can change scope, actors, business rules, acceptance, failure behavior, architecture, verification, rollout, or rollback.
+- Ask only unresolved questions that can change scope, actors, business rules, acceptance, failure behavior, architecture, verification, or the delivery boundary.
 - Order questions by impact: scope, actors, rules, acceptance, failure behavior, then lower-impact details.
 - Prefer interactive Q&A when the environment supports it.
 - Each question should include 2-4 concrete options.
@@ -237,20 +237,20 @@ Before starting the Technical Loop, use the same preflight sync rules as the Bus
 
 During the Technical Loop, the Agent should:
 
-1. Read `story.md`, `metadata.json`, `templates/technical-plan.md`, and the Lumen coding guideline shipped with the CLI.
+1. Read `story.md`, `metadata.json`, the selected profile template (`templates/technical-plan-light.md`, `templates/technical-plan-standard.md`, or `templates/technical-plan-complex.md`; `templates/technical-plan.md` is the Standard compatibility entry point), and the Lumen coding guideline shipped with the CLI.
 2. Inspect impacted repositories and identify real modules, endpoints, tables, jobs, Dockerfiles, build files, and tests.
 3. If the input is a broad topic, guide the user to split and select one concrete story before planning.
-4. Use the Lumen Grill protocol for unresolved technical questions affecting design, scope, runtime, verification, rollout, or rollback; ask sequentially when questions depend on one another and otherwise use a small checklist.
+4. Use the Lumen Grill protocol for unresolved technical questions affecting design, scope, runtime, verification, or the delivery boundary; ask sequentially when questions depend on one another and otherwise use a small checklist.
 5. Offer concrete options for each question and allow a custom answer.
 6. Record confirmed technical decisions in `technical-plan.md`; do not leave decisions only in chat.
-7. Derive a concise, business-facing `Delivery Checklist` from confirmed Acceptance Criteria and Business Rules; do not use technical implementation language.
-8. Add an optional business flow diagram only when the flow spans systems, jobs, asynchronous steps, state transitions, or complex filtering.
-9. Produce a file-level plan detailed enough for implementation without guessing.
+7. Map each confirmed Acceptance Criterion to a short, observable verification bullet; do not turn the Technical Plan into a second business checklist or evidence report.
+8. Add zero or one flow diagram only when a cross-module/service, scheduled, asynchronous, state-transition, or complex-filtering flow is unclear without it. Add a class/component diagram only when that relationship is itself the design problem.
+9. Produce repository/module-level implementation boundaries and the concrete file guidance needed to implement without guessing. Do not inventory every private method, local variable, or unchanged file.
 10. Save only the technical plan in `technical-plan.md`; ask whether to approve and push the plan, run build/verification now, or keep refining as ordinary Feishu text.
 11. Ask for explicit user approval before setting `technicalStatus` to `approved`.
 12. Never modify application code during the Technical Loop.
 
-A technical plan is not ready until it is scoped to one story and includes repository scope, existing layer boundaries and coding conventions, architecture guard impact, file-level changes, API/schema/config/integration/permission impact, runtime profile, implementation steps, test strategy based on actual repo capabilities, verification, rollback, and out-of-scope boundaries. Database foreign keys are not allowed; plan application-level relationship validation and indexes instead.
+A technical plan is not ready until it is scoped to one Story and uses the smallest sufficient profile. It must include the concrete decisions, repository/module boundaries, applicable API/event/config contracts, grounded target schema when data changes, runtime/permission/integration/async impact when relevant, implementation steps, and verification based on actual repository capabilities. It must not guess unknown schema facts or add empty evidence, diagram, identifier, performance, release-order, deployment-recovery, or approval sections. Database foreign keys are not allowed; plan application-level relationship validation and indexes instead.
 
 ## Technical Status
 
