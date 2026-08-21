@@ -268,7 +268,6 @@ def _run_autonomous_worker(
             suppress_result_reply = bool(
                 result.get("suppress_final_reply")
                 and int(result.get("visible_message_count") or 0) > 0
-                and not result.get("pending_clarification")
             )
             effective_suppress_reply = suppress_reply or suppress_result_reply
             host_file_sent = any(
@@ -368,6 +367,7 @@ def _run_autonomous_worker(
         chat_id=chat_id,
         thread_id=str(meta.get("thread_id") or ""),
         user_id=str(meta.get("user_id") or ""),
+        agent_id=agent,
         worker=_worker,
     )
     if queued.get("status") == "duplicate":

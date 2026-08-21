@@ -273,7 +273,7 @@ def record_inbound_message(
         thread_id = str(meta.get("thread_id") or "").strip()
         if not thread_id and parent is not None:
             thread_id = parent.thread_id
-        return transcript.record(
+        recorded = transcript.record(
             ThreadMessage(
                 message_id=str(message_id).strip(),
                 chat_id=str(meta.get("chat_id") or "").strip(),
@@ -288,6 +288,33 @@ def record_inbound_message(
                 project_slug=str(project_slug or meta.get("_project_slug") or "").strip(),
             )
         )
+        # Keep the event stream replayable without making the Feishu handler
+        # depend on a second transport. The message-id key makes webhook
+        # retries safe while the message table remains the source of truth.
+        try:
+            from agents.conversation.event_bus import EventBus
+            from agents.conversation.events import ConversationEvent
+
+            EventBus(store=transcript).publish(
+                ConversationEvent.create(
+                    thread_id=recorded.conversation_key,
+                    chat_id=recorded.chat_id,
+                    agent_id="",
+                    type="human.message",
+                    text=recorded.text,
+                    payload={
+                        "mentions": list(recorded.mentions),
+                        "attachment_refs": list(recorded.attachment_refs),
+                    },
+                    source_message_id=recorded.message_id,
+                    dedupe_key=f"human:{recorded.message_id}",
+                )
+            )
+        except Exception:
+            # Transcript ingestion remains available to legacy handlers even
+            # if optional observability persistence/subscribers are unhealthy.
+            pass
+        return recorded
     finally:
         if owned:
             transcript.close()

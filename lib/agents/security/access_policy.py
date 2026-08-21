@@ -169,19 +169,25 @@ def load_agent_access_policy(agent_id: str, config: Optional[dict[str, Any]] = N
     global_mutators = _as_set(legacy.get("mutation_allowed_user_ids"))
 
     if raw is None:
+        # Dashboard stores the private-user and group ACLs as a global policy
+        # until an agent-specific override is needed.  Do not discard that
+        # authorization merely because `access.agents.<agent>` is absent:
+        # otherwise every DM hits AGENT_ACCESS_UNCONFIGURED even when the
+        # user was explicitly allowed in Dashboard.
+        has_global_acl = bool(global_users or global_chats)
         return AgentAccessPolicy(
             agent_id=agent,
             exposure_mode=DEFAULT_EXPOSURE.get(agent, "restricted_team"),
-            allowed_user_ids=frozenset(),
+            allowed_user_ids=global_users,
             allowed_chat_ids=global_chats,
             dm_only=True,
             host_read_mode="deny",
             host_read_capabilities=frozenset(),
-            mutation_allowed_user_ids=frozenset(),
+            mutation_allowed_user_ids=global_mutators,
             owners=owners,
             admins=admins,
             default_policy=default_policy,
-            source="missing",
+            source="global" if has_global_acl else "missing",
         )
 
     exposure = str(raw.get("exposure_mode") or DEFAULT_EXPOSURE.get(agent, "restricted_team")).strip()

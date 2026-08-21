@@ -36,13 +36,22 @@ def _prepare_conversation_job(
     chat_id: str,
     thread_id: str,
     user_id: str,
+    agent_id: str = "",
 ) -> dict[str, Any]:
     bootstrap = ConversationJobStore()
     try:
-        existing = bootstrap.get_by_message_id(message_id) if message_id else None
+        # The same Feishu inbound message may intentionally wake several
+        # Agents.  conversation_job predates Thread-native collaboration and
+        # has a global UNIQUE(message_id), so scope its compatibility record
+        # by Agent while preserving the old key for callers without one.
+        base_message_id = message_id or f"local-{chat_id}-{thread_id}-{user_id}"
+        normalized_agent = str(agent_id or "").strip().lower()
+        job_message_id = (
+            f"{base_message_id}::agent:{normalized_agent}" if normalized_agent else base_message_id
+        )
+        existing = bootstrap.get_by_message_id(job_message_id) if job_message_id else None
         if existing is not None:
             return {"status": "duplicate", "job": existing}
-        job_message_id = message_id or f"local-{chat_id}-{thread_id}-{user_id}"
         job = bootstrap.create(
             {
                 "message_id": job_message_id,
@@ -62,11 +71,15 @@ def _execute_conversation_job(
     job_message_id: str,
     chat_id: str,
     thread_id: str,
+    agent_id: str,
     worker: Callable[[], Any],
 ) -> Any:
     jobs = ConversationJobStore()
     try:
-        lock = _SCOPE_LOCKS.lock_for(chat_id, thread_id)
+        # A Thread is a shared blackboard, not a global single-writer lock.
+        # Serialize only one inbound event per Agent session; peers in the
+        # same Thread must be able to work concurrently.
+        lock = _SCOPE_LOCKS.lock_for(chat_id, f"{thread_id}::{str(agent_id or '').strip().lower()}")
         with lock:
             jobs.update(job_message_id, state="routing")
             try:
@@ -97,6 +110,7 @@ def run_conversation_job(
     chat_id: str,
     thread_id: str,
     user_id: str,
+    agent_id: str = "",
     worker: Callable[[], Any],
 ) -> dict[str, Any]:
     """Run on the current thread. Prefer this from Feishu pool workers to avoid nested-pool deadlock."""
@@ -105,6 +119,7 @@ def run_conversation_job(
         chat_id=chat_id,
         thread_id=thread_id,
         user_id=user_id,
+        agent_id=agent_id,
     )
     if prepared.get("status") == "duplicate":
         return prepared
@@ -112,6 +127,7 @@ def run_conversation_job(
         job_message_id=str(prepared["job_message_id"]),
         chat_id=chat_id,
         thread_id=thread_id,
+        agent_id=agent_id,
         worker=worker,
     )
     return {"status": "completed", "job": prepared.get("job"), "result": result}
@@ -123,6 +139,7 @@ def submit_conversation_job(
     chat_id: str,
     thread_id: str,
     user_id: str,
+    agent_id: str = "",
     worker: Callable[[], Any],
 ) -> dict[str, Any]:
     prepared = _prepare_conversation_job(
@@ -130,6 +147,7 @@ def submit_conversation_job(
         chat_id=chat_id,
         thread_id=thread_id,
         user_id=user_id,
+        agent_id=agent_id,
     )
     if prepared.get("status") == "duplicate":
         return prepared
@@ -141,6 +159,7 @@ def submit_conversation_job(
             job_message_id=job_message_id,
             chat_id=chat_id,
             thread_id=thread_id,
+            agent_id=agent_id,
             worker=worker,
         )
 

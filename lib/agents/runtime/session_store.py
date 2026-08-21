@@ -76,7 +76,8 @@ class SessionStore:
         row = self.store.conn.execute(
             """
             SELECT * FROM agent_session
-            WHERE agent_id = ? AND conversation_scope_id = ? AND status IN ('active', 'idle')
+            WHERE agent_id = ? AND conversation_scope_id = ?
+              AND status IN ('active', 'idle', 'running', 'waiting_human', 'paused')
             ORDER BY last_active_at DESC LIMIT 1
             """,
             (str(agent_id or "").strip().lower(), conversation_scope_id),
@@ -220,3 +221,22 @@ class SessionStore:
 
     def clear_pending(self, session_id: str) -> None:
         self.update(session_id, pending_json=None)
+
+    def set_runtime_state(
+        self,
+        session_id: str,
+        state: str,
+        *,
+        question: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist Session Host state without making the Thread wait globally."""
+
+        value = str(state or "idle").strip().lower()
+        self.update(session_id, status=value)
+        if question is not None:
+            self.save_pending(session_id, question)
+
+    def runtime_state(self, session: dict[str, Any] | None) -> str:
+        if not session:
+            return "idle"
+        return str(session.get("status") or "idle").strip().lower()

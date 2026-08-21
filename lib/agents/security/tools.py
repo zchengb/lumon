@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -65,7 +66,11 @@ def host_tool_specs(*, include_legacy: bool = True) -> list[HostToolSpec]:
     """Return the current catalog as small provider-readable tool schemas."""
     specs: list[HostToolSpec] = []
     for action in sorted(ALL_ACTIONS):
-        if not include_legacy and action.startswith("agent.job."):
+        # Native conversation removes the old per-turn delegation verbs, but
+        # durable background work remains a legitimate native capability.
+        # Keep only job creation in the compact native catalog; lifecycle
+        # inspection/cancellation stays on the Host/dashboard surface.
+        if not include_legacy and action.startswith("agent.job.") and action != "agent.job.create":
             continue
         required = list(_REQUIRED.get(action, []))
         properties = {
@@ -97,15 +102,41 @@ def host_tool_manifest() -> list[dict[str, Any]]:
 
 
 def write_host_tool_manifest(workspace: Path) -> Path:
-    """Write the current registry into the disposable workspace context."""
+    """Write native connected-tool schemas into the disposable workspace.
+
+    The legacy action catalog is retained in a separate field for fallback
+    providers, but native Cursor/OpenCode/Codex sessions consume the registry
+    directly and do not need to hand-build an envelope.
+    """
     target = Path(workspace).expanduser().resolve() / ".lumon" / "host-tools.json"
     target.parent.mkdir(parents=True, exist_ok=True)
+    from agents.runtime.connected_tools import ConnectedToolRegistry
+
+    legacy_enabled = True
+    common_path = target.parent.parent / "config" / "common.json"
+    try:
+        common = json.loads(common_path.read_text(encoding="utf-8"))
+        runtime = common.get("conversation") if isinstance(common, dict) else None
+        if not isinstance(runtime, dict) and isinstance(common, dict):
+            runtime = common.get("conversation_runtime")
+        if isinstance(runtime, dict) and "legacy_compatibility" in runtime:
+            legacy_enabled = str(runtime.get("legacy_compatibility")).strip().casefold() in {
+                "1", "true", "yes", "on", "enabled"
+            }
+    except (OSError, TypeError, json.JSONDecodeError):
+        pass
+
     target.write_text(
         json.dumps(
             {
-                "version": 1,
-                "protocol": "native-first-action-request",
-                "tools": host_tool_manifest(),
+                "version": 2,
+                "protocol": "thread-native-connected-tools",
+                "tools": ConnectedToolRegistry(include_legacy=False).schemas(),
+                "legacy_compatibility": {
+                    "enabled": legacy_enabled,
+                    "protocol": "legacy-envelopes",
+                    "tools": host_tool_manifest(),
+                },
             },
             ensure_ascii=False,
             indent=2,
@@ -113,4 +144,10 @@ def write_host_tool_manifest(workspace: Path) -> Path:
         + "\n",
         encoding="utf-8",
     )
+    native_docs = Path(__file__).resolve().parents[1] / "connected-tools.md"
+    if native_docs.is_file():
+        shutil.copyfile(native_docs, target.parent / native_docs.name)
+    native_protocol = Path(__file__).resolve().parents[1] / "native-protocol.md"
+    if native_protocol.is_file():
+        shutil.copyfile(native_protocol, target.parent / native_protocol.name)
     return target

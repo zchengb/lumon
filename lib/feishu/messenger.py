@@ -754,6 +754,20 @@ class FeishuMessenger:
             },
         )
 
+    def send_file(self, chat_id: str, file_key: str) -> dict[str, Any]:
+        """Send an already-uploaded file as a new chat message."""
+
+        token = self.tenant_token()
+        return self._post(
+            CREATE_URL,
+            token,
+            {
+                "receive_id": chat_id,
+                "msg_type": "file",
+                "content": json.dumps({"file_key": str(file_key or "").strip()}, ensure_ascii=False),
+            },
+        )
+
     def send_card(self, chat_id: str, card: dict[str, Any]) -> dict[str, Any]:
         token = self.tenant_token()
         return self._post(

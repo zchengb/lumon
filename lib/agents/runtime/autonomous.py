@@ -13,10 +13,11 @@ from agents.dylan.schemas import ConversationFlags
 from agents.project_resolver import known_project_slugs, load_chat_project_map, resolve_project
 from agents.runner import default_runner
 from agents.runtime.cursor_runtime import CursorAgentRuntime, canonical_agent_provider, create_agent_runtime
-from agents.runtime.final_response import (
+from agents.compat.legacy_envelopes import (
     extract_final_response,
     has_unbacked_delegation_claim,
     job_create_succeeded,
+    parse_native_response,
     prefer_action_summary,
 )
 from agents.runtime.interaction import (
@@ -36,8 +37,12 @@ from agents.runtime.harness import infer_task_mode
 from agents.runtime.observability import Observability, TraceContext, new_trace_id
 from agents.runtime.reply_anchor import format_anchored_user_message, resolve_reply_anchor
 from agents.runtime.session_store import SessionStore, conversation_scope_id, session_contract_current
-from agents.conversation.config import thread_native_config
+from agents.runtime.session_host import AgentSessionHost
+from agents.conversation.config import native_provider_contract, thread_native_config
+from agents.conversation.event_bus import EventBus
+from agents.conversation.output import ConversationOutput
 from agents.conversation.thread_context import ThreadContextLoader
+from agents.conversation.thread_store import ThreadTranscriptStore
 from feishu.agent_mentions import parse_agent_mentions
 from agents.security.access_policy import authorize_agent_interaction, security_context_prompt
 from agents.security.flags import workspace_isolation_v2_enabled
@@ -152,6 +157,101 @@ def _user_facing_agent_error(error: str, trace_id: str) -> str:
         "I couldn't finish this turn cleanly.\n"
         f"Trace ID: {trace_id}"
     )
+
+
+def _publish_native_workstream_events(
+    *,
+    result: Any,
+    output: ConversationOutput,
+    session_id: str,
+) -> tuple[int, str, dict[str, Any] | None]:
+    """Publish explicit Harness work events without parsing a final envelope.
+
+    Provider adapters may emit multiple assistant messages, progress,
+    questions, handoffs, or artifacts. Completed/tool/error events stay
+    internal; public work events are delivered through ConversationOutput.
+    """
+
+    count = 0
+    last_text = ""
+    question: dict[str, Any] | None = None
+    for event in list(getattr(result, "harness_events", []) or []):
+        event_type = str(getattr(event, "type", "") or "").strip().lower()
+        text = str(getattr(event, "text", "") or "").strip()
+        payload = dict(getattr(event, "payload", {}) or {})
+        if event_type in {"tool_call", "tool_result", "completed", "error"}:
+            if event_type == "tool_call":
+                internal_type = "tool.started"
+            elif event_type == "tool_result":
+                internal_type = (
+                    "tool.failed"
+                    if str(payload.get("status") or "").strip().lower() in {"failed", "error"}
+                    else "tool.completed"
+                )
+            elif event_type == "error":
+                internal_type = "tool.failed"
+            else:
+                internal_type = "agent.completed"
+            telemetry_payload = {
+                "provider": str(getattr(event, "provider", "") or ""),
+                "provider_session_id": str(getattr(event, "provider_session_id", "") or ""),
+                "request_id": str(getattr(event, "request_id", "") or ""),
+                "harness_event_id": str(getattr(event, "event_id", "") or ""),
+                **payload,
+            }
+            output.observe(internal_type, text, **telemetry_payload)
+            continue
+        if event_type not in {"assistant_message", "progress", "question", "artifact"}:
+            continue
+        payload.setdefault("session_id", session_id)
+        if event_type == "artifact":
+            path = str(payload.get("path") or "").strip()
+            if not path:
+                continue
+            receipt = output.artifact(path, text=text, **{key: value for key, value in payload.items() if key != "path"})
+        elif event_type == "question":
+            receipt = output.question(text, **payload)
+            if receipt.status in {"succeeded", "duplicate"}:
+                question = {
+                    "action": "conversation.question",
+                    "question": text,
+                    "choices": payload.get("choices") if isinstance(payload.get("choices"), list) else [],
+                    "missing": [],
+                    "mode": "native",
+                    "session_id": session_id,
+                }
+        elif event_type == "assistant_message":
+            receipt = output.message(text, **payload)
+        else:
+            receipt = output.progress(text, **payload)
+        if receipt.status in {"succeeded", "duplicate"}:
+            count += 1
+            last_text = text or last_text
+    return count, last_text, question
+
+
+def _native_messages_cover_result(result: Any) -> bool:
+    """Return true when provider assistant events already contain the reply."""
+
+    final_text = re.sub(r"\s+", " ", str(getattr(result, "text", "") or "").strip())
+    if not final_text:
+        return bool(
+            any(
+                str(getattr(event, "type", "") or "").strip().lower() == "assistant_message"
+                and str(getattr(event, "text", "") or "").strip()
+                for event in list(getattr(result, "harness_events", []) or [])
+            )
+        )
+    messages = [
+        re.sub(r"\s+", " ", str(getattr(event, "text", "") or "").strip())
+        for event in list(getattr(result, "harness_events", []) or [])
+        if str(getattr(event, "type", "") or "").strip().lower() == "assistant_message"
+    ]
+    messages = [item for item in messages if item]
+    if not messages:
+        return False
+    combined = " ".join(messages)
+    return final_text == combined or final_text in messages or final_text in combined
 
 
 _IMAGE_SUFFIXES = {
@@ -485,6 +585,11 @@ def handle_autonomous_conversation(
     root_id = str(meta.get("root_id") or "").strip()
     anchored_text = text
     messenger = FeishuMessenger(agent_id)
+    native_output: ConversationOutput | None = None
+    session_host: AgentSessionHost | None = None
+    native_event_bus: EventBus | None = None
+    native_thread_store: ThreadTranscriptStore | None = None
+    session_waiting = False
     if parent_id or root_id:
         anchor = resolve_reply_anchor(
             messenger=messenger,
@@ -531,6 +636,7 @@ def handle_autonomous_conversation(
     original_additional_dirs: list[Path] | None = None
     thread_context_block = ""
     thread_context_last_message_id = ""
+    thread_context_last_event_id = ""
     with lock:
         try:
             obs.emit(trace, "agent.message.received")
@@ -652,6 +758,24 @@ def handle_autonomous_conversation(
                     store.save_checkpoint(session["session_id"], checkpoint)
 
             collaboration = thread_native_config(common, meta)
+            native_thread_store = ThreadTranscriptStore()
+            native_event_bus = EventBus(store=native_thread_store)
+            session_host = AgentSessionHost(session_store=store, event_bus=native_event_bus)
+            session_host.register(
+                session,
+                thread_id=thread_id or root_id or scope,
+                chat_id=chat_id,
+                conversation_scope_id=scope,
+            )
+            session_host.start(str(session.get("session_id") or ""))
+            native_output = ConversationOutput(
+                agent_id=agent_id,
+                meta={**meta, "session_id": str(session.get("session_id") or "")},
+                common=common,
+                messenger=messenger,
+                event_bus=native_event_bus,
+                config=collaboration,
+            )
             obs.emit(
                 trace,
                 "agent.thread.session.created" if is_new else "agent.thread.session.resumed",
@@ -673,6 +797,7 @@ def handle_autonomous_conversation(
                     )
                     thread_context_block = context_loader.prompt_block(shared_context)
                     thread_context_last_message_id = shared_context.last_message_id
+                    thread_context_last_event_id = shared_context.last_event_id
                     obs.emit(
                         trace,
                         "thread.context.loaded",
@@ -788,6 +913,9 @@ def handle_autonomous_conversation(
                             pending=current_pending,
                             workspace_path=workspace,
                             task_mode=task_mode,
+                            native_provider=native_provider_contract(
+                                canonical_agent_provider(flags.model.provider), collaboration
+                            ) and collaboration.enabled,
                         ),
                     )
                     if part
@@ -932,7 +1060,14 @@ def handle_autonomous_conversation(
                 is_new = True
                 provider_session_id = None
 
-            if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
+            has_native_work_events = any(
+                str(getattr(item, "type", "") or "").strip().lower()
+                in {"assistant_message", "progress", "question", "artifact"}
+                for item in list(getattr(result, "harness_events", []) or [])
+            )
+            if result.provider_session_id and result.status == "succeeded" and (
+                str(result.text or "").strip() or has_native_work_events
+            ):
                 store.update(
                     session["session_id"],
                     provider_session_id=result.provider_session_id,
@@ -957,7 +1092,7 @@ def handle_autonomous_conversation(
                     failure_count=int(session.get("failure_count") or 0) + 1,
                 )
 
-            if result.status != "succeeded" or not result.text:
+            if result.status != "succeeded" or (not result.text and not has_native_work_events):
                 obs.upsert_trace(trace, state="failed", error_code=result.status or "agent_failed")
                 error_text = _user_facing_agent_error(result.error or result.status, trace.trace_id)
                 if agent_id == "mark" and result.status == "timed_out":
@@ -986,6 +1121,7 @@ def handle_autonomous_conversation(
             conversation_decision = None
             visible_message_count = 0
             last_visible_message = ""
+            native_question: dict[str, Any] | None = None
             suppress_final_reply = False
             next_active_loop = active_loop
             total_latency_ms = 0
@@ -994,6 +1130,19 @@ def handle_autonomous_conversation(
 
             while True:
                 total_latency_ms += int(result.duration_ms or 0)
+                if native_output is not None and collaboration.visible_workstream:
+                    native_count, native_last, native_question = _publish_native_workstream_events(
+                        result=result,
+                        output=native_output,
+                        session_id=str(session.get("session_id") or ""),
+                    )
+                    visible_message_count += native_count
+                    if native_last:
+                        last_visible_message = native_last
+                    if native_count and (not str(result.text or "").strip() or native_question is not None):
+                        suppress_final_reply = True
+                    if native_count and _native_messages_cover_result(result):
+                        suppress_final_reply = True
                 if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
                     store.update(
                         session["session_id"],
@@ -1004,7 +1153,14 @@ def handle_autonomous_conversation(
                         failure_count=0,
                     )
 
-                parsed = extract_final_response(result.text)
+                native_provider = native_provider_contract(
+                    canonical_agent_provider(flags.model.provider), collaboration
+                ) and collaboration.enabled
+                parsed = (
+                    parse_native_response(result.text)
+                    if native_provider and not collaboration.legacy_compatibility
+                    else extract_final_response(result.text)
+                )
                 conversation_decision = normalize_conversation_decision(
                     parsed.conversation_decision,
                     pending=pending,
@@ -1076,6 +1232,7 @@ def handle_autonomous_conversation(
                             "exposure_mode": access.exposure_mode,
                             "policy_version": access.policy_version,
                             "thread_last_seen_message_id": message_id or thread_context_last_message_id,
+                            "thread_last_seen_event_id": thread_context_last_event_id,
                             "thread_last_seen_at": shared_context.last_message_at if collaboration.enabled else "",
                         },
                         ensure_ascii=False,
@@ -1087,6 +1244,12 @@ def handle_autonomous_conversation(
                     agent_id=agent_id,
                     source_message_id=message_id,
                 ) if parsed.clarification_request else None
+                if clarification is None and native_question is not None:
+                    clarification = normalize_clarification(
+                        native_question,
+                        agent_id=agent_id,
+                        source_message_id=message_id,
+                    )
                 raw_action_requests = list(parsed.action_requests)
                 if (
                     inferred_test_case_action
@@ -1145,6 +1308,15 @@ def handle_autonomous_conversation(
                         if str(clarification.get("loop") or "").strip().lower() in {"", "general"}:
                             clarification["loop"] = conversation_decision["active_loop"]
                     store.save_pending(session["session_id"], clarification)
+                    if native_question is not None:
+                        session_waiting = True
+                        if session_host is not None:
+                            session_host.pause(str(session.get("session_id") or ""), waiting_for_human=True)
+                        store.set_runtime_state(
+                            session["session_id"],
+                            "waiting_human",
+                            question=clarification,
+                        )
                 else:
                     store.clear_pending(session["session_id"])
 
@@ -1410,3 +1582,16 @@ def handle_autonomous_conversation(
                     obs.emit(trace, "loop.gateway.permission_restore_failed", error=str(exc)[:300], level="ERROR")
             if owned_obs:
                 obs.close()
+            if native_output is not None:
+                native_output.close()
+            if session_host is not None:
+                if not session_waiting:
+                    try:
+                        session_host.finish(str(session.get("session_id") or ""), keep_session=True)
+                    except Exception:
+                        pass
+                session_host.close()
+            if native_event_bus is not None:
+                native_event_bus.close()
+            if native_thread_store is not None:
+                native_thread_store.close()

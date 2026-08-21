@@ -14,6 +14,16 @@
     "max_relay_hops": 4,
     "context_max_chars": 24000
   },
+  "conversation": {
+    "version": "3.0",
+    "native_first": true,
+    "legacy_compatibility": false,
+    "visible_workstream": true,
+    "native_tools": true,
+    "native_questions": true,
+    "minimum_event_interval_seconds": 3,
+    "dedupe_window_seconds": 10
+  },
   "execution": {
     "mode": "lightweight_review_only",
     "provider": "opencode",

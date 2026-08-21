@@ -4,7 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from agents.conversation.thread_store import ThreadMessage, ThreadTranscriptStore
+from agents.conversation.events import ConversationEvent
+from agents.conversation.thread_store import ThreadMessage, ThreadTranscriptStore, thread_key
 
 
 _INTERNAL_LINE = re.compile(
@@ -31,6 +32,8 @@ class ThreadContext:
     last_message_id: str = ""
     full: bool = True
     last_message_at: str = ""
+    events: tuple[ConversationEvent, ...] = ()
+    last_event_id: str = ""
 
 
 class ThreadContextLoader:
@@ -61,6 +64,60 @@ class ThreadContextLoader:
         if message.attachment_refs:
             lines.append("Attachments: " + ", ".join(message.attachment_refs))
         return "\n".join(lines)
+
+    @staticmethod
+    def _render_event(event: ConversationEvent) -> str:
+        """Render only useful public activity that has no message row.
+
+        Most visible events are intentionally already represented by a
+        ``ThreadMessage`` (the Feishu send path is the delivery source of
+        truth).  Artifact events are different: a file message has no text
+        row, so retaining the activity event here makes the artifact visible
+        to the next Agent without exposing provider internals or absolute
+        host paths.
+        """
+
+        if not event.user_visible or event.type != "agent.artifact":
+            return ""
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        label = str(payload.get("path") or payload.get("name") or "artifact").strip()
+        if not label:
+            label = "artifact"
+        # A provider event is untrusted metadata. Keep prompt context from
+        # becoming an accidental absolute-path disclosure.
+        label = label.replace("\\", "/").rsplit("/", 1)[-1]
+        text = _clean_text(event.text or "")
+        speaker = event.agent_id.title() or "Agent"
+        lines = [f"{speaker} [artifact]: {label}"]
+        if text:
+            lines.append(text)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _event_is_represented(event: ConversationEvent, messages: list[ThreadMessage]) -> bool:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        transport_id = str(payload.get("transport_message_id") or "").strip()
+        if transport_id and any(item.message_id == transport_id for item in messages):
+            return True
+        # A file transport response is not normally represented by a
+        # ThreadMessage row.  Even when the artifact also has a caption (and
+        # that caption is present as a text message), retain the artifact
+        # event so the next Agent knows that a file was actually attached.
+        if event.type == "agent.artifact":
+            return False
+        # Textual finding/decision/question events are delivered through the
+        # normal message path and therefore already exist in the transcript.
+        # Match conservatively by Agent and cleaned text; artifacts without a
+        # text message remain visible through _render_event.
+        event_text = _clean_text(event.text or "")
+        if event_text and any(
+            item.sender_kind == "agent"
+            and item.sender_agent_id == event.agent_id
+            and _clean_text(item.text) == event_text
+            for item in messages
+        ):
+            return True
+        return False
 
     def load(
         self,
@@ -106,6 +163,33 @@ class ThreadContextLoader:
             rendered.pop(0)
             selected.pop(0)
             full = False
+        event_thread_id = thread_key(
+            thread_id=str(data.get("thread_id") or ""),
+            root_id=str(data.get("root_id") or ""),
+            parent_id=str(data.get("parent_id") or ""),
+            message_id=str(data.get("message_id") or ""),
+        )
+        events = self.store.list_events(
+            chat_id=str(data.get("chat_id") or ""),
+            thread_id=event_thread_id,
+            after_event_id=str((checkpoint or {}).get("thread_last_seen_event_id") or "") if marker else "",
+            visibility="public",
+        )
+        context_events: list[ConversationEvent] = []
+        for event in events:
+            if self._event_is_represented(event, all_messages):
+                continue
+            value = self._render_event(event)
+            if value:
+                context_events.append(event)
+                rendered.append(value)
+        while rendered and len("\n\n".join(rendered)) > budget:
+            rendered.pop(0)
+            if selected:
+                selected.pop(0)
+            elif context_events:
+                context_events.pop(0)
+            full = False
         text = "\n\n".join(rendered).strip()
         last_message = all_messages[-1] if all_messages else None
         return ThreadContext(
@@ -114,6 +198,8 @@ class ThreadContextLoader:
             last_message.message_id if last_message else "",
             full,
             last_message.created_at if last_message else "",
+            tuple(context_events),
+            events[-1].event_id if events else "",
         )
 
     @staticmethod

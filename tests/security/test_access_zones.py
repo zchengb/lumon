@@ -155,6 +155,22 @@ class AccessZoneTests(unittest.TestCase):
         self.assertTrue(decision.allowed)
         self.assertEqual(decision.trust_zone, "RESTRICTED")
 
+    def test_global_private_acl_works_without_per_agent_override(self) -> None:
+        config = {"access": {"default_policy": "deny", "allowed_user_ids": [OWNER]}}
+        allowed = authorize_agent_interaction(
+            agent_id="mark",
+            meta={"user_id": OWNER, "chat_id": "oc_mark_dm", "chat_type": "p2p", "message_id": "om1"},
+            config=config,
+        )
+        denied = authorize_agent_interaction(
+            agent_id="mark",
+            meta={"user_id": STRANGER, "chat_id": "oc_mark_dm", "chat_type": "p2p", "message_id": "om2"},
+            config=config,
+        )
+        self.assertTrue(allowed.allowed)
+        self.assertEqual(allowed.trust_zone, "RESTRICTED")
+        self.assertFalse(denied.allowed)
+
     def test_mark_other_chat_denied(self) -> None:
         decision = authorize_agent_interaction(
             agent_id="mark",

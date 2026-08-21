@@ -510,6 +510,7 @@ def interaction_contract_prompt(
     pending: dict[str, Any] | None = None,
     workspace_path: Path | None = None,
     task_mode: str = "",
+    native_provider: bool = False,
 ) -> str:
     protocol_path = Path(__file__).resolve().parents[1] / "protocol.md"
     action_catalog_path = Path(__file__).resolve().parents[1] / "action-catalog.md"
@@ -520,33 +521,47 @@ def interaction_contract_prompt(
         action_catalog_path = workspace / ".lumon" / "action-catalog.md"
         blacklist_path = workspace / ".lumon" / "blacklist.md"
     host_tools_path = protocol_path.parent / "host-tools.json"
-    lines = [
+    native_protocol_path = protocol_path.parent / "native-protocol.md"
+    common_lines = [
         "[LUMON INTERACTION CONTRACT]",
         f"You are {str(agent_id or 'the current Agent').strip().title()} inside a persistent Lumon conversation.",
-        f"READ the interaction protocol before responding: {protocol_path}",
-        "It defines the compatibility envelope schemas (CONVERSATION_DECISION / ACTION_REQUEST / CLARIFICATION_REQUEST / FINAL_RESPONSE) and the Grill protocol.",
-        "Non-negotiable:",
-        "- CONVERSATION_DECISION is optional telemetry when the Harness exposes native events; do not block a normal turn just to classify it.",
+        f"READ the {'native ' if native_provider else ''}interaction protocol before responding: {native_protocol_path if native_provider else protocol_path}",
         "- Before using tools, READ the common blacklist at " + str(blacklist_path) + ".",
-        "- Prefer native connected tools and native Question events when the Harness exposes them. The compatibility envelopes remain valid fallback syntax.",
-        "- For read-only Jira evidence, prefer the authorized `twg jira workitem get/query` commands described in the action catalog; do not emit ACTION_REQUEST for that read when the command succeeds.",
-        "- Jira create/update and other external mutations still require exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without its action result.",
-        "- A turn may contain multiple ACTION_REQUEST envelopes for distinct catalog capabilities, such as a progress update followed by a file attachment; use one valid envelope per action.",
-        "- Put the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.",
         f"Current task mode: {task_mode or 'explore'}. Explore is read/search/question; Build adds edit/build/test/local Git; External adds connected actions. Move modes when user intent becomes explicit.",
         f"The live connected-tool registry is available at {host_tools_path}; inspect it when native tools are not listed directly by the Harness.",
-        "Envelope schemas:",
-        '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":"", "suppress_final_reply":false}</CONVERSATION_DECISION>',
-        '<ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>',
-        '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
-        f"If native connected tools are unavailable and this turn needs an external action, use the compatibility catalog as a fallback: {action_catalog_path}",
-        "Connected tools are dynamically registered with a name, description, JSON schema, risk level, default owner, and authorization class. Put model-selected fields in the tool arguments; the connection injects identity.",
-        "Use only registered canonical action names and field names; never invent, translate, or alias action names.",
-        "Use exact canonical action names and the exact arguments shape from the live registry or compatibility catalog.",
-        "For ordinary bounded code changes in the resolved isolated workspace, use native Read/Edit/Shell/Build/Test tools directly; do not use delivery.quick_change or hidden delegation unless native editing is unavailable.",
-        "Use feishu.say for useful visible findings, decisions, blockers, or progress when a multi-message update helps. There is no fixed message count. Working aloud must not expose private chain-of-thought, raw tool traces, or secrets. If the latest visible action already completes the request, set suppress_final_reply=true.",
-        "A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true.",
+        "For ordinary bounded code changes in the resolved isolated workspace, use native Read/Edit/Shell/Build/Test tools directly.",
+        "Use visible messages for useful findings, decisions, blockers, progress, questions, and handoffs. Never expose private chain-of-thought, raw tool traces, or secrets.",
     ]
+    if native_provider:
+        lines = common_lines + [
+            "This provider uses the Thread-native contract:",
+            "- Use connected tools directly by their registered name and JSON schema; do not emit compatibility XML envelopes or protocol markers.",
+            "- Use the Harness assistant message stream for ordinary conversation. You may send several useful messages; no final-message marker is required.",
+            "- Ask a human with the native Question capability. A question pauses only this Agent session; it never locks the Thread or other Agents.",
+            "- Mention another Agent for normal collaboration and handoff. Do not create an AgentJob for ordinary Thread collaboration.",
+            "- Use native file/artifact output when the user asks for a file, and wait for the tool result before claiming it was uploaded.",
+            "- Human messages carry authority. Do not claim an external effect unless the connected-tool result confirms it.",
+            "Legacy envelope parsing is isolated to the compatibility fallback and is not part of this provider's normal output contract.",
+        ]
+    else:
+        lines = common_lines + [
+            "It defines the compatibility envelope schemas (CONVERSATION_DECISION / ACTION_REQUEST / CLARIFICATION_REQUEST / FINAL_RESPONSE) and the Grill protocol.",
+            "- CONVERSATION_DECISION is optional telemetry when the Harness exposes native events; do not block a normal turn just to classify it.",
+            "- Prefer native connected tools and native Question events when the Harness exposes them. The compatibility envelopes remain valid fallback syntax.",
+            "- For read-only Jira evidence, prefer the authorized `twg jira workitem get/query` commands described in the action catalog; do not emit ACTION_REQUEST for that read when the command succeeds.",
+            "- Jira create/update and other external mutations still require exactly one ACTION_REQUEST envelope. Never claim work was delegated, created, or executed without its action result.",
+            "- A turn may contain multiple ACTION_REQUEST envelopes for distinct catalog capabilities, such as a progress update followed by a file attachment; use one valid envelope per action.",
+            "- Put the Feishu-facing answer inside <FINAL_RESPONSE>...</FINAL_RESPONSE>.",
+            "Envelope schemas:",
+            '<CONVERSATION_DECISION>{"mode":"normal|continue_pending|new_request|clarify","route":"your best route", "confidence":0.0, "reason":"...", "supersede_pending":false, "active_loop":"", "target_agent":"", "assumptions":[], "required_actions":[], "completion_criteria":"", "suppress_final_reply":false}</CONVERSATION_DECISION>',
+            '<ACTION_REQUEST>{"action":"...","arguments":{...},"resource":{}}</ACTION_REQUEST>',
+            '<CLARIFICATION_REQUEST>{"action":"...","question":"...","missing":["..."],"choices":[],"resource":{},"arguments":{}}</CLARIFICATION_REQUEST>',
+            f"If native connected tools are unavailable and this turn needs an external action, use the compatibility catalog as a fallback: {action_catalog_path}",
+            "Connected tools are dynamically registered with a name, description, JSON schema, risk level, default owner, and authorization class. Put model-selected fields in the tool arguments; the connection injects identity.",
+            "Use only registered canonical action names and field names; never invent, translate, or alias action names.",
+            "Use exact canonical action names and the exact arguments shape from the live registry or compatibility catalog.",
+            "A pending clarification is context, not a lock. If the latest message answers it, use continue_pending; if it clearly starts a different request, use new_request and supersede_pending=true.",
+        ]
     if pending:
         safe = json.dumps(_json_safe(pending), ensure_ascii=False, separators=(",", ":"))
         lines.extend(

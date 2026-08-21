@@ -1,11 +1,29 @@
 # Lumon Interaction Protocol
 
-This file defines the compatibility envelopes Lumon can accept inside a
-persistent conversation. Native Harness tools and native Question events are
-preferred when the provider exposes them; the host executes external side
-effects only from a trusted tool call or compatibility envelope, never from a
-natural-language claim. Approved read-only workspace commands remain Harness
-tools.
+This file defines the migration contract for a persistent conversation.
+Cursor, OpenCode, and Codex use native Harness messages, Questions, and
+connected tools first.  They do not need XML markers.  The envelope sections
+below are isolated compatibility behavior for older providers/workspaces; the
+host executes external side effects only from a trusted native tool call or a
+compatibility envelope, never from a natural-language claim. Approved
+read-only workspace commands remain Harness tools.
+
+## Native provider contract
+
+- Send ordinary assistant messages whenever useful; multiple messages and no
+  mechanical final message are valid.
+- Use the native Question capability for human input. Waiting belongs to this
+  Agent session and never locks the Thread or another Agent.
+- Use the connected-tool registry by name and schema. Do not print
+  `ACTION_REQUEST`, `CLARIFICATION_REQUEST`, `CONVERSATION_DECISION`, or
+  `FINAL_RESPONSE` as part of the normal native flow.
+- Use visible `@Agent` mentions for ordinary collaboration. Reserve durable
+  background jobs for work that must survive independently of the Thread.
+- Publish useful findings, decisions, progress, blockers, handoffs, and
+  artifacts, but never raw chain-of-thought, credentials, private prompts, or
+  raw tool arguments.
+- The native tool/output details are documented in `connected-tools.md`; the
+  live schemas are in `.lumon/host-tools.json`.
 
 ## Turn envelope
 

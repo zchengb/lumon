@@ -15,6 +15,7 @@ from agents.dylan.model_client import _load_lumen_dotenv
 from agents.runtime.cursor_runtime import AgentRunResult
 from agents.runtime.cursor_stream import AgentToolEvent
 from agents.runtime.harness import HarnessCapabilities, capabilities_for_provider, canonical_task_mode, harness_mode as configured_harness_mode
+from agents.runtime.harness_events import normalize_provider_events
 
 
 DEFAULT_MODEL = "gpt-5.6-luna"
@@ -322,6 +323,8 @@ class CodexAgentRuntime:
         entries = [
             ("action-catalog.md", "action-catalog.md"),
             ("protocol.md", "protocol.md"),
+            ("native-protocol.md", "native-protocol.md"),
+            ("connected-tools.md", "connected-tools.md"),
             ("responsibilities/blacklist.md", "blacklist.md"),
         ]
         if self.agent_id:
@@ -508,6 +511,7 @@ class CodexAgentRuntime:
             status=parsed.status,
             error=parsed.error,
             raw_event_count=len(parsed.events),
+            harness_events=normalize_provider_events(parsed.events, provider="codex"),
         )
 
     def _emit_line_events(self, line: str, *, obs: Any, trace: Any) -> None:
