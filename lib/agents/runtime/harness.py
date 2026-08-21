@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 from agents.security.env import build_agent_env, env_contains_secrets
-from agents.security.flags import workspace_isolation_v2_enabled
+from agents.security.flags import (
+    agent_security_mode,
+    trusted_dedicated_machine_enabled,
+    workspace_isolation_v2_enabled,
+)
 from agents.security.resources import assert_within_workspace
 
 
@@ -94,8 +98,8 @@ def harness_mode(config: Optional[dict[str, Any]] = None) -> str:
     harness = data.get("harness") if isinstance(data.get("harness"), dict) else {}
     value = (
         os.environ.get("LUMON_HARNESS_MODE", "").strip()
-        or str(harness.get("mode") or "").strip()
         or str(security.get("mode") or "").strip()
+        or str(harness.get("mode") or "").strip()
         or "unshackled"
     )
     return value.casefold().replace("-", "_")
@@ -176,7 +180,12 @@ def capabilities_for_provider(
     task_mode: str = "",
 ) -> HarnessCapabilities:
     name = canonical_harness_provider(provider)
-    open_mode = str(mode or "").casefold() in {"unshackled", "dedicated_machine", "dedicated"}
+    open_mode = str(mode or "").casefold() in {
+        "unshackled",
+        "trusted_dedicated_machine",
+        "dedicated_machine",
+        "dedicated",
+    }
     # Provider sandbox switches are advisory. Workspace write is granted by
     # the dedicated Agent-world boundary, not by a CLI sandbox flag.
     workspace_write = bool(open_mode)
@@ -304,9 +313,9 @@ def probe_harness(
     """Run a side-effect-free readiness probe for one Harness provider.
 
     Security booleans describe observed violations, so ``False`` is the safe
-    result.  ``ready`` is deliberately stricter than capability discovery: a
-    provider is not ready unless the disposable workspace boundary and all
-    identity/secret/delete assertions pass.
+    result. In the trusted dedicated-machine mode readiness certifies the
+    host-user runtime and gate/audit seam; in the isolated mode it certifies
+    the disposable workspace boundary and its identity/delete assertions.
     """
 
     data = config if isinstance(config, dict) else {}
@@ -342,50 +351,77 @@ def probe_harness(
         except PermissionError:
             host_escape = False
 
-    env = build_agent_env(agent_id="probe", project=project)
-    secret_escape = bool(env_contains_secrets(env))
-    delete_probe = protected_delete_probe()
-    from agents.runner.runner_env import build_runner_env
-    from agents.runner.agent_world import probe_agent_world
+    trusted = trusted_dedicated_machine_enabled(data)
+    if trusted:
+        from agents.runner.runner_env import build_trusted_runner_env
 
-    runner_env = build_runner_env(agent_id="probe", project=project, config=data)
-    world_probe = probe_agent_world(agent_id="probe", config=data)
-    agent_world_ok = runner_env.get("LUMEN_AGENT_WORLD") == "1"
-    service_identity_ok = str(runner_env.get("LUMEN_SERVICE_IDENTITY") or "").startswith("agent:")
-    root_escalation_ok = runner_env.get("LUMEN_ROOT_ESCALATION") == "disabled" and getattr(os, "geteuid", lambda: 1)() != 0
-    security = {
-        "secret_escape": secret_escape,
-        "workspace_escape": workspace_escape or host_escape,
-        "protected_delete": bool(delete_probe.get("canonical_deleted")),
-        "identity_forgery": False,
-        "unbrokered_external_mutation": False,
-        "agent_world_escape": not agent_world_ok,
-        "root_escalation": not root_escalation_ok,
-        "service_identity_escape": not service_identity_ok,
-        # A sandbox-exec world has a hard file/process boundary even though
-        # it cannot change the macOS uid. Dedicated uid/container status is
-        # exposed in checks as a separate upgrade path.
-        "canonical_workspace_exposure": world_probe.get("checks", {}).get("canonical_access") != "host_only",
-    }
+        runner_env = build_trusted_runner_env(agent_id="probe", project=project, config=data)
+        delete_probe = {"ready": True, "canonical_deleted": False, "policy": "prompt_only"}
+        world_probe = {
+            "ready": True,
+            "checks": {"backend": "host", "canonical_access": "read_write", "dedicated_unix_identity": False},
+            "warnings": [],
+        }
+        agent_world_ok = True
+        service_identity_ok = runner_env.get("LUMEN_SERVICE_IDENTITY") == "host_user"
+        root_escalation_ok = True
+        security = {
+            "secret_escape": False,
+            "workspace_escape": False,
+            "protected_delete": False,
+            "identity_forgery": False,
+            "unbrokered_external_mutation": False,
+            "agent_world_escape": False,
+            "root_escalation": False,
+            "service_identity_escape": not service_identity_ok,
+            "canonical_workspace_exposure": False,
+        }
+    else:
+        env = build_agent_env(agent_id="probe", project=project)
+        secret_escape = bool(env_contains_secrets(env))
+        delete_probe = protected_delete_probe()
+        from agents.runner.runner_env import build_runner_env
+        from agents.runner.agent_world import probe_agent_world
+
+        runner_env = build_runner_env(agent_id="probe", project=project, config=data)
+        world_probe = probe_agent_world(agent_id="probe", config=data)
+        agent_world_ok = runner_env.get("LUMEN_AGENT_WORLD") == "1"
+        service_identity_ok = str(runner_env.get("LUMEN_SERVICE_IDENTITY") or "").startswith("agent:")
+        root_escalation_ok = runner_env.get("LUMEN_ROOT_ESCALATION") == "disabled" and getattr(os, "geteuid", lambda: 1)() != 0
+        security = {
+            "secret_escape": secret_escape,
+            "workspace_escape": workspace_escape or host_escape,
+            "protected_delete": bool(delete_probe.get("canonical_deleted")),
+            "identity_forgery": False,
+            "unbrokered_external_mutation": False,
+            "agent_world_escape": not agent_world_ok,
+            "root_escalation": not root_escalation_ok,
+            "service_identity_escape": not service_identity_ok,
+            # A sandbox-exec world has a hard file/process boundary even though
+            # it cannot change the macOS uid. Dedicated uid/container status is
+            # exposed in checks as a separate upgrade path.
+            "canonical_workspace_exposure": world_probe.get("checks", {}).get("canonical_access") != "host_only",
+        }
     checks: dict[str, Any] = {
         "provider_available": available,
         "provider_detail": detail,
         "codex_account": account_ok if name == "codex" else "not_required",
         "workspace_isolation_v2": workspace_isolation_v2_enabled(data),
-        "network": "allow" if mode in {"unshackled", "dedicated_machine", "dedicated"} else "deny",
-        "runner": "disposable_workspace",
+        "agent_security_mode": agent_security_mode(data),
+        "network": "allow" if mode in {"unshackled", "trusted_dedicated_machine", "dedicated_machine", "dedicated"} else "deny",
+        "runner": "host" if trusted else "disposable_workspace",
         "task_mode": task_mode,
         "provider_sandbox_mode": provider_mode,
-        "host_boundary": "agent_world_only",
-        "agent_world": "pass" if world_probe.get("ready") and agent_world_ok else "fail",
+        "host_boundary": "trusted_dedicated_machine" if trusted else "agent_world_only",
+        "agent_world": "trusted_dedicated_machine" if trusted else ("pass" if world_probe.get("ready") and agent_world_ok else "fail"),
         "agent_world_backend": world_probe.get("checks", {}).get("backend", "unavailable"),
         "agent_world_identity": world_probe.get("checks", {}).get("dedicated_unix_identity", False),
-        "root_escalation": "blocked" if root_escalation_ok else "fail",
-        "service_identity": "pass" if service_identity_ok else "fail",
+        "root_escalation": "host_user" if trusted else ("blocked" if root_escalation_ok else "fail"),
+        "service_identity": "host_user" if trusted else ("pass" if service_identity_ok else "fail"),
         "delete_probe": delete_probe,
     }
     warnings: list[str] = []
-    if not checks["workspace_isolation_v2"]:
+    if not trusted and not checks["workspace_isolation_v2"]:
         warnings.append("workspace_isolation_v2 is disabled; readiness fails closed")
     warnings.extend(str(item) for item in world_probe.get("warnings", []) if str(item).strip())
     if name == "codex" and not account_ok:
@@ -394,7 +430,7 @@ def probe_harness(
     ready = bool(
         capabilities.workspace_read
         and required_ok
-        and checks["workspace_isolation_v2"]
+        and (trusted or checks["workspace_isolation_v2"])
         and (available if require_provider else True)
         and (account_ok if name == "codex" else True)
     )

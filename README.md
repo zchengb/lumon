@@ -1,6 +1,8 @@
 # Lumon
 
-Lumon is a local, AI-assisted engineering control plane. It provides two connected workflows:
+Lumon is a multi-agent engineering runtime for a dedicated Agent machine. It
+connects Feishu conversations, persistent provider sessions, native tools, and
+auditable engineering workflows:
 
 1. **Scan**: examine recent repository change, maintain a durable issue registry, publish reports, and optionally prepare scoped pull requests.
 2. **Delivery**: turn an approved Story and technical plan into isolated worktrees, verified changes, pull requests, and an auditable delivery record.
@@ -14,8 +16,8 @@ The system is intentionally local-first. Source repositories, configuration, cre
 - **Evidence**: scan findings, verification results, pull requests, and status transitions are materialized as local records.
 - **Minimal intervention**: Lumon changes only the configured workspace and never writes directly to a default branch.
 - **Human control**: scheduling and automation are configurable; pull request review and merge remain outside the default automation boundary.
-- **Agent World**: provider CLIs run in an OS-enforced disposable world with a service identity and a Host-only canonical checkout.
-- **Native autonomy**: connected tools, live workstream events, and SessionHost lifecycle are provider-native seams; prompt text is not an action protocol.
+- **Agent World**: a dedicated Mac is the Agent's real working world by default. Providers use the canonical workspace and host-user CLI identity directly; an explicit isolated Agent World remains available for higher-isolation deployments.
+- **Native autonomy**: connected tools, live workstream events, and SessionHost lifecycle are provider-native seams. Feishu trust gating and audit remain Host infrastructure, while the Agent chooses when to talk, inspect, edit, call a tool, ask, hand off, or finish.
 
 ## Installation
 
@@ -38,8 +40,10 @@ cd lumon
 Run `lumon doctor` after installation to inspect required and optional local dependencies.
 
 Inspect or certify the runtime boundary with `lumon agent-world status` and
-`lumon agent-world certify --provider codex --live`. Provisioning creates empty
-service directories and never copies personal provider credentials.
+`lumon agent-world certify --provider codex --live`. The default
+`trusted_dedicated_machine` mode intentionally uses the logged-in host user's
+provider credentials and normal CLI configuration; use
+`isolated_agent_world` when a disposable service boundary is required.
 
 ## Workspace Model
 

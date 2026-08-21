@@ -1,15 +1,15 @@
 {
   "enabled": false,
   "agent_security": {
-    "workspace_isolation_v2": true,
-    "mode": "dedicated_agent_machine",
+    "workspace_isolation_v2": false,
+    "mode": "trusted_dedicated_machine",
     "provider_sandbox": "unrestricted",
-    "canonical_workspace_access": "read_only",
-    "identity_mode": "service_account",
-    "host_visibility": "agent_world_only",
-    "delete_policy": "no_irreversible_delete",
+    "canonical_workspace_access": "read_write",
+    "identity_mode": "host_user",
+    "host_visibility": "full",
+    "delete_policy": "prompt_only",
     "network": "allow",
-    "secret_isolation": true
+    "secret_isolation": false
   },
   "harness": {
     "mode": "unshackled",

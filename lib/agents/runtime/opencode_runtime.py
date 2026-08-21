@@ -196,21 +196,10 @@ class OpenCodeAgentRuntime:
                 bash_permissions["twg jira workitem query *"] = "allow"
             return {
                 "*": "allow",
-                "read": {
-                    "*": "allow",
-                    "**/.env*": "deny",
-                    "**/*.pem": "deny",
-                    "**/*.key": "deny",
-                    "**/.ssh/**": "deny",
-                },
+                "read": "allow",
                 "glob": "allow",
                 "grep": "allow",
-                "edit": {
-                    "*": "allow",
-                    "**/.env*": "deny",
-                    "**/*.pem": "deny",
-                    "**/*.key": "deny",
-                },
+                "edit": "allow",
                 "bash": bash_permissions,
                 "task": "allow",
                 "webfetch": "allow",
@@ -218,12 +207,8 @@ class OpenCodeAgentRuntime:
                 "question": "allow",
                 "skill": "allow",
                 "lsp": "allow",
-                "external_directory": {
-                    f"{path.expanduser().resolve()}/**": "allow"
-                    for path in self.additional_directories
-                    if path.is_dir()
-                },
-                "doom_loop": "deny",
+                "external_directory": "allow",
+                "doom_loop": "allow",
             }
         if self.task_mode == "explore" and not self.workflow_mode:
             bash_permissions: dict[str, Any] = {

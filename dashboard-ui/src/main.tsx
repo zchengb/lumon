@@ -309,7 +309,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.sessionMode": "Session",
     "settings.permissionProfile": "Permissions",
     "settings.harnessStatus": "Harness readiness",
-    "settings.harnessStatusDescription": "The provider can use native tools while Lumon keeps workspace writes disposable and external mutations brokered.",
+    "settings.harnessStatusDescription": "The provider can use native tools and the canonical workspace; Feishu trust gating and audit remain the Host infrastructure seam.",
     "settings.harnessMode": "Mode",
     "settings.harnessCapabilities": "Capabilities",
     "settings.harnessSecurity": "Security boundary",
@@ -891,7 +891,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.sessionMode": "会话",
     "settings.permissionProfile": "权限",
     "settings.harnessStatus": "Harness 就绪状态",
-    "settings.harnessStatusDescription": "Provider 可以使用原生工具，同时 Lumon 保持工作区可丢弃，并通过 Broker 处理外部变更。",
+    "settings.harnessStatusDescription": "Provider 可以使用原生工具和规范工作区；飞书信任门与审计仍由 Host 基础设施负责。",
     "settings.harnessMode": "模式",
     "settings.harnessCapabilities": "能力",
     "settings.harnessSecurity": "安全边界",
@@ -1473,7 +1473,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.sessionMode": "會話",
     "settings.permissionProfile": "權限",
     "settings.harnessStatus": "Harness 就緒狀態",
-    "settings.harnessStatusDescription": "Provider 可以使用原生工具，同時 Lumon 保持工作區可丟棄，並透過 Broker 處理外部變更。",
+    "settings.harnessStatusDescription": "Provider 可以使用原生工具與規範工作區；飛書信任門與審計仍由 Host 基礎設施負責。",
     "settings.harnessMode": "模式",
     "settings.harnessCapabilities": "能力",
     "settings.harnessSecurity": "安全邊界",
@@ -1859,6 +1859,7 @@ interface AgentSettings {
     runner?: string;
     host_visibility?: string;
     workspace_isolation_v2?: boolean;
+    agent_security_mode?: string;
     exposure_mode?: string;
     dm_only?: boolean;
     host_read?: string;
@@ -4363,8 +4364,9 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
           </div>
           <div className="settings-control wide">
             <div className="runtime-status-grid">
-              <div><span>{t("settings.harnessMode")}</span><strong>{text(harnessProbe.mode, "unshackled")}</strong></div>
+              <div><span>{t("settings.harnessMode")}</span><strong>{text(harnessProbe.mode, "trusted_dedicated_machine")}</strong></div>
               <div><span>{t("settings.harness")}</span><strong>{text(harnessProbe.provider, runtimeStatus.harness || "unknown")}</strong></div>
+              <div><span>{t("settings.harnessSecurity")}</span><strong>{text(harnessProbe.checks?.agent_security_mode, "trusted_dedicated_machine")}</strong></div>
               <div className="runtime-status-wide"><span>{t("settings.harnessCapabilities")}</span><code>{enabledHarnessCapabilities || "—"}</code></div>
               <div className="runtime-status-wide"><span>{t("settings.harnessSecurity")}</span><code className={Object.values(harnessSecurity).some(Boolean) ? "runtime-warning" : "runtime-ok"}>{harnessSecuritySummary || "—"}</code></div>
               {Array.isArray(harnessProbe.warnings) && harnessProbe.warnings.length > 0 && <div className="runtime-status-wide"><span>{t("settings.harnessWarnings")}</span><strong className="runtime-warning">{harnessProbe.warnings.join(" · ")}</strong></div>}

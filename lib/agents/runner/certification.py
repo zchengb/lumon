@@ -1,4 +1,4 @@
-"""Provider certification for the M0.7 Agent World contract.
+"""Provider certification for the M0.8 Agent World contracts.
 
 Certification is intentionally provider-agnostic at the boundary.  It proves
 the same properties for Cursor, OpenCode, and Codex: the child can write its
@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from agents.runner.agent_world import AGENT_WORLD_CONTRACT, AgentWorld, AgentWorldError, probe_agent_world
+from agents.security.flags import trusted_dedicated_machine_enabled
 
 
 def _run(world: AgentWorld, workspace: Path, env: Mapping[str, str], command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -54,6 +55,35 @@ def certify_provider(
     """
 
     provider_name = str(provider or "").strip().casefold()
+    config_data = dict(config) if isinstance(config, Mapping) else {}
+    trusted_machine = trusted_dedicated_machine_enabled(config_data) and isinstance(
+        config_data.get("agent_security"), Mapping
+    )
+    if trusted_machine:
+        available = bool(_provider_binary(provider_name))
+        report = {
+            "contract": "agent-world/1-trusted",
+            "provider": provider_name,
+            "agent_id": str(agent_id or "certification").strip().lower(),
+            "live": bool(live),
+            "backend": "host",
+            "provider_binary": available,
+            "workspace_write": True,
+            "twg": bool(shutil.which("twg")),
+            "canonical_write": True,
+            "canonical_delete": True,
+            "host_escape": True,
+            "sudo": bool(shutil.which("sudo")),
+            "secret_read": True,
+            "identity": True,
+            "details": {"boundary": "trusted_dedicated_machine", "identity": "host_user"},
+            "warnings": [
+                "Trusted dedicated-machine mode audits destructive capability instead of blocking the host workspace.",
+            ],
+            "ready": bool(available or not live),
+        }
+        report["status"] = "ready" if report["ready"] else "not_ready"
+        return report
     world_probe = probe_agent_world(agent_id=agent_id, config=config)
     report: dict[str, Any] = {
         "contract": AGENT_WORLD_CONTRACT,

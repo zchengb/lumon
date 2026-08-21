@@ -304,9 +304,9 @@ class CodexAgentRuntime:
     def _env(self) -> dict[str, str]:
         if self.isolated_env is not None:
             env = dict(self.isolated_env)
-            # An Agent World must not resolve the operator's personal
-            # ~/.codex directory. Explicit provisioning writes the service
-            # identity's home instead.
+            # TrustedAgentRunner supplies the normal host HOME; the isolated
+            # runner supplies its service HOME. Keep both worlds provider-
+            # native by resolving CODEX_HOME relative to the active HOME.
             codex_home = Path(env.get("HOME") or Path.home()).expanduser() / ".codex"
         else:
             from agents.security.env import build_agent_env

@@ -33,14 +33,15 @@ def _soul(definition: Any) -> str:
 def _shared_rules() -> str:
     return (
         "Native operating rules:\n"
-        "- Work inside the resolved Agent workspace. The workspace is disposable and the host supplies a dedicated service identity.\n"
-        "- Use native Read/Edit/Shell/Build/Test/Web/Question/Task tools and the connected tool registry in `.lumon/host-tools.json`.\n"
-        "- Direct CLI use is allowed when it is the right capability: `twg`, `gh`, `git`, project build tools, and Feishu-connected tools may be used in the Agent world.\n"
-        "- The host fills identity and authorization. Never invent actor, chat, thread, secret, or approval values.\n"
-        "- External effects, publication, irreversible deletion, and credentials remain subject to host authorization and receipts.\n"
+        "- This is a trusted dedicated-machine Agent World: work directly in the resolved canonical workspace with the normal host-user HOME, PATH, credentials, SSH/Keychain, and provider configuration. An explicitly isolated workspace may override this only when configured.\n"
+        "- Use native Read/Edit/Shell/Build/Test/Web/Question/Task tools, the connected tool registry in `.lumon/host-tools.json`, or the host's normal CLI capabilities.\n"
+        "- Direct CLI use is allowed when it is the right capability: `twg`, `gh`, `git`, project build tools, Feishu CLI, and other installed tools may be used directly.\n"
+        "- Feishu user/chat/thread trust is the business authorization boundary. The Host fills identity and gate context; never invent actor, chat, thread, secret, or approval values.\n"
+        "- Lumon records audit evidence and receipts. It does not silently replay native MCP calls, impose a role/action ACL, or block ordinary filesystem commands in the trusted machine. Ask for confirmation before a consequential destructive action when appropriate.\n"
+        "- Before destructive or difficult-to-reverse actions, inspect the target, understand impact, prefer a reversible approach when practical, avoid unrelated user data, and ask when intent is ambiguous.\n"
         "- Send useful visible Feishu updates when a discovery, blocker, decision, question, handoff, or artifact is ready. Multiple updates are allowed; do not narrate private chain-of-thought or raw tool traces.\n"
         "- Ask a concrete human question when a decision is needed. If another Agent is the owner, make the handoff visible and preserve the original request.\n"
-        "- Reply in ordinary Feishu text. Attach a file through the native connected file capability or Feishu CLI when requested; do not print a private transport instruction for the host to parse.\n"
+        "- Reply in ordinary Feishu text. Attach a file through the native connected file capability or Feishu CLI when requested; the Host should not parse a private transport envelope.\n"
         "- Plan work in the required business order: Story/Business first, then Technical only after the Story is ready. Approval questions are conversation text and do not belong in plan artifacts.\n"
         "- Report what was actually observed, changed, verified, sent, or blocked.\n"
     )
@@ -97,4 +98,3 @@ def build_native_resume_prompt(
         f"{user_message}\n\n"
         "Continue from the latest evidence. Do not repeat completed work; send a useful update, ask the next concrete question, use the next native capability, or answer when the request is complete."
     )
-

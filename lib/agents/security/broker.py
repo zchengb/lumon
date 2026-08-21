@@ -14,6 +14,7 @@ from agents.security.actions import (
 from agents.security.audit import emit_security_event, write_receipt
 from agents.security.errors import AuthorizationDenied, CapabilityDenied, SecurityError
 from agents.security.policy import is_action_allowed_for_agent, is_action_known
+from agents.security.flags import trusted_dedicated_machine_enabled
 from feishu.config import load_agents_config
 
 Executor = Callable[[ActionRequest], dict[str, Any]]
@@ -46,6 +47,7 @@ class CapabilityBroker:
         receipt_id = new_receipt_id()
         action = str(request.action or "").strip()
         agent_id = str(request.agent_id or "").strip().lower()
+        trusted_machine = trusted_dedicated_machine_enabled(self.config)
         try:
             if not action:
                 raise CapabilityDenied("action is required")
@@ -59,7 +61,7 @@ class CapabilityBroker:
                     trace_id=request.trace_id,
                 )
                 raise CapabilityDenied(f"unknown action {action}")
-            if not is_action_allowed_for_agent(agent_id, action):
+            if not trusted_machine and not is_action_allowed_for_agent(agent_id, action):
                 self._emit_security_event(
                     "security.responsibility.denied",
                     agent_id=agent_id,
@@ -108,7 +110,7 @@ class CapabilityBroker:
                     trace_id=request.trace_id,
                 )
                 raise AuthorizationDenied(decision.reason_code or "access denied")
-            if action.startswith("host.") or action.startswith("lumen."):
+            if not trusted_machine and (action.startswith("host.") or action.startswith("lumen.")):
                 if action not in decision.effective_capabilities:
                     self._emit_security_event(
                         "agent.access.host_read_denied",
@@ -119,7 +121,7 @@ class CapabilityBroker:
                         chat_id=request.chat_id,
                     )
                     raise AuthorizationDenied(f"host capability denied in zone {decision.trust_zone}")
-            if action in MUTATION_ACTIONS and not gate_only:
+            if action in MUTATION_ACTIONS and not gate_only and not trusted_machine:
                 if not mutation_allowed_for_decision(decision, action=action):
                     self._emit_security_event(
                         "agent.access.mutation_denied",

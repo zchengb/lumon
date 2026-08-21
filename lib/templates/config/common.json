@@ -10,17 +10,17 @@
     "workspace_root": ""
   },
   "agent_security": {
-    "mode": "dedicated_agent_machine",
-    "workspace_isolation_v2": true,
+    "mode": "trusted_dedicated_machine",
+    "workspace_isolation_v2": false,
     "provider_sandbox": "unrestricted",
-    "canonical_workspace_access": "host_only",
-    "agent_world_backend": "auto",
-    "boundary_backend": "sandbox_exec",
-    "world_contract": "agent-world/1",
-    "delete_policy": "no_irreversible_delete",
-    "secret_isolation": true,
-    "identity_mode": "service_account",
-    "host_visibility": "agent_world_only",
+    "canonical_workspace_access": "read_write",
+    "agent_world_backend": "host",
+    "boundary_backend": "host_user",
+    "world_contract": "agent-world/1-trusted",
+    "delete_policy": "prompt_only",
+    "secret_isolation": false,
+    "identity_mode": "host_user",
+    "host_visibility": "full",
     "network": "allow"
   },
   "access": {
@@ -51,7 +51,7 @@
     "context_max_chars": 24000
   },
   "conversation": {
-    "version": "3.1",
+    "version": "3.2",
     "native_first": true,
     "legacy_compatibility": false,
     "visible_workstream": true,
@@ -69,7 +69,7 @@
     "scan_window_days": 7,
     "run_project_commands": true,
     "validation_policy": "agent_selected_relevant_validation",
-    "workspace_strategy": "disposable_agent_world",
+    "workspace_strategy": "canonical_workspace",
     "keep_worktrees_after_run": false,
     "max_worktrees_per_repo": 1,
     "create_pr_for_severity": ["High"]

@@ -266,7 +266,13 @@ def _run_autonomous_worker(
             reply_text = str(result.get("text") or "暂无数据。")
             receipts = result.get("action_receipts") if isinstance(result.get("action_receipts"), list) else []
             suppress_result_reply = bool(
-                result.get("suppress_final_reply")
+                (
+                    result.get("suppress_final_reply")
+                    or (
+                        result.get("output_delivered")
+                        and not result.get("needs_transport_reply")
+                    )
+                )
                 and int(result.get("visible_message_count") or 0) > 0
             )
             effective_suppress_reply = suppress_reply or suppress_result_reply

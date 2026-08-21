@@ -128,15 +128,19 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
         if provider_type not in {"codex", "codex_cli", "codex-cli"}:
             model_key_env = str(provider.get("api_key_env") or ("DEEPSEEK_API_KEY" if provider_type in {"opencode", "opencode_deepseek", "deepseek", "deepseek_api"} else default_api_key_env(provider_type))).strip()
             model_configured = is_local_opencode_provider(provider.get("model", ""), provider.get("base_url", "")) or bool(os.environ.get(model_key_env, "").strip() or read_lumen_env_var(model_key_env))
+    from agents.security.flags import agent_security_mode, trusted_dedicated_machine_enabled
+
+    trusted_machine = trusted_dedicated_machine_enabled(data)
     security = {
         "filesystem": "workspace_read",
-        "mutations": "brokered",
+        "mutations": "audited_entry_gate" if trusted_machine else "brokered",
         "network": "allow",
         "sandbox": "unrestricted",
-        "secrets": "isolated",
-        "runner": "local_isolated",
-        "host_visibility": "denied",
-        "workspace_isolation_v2": True,
+        "secrets": "host_user" if trusted_machine else "isolated",
+        "runner": "host" if trusted_machine else "local_isolated",
+        "host_visibility": "full" if trusted_machine else "denied",
+        "workspace_isolation_v2": not trusted_machine,
+        "agent_security_mode": agent_security_mode(data),
         "exposure_mode": "owner_private" if agent == "dylan" else ("admin_private" if agent == "milchick" else "restricted_team"),
         "dm_only": agent in {"dylan", "milchick"},
         "host_read": "selected" if agent == "dylan" else ("system_only" if agent == "milchick" else "deny"),
@@ -160,9 +164,10 @@ def agent_settings_view(agent_id: str, config: dict[str, Any] | None = None) -> 
                 "sandbox": "unrestricted",
                 "secrets": caps.secret_profile,
                 "actions": list(caps.actions),
-                "runner": "local_isolated" if isolation else "host",
-                "host_visibility": "denied" if isolation else "limited",
+                "runner": "local_isolated" if isolation and not trusted_machine else "host",
+                "host_visibility": "denied" if isolation and not trusted_machine else ("full" if trusted_machine else "limited"),
                 "workspace_isolation_v2": isolation,
+                "agent_security_mode": agent_security_mode(data),
                 "exposure_mode": policy.exposure_mode,
                 "dm_only": policy.dm_only,
                 "host_read": policy.host_read_mode,

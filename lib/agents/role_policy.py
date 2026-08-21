@@ -81,9 +81,10 @@ def build_role_guidance(agent_id: str) -> str:
         f"{role_mirror} (source: {policy.path})\n\n"
         "It defines your role, owned work, delegation targets, and forbidden actions. "
         f"Also READ the common blacklist at {blacklist_mirror} before using any tool. "
-        "It is model guidance for avoiding out-of-scope work; the connection still enforces "
-        "identity, access, resource boundaries, and irreversible external mutations; "
-        "never attempt to bypass them or those controls.\n\n"
+        "These documents are scope guidance for the Agent, not a hidden action ACL. "
+        "The Feishu user/chat trust gate, provider credentials, connected-tool identity, "
+        "and audit receipts are the Host-owned infrastructure boundary; never invent or "
+        "bypass that identity, and never attempt to bypass them.\n\n"
         "Never claim a mutation, deployment, Jira write, Sheet write, PR, or verification "
         "succeeded without its action result and evidence.\n"
     )

@@ -13,7 +13,7 @@ from agents.runner.workspace_mounts import ensure_runner_dirs
 from agents.security.actions import ActionRequest
 from agents.security.broker import CapabilityBroker
 from agents.security.env import build_agent_env, env_contains_secrets
-from agents.security.flags import security_flags, workspace_isolation_v2_enabled
+from agents.security.flags import security_flags, trusted_dedicated_machine_enabled, workspace_isolation_v2_enabled
 from agents.security.resources import (
     HOST_INTROSPECTION_COMMANDS,
     assert_within_workspace,
@@ -65,6 +65,9 @@ def run_security_check(
     agent = str(agent_id or "dylan").strip().lower()
     cfg = config if isinstance(config, dict) else load_agents_config()
     flags = security_flags(cfg)
+    # A bare legacy probe config is intentionally kept fail-closed for old
+    # callers. Installed M0.8 configs carry an explicit agent_security mode.
+    trusted_machine = trusted_dedicated_machine_enabled(cfg) and isinstance(cfg.get("agent_security"), dict)
     from agents.dylan.model_client import _load_lumen_dotenv
     from agents.dylan.schemas import ConversationFlags
     from agents.runtime.openai_compatible import default_api_key_env, is_api_provider
@@ -122,15 +125,19 @@ def run_security_check(
     if checks["permission_profile_v2"] == "fail":
         critical_fail = True
 
-    if flags.get("workspace_isolation_v2"):
+    if trusted_machine:
+        from agents.runner.runner_env import build_trusted_runner_env
+
+        env = build_trusted_runner_env(agent_id=agent, project=project, config=cfg)
+    elif flags.get("workspace_isolation_v2"):
         from agents.runner.runner_env import build_runner_env
 
         env = build_runner_env(agent_id=agent, project=project, config=cfg)
     else:
         env = build_agent_env(agent_id=agent, project=project)
     leaked = env_contains_secrets(env)
-    checks["secret_env"] = "isolated" if not leaked else f"leaked:{','.join(leaked)}"
-    if leaked:
+    checks["secret_env"] = "host_user_environment" if trusted_machine else ("isolated" if not leaked else f"leaked:{','.join(leaked)}")
+    if leaked and not trusted_machine:
         critical_fail = True
     if env.get("CURSOR_API_KEY"):
         warnings.append("CURSOR_API_KEY is explicitly enabled as a provider-scoped credential")
@@ -138,7 +145,17 @@ def run_security_check(
     else:
         checks["cursor_api_key"] = "absent"
 
-    if flags.get("workspace_isolation_v2"):
+    if trusted_machine:
+        checks["runner"] = "host"
+        checks["runner_home"] = str(Path.home())
+        checks["runner_home_env"] = "pass" if Path(env.get("HOME", "")).resolve() == Path.home().resolve() else "fail"
+        checks["runner_tmpdir"] = "host"
+        checks["agent_world"] = "trusted_dedicated_machine"
+        checks["root_escalation"] = "host_user"
+        checks["service_identity"] = "host_user"
+        if checks["runner_home_env"] != "pass":
+            critical_fail = True
+    elif flags.get("workspace_isolation_v2"):
         dirs = ensure_runner_dirs(agent)
         runner_env = build_runner_env(agent_id=agent, project=project, source={"PATH": "/usr/bin"}, config=cfg)
         checks["runner"] = "local_isolated"
@@ -176,36 +193,44 @@ def run_security_check(
             checks["workspace_read"] = f"fail:{exc}"
             critical_fail = True
         desktop = Path.home() / "Desktop" / "lumen-security-probe.png"
-        try:
-            assert_within_workspace(desktop, workspace)
-            checks["workspace_escape"] = "fail"
-            critical_fail = True
-        except PermissionError:
-            checks["workspace_escape"] = "blocked"
         apps = Path("/Applications")
-        try:
-            assert_within_workspace(apps, workspace)
-            checks["host_apps"] = "fail"
-            critical_fail = True
-        except PermissionError:
-            checks["host_apps"] = "blocked"
-        checks["host_write"] = "blocked" if is_forbidden_host_path(Path.home() / "Library" / "LaunchAgents") else "fail"
-        if checks["host_write"] != "blocked":
-            critical_fail = True
+        if trusted_machine:
+            checks["workspace_escape"] = "allowed_by_trusted_machine"
+            checks["host_apps"] = "allowed_by_trusted_machine"
+            checks["host_write"] = "allowed_by_trusted_machine"
+        else:
+            try:
+                assert_within_workspace(desktop, workspace)
+                checks["workspace_escape"] = "fail"
+                critical_fail = True
+            except PermissionError:
+                checks["workspace_escape"] = "blocked"
+            try:
+                assert_within_workspace(apps, workspace)
+                checks["host_apps"] = "fail"
+                critical_fail = True
+            except PermissionError:
+                checks["host_apps"] = "blocked"
+            checks["host_write"] = "blocked" if is_forbidden_host_path(Path.home() / "Library" / "LaunchAgents") else "fail"
+            if checks["host_write"] != "blocked":
+                critical_fail = True
         checks["host_introspection_deny"] = "pass" if "system_profiler" in HOST_INTROSPECTION_COMMANDS else "fail"
         if checks["host_introspection_deny"] != "pass":
             critical_fail = True
-        link = workspace / "escape-link"
-        try:
-            link.symlink_to(Path.home() / "Desktop")
+        if trusted_machine:
+            checks["symlink_escape"] = "allowed_by_trusted_machine"
+        else:
+            link = workspace / "escape-link"
             try:
-                assert_within_workspace(link, workspace)
-                checks["symlink_escape"] = "fail"
-                critical_fail = True
-            except PermissionError:
-                checks["symlink_escape"] = "blocked"
-        except OSError:
-            checks["symlink_escape"] = "skipped"
+                link.symlink_to(Path.home() / "Desktop")
+                try:
+                    assert_within_workspace(link, workspace)
+                    checks["symlink_escape"] = "fail"
+                    critical_fail = True
+                except PermissionError:
+                    checks["symlink_escape"] = "blocked"
+            except OSError:
+                checks["symlink_escape"] = "skipped"
 
     broker = CapabilityBroker(config=cfg, audit=False)
     denied = broker.execute(
@@ -251,16 +276,19 @@ def run_security_check(
     checks["access_configured"] = bool(
         access.get("mutation_allowed_user_ids") or access.get("admin_user_ids")
     )
-    checks["host_visibility"] = "denied" if flags.get("workspace_isolation_v2") else "limited"
+    checks["host_visibility"] = "full" if trusted_machine else ("denied" if flags.get("workspace_isolation_v2") else "limited")
 
-    delete_probe = protected_delete_probe()
-    checks["protected_delete"] = (
-        "blocked"
-        if delete_probe.get("status") == "blocked" and not delete_probe.get("canonical_deleted")
-        else "fail"
-    )
-    if checks["protected_delete"] != "blocked":
-        critical_fail = True
+    if trusted_machine:
+        checks["protected_delete"] = "prompt_only"
+    else:
+        delete_probe = protected_delete_probe()
+        checks["protected_delete"] = (
+            "blocked"
+            if delete_probe.get("status") == "blocked" and not delete_probe.get("canonical_deleted")
+            else "fail"
+        )
+        if checks["protected_delete"] != "blocked":
+            critical_fail = True
     checks["identity_forgery"] = checks.get("trusted_context")
 
     if live:

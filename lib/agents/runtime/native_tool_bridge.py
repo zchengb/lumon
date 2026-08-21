@@ -1,9 +1,10 @@
 """Provider-native connected-tool registration.
 
 The registry is the one tool interface shared by Cursor, OpenCode and Codex.
-This module materializes provider-neutral MCP metadata inside the Agent World
-and provides a small JSON-RPC server entry point for providers that support
-stdio MCP.  Legacy text envelopes remain a compatibility adapter only.
+This module materializes provider-neutral MCP metadata inside the configured
+Agent World (trusted host or explicit isolated world) and provides a small
+JSON-RPC server entry point for providers that support stdio MCP. Legacy text
+envelopes remain a compatibility adapter only.
 """
 
 from __future__ import annotations
@@ -63,8 +64,8 @@ def write_native_tool_manifests(workspace: Path, *, provider: str = "") -> tuple
         encoding="utf-8",
     )
     # Cursor discovers project MCP servers from .cursor/mcp.json. Keep the
-    # provider-facing file inside the disposable workspace; the Host socket
-    # and entry-gate environment are inherited only for this process tree.
+    # provider-facing file inside the active workspace; the Host socket and
+    # entry-gate environment are inherited only for this process tree.
     cursor_mcp = Path(workspace).expanduser().resolve() / ".cursor" / "mcp.json"
     cursor_mcp.parent.mkdir(parents=True, exist_ok=True)
     cursor_mcp.write_text(mcp_path.read_text(encoding="utf-8"), encoding="utf-8")

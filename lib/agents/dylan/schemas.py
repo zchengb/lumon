@@ -177,10 +177,17 @@ class ConversationFlags:
         if isinstance(agents_config, dict):
             configured_harness = agents_config.get("harness")
             if isinstance(configured_harness, dict):
-                harness_raw = configured_harness
+                harness_raw = dict(configured_harness)
             security_raw = agents_config.get("agent_security")
-            if not harness_raw and isinstance(security_raw, dict):
-                harness_raw = security_raw
+            if isinstance(security_raw, dict):
+                # The execution world is the provider-facing mode.  Keep
+                # harness capability switches, but let an explicit trusted
+                # or isolated security mode win over the older generic
+                # ``harness.mode`` value.
+                if not harness_raw:
+                    harness_raw = dict(security_raw)
+                elif security_raw.get("mode"):
+                    harness_raw["mode"] = security_raw["mode"]
         v4_enabled = bool(v4.get("enabled", False))
         provider_name = str(model_src.get("type") or model_src.get("provider") or "cursor").strip().casefold()
         codex_provider = provider_name in {"codex", "codex_cli", "codex-cli"}

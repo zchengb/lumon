@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -17,8 +18,8 @@ from agents.compat.legacy_envelopes import (
     extract_final_response,
     has_unbacked_delegation_claim,
     job_create_succeeded,
-    parse_native_response,
     prefer_action_summary,
+    sanitize_public_text,
 )
 from agents.runtime.interaction import (
     action_missing_fields,
@@ -182,7 +183,9 @@ def _publish_native_workstream_events(
     count = 0
     last_text = ""
     question: dict[str, Any] | None = None
-    native_tool_requests: list[dict[str, Any]] = []
+    # Native MCP calls are already executed by the provider-facing MCP
+    # server.  The Harness event is observability only; collecting it here
+    # would replay the same side effect through the legacy action broker.
     for event in list(getattr(result, "harness_events", []) or []):
         event_type = str(getattr(event, "type", "") or "").strip().lower()
         text = str(getattr(event, "text", "") or "").strip()
@@ -210,17 +213,6 @@ def _publish_native_workstream_events(
                 **payload,
             }
             output.observe(internal_type, text, **telemetry_payload)
-            if event_type == "tool_call":
-                tool_name = str(payload.get("tool") or "").strip()
-                arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
-                if tool_name and "." in tool_name:
-                    native_tool_requests.append(
-                        {
-                            "action": tool_name,
-                            "arguments": arguments,
-                            "resource": {},
-                        }
-                    )
             continue
         if event_type not in {"assistant_message", "progress", "question", "artifact"}:
             continue
@@ -248,31 +240,7 @@ def _publish_native_workstream_events(
         if receipt.status in {"succeeded", "duplicate"}:
             count += 1
             last_text = text or last_text
-    return count, last_text, question, native_tool_requests
-
-
-def _native_messages_cover_result(result: Any) -> bool:
-    """Return true when provider assistant events already contain the reply."""
-
-    final_text = re.sub(r"\s+", " ", str(getattr(result, "text", "") or "").strip())
-    if not final_text:
-        return bool(
-            any(
-                str(getattr(event, "type", "") or "").strip().lower() == "assistant_message"
-                and str(getattr(event, "text", "") or "").strip()
-                for event in list(getattr(result, "harness_events", []) or [])
-            )
-        )
-    messages = [
-        re.sub(r"\s+", " ", str(getattr(event, "text", "") or "").strip())
-        for event in list(getattr(result, "harness_events", []) or [])
-        if str(getattr(event, "type", "") or "").strip().lower() == "assistant_message"
-    ]
-    messages = [item for item in messages if item]
-    if not messages:
-        return False
-    combined = " ".join(messages)
-    return final_text == combined or final_text in messages or final_text in combined
+    return count, last_text, question, []
 
 
 _IMAGE_SUFFIXES = {
@@ -952,7 +920,7 @@ def handle_autonomous_conversation(
                             pending=current_pending,
                             workspace_path=workspace,
                             task_mode=task_mode,
-                            native_provider=native_runtime and collaboration.enabled,
+                            native_provider=native_runtime,
                         ),
                     )
                     if part
@@ -985,7 +953,7 @@ def handle_autonomous_conversation(
                 prompt = _prepend_thread_context(prompt)
                 provider_session_id = None
             else:
-                choice_hint = clarification_choice_hint(text, pending)
+                choice_hint = "" if native_runtime else clarification_choice_hint(text, pending)
                 if choice_hint:
                     anchored_text = f"{anchored_text}\n\n{choice_hint}"
                 prompt = (
@@ -1044,8 +1012,8 @@ def handle_autonomous_conversation(
             elif attachment_dir is not None and hasattr(cursor, "additional_files"):
                 cursor.additional_files = sorted(attachment_dir.iterdir())
             runner = (
-                default_runner(runtime=cursor)
-                if workspace_isolation_v2_enabled() and runtime is None
+                default_runner(runtime=cursor, config=common)
+                if runtime is None
                 else cursor
             )
             obs.upsert_trace(trace, state="running", project_slug=slug)
@@ -1111,7 +1079,7 @@ def handle_autonomous_conversation(
                 if not accepts_event:
                     run_kwargs.pop("on_event", None)
                 def provider_call() -> Any:
-                    if workspace_isolation_v2_enabled() and runtime is None:
+                    if getattr(runner, "requires_definition", False):
                         return runner.run(definition=definition, **run_kwargs)
                     return runner.run(**run_kwargs)
 
@@ -1286,10 +1254,6 @@ def handle_autonomous_conversation(
                         native_question = live_question
                     if not native_tool_requests:
                         native_tool_requests = live_tool_requests
-                    if (native_count or live_event_count) and (not str(result.text or "").strip() or native_question is not None):
-                        suppress_final_reply = True
-                    if (native_count or live_event_count) and _native_messages_cover_result(result):
-                        suppress_final_reply = True
                 if result.provider_session_id and result.status == "succeeded" and str(result.text or "").strip():
                     store.update(
                         session["session_id"],
@@ -1300,15 +1264,34 @@ def handle_autonomous_conversation(
                         failure_count=0,
                     )
 
-                native_provider = native_runtime and collaboration.enabled
-                parsed = (
-                    parse_native_response(result.text)
-                    if native_provider and not collaboration.legacy_compatibility
-                    else extract_final_response(result.text)
-                )
-                conversation_decision = normalize_conversation_decision(
-                    parsed.conversation_decision,
-                    pending=pending,
+                # Provider-native autonomy is independent of thread handoff
+                # enablement.  DMs use the same native SessionHost/tool path;
+                # collaboration.enabled only controls shared-thread context
+                # and @Agent routing.
+                native_provider = native_runtime
+                if native_provider and not collaboration.legacy_compatibility:
+                    native_text, _ = sanitize_public_text(result.text)
+                    parsed = SimpleNamespace(
+                        text=native_text,
+                        mode="native",
+                        valid=bool(native_text),
+                        clarification_request=None,
+                        action_requests=[],
+                        conversation_decision=None,
+                    )
+                else:
+                    parsed = extract_final_response(result.text)
+                # Native sessions do not route through Lumon's conversation,
+                # clarification, or action controllers.  The parsed object is
+                # retained only as a compatibility-safe text sanitizer for
+                # the transport result; the Agent owns the decision.
+                conversation_decision = (
+                    None
+                    if native_provider
+                    else normalize_conversation_decision(
+                        parsed.conversation_decision,
+                        pending=pending,
+                    )
                 )
                 if conversation_decision and conversation_decision.get("suppress_final_reply"):
                     # Suppression is a deliberate closing signal attached to a
@@ -1383,6 +1366,28 @@ def handle_autonomous_conversation(
                         ensure_ascii=False,
                     )
                     store.update(session["session_id"], checkpoint_json=checkpoint_json)
+
+                if native_provider:
+                    # MCP side effects have already happened in the native
+                    # server.  Never turn tool events into action requests or
+                    # start a Host-generated continuation.  A native question
+                    # only pauses the SessionHost; the next human message
+                    # resumes the same provider session.
+                    clarification = None
+                    action_requests = []
+                    store.clear_pending(session["session_id"])
+                    if native_question is not None:
+                        session_waiting = True
+                        if session_host is not None:
+                            session_host.pause(str(session.get("session_id") or ""), waiting_for_human=True)
+                        store.set_runtime_state(
+                            session["session_id"],
+                            "waiting_human",
+                            question=native_question,
+                        )
+                    else:
+                        store.set_runtime_state(session["session_id"], "active")
+                    break
 
                 clarification = normalize_clarification(
                     parsed.clarification_request or {},
@@ -1612,6 +1617,38 @@ def handle_autonomous_conversation(
                         "error": continuation_error[:500],
                     }
                 )
+            if native_provider:
+                # Native output is already the Agent's completion surface.
+                # Do not run clarification formatting, action summaries,
+                # delegation fallbacks, or a synthetic final-response gate.
+                native_reply = str(parsed.text or "").strip()
+                delivered = bool(visible_message_count)
+                return {
+                    "status": "ok",
+                    "action": "autonomous.native",
+                    "text": native_reply,
+                    "final_response_mode": "native",
+                    "final_response_valid": bool(native_reply),
+                    "action_receipts": action_receipts,
+                    "pending_clarification": None,
+                    "conversation_decision": None,
+                    "visible_message_count": visible_message_count,
+                    "last_visible_message": last_visible_message,
+                    "output_delivered": delivered,
+                    "needs_transport_reply": bool(native_reply and not delivered),
+                    "waiting_for_human": bool(session_waiting),
+                    "trace_id": trace.trace_id,
+                    "session_id": session["session_id"],
+                    "provider_session_id": result.provider_session_id,
+                    "project_slug": slug,
+                    "workspace": str(workspace),
+                    "agent_id": agent_id,
+                    "latency_ms": total_latency_ms,
+                    "tool_events": [e.__dict__ for e in result.tool_events],
+                    "bootstrap": is_new,
+                    "typing": {"enabled": False},
+                    "flags": {"conversation_v4": True, "mode": "native_agent_owned"},
+                }
             reply_text = parsed.text
             if clarification and clarification.get("choices"):
                 rendered_question = str(clarification.get("question") or "").strip()
@@ -1731,8 +1768,8 @@ def handle_autonomous_conversation(
                 "status": "ok",
                 "action": "autonomous.clarification" if clarification else "autonomous.reply",
                 "text": reply_text,
-                "final_response_mode": parsed.mode,
-                "final_response_valid": parsed.valid,
+                "final_response_mode": "native" if native_provider else parsed.mode,
+                "final_response_valid": True if native_provider else parsed.valid,
                 "action_receipts": action_receipts,
                 "pending_clarification": clarification,
                 "conversation_decision": conversation_decision,
@@ -1744,6 +1781,8 @@ def handle_autonomous_conversation(
                     else ""
                 ),
                 "suppress_final_reply": bool(suppress_final_reply and visible_message_count and not clarification),
+                "output_delivered": bool(native_provider and visible_message_count > 0),
+                "needs_transport_reply": bool(native_provider and visible_message_count == 0 and str(reply_text or "").strip()),
                 "trace_id": trace.trace_id,
                 "session_id": session["session_id"],
                 "provider_session_id": result.provider_session_id,

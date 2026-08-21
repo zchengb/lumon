@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Migrate legacy conversational DeepSeek settings to OpenCode + DeepSeek."""
+"""Migrate legacy runtime settings to the M0.8 native Agent World contract."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def migrate_runtime_sections(config: dict[str, Any]) -> bool:
         config["conversation"] = conversation
         changed = True
     defaults = {
-        "version": "3.1",
+        "version": "3.2",
         "native_first": True,
         "legacy_compatibility": False,
         "visible_workstream": True,
@@ -68,16 +68,48 @@ def migrate_runtime_sections(config: dict[str, Any]) -> bool:
         security = {}
         config["agent_security"] = security
         changed = True
-    security_defaults = {
-        "agent_world_backend": "auto",
-        "boundary_backend": "sandbox_exec",
-        "canonical_workspace_access": "host_only",
-        "identity_mode": "service_account",
-        "world_contract": "agent-world/1",
-        "network": "allow",
+    raw_mode = str(security.get("mode") or "").strip().casefold().replace("-", "_")
+    explicit_isolation = raw_mode in {
+        "isolated_agent_world",
+        "agent_world",
+        "sandbox_exec",
+        "sandboxed",
+        "isolated",
     }
+    # M0.8 is the default for existing installations unless they explicitly
+    # opted into the named isolated world.  This is the migration point that
+    # makes the dedicated Mac behave like the Agent's actual working machine.
+    security_defaults = (
+        {
+            "mode": "isolated_agent_world",
+            "workspace_isolation_v2": True,
+            "agent_world_backend": "auto",
+            "boundary_backend": "sandbox_exec",
+            "canonical_workspace_access": "host_only",
+            "identity_mode": "service_account",
+            "world_contract": "agent-world/1",
+            "delete_policy": "no_irreversible_delete",
+            "secret_isolation": True,
+            "host_visibility": "agent_world_only",
+            "network": "allow",
+        }
+        if explicit_isolation
+        else {
+            "mode": "trusted_dedicated_machine",
+            "workspace_isolation_v2": False,
+            "agent_world_backend": "host",
+            "boundary_backend": "host_user",
+            "canonical_workspace_access": "read_write",
+            "identity_mode": "host_user",
+            "world_contract": "agent-world/1-trusted",
+            "delete_policy": "prompt_only",
+            "secret_isolation": False,
+            "host_visibility": "full",
+            "network": "allow",
+        }
+    )
     for key, value in security_defaults.items():
-        if key not in security:
+        if (not explicit_isolation and security.get(key) != value) or (explicit_isolation and key not in security):
             security[key] = value
             changed = True
     return changed
