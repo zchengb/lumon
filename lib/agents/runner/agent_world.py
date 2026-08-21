@@ -1,10 +1,11 @@
-"""The OS-enforced Agent World seam.
+"""The Agent World seam.
 
-The disposable workspace is still created by the Host, but this module is the
-small interface every provider process crosses before it starts.  On macOS we
-use ``sandbox-exec`` when it is available.  The profile gives the child a
-read/write world containing only its disposable workspace, service HOME and
-temporary directory; the canonical workspace remains a Host-only path.
+The explicit isolated world is still created by the Host, but M0.8's default
+trusted dedicated-machine world intentionally runs in the host user's
+canonical workspace. This module is the small interface every provider
+process crosses before it starts. On macOS the isolated profile uses
+``sandbox-exec`` when it is available; the trusted profile reports the host
+boundary and relies on the Feishu entry gate plus audit instead.
 
 This is deliberately an adapter seam rather than a provider feature.  A
 future container or VM adapter can satisfy the same interface without
@@ -418,6 +419,31 @@ def probe_agent_world(*, agent_id: str = "probe", config: Mapping[str, Any] | No
     """Return a side-effect-free backend/capability report."""
 
     backends = available_backends(config)
+    explicit_config = isinstance(config, Mapping) and isinstance(config.get("agent_security"), Mapping)
+    from agents.security.flags import trusted_dedicated_machine_enabled
+
+    if explicit_config and trusted_dedicated_machine_enabled(dict(config)):
+        uid = int(getattr(os, "geteuid", lambda: -1)())
+        return {
+            "contract": "agent-world/1-trusted",
+            "agent_id": str(agent_id or "probe").strip().lower(),
+            "ready": True,
+            "checks": {
+                "backend": "host",
+                "available_backends": backends,
+                "boundary_enforced": False,
+                "dedicated_unix_identity": False,
+                "canonical_access": "read_write",
+                "network": "allow",
+                "operator_uid": uid,
+                "identity": "host_user",
+                "trust_gate": "required",
+                "audit": "enabled",
+            },
+            "warnings": [
+                "trusted dedicated-machine mode uses the host user's real Agent World; destructive operations are audited and prompt-guided",
+            ],
+        }
     selected = select_backend(config)
     uid = int(getattr(os, "geteuid", lambda: -1)())
     checks = {
