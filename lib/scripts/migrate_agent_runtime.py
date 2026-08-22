@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Migrate legacy runtime settings to the M0.8 native Agent World contract."""
+"""Migrate legacy runtime settings to the M0.9 senior-coworker contract."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ LEGACY_CONVERSATION_KEYS = ("conversation_runtime", "conversation_v4", "conversa
 
 
 def migrate_runtime_sections(config: dict[str, Any]) -> bool:
-    """Converge old runtime flags onto the M0.7 deep-module boundaries."""
+    """Converge old runtime flags onto the M0.9 conversation boundaries."""
 
     changed = False
     conversation = config.get("conversation")
@@ -28,7 +28,8 @@ def migrate_runtime_sections(config: dict[str, Any]) -> bool:
         config["conversation"] = conversation
         changed = True
     defaults = {
-        "version": "3.2",
+        "version": "3.3",
+        "default_language": "zh-Hant",
         "native_first": True,
         "legacy_compatibility": False,
         "visible_workstream": True,

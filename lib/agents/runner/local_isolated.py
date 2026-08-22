@@ -138,6 +138,11 @@ class LocalIsolatedAgentRunner:
                     "thread_id": str(getattr(entry_gate, "thread_id", "") or ""),
                     "message_id": str(getattr(entry_gate, "message_id", "") or ""),
                     "chat_type": str(getattr(gate_context, "chat_type", "") or ""),
+                    "chat_name": str(getattr(gate_context, "chat_name", "") or ""),
+                    "root_id": str(getattr(gate_context, "root_id", "") or ""),
+                    "participants": list(getattr(gate_context, "participants", ()) or ()),
+                    "available_agents": list(getattr(gate_context, "available_agents", ()) or ()),
+                    "available_agents_verified": bool(getattr(gate_context, "available_agents_verified", False)),
                     "_entry_gate_token": str(getattr(entry_gate, "token", "") or ""),
                 }
                 host_context = trusted_context_from_meta(
@@ -281,6 +286,11 @@ class TrustedAgentRunner:
             "thread_id": str(getattr(entry_gate, "thread_id", "") or ""),
             "message_id": str(getattr(entry_gate, "message_id", "") or ""),
             "chat_type": str(getattr(gate_context, "chat_type", "") or ""),
+            "chat_name": str(getattr(gate_context, "chat_name", "") or ""),
+            "root_id": str(getattr(gate_context, "root_id", "") or ""),
+            "participants": list(getattr(gate_context, "participants", ()) or ()),
+            "available_agents": list(getattr(gate_context, "available_agents", ()) or ()),
+            "available_agents_verified": bool(getattr(gate_context, "available_agents_verified", False)),
             "_entry_gate_token": str(getattr(entry_gate, "token", "") or ""),
         }
         host_context = trusted_context_from_meta(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from agents.conversation.config import DEFAULT_REPLY_LANGUAGE, normalize_reply_language
+
 
 @dataclass
 class ToolCall:
@@ -120,6 +122,7 @@ class ConversationFlags:
     harness_mode: str = "unshackled"
     soft_timeout_seconds: int = 90
     hard_timeout_seconds: int = 3600
+    default_language: str = DEFAULT_REPLY_LANGUAGE
 
     @classmethod
     def from_common(
@@ -129,6 +132,12 @@ class ConversationFlags:
         agent_id: str = "dylan",
     ) -> "ConversationFlags":
         data = common if isinstance(common, dict) else {}
+        common_conversation = data.get("conversation") if isinstance(data.get("conversation"), dict) else {}
+        configured_conversation = (
+            agents_config.get("conversation")
+            if isinstance(agents_config, dict) and isinstance(agents_config.get("conversation"), dict)
+            else {}
+        )
         agents = data.get("agents") if isinstance(data.get("agents"), dict) else {}
         key = str(agent_id or "dylan").strip().lower() or "dylan"
         dylan = agents.get(key) if isinstance(agents.get(key), dict) else {}
@@ -266,6 +275,12 @@ class ConversationFlags:
             harness_mode=str(harness_raw.get("mode") or "unshackled").strip().casefold(),
             soft_timeout_seconds=int(runtime_raw.get("soft_timeout_seconds") or 90),
             hard_timeout_seconds=int(runtime_raw.get("hard_timeout_seconds") or 3600),
+            default_language=normalize_reply_language(
+                configured_conversation.get(
+                    "default_language",
+                    common_conversation.get("default_language", DEFAULT_REPLY_LANGUAGE),
+                )
+            ),
         )
         flags._max_concurrent_jobs = int(dylan.get("max_concurrent_jobs") or runtime_raw.get("max_concurrent_sessions") or 3)  # type: ignore[attr-defined]
         return flags

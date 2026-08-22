@@ -1,5 +1,9 @@
 {
   "enabled": false,
+  "conversation": {
+    "version": "3.3",
+    "default_language": "zh-Hant"
+  },
   "agent_security": {
     "workspace_isolation_v2": false,
     "mode": "trusted_dedicated_machine",

@@ -16,6 +16,7 @@ from feishu.config import (
 )
 from agents.registry import APP_ID_ENV
 from feishu.client_registry import APP_SECRET_ENV
+from agents.conversation.config import DEFAULT_REPLY_LANGUAGE, normalize_reply_language
 
 AGENT_META = {
     "dylan": {
@@ -262,6 +263,7 @@ def test_case_settings_view(project_slug: str = "", config: dict[str, Any] | Non
 def agents_settings_payload(*, network: bool = False, project: str = "") -> dict[str, Any]:
     config = load_agents_config()
     access = config.get("access") if isinstance(config.get("access"), dict) else {}
+    conversation = config.get("conversation") if isinstance(config.get("conversation"), dict) else {}
     recent = {"user_ids": [], "chat_ids": [], "direct_chat_ids": [], "users": [], "chats": [], "names": {}}
     pending_questions: list[dict[str, Any]] = []
     try:
@@ -385,6 +387,12 @@ def agents_settings_payload(*, network: bool = False, project: str = "") -> dict
         "enabled": bool(config.get("enabled", False)),
         "home": str(agents_home()),
         "config_path": str(agents_home() / "config.json"),
+        "conversation": {
+            "version": str(conversation.get("version") or "3.3"),
+            "default_language": normalize_reply_language(
+                conversation.get("default_language"), DEFAULT_REPLY_LANGUAGE
+            ),
+        },
         "access": {
             "default_policy": str(access.get("default_policy") or "deny"),
             "owners": [str(x) for x in (access.get("owners") or []) if str(x).strip()],
@@ -412,6 +420,18 @@ def apply_agent_settings(payload: dict[str, Any]) -> dict[str, Any]:
     project_slug = str(payload.get("project") or "").strip().lower()
     if "enabled" in payload:
         config["enabled"] = bool(payload.get("enabled"))
+    conversation_in = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
+    if "default_language" in payload and "default_language" not in conversation_in:
+        conversation_in = {**conversation_in, "default_language": payload.get("default_language")}
+    if conversation_in:
+        conversation = _ensure_dict(config, "conversation")
+        # M0.9 is the current prompt/session contract.  Keep this explicit so
+        # old Dashboard payloads cannot silently downgrade a workspace.
+        conversation["version"] = "3.3"
+        if "default_language" in conversation_in:
+            conversation["default_language"] = normalize_reply_language(
+                conversation_in.get("default_language"), DEFAULT_REPLY_LANGUAGE
+            )
     if "access" in payload and isinstance(payload.get("access"), dict):
         access_in = payload["access"]
         access = _ensure_dict(config, "access")

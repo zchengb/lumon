@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 import threading
 import time
@@ -58,6 +59,11 @@ class InteractionContext:
     trust_zone: str = ""
     is_owner: bool = False
     is_admin: bool = False
+    chat_name: str = ""
+    root_id: str = ""
+    participants: tuple[str, ...] = ()
+    available_agents: tuple[str, ...] = ()
+    available_agents_verified: bool = False
 
 
 @dataclass(frozen=True)
@@ -183,6 +189,34 @@ def is_dm_chat(chat_type: str, *, thread_id: str = "", chat_id: str = "") -> boo
     return not kind and not str(chat_id or "").strip()
 
 
+def _context_id_list(value: Any) -> tuple[str, ...]:
+    """Read context identifiers from JSON/list or a simple comma list."""
+
+    raw: Any = value
+    if isinstance(raw, str):
+        candidate = raw.strip()
+        if not candidate:
+            return ()
+        try:
+            raw = json.loads(candidate)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raw = candidate.split(",")
+    if not isinstance(raw, (list, tuple, set)):
+        return ()
+    values: list[str] = []
+    for item in raw:
+        if isinstance(item, dict):
+            item = item.get("id") or item.get("open_id") or item.get("agent_id")
+        value = str(item or "").strip()
+        if value and value not in values:
+            values.append(value)
+    return tuple(values)
+
+
+def _context_bool(value: Any) -> bool:
+    return str(value or "").strip().casefold() in {"1", "true", "yes", "on"}
+
+
 def interaction_context_from_meta(
     *,
     agent_id: str,
@@ -210,6 +244,15 @@ def interaction_context_from_meta(
             and policy.exposure_mode == "owner_private"
         ),
         is_admin=_user_in(store, user_id, admins),
+        chat_name=str(meta.get("chat_name") or "").strip(),
+        root_id=str(meta.get("root_id") or meta.get("parent_id") or "").strip(),
+        participants=_context_id_list(meta.get("participants") or meta.get("_participants")),
+        available_agents=_context_id_list(
+            meta.get("available_agents") or meta.get("_available_agents")
+        ),
+        available_agents_verified=_context_bool(
+            meta.get("available_agents_verified") or meta.get("_available_agents_verified")
+        ),
     )
 
 def load_agent_access_policy(agent_id: str, config: Optional[dict[str, Any]] = None) -> AgentAccessPolicy:
@@ -446,6 +489,11 @@ def authorize_agent_interaction(
             trust_zone=zone,
             is_owner=_user_in(identity_store, context.user_id, policy.owners),
             is_admin=_user_in(identity_store, context.user_id, policy.admins),
+            chat_name=context.chat_name,
+            root_id=context.root_id,
+            participants=context.participants,
+            available_agents=context.available_agents,
+            available_agents_verified=context.available_agents_verified,
         )
         if zone == "DENY":
             reason = "DM_ONLY" if policy.dm_only and not context.is_dm else "ACCESS_DENIED"

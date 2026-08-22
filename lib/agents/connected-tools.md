@@ -27,6 +27,20 @@ conversation.question(text, choices=[])
 conversation.artifact(path)
 ```
 
+The registry also exposes `feishu.context`, a read-only Agent-readable view of
+the current conversation. It may include the context type (`dm`, `group`, or
+`thread`), chat and Thread identifiers, chat name, known participants, and
+reachable Agent apps. `available_agents_verified` distinguishes Agent apps
+confirmed through Feishu group visibility from names merely observed in a
+mention. It exists so the Agent can make an informed collaboration choice; it
+does not grant or deny access and must not be treated as a second permission
+controller.
+
+Conversation quality is a judgment seam, not a hard controller: investigate
+quietly by default, use Typing for ordinary work, choose Consult versus
+Transfer deliberately, prefer live incident evidence, and calibrate what is
+confirmed versus still unknown.
+
 Use `@Agent` for ordinary Thread collaboration.  The native registry keeps
 `agent.job.create` only for durable background work that must survive a
 conversation turn or process restart; it is not a substitute for a visible

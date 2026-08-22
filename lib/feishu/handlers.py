@@ -121,6 +121,12 @@ def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
         "sender_type": str(sender.get("sender_type") or "").strip().lower(),
         "app_id": str(header.get("app_id") or "").strip(),
         "user_name": "",
+        "chat_name": str(
+            message.get("chat_name")
+            or message.get("chat_title")
+            or message.get("conversation_name")
+            or ""
+        ).strip(),
     }
     image_keys = extract_feishu_image_keys(msg_type, content)
     if image_keys:
@@ -129,6 +135,10 @@ def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
     if attachment_refs:
         meta["attachment_refs"] = json.dumps(attachment_refs, ensure_ascii=False)
     mentions = message.get("mentions") if isinstance(message.get("mentions"), list) else []
+    participant_ids: list[str] = []
+    if meta["user_id"]:
+        participant_ids.append(meta["user_id"])
+    mentioned_agent_ids: list[str] = []
     for item in mentions:
         if not isinstance(item, dict):
             continue
@@ -137,7 +147,17 @@ def extract_message_meta(event: dict[str, Any]) -> dict[str, str]:
         name = str(item.get("name") or "").strip()
         if open_id and name and open_id == meta["user_id"]:
             meta["user_name"] = name
-            break
+        if open_id and open_id not in participant_ids:
+            participant_ids.append(open_id)
+    if mentions:
+        try:
+            mentioned_agent_ids = list(dict.fromkeys(agent_ids_from_structured_mentions(mentions)))
+        except Exception:
+            mentioned_agent_ids = []
+    if participant_ids:
+        meta["participants"] = json.dumps(participant_ids, ensure_ascii=False)
+    if mentioned_agent_ids:
+        meta["available_agents"] = json.dumps(mentioned_agent_ids, ensure_ascii=False)
     return meta
 
 

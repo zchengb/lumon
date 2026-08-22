@@ -5,6 +5,8 @@ from typing import Any
 
 
 NATIVE_PROVIDER_NAMES = frozenset({"cursor", "cursor_cli", "opencode", "codex"})
+SUPPORTED_REPLY_LANGUAGES = frozenset({"en", "zh-Hans", "zh-Hant"})
+DEFAULT_REPLY_LANGUAGE = "zh-Hant"
 
 
 @dataclass(frozen=True)
@@ -16,6 +18,8 @@ class ThreadNativeConfig:
     """
 
     enabled: bool = False
+    version: str = "3.3"
+    default_language: str = DEFAULT_REPLY_LANGUAGE
     max_relay_hops: int = 4
     context_max_chars: int = 24000
     # Native providers use the Harness event/tool surface first.  Legacy
@@ -46,8 +50,45 @@ def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int
     return max(minimum, min(maximum, number))
 
 
+def normalize_reply_language(value: Any, default: str = DEFAULT_REPLY_LANGUAGE) -> str:
+    """Normalize the small, provider-neutral reply-language vocabulary."""
+
+    raw = str(value or "").strip()
+    aliases = {
+        "english": "en",
+        "en-us": "en",
+        "en-gb": "en",
+        "简体中文": "zh-Hans",
+        "simplified chinese": "zh-Hans",
+        "zh-cn": "zh-Hans",
+        "zh-sg": "zh-Hans",
+        "繁體中文": "zh-Hant",
+        "traditional chinese": "zh-Hant",
+        "zh-tw": "zh-Hant",
+        "zh-hk": "zh-Hant",
+        "zh-mo": "zh-Hant",
+    }
+    normalized = aliases.get(raw.casefold(), raw)
+    if normalized in SUPPORTED_REPLY_LANGUAGES:
+        return normalized
+    fallback = aliases.get(str(default or "").strip().casefold(), str(default or "").strip())
+    return fallback if fallback in SUPPORTED_REPLY_LANGUAGES else DEFAULT_REPLY_LANGUAGE
+
+
+def conversation_runtime_version(common: dict[str, Any] | None = None, default: str = "3.3") -> str:
+    """Return the configured conversation contract version without inventing one."""
+
+    data = common if isinstance(common, dict) else {}
+    runtime = data.get("conversation")
+    if not isinstance(runtime, dict):
+        runtime = data.get("conversation_runtime")
+    runtime = runtime if isinstance(runtime, dict) else {}
+    value = str(runtime.get("version") or default).strip()
+    return value or default
+
+
 def native_provider_contract(provider: str, config: ThreadNativeConfig) -> bool:
-    """Whether a configured provider should use the native 3.1 contract."""
+    """Whether a configured provider should use the configured native contract."""
 
     normalized = str(provider or "").strip().casefold().replace("-", "_")
     if normalized in {"deepseek", "deepseek_api", "opencode_deepseek"}:
@@ -77,8 +118,18 @@ def thread_native_config(
     enabled = _bool(data.get("thread_native_handoff"), False)
     if "_thread_native_handoff" in raw_meta:
         enabled = _bool(raw_meta.get("_thread_native_handoff"), enabled)
+    configured_language = runtime_data.get("default_language", DEFAULT_REPLY_LANGUAGE)
+    if "_default_language" in raw_meta:
+        configured_language = raw_meta.get("_default_language")
+    configured_version = conversation_runtime_version(raw_common)
+    if "_conversation_version" in raw_meta:
+        candidate_version = str(raw_meta.get("_conversation_version") or "").strip()
+        if candidate_version:
+            configured_version = candidate_version
     return ThreadNativeConfig(
         enabled=enabled,
+        version=configured_version,
+        default_language=normalize_reply_language(configured_language),
         max_relay_hops=_bounded_int(
             data.get("max_relay_hops"), default=4, minimum=1, maximum=12
         ),

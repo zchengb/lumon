@@ -51,7 +51,8 @@
     "context_max_chars": 24000
   },
   "conversation": {
-    "version": "3.2",
+    "version": "3.3",
+    "default_language": "zh-Hant",
     "native_first": true,
     "legacy_compatibility": false,
     "visible_workstream": true,

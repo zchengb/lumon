@@ -22,6 +22,19 @@ from agents.security.access_policy import AccessDecision, InteractionContext, PO
 from agents.security.trusted import TrustedActionContext
 
 
+def _env_list(name: str) -> tuple[str, ...]:
+    raw = str(os.environ.get(name) or "").strip()
+    if not raw:
+        return ()
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        value = raw.split(",")
+    if not isinstance(value, (list, tuple, set)):
+        return ()
+    return tuple(str(item).strip() for item in value if str(item).strip())
+
+
 def _response(request_id: Any, result: Any = None, error: Any = None) -> dict[str, Any]:
     value: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id}
     if error is not None:
@@ -48,6 +61,11 @@ def _context() -> TrustedActionContext | None:
         message_id=str(os.environ.get("LUMON_GATE_MESSAGE_ID") or ""),
         is_dm=os.environ.get("LUMON_GATE_IS_DM") == "1",
         trust_zone=str(os.environ.get("LUMON_GATE_TRUST_ZONE") or ""),
+        chat_name=str(os.environ.get("LUMON_GATE_CHAT_NAME") or ""),
+        root_id=str(os.environ.get("LUMON_GATE_ROOT_ID") or ""),
+        participants=_env_list("LUMON_GATE_PARTICIPANTS"),
+        available_agents=_env_list("LUMON_GATE_AVAILABLE_AGENTS"),
+        available_agents_verified=os.environ.get("LUMON_GATE_AVAILABLE_AGENTS_VERIFIED") == "1",
     )
     decision = AccessDecision(
         allowed=os.environ.get("LUMON_GATE_ALLOWED") == "1",

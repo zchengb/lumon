@@ -1,0 +1,91 @@
+{
+  "contract": "3.3",
+  "cases": [
+    {
+      "id": "A-alert-email-only",
+      "kind": "incident",
+      "human": "Forwarded an English alert and asked what is happening.",
+      "expected": {
+        "language_source": "configured_default",
+        "progress": "silent_by_default",
+        "evidence": "live_before_history"
+      }
+    },
+    {
+      "id": "B-human-explicit-language",
+      "kind": "language",
+      "human": "Please answer in English.",
+      "expected": {
+        "language_source": "explicit_human"
+      }
+    },
+    {
+      "id": "C-quiet-investigation",
+      "kind": "progress",
+      "human": "Investigate the current failure.",
+      "expected": {
+        "working_signal": "typing",
+        "ordinary_progress": "suppressed"
+      }
+    },
+    {
+      "id": "D-dm-mark",
+      "kind": "context",
+      "human": "Please check this delivery issue in our DM.",
+      "expected": {
+        "context_type": "dm",
+        "peer_handoff": "agent_judgment"
+      }
+    },
+    {
+      "id": "E-group-consult",
+      "kind": "collaboration",
+      "human": "@Mark confirm the deployed delivery setting.",
+      "expected": {
+        "collaboration": "consult",
+        "source_owns_main_task": true
+      }
+    },
+    {
+      "id": "F-transfer",
+      "kind": "collaboration",
+      "human": "@Irving take ownership of the remaining remediation.",
+      "expected": {
+        "collaboration": "transfer",
+        "source_stops_duplicate_work": true
+      }
+    },
+    {
+      "id": "G-live-environment",
+      "kind": "incident",
+      "human": "The cluster context is already available; find the direct cause.",
+      "expected": {
+        "evidence": "live_before_history"
+      }
+    },
+    {
+      "id": "H-new-human-evidence",
+      "kind": "replan",
+      "human": "Here are credentials and a correction to the earlier assumption.",
+      "expected": {
+        "replan": "immediate"
+      }
+    },
+    {
+      "id": "I-layered-root-cause",
+      "kind": "calibration",
+      "human": "The alert is gone, but explain what is confirmed and what is deeper unknown.",
+      "expected": {
+        "conclusion": "confirmed_likely_unknown"
+      }
+    },
+    {
+      "id": "J-proactive-completion",
+      "kind": "completion",
+      "human": "The diagnosis is complete; proceed with the safest next step.",
+      "expected": {
+        "next_step": "continue_if_authorized_or_offer"
+      }
+    }
+  ]
+}

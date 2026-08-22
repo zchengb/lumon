@@ -12,6 +12,7 @@ from typing import Any, Mapping
 from agents.conversation.config import ThreadNativeConfig, thread_native_config
 from agents.conversation.event_bus import EventBus
 from agents.conversation.events import ConversationEvent
+from agents.conversation.quality import ConversationQualityMetrics
 from agents.compat.legacy_envelopes import sanitize_public_text
 from feishu.messenger import FeishuMessenger, extract_message_id, should_reply_in_thread
 
@@ -55,6 +56,13 @@ class ConversationOutput:
         self._owned_bus = event_bus is None
         self.config = config or thread_native_config(self.common, self.meta)
         self._last_public_event: dict[str, float] = {}
+        self.quality = ConversationQualityMetrics(default_language=self.config.default_language)
+        for key in ("_human_interrupt_count", "human_interrupt_count"):
+            try:
+                self.quality.record_human_interrupt(int(self.meta.get(key) or 0))
+                break
+            except (TypeError, ValueError):
+                continue
 
     def close(self) -> None:
         if self._owned_bus:
@@ -304,6 +312,7 @@ class ConversationOutput:
             if stored is None:
                 return OutputReceipt(status="duplicate", event=event, response=response)
             self._last_public_event[event.type] = now
+            self.quality.record_public(event.type, clean_text, event.payload, now=now)
             return OutputReceipt(
                 status="succeeded",
                 event=stored,
@@ -328,6 +337,8 @@ class ConversationOutput:
             stored = self.event_bus.publish(event)
             if stored is None:
                 return OutputReceipt(status="duplicate", event=event)
+            if event.type in {"agent.completed", "session.completed"}:
+                self.quality.mark_conclusion()
             return OutputReceipt(status="succeeded", event=stored)
         except Exception as exc:
             return OutputReceipt(status="failed", event=event, error=str(exc)[:500])
@@ -355,3 +366,13 @@ class ConversationOutput:
 
     def artifact(self, path: str | Path, *, text: str = "", **payload: Any) -> OutputReceipt:
         return self.emit("agent.artifact", text, payload=payload, attachment_path=path)
+
+    def mark_conclusion(self) -> None:
+        """Record that the current turn reached a stable conclusion."""
+
+        self.quality.mark_conclusion()
+
+    def quality_summary(self) -> dict[str, Any]:
+        """Return observational conversation-quality metrics for telemetry."""
+
+        return self.quality.summary()

@@ -52,6 +52,90 @@ _TRUSTED_IDENTITY_FIELDS = frozenset(
 )
 
 
+def _conversation_context_snapshot(context: TrustedActionContext) -> dict[str, Any]:
+    """Return read-only Feishu conversation context bound by the Host.
+
+    This is information for the Agent's judgment, not a second permission
+    check.  The access decision remains the single authorization boundary.
+    """
+
+    access_context = getattr(getattr(context, "access_decision", None), "context", None)
+    chat_type = str(
+        getattr(access_context, "chat_type", "") or getattr(context, "chat_type", "") or ""
+    ).strip()
+    is_dm = bool(getattr(access_context, "is_dm", False)) or chat_type.casefold() in {"p2p", "private", "dm"}
+    thread_id = str(
+        getattr(access_context, "thread_id", "") or getattr(context, "thread_id", "") or ""
+    ).strip()
+    root_id = str(
+        getattr(access_context, "root_id", "") or getattr(context, "root_id", "") or ""
+    ).strip()
+    if thread_id or root_id:
+        context_type = "thread"
+    elif is_dm:
+        context_type = "dm"
+    else:
+        context_type = "group"
+
+    participants = list(getattr(access_context, "participants", ()) or ())
+    actor = str(getattr(context, "actor_user_id", "") or "").strip()
+    if actor and actor not in participants:
+        participants.append(actor)
+    available_agents = [
+        str(item).strip().lower()
+        for item in (getattr(access_context, "available_agents", ()) or ())
+        if str(item).strip()
+    ]
+    available_agents_verified = bool(getattr(access_context, "available_agents_verified", False))
+    chat_id = str(getattr(access_context, "chat_id", "") or getattr(context, "chat_id", "") or "").strip()
+    chat_name = str(getattr(access_context, "chat_name", "") or "").strip()
+    if not is_dm and context_type in {"group", "thread"} and chat_id and not available_agents_verified:
+        # The inbound event may not carry the full member list.  When the
+        # Agent explicitly asks for context, use the existing Feishu client
+        # seam to discover which configured Agent apps are members of this
+        # group. A structured @mention is only an observed hint, not proof of
+        # membership. A failed lookup leaves the evidence honest and partial.
+        try:
+            from feishu.client_registry import configured_agents
+            from feishu.messenger import FeishuMessenger
+
+            for client in configured_agents():
+                try:
+                    chats = FeishuMessenger(client.agent_id).list_group_chats()
+                except Exception:
+                    continue
+                available_agents_verified = True
+                if any(str(item.get("id") or item.get("chat_id") or "").strip() == chat_id for item in chats):
+                    if client.agent_id not in available_agents:
+                        available_agents.append(client.agent_id)
+        except Exception:
+            pass
+    current_agent = str(getattr(context, "agent_id", "") or "").strip().lower()
+    if current_agent and current_agent not in available_agents:
+        available_agents.append(current_agent)
+    if not chat_name and chat_id and context_type != "dm":
+        try:
+            from feishu.messenger import FeishuMessenger
+
+            chat_name = FeishuMessenger(current_agent).safe_get_chat_name(chat_id)
+        except Exception:
+            pass
+    return {
+        "information_capability": True,
+        "context_type": context_type,
+        "is_dm": is_dm,
+        "chat_id": chat_id,
+        "chat_type": chat_type,
+        "chat_name": chat_name,
+        "thread_id": thread_id,
+        "root_id": root_id,
+        "participants": participants,
+        "available_agents": available_agents,
+        "available_agents_verified": available_agents_verified,
+        "current_agent": current_agent,
+    }
+
+
 @dataclass(frozen=True)
 class ConnectedTool:
     name: str
@@ -123,6 +207,25 @@ class ConnectedToolRegistry:
                 default_owner="current_agent",
                 authorization_class="entry_gate",
             )
+        self._tools.setdefault(
+            "feishu.context",
+            ConnectedTool(
+                name="feishu.context",
+                description=(
+                    "Read the current Feishu conversation context: DM, group, or thread; chat identity; "
+                    "participants; and Agents available in this conversation. Information only, not a permission gate."
+                ),
+                schema={
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+                implementation="feishu.context",
+                risk_level="low",
+                default_owner="current_agent",
+                authorization_class="entry_gate",
+            ),
+        )
         # These are real seams even when a workspace has not installed a
         # concrete Bitable adapter yet.  An injected executor can provide the
         # implementation without changing the Harness interface.
@@ -188,6 +291,8 @@ class ConnectedToolExecutor:
         args = dict(arguments or {})
         for field in _TRUSTED_IDENTITY_FIELDS:
             args.pop(field, None)
+        if tool.implementation == "feishu.context":
+            return _conversation_context_snapshot(context)
         if self.native_executor is not None:
             return self.native_executor(tool.implementation, args, context)
         receipts = execute_trusted_actions(

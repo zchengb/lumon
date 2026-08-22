@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -77,6 +78,17 @@ def build_runner_env(
                     {
                         "LUMON_GATE_CHAT_TYPE": str(getattr(context, "chat_type", "") or ""),
                         "LUMON_GATE_IS_DM": "1" if getattr(context, "is_dm", False) else "0",
+                        "LUMON_GATE_CHAT_NAME": str(getattr(context, "chat_name", "") or ""),
+                        "LUMON_GATE_ROOT_ID": str(getattr(context, "root_id", "") or ""),
+                        "LUMON_GATE_PARTICIPANTS": json.dumps(
+                            list(getattr(context, "participants", ()) or ()), ensure_ascii=False
+                        ),
+                        "LUMON_GATE_AVAILABLE_AGENTS": json.dumps(
+                            list(getattr(context, "available_agents", ()) or ()), ensure_ascii=False
+                        ),
+                        "LUMON_GATE_AVAILABLE_AGENTS_VERIFIED": (
+                            "1" if getattr(context, "available_agents_verified", False) else "0"
+                        ),
                     }
                 )
     env = build_agent_env(agent_id=agent_id, project=project, extra=extra, source=source)
@@ -166,6 +178,17 @@ def build_trusted_runner_env(
                     {
                         "LUMON_GATE_CHAT_TYPE": str(getattr(context, "chat_type", "") or ""),
                         "LUMON_GATE_IS_DM": "1" if getattr(context, "is_dm", False) else "0",
+                        "LUMON_GATE_CHAT_NAME": str(getattr(context, "chat_name", "") or ""),
+                        "LUMON_GATE_ROOT_ID": str(getattr(context, "root_id", "") or ""),
+                        "LUMON_GATE_PARTICIPANTS": json.dumps(
+                            list(getattr(context, "participants", ()) or ()), ensure_ascii=False
+                        ),
+                        "LUMON_GATE_AVAILABLE_AGENTS": json.dumps(
+                            list(getattr(context, "available_agents", ()) or ()), ensure_ascii=False
+                        ),
+                        "LUMON_GATE_AVAILABLE_AGENTS_VERIFIED": (
+                            "1" if getattr(context, "available_agents_verified", False) else "0"
+                        ),
                     }
                 )
     env.update({key: str(value) for key, value in extra.items()})

@@ -93,9 +93,18 @@ _WORKFLOW_BUDGET_ERROR_TOKENS = (
 )
 
 
-def _session_protocol_version(definition: AgentDefinition, native_runtime: bool) -> str:
-    """Make old provider sessions ineligible after the native migration."""
-    return f"{definition.protocol_version}:native-3.1" if native_runtime else definition.protocol_version
+def _session_protocol_version(
+    definition: AgentDefinition,
+    native_runtime: bool,
+    conversation_version: str = "3.3",
+) -> str:
+    """Make old provider sessions ineligible after a native contract change."""
+
+    return (
+        f"{definition.protocol_version}:native-{str(conversation_version or '3.3').strip()}"
+        if native_runtime
+        else definition.protocol_version
+    )
 
 
 def _user_facing_agent_error(error: str, trace_id: str) -> str:
@@ -640,7 +649,26 @@ def handle_autonomous_conversation(
             obs.emit(trace, "agent.message.received")
             obs.upsert_trace(trace, state="queued", project_slug=slug)
             native_runtime = native_runtime_configured(common)
-            session_protocol_version = _session_protocol_version(definition, native_runtime)
+            collaboration = thread_native_config(
+                common,
+                {
+                    **meta,
+                    "_default_language": flags.default_language,
+                    "_conversation_version": str(
+                        (
+                            agents_config.get("conversation", {}).get("version")
+                            if isinstance(agents_config, dict)
+                            and isinstance(agents_config.get("conversation"), dict)
+                            else ""
+                        )
+                    ),
+                },
+            )
+            session_protocol_version = _session_protocol_version(
+                definition,
+                native_runtime,
+                collaboration.version,
+            )
             session = store.get_active(agent_id=agent_id, conversation_scope_id=scope)
             if reset and session:
                 store.close_session(session["session_id"])
@@ -656,7 +684,7 @@ def handle_autonomous_conversation(
                     soul_version=session.get("soul_version"),
                     protocol_version=session.get("protocol_version"),
                     expected_soul=definition.soul_version,
-                    expected_protocol=definition.protocol_version,
+                    expected_protocol=session_protocol_version,
                 )
                 store.close_session(session["session_id"])
                 session = None
@@ -757,7 +785,6 @@ def handle_autonomous_conversation(
                     # provider fails before it can write a fresh checkpoint.
                     store.save_checkpoint(session["session_id"], checkpoint)
 
-            collaboration = thread_native_config(common, meta)
             native_thread_store = ThreadTranscriptStore()
             native_event_bus = EventBus(store=native_thread_store)
             session_host = AgentSessionHost(session_store=store, event_bus=native_event_bus)
@@ -939,6 +966,7 @@ def handle_autonomous_conversation(
                         workspace_path=str(workspace),
                         user_message=anchored_text,
                         checkpoint=checkpoint,
+                        default_language=collaboration.default_language,
                     )
                     if native_runtime
                     else definition.build_bootstrap_prompt(
@@ -962,6 +990,7 @@ def handle_autonomous_conversation(
                         project_slug=slug,
                         user_message=anchored_text,
                         checkpoint=checkpoint,
+                        default_language=collaboration.default_language,
                     )
                     if native_runtime
                     else definition.build_resume_prompt(
@@ -1150,6 +1179,7 @@ def handle_autonomous_conversation(
                         workspace_path=str(workspace),
                         user_message=anchored_text,
                         checkpoint=checkpoint,
+                        default_language=collaboration.default_language,
                     )
                     if native_runtime
                     else definition.build_bootstrap_prompt(
@@ -1206,6 +1236,14 @@ def handle_autonomous_conversation(
                         "我沒有把中間進度當成結論。請在此 thread 回覆「繼續調查」，Mark 會從現有會話續接。\n"
                         f"Trace ID: {trace.trace_id}"
                     )
+                conversation_quality = native_output.quality_summary() if native_output is not None else {}
+                obs.emit(
+                    trace,
+                    "conversation.quality.summary",
+                    conversation_version=collaboration.version,
+                    default_language=collaboration.default_language,
+                    **conversation_quality,
+                )
                 return {
                     "status": "error",
                     "action": "autonomous.failed",
@@ -1216,6 +1254,7 @@ def handle_autonomous_conversation(
                     "provider_session_id": result.provider_session_id,
                     "agent_id": agent_id,
                     "tool_events": [e.__dict__ for e in result.tool_events],
+                    "conversation_quality": conversation_quality,
                     "typing": {"enabled": False},
                     "flags": {"conversation_v4": True, "mode": "autonomous_workspace"},
                 }
@@ -1559,6 +1598,7 @@ def handle_autonomous_conversation(
                                 f"Executed results:\n{_action_results_for_agent(action_receipts)}"
                             ),
                             checkpoint=checkpoint,
+                            default_language=collaboration.default_language,
                         )
                         if native_runtime
                         else definition.build_resume_prompt(
@@ -1623,6 +1663,16 @@ def handle_autonomous_conversation(
                 # delegation fallbacks, or a synthetic final-response gate.
                 native_reply = str(parsed.text or "").strip()
                 delivered = bool(visible_message_count)
+                if native_output is not None and native_reply and not session_waiting and native_question is None:
+                    native_output.mark_conclusion()
+                conversation_quality = native_output.quality_summary() if native_output is not None else {}
+                obs.emit(
+                    trace,
+                    "conversation.quality.summary",
+                    conversation_version=collaboration.version,
+                    default_language=collaboration.default_language,
+                    **conversation_quality,
+                )
                 return {
                     "status": "ok",
                     "action": "autonomous.native",
@@ -1643,6 +1693,7 @@ def handle_autonomous_conversation(
                     "project_slug": slug,
                     "workspace": str(workspace),
                     "agent_id": agent_id,
+                    "conversation_quality": conversation_quality,
                     "latency_ms": total_latency_ms,
                     "tool_events": [e.__dict__ for e in result.tool_events],
                     "bootstrap": is_new,
@@ -1764,6 +1815,16 @@ def handle_autonomous_conversation(
                         "還沒有真正開始：這次沒有產生委派回執，工作並未交給 Mark。"
                         "請再發一次需求，或直接 @Mark。"
                     )
+            if native_output is not None and str(reply_text or "").strip() and not clarification and not session_waiting:
+                native_output.mark_conclusion()
+            conversation_quality = native_output.quality_summary() if native_output is not None else {}
+            obs.emit(
+                trace,
+                "conversation.quality.summary",
+                conversation_version=collaboration.version,
+                default_language=collaboration.default_language,
+                **conversation_quality,
+            )
             return {
                 "status": "ok",
                 "action": "autonomous.clarification" if clarification else "autonomous.reply",
@@ -1789,6 +1850,7 @@ def handle_autonomous_conversation(
                 "project_slug": slug,
                 "workspace": str(workspace),
                 "agent_id": agent_id,
+                "conversation_quality": conversation_quality,
                 "latency_ms": total_latency_ms,
                 "tool_events": [e.__dict__ for e in result.tool_events],
                 "bootstrap": is_new,

@@ -253,6 +253,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.businessOutput": "03 · BUSINESS OUTPUT",
     "settings.operatingDetails": "04 · OPERATING DETAILS",
     "settings.globalFeishuAgents": "Global Feishu agents",
+    "settings.defaultReplyLanguage": "Agent default reply language",
+    "settings.defaultReplyLanguageDescription": "Used when the human has not explicitly established a language. Dashboard UI language is separate.",
     "settings.accessControl": "Access Control",
     "settings.accessControlDescription": "Authorize group chats as a whole, while private chats require one-to-one approval. Group membership is discovered from every configured Agent app.",
     "settings.accessPerson": "Person",
@@ -463,6 +465,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.receives": "Receives",
     "label.returns": "Returns",
     "label.gateway": "Gateway",
+    "label.agentDefaultLanguage": "Reply language",
     "label.agentsReady": "Agents ready",
     "label.workflowsActive": "Workflows active",
     "label.questionsWaiting": "Questions waiting",
@@ -835,6 +838,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.businessOutput": "03 · 业务产出",
     "settings.operatingDetails": "04 · 运行细节",
     "settings.globalFeishuAgents": "全局飞书 Agent",
+    "settings.defaultReplyLanguage": "Agent 默认回复语言",
+    "settings.defaultReplyLanguageDescription": "当用户没有明确建立语言时使用。它与 Dashboard 界面语言相互独立。",
     "settings.accessControl": "访问控制",
     "settings.accessControlDescription": "群组按整个群授权，私聊则需要逐个授权。系统会从每个已配置的 Agent 应用发现它加入的群组。",
     "settings.accessPerson": "用户",
@@ -1045,6 +1050,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.receives": "接收",
     "label.returns": "产出",
     "label.gateway": "网关",
+    "label.agentDefaultLanguage": "回复语言",
     "label.agentsReady": "就绪 Agent",
     "label.workflowsActive": "运行中工作流",
     "label.questionsWaiting": "待回答问题",
@@ -1417,6 +1423,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "settings.businessOutput": "03 · 業務產出",
     "settings.operatingDetails": "04 · 執行細節",
     "settings.globalFeishuAgents": "全域飛書 Agent",
+    "settings.defaultReplyLanguage": "Agent 預設回覆語言",
+    "settings.defaultReplyLanguageDescription": "當使用者沒有明確建立語言時使用。它與 Dashboard 介面語言彼此獨立。",
     "settings.accessControl": "存取控制",
     "settings.accessControlDescription": "群組按整個群組授權，私聊則需要逐一授權。系統會從每個已設定的 Agent 應用發現它加入的群組。",
     "settings.accessPerson": "使用者",
@@ -1627,6 +1635,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "label.receives": "接收",
     "label.returns": "產出",
     "label.gateway": "閘道",
+    "label.agentDefaultLanguage": "回覆語言",
     "label.agentsReady": "就緒 Agent",
     "label.workflowsActive": "執行中工作流",
     "label.questionsWaiting": "待回答問題",
@@ -1905,6 +1914,7 @@ interface AgentsSettingsPayload {
   enabled?: boolean;
   home?: string;
   config_path?: string;
+  conversation?: { version?: string; default_language?: string };
   access?: AgentsAccessSettings;
   recent_feishu?: {
     user_ids?: string[];
@@ -3907,6 +3917,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const [githubRepository, setGithubRepository] = useState(String(workspace.deployment_tracking?.github_actions?.repository || ""));
   const [githubWorkflow, setGithubWorkflow] = useState(String(workspace.deployment_tracking?.github_actions?.workflow || ""));
   const [agentsEnabled, setAgentsEnabled] = useState(Boolean(agentsPayload.enabled));
+  const [defaultLanguage, setDefaultLanguage] = useState(agentsPayload.conversation?.default_language || "zh-Hant");
   const [agentDrafts, setAgentDrafts] = useState<AgentSettings[]>(Array.isArray(agentsPayload.agents) ? agentsPayload.agents.map((agent) => ({ ...agent })) : []);
   const [accessDraft, setAccessDraft] = useState<AgentsAccessSettings>({
     allowed_chat_ids: agentsPayload.access?.allowed_chat_ids || [],
@@ -3927,6 +3938,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [agentsBaseline, setAgentsBaseline] = useState({
     enabled: Boolean(agentsPayload.enabled),
+    defaultLanguage: agentsPayload.conversation?.default_language || "zh-Hant",
     agents: Array.isArray(agentsPayload.agents) ? JSON.stringify(agentsPayload.agents) : "[]",
     access: JSON.stringify(agentsPayload.access || {}),
     testCase: JSON.stringify(agentsPayload.test_case || {}),
@@ -4024,6 +4036,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       default_policy: payload.access?.default_policy || "deny",
     };
     setAgentsEnabled(Boolean(payload.enabled));
+    setDefaultLanguage(payload.conversation?.default_language || "zh-Hant");
     setAgentDrafts(nextAgents);
     setAccessDraft(nextAccess);
     setRecentFeishu({
@@ -4036,6 +4049,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     });
     setAgentsBaseline({
       enabled: Boolean(payload.enabled),
+      defaultLanguage: payload.conversation?.default_language || "zh-Hant",
       agents: JSON.stringify(nextAgents),
       access: JSON.stringify(nextAccess),
       testCase: JSON.stringify(payload.test_case || {}),
@@ -4115,7 +4129,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
     jenkins: { job: String(savedDeploymentConfig.jenkins?.job || "") },
     github_actions: { repository: String(savedDeploymentConfig.github_actions?.repository || ""), workflow: String(savedDeploymentConfig.github_actions?.workflow || "") },
   });
-  const agentsChanged = agentsEnabled !== agentsBaseline.enabled || JSON.stringify(agentDrafts) !== agentsBaseline.agents || JSON.stringify(accessDraft) !== agentsBaseline.access || JSON.stringify({
+  const agentsChanged = defaultLanguage !== agentsBaseline.defaultLanguage || agentsEnabled !== agentsBaseline.enabled || JSON.stringify(agentDrafts) !== agentsBaseline.agents || JSON.stringify(accessDraft) !== agentsBaseline.access || JSON.stringify({
     language: testCaseDraft.language || "zh-Hant",
     table_name: testCaseDraft.table_name || "Sheet1",
     base_app_token_env: testCaseDraft.base_app_token_env || "FEISHU_MBPASS_QA_SHEET_TOKEN",
@@ -4151,6 +4165,7 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
             method: "POST",
             json: {
               enabled: agentsEnabled,
+              conversation: { version: "3.3", default_language: defaultLanguage },
               access: accessDraft,
               test_case: {
                 destination: "sheet",
@@ -4211,6 +4226,21 @@ function SettingsView({ data, project, notify, onDirtyChange, reload }: { data: 
       <div className="settings-cluster-heading"><div><span>{t("settings.humanAgents")}</span><h2>{t("settings.agentTeam")}</h2><p>{t("settings.agentTeamDescription")}</p></div><a href="#settings-project">{t("settings.nextProjectOutput")} <ChevronRight size={13} /></a></div>
       <Panel title={t("heading.agentRoles")} action={<span className="muted">{t("settings.globalFeishuAgents")}</span>}>
       <div className="settings-section"><div className="settings-copy"><div className="settings-heading"><div className="settings-title-stack"><h4>{t("label.gateway")}</h4></div></div><p>Enable Feishu conversational agents. Config lives in {text(agentsPayload.config_path, "~/.lumon/agents/config.json")}. Restart `lumon agents start` after saving. Mutations fail closed until mutation users are configured.</p></div><div className="settings-toggle"><ScheduleToggle enabled={agentsEnabled} onChange={(enabled) => { setAgentsEnabled(enabled); markDirty(); }} /></div></div>
+      <div className="settings-section divider">
+        <div className="settings-copy">
+          <div className="settings-heading"><div className="settings-title-stack"><h4>{t("settings.defaultReplyLanguage")}</h4></div></div>
+          <p>{t("settings.defaultReplyLanguageDescription")}</p>
+        </div>
+        <div className="settings-control">
+          <Field label={t("label.agentDefaultLanguage")}>
+            <select value={defaultLanguage} onChange={(event) => { setDefaultLanguage(event.target.value); markDirty(); }}>
+              <option value="zh-Hant">{t("language.zhHant")} (zh-Hant)</option>
+              <option value="zh-Hans">{t("language.zhHans")} (zh-Hans)</option>
+              <option value="en">{t("language.en")} (en)</option>
+            </select>
+          </Field>
+        </div>
+      </div>
       <div className="settings-section divider access-control-section">
         <div className="settings-copy">
           <div className="settings-heading"><div className="settings-title-stack"><h4>{t("settings.accessControl")}</h4></div></div>

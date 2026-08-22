@@ -58,6 +58,7 @@ class AgentSettingsTests(unittest.TestCase):
             payload = apply_agent_settings(
                 {
                     "enabled": True,
+                    "conversation": {"default_language": "en"},
                     "access": {
                         "default_policy": "deny",
                         "allowed_chat_ids": ["oc_abcdef0123456789abcdef0123456789"],
@@ -112,6 +113,8 @@ class AgentSettingsTests(unittest.TestCase):
                 }
             )
             self.assertTrue(payload["enabled"])
+            self.assertEqual("3.3", payload["conversation"]["version"])
+            self.assertEqual("en", payload["conversation"]["default_language"])
             self.assertEqual("deny", payload["access"]["default_policy"])
             self.assertEqual(
                 ["oc_abcdef0123456789abcdef0123456789"],
