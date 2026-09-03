@@ -1,0 +1,6 @@
+"""Run Lumon through ``python -m lumon``."""
+
+from lumon.cli.app import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())
