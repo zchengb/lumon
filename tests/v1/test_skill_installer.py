@@ -24,6 +24,20 @@ def test_preview_is_read_only(skills_root: Path) -> None:
     assert not skills_root.exists()
 
 
+def test_catalog_contains_chinese_dual_mode_planning_skills() -> None:
+    catalog = SkillCatalog()
+
+    assert catalog.names() == ("lumon-story-planning", "lumon-technical-planning")
+    with pytest.raises(KeyError):
+        catalog.source("lumon-workspace")
+
+    for name in catalog.names():
+        content = catalog.source(name).joinpath("SKILL.md").read_text(encoding="utf-8")
+        assert "twg jira workitem get" in content
+        assert "独立项目模式" in content
+        assert "AGENTS.md" in content
+
+
 def test_existing_skill_directory_is_skipped_without_overwrite(skills_root: Path) -> None:
     existing = skills_root / "lumon-story-planning"
     existing.mkdir(parents=True)

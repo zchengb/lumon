@@ -10,7 +10,7 @@ Lumon uses an isolated Python 3.12 environment managed by `uv`:
 
 ```text
 uv python install 3.12
-uv tool install --python 3.12 /path/to/lumon-0.1.0-py3-none-any.whl
+uv tool install --python 3.12 /path/to/lumon-1.0.0-py3-none-any.whl
 lumon doctor
 ```
 

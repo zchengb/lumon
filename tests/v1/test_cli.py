@@ -9,12 +9,12 @@ from lumon.cli.app import main
 
 def test_version_command(capsys) -> None:
     assert main(["version"]) == 0
-    assert capsys.readouterr().out.strip() == "0.1.0"
+    assert capsys.readouterr().out.strip() == "1.0.0"
 
 
 def test_root_version_option(capsys) -> None:
     assert main(["--version"]) == 0
-    assert capsys.readouterr().out.strip() == "0.1.0"
+    assert capsys.readouterr().out.strip() == "1.0.0"
 
 
 def test_doctor_json_is_machine_readable(capsys) -> None:
