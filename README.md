@@ -19,6 +19,27 @@ uv tool install --python 3.12 https://github.com/zchengb/lumon/releases/download
 lumon doctor
 ```
 
+For a one-command Shell installation, use the installer in
+`packaging/install.sh`. It does not use uv; it creates an isolated Python 3.12
+virtual environment and installs Lumon with pip. On a private repository, the
+installer uses `LUMON_GITHUB_TOKEN` for the Release API when provided, or falls
+back to the SSH-accessible release tag. The matching uninstaller is
+`packaging/uninstall.sh`.
+
+For the current private repository, an authorized machine can run:
+
+```text
+git clone --depth 1 --branch release git@github.com:zchengb/lumon.git /tmp/lumon-installer
+bash /tmp/lumon-installer/packaging/install.sh --version v1.0.0
+```
+
+The installer does not modify a Workspace or remove global Skills. To remove
+the Shell installation later, run:
+
+```text
+bash /tmp/lumon-installer/packaging/uninstall.sh
+```
+
 After a newer GitHub Release is published, update the installed CLI with:
 
 ```text
