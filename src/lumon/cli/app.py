@@ -7,7 +7,7 @@ from collections.abc import Sequence
 import click
 import typer
 
-from lumon.cli.commands import doctor, init, version
+from lumon.cli.commands import doctor, init, update, version
 from lumon.version import __version__
 
 app = typer.Typer(
@@ -41,6 +41,7 @@ def callback(
 
 app.command("init")(init.command)
 app.command("doctor")(doctor.command)
+app.command("update")(update.command)
 app.command("version")(version.command)
 
 

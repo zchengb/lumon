@@ -8,6 +8,7 @@ from typing import Any
 import typer
 
 from lumon.errors import LumonError
+from lumon.update import UpdateResult, UpdateStatus
 from lumon.workspace.doctor import DoctorReport
 from lumon.workspace.model import InitResult
 
@@ -41,6 +42,21 @@ def emit_doctor(report: DoctorReport, json_output: bool) -> None:
     for check in report.checks:
         marker = "ok" if check.ok else "fail"
         typer.echo(f"[{marker}] {check.name}: {check.detail}")
+
+
+def emit_update(result: UpdateResult, json_output: bool) -> None:
+    """Render an update result without exposing implementation details."""
+
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    if result.status is UpdateStatus.UP_TO_DATE:
+        typer.echo(f"Lumon {result.current_version} is up to date.")
+    elif result.status is UpdateStatus.UPDATE_AVAILABLE:
+        typer.echo(f"Update available: Lumon {result.current_version} -> {result.latest_version}.")
+    else:
+        typer.echo(f"Lumon updated: {result.current_version} -> {result.latest_version}.")
 
 
 def emit_error(error: LumonError, json_output: bool) -> None:

@@ -9,12 +9,13 @@ import pytest
 
 from lumon.errors import InvalidInputError, PreflightError
 from lumon.workspace.doctor import Doctor
+from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.model import InitRequest
 
 
 def test_initialize_missing_workspace_and_install_missing_skill(
-    initializer, skills_root: Path, tmp_path: Path
+    initializer: WorkspaceInitializer, skills_root: Path, tmp_path: Path
 ) -> None:
     target = tmp_path / "workspaces" / "lumon-lab"
 
@@ -47,7 +48,9 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     assert (skills_root / "lumon-technical-planning" / "SKILL.md").is_file()
 
 
-def test_initialize_empty_workspace_uses_explicit_name(initializer, tmp_path: Path) -> None:
+def test_initialize_empty_workspace_uses_explicit_name(
+    initializer: WorkspaceInitializer, tmp_path: Path
+) -> None:
     target = tmp_path / "empty"
     target.mkdir()
 
@@ -61,7 +64,7 @@ def test_initialize_empty_workspace_uses_explicit_name(initializer, tmp_path: Pa
 
 
 def test_dry_run_does_not_create_workspace_or_skill_directory(
-    initializer, skills_root: Path, tmp_path: Path
+    initializer: WorkspaceInitializer, skills_root: Path, tmp_path: Path
 ) -> None:
     target = tmp_path / "not-created"
 
@@ -77,7 +80,9 @@ def test_dry_run_does_not_create_workspace_or_skill_directory(
     assert result.planned_paths
 
 
-def test_dry_run_does_not_create_missing_parent_directories(initializer, tmp_path: Path) -> None:
+def test_dry_run_does_not_create_missing_parent_directories(
+    initializer: WorkspaceInitializer, tmp_path: Path
+) -> None:
     target = tmp_path / "missing" / "nested" / "workspace"
 
     initializer.initialize(InitRequest(target, dry_run=True))
@@ -85,7 +90,9 @@ def test_dry_run_does_not_create_missing_parent_directories(initializer, tmp_pat
     assert not (tmp_path / "missing").exists()
 
 
-def test_non_empty_unmanaged_directory_is_rejected(initializer, tmp_path: Path) -> None:
+def test_non_empty_unmanaged_directory_is_rejected(
+    initializer: WorkspaceInitializer, tmp_path: Path
+) -> None:
     target = tmp_path / "existing"
     target.mkdir()
     (target / "keep.txt").write_text("user data", encoding="utf-8")
@@ -98,7 +105,7 @@ def test_non_empty_unmanaged_directory_is_rejected(initializer, tmp_path: Path) 
 
 
 def test_existing_workspace_is_idempotent_and_skips_existing_skill(
-    initializer, skills_root: Path, tmp_path: Path
+    initializer: WorkspaceInitializer, skills_root: Path, tmp_path: Path
 ) -> None:
     target = tmp_path / "workspace"
     initializer.initialize(InitRequest(target))
@@ -118,7 +125,9 @@ def test_existing_workspace_is_idempotent_and_skips_existing_skill(
     assert skill_file.read_text(encoding="utf-8") == "user-owned content\n"
 
 
-def test_existing_invalid_manifest_is_rejected(initializer, tmp_path: Path) -> None:
+def test_existing_invalid_manifest_is_rejected(
+    initializer: WorkspaceInitializer, tmp_path: Path
+) -> None:
     target = tmp_path / "broken"
     layout = WorkspaceLayout.from_root(target)
     layout.control_dir.mkdir(parents=True)
@@ -128,7 +137,7 @@ def test_existing_invalid_manifest_is_rejected(initializer, tmp_path: Path) -> N
         initializer.initialize(InitRequest(target))
 
 
-def test_root_initialization_is_rejected(initializer) -> None:
+def test_root_initialization_is_rejected(initializer: WorkspaceInitializer) -> None:
     with pytest.raises(InvalidInputError, match="filesystem root"):
         initializer.initialize(InitRequest(Path("/")))
 

@@ -1,0 +1,65 @@
+name: Lumon Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install locked development environment
+        run: uv sync --locked --dev
+
+      - name: Verify tag matches package version
+        run: uv run python tools/check_release_version.py "${{ github.ref_name }}"
+
+      - name: Ruff check
+        run: uv run ruff check
+
+      - name: Ruff format check
+        run: uv run ruff format --check
+
+      - name: Pyright
+        run: uv run pyright --pythonpath .venv/bin/python
+
+      - name: Pytest
+        run: uv run pytest
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Create distribution checksums
+        run: uv run python tools/create_checksums.py dist
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumon-release-${{ github.ref_name }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release and attach distributions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}" dist/*
+          --verify-tag
+          --title "Lumon ${{ github.ref_name }}"
+          --generate-notes

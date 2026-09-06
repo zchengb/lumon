@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
 
 from lumon.errors import PreflightError
@@ -47,12 +48,13 @@ class WorkspaceManifest:
         if not isinstance(value, dict):
             raise PreflightError(f"Workspace manifest is not an object: {source}")
 
-        schema_version = value.get("schema_version")
-        workspace_id = value.get("workspace_id")
-        name = value.get("name")
-        created_at = value.get("created_at")
-        lumon_version = value.get("lumon_version")
-        status = value.get("status")
+        fields = cast(dict[str, object], value)
+        schema_version = fields.get("schema_version")
+        workspace_id = fields.get("workspace_id")
+        name = fields.get("name")
+        created_at = fields.get("created_at")
+        lumon_version = fields.get("lumon_version")
+        status = fields.get("status")
 
         if (
             not isinstance(schema_version, int)
@@ -77,7 +79,7 @@ class WorkspaceManifest:
             name=name,
             created_at=created_at,
             lumon_version=lumon_version,
-            status=status,
+            status="initialized",
         )
 
     def to_dict(self) -> dict[str, object]:

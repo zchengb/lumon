@@ -31,3 +31,9 @@ class InitializationError(LumonError):
 
 class SkillInstallError(InitializationError):
     """A new Skill could not be installed."""
+
+
+class UpdateError(LumonError):
+    """A Lumon update could not be checked or applied."""
+
+    exit_code: ClassVar[int] = 4
