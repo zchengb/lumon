@@ -6,6 +6,7 @@ import shutil
 import tempfile
 from collections.abc import Callable
 from datetime import datetime
+from importlib.resources import files
 from pathlib import Path
 
 from lumon.errors import InitializationError, InvalidInputError, PreflightError
@@ -150,22 +151,7 @@ class WorkspaceInitializer:
             f"# {name}\n\nThis Workspace was initialized by Lumon.\n",
             encoding="utf-8",
         )
-        layout.agents_instructions.write_text(
-            """# Lumon Workspace
-
-This directory is a Lumon Workspace initialized by Lumon.
-
-## Local rules
-
-- Treat `lumon/manifest.json` as the identity and initialization record for this Workspace.
-- Keep runtime outputs under `lumon/runs`, `lumon/artifacts`, `lumon/logs`, and `lumon/tmp`.
-- Do not store secrets in this Workspace.
-- Global Agent Skills live under `~/.agents/skills/`; do not copy them into this Workspace.
-- Use `lumon doctor --workspace <path>` for read-only Workspace checks.
-- Add Workspace-specific rules here instead of changing the global Skills.
-""",
-            encoding="utf-8",
-        )
+        layout.agents_instructions.write_text(_read_agents_template(), encoding="utf-8")
         layout.gitignore.write_text(
             "lumon/runs/\nlumon/artifacts/\nlumon/logs/\nlumon/tmp/\n",
             encoding="utf-8",
@@ -226,6 +212,17 @@ def _workspace_name(requested: str | None, target: Path) -> str:
 
 def _toml_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _read_agents_template() -> str:
+    """Read the packaged Workspace instructions template."""
+
+    try:
+        return files("lumon.workspace.templates").joinpath("AGENTS.md").read_text(encoding="utf-8")
+    except (ModuleNotFoundError, OSError) as exc:
+        raise InitializationError(
+            "The bundled Workspace AGENTS.md template is unavailable."
+        ) from exc
 
 
 def _is_writable_directory(path: Path) -> bool:

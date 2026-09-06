@@ -37,7 +37,7 @@ testpaths = ["tests"]
 addopts = "-ra"
 
 [tool.pyright]
-include = ["src/lumon", "tests/v1"]
+include = ["src/lumon", "tests"]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
 

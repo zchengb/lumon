@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,8 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     assert (target / "README.md").is_file()
     assert (target / "AGENTS.md").is_file()
     agents = (target / "AGENTS.md").read_text(encoding="utf-8")
+    template = files("lumon.workspace.templates").joinpath("AGENTS.md").read_text(encoding="utf-8")
+    assert agents == template
     assert "Global Agent Skills live under `~/.agents/skills/`" in agents
     assert "lumon/manifest.json" in agents
     assert (target / ".gitignore").is_file()

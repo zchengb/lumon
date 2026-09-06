@@ -57,4 +57,4 @@ lumon doctor [--workspace /path/to/lumon-workspace]
 lumon init /path/to/lumon-workspace --dry-run
 ```
 
-The v1 source tree intentionally contains only `src/lumon` and `tests/v1`.
+The v1 source tree intentionally contains only `src/lumon` and `tests`.
