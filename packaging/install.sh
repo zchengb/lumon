@@ -280,6 +280,7 @@ else
     "$wheel_path"
 fi
 
+touch "$install_root/.lumon-shell-install"
 "$install_root/venv/bin/lumon" --version
 "$install_root/venv/bin/lumon" doctor --json
 

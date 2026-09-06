@@ -9,6 +9,7 @@ import pytest
 
 from lumon.errors import UpdateError
 from lumon.update import (
+    PythonVenvInstaller,
     ReleaseAsset,
     ReleaseInfo,
     ReleaseVersion,
@@ -119,3 +120,34 @@ def test_update_rejects_a_checksum_mismatch() -> None:
         UpdateService(source, installer).update(UpdateRequest("zchengb/lumon"))
 
     assert installer.installed_bytes is None
+
+
+def test_python_venv_installer_uses_pip_without_uv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> None:
+        calls.append((command, kwargs))
+
+    monkeypatch.setattr("lumon.update.subprocess.run", fake_run)
+    wheel = tmp_path / "lumon-1.0.1-py3-none-any.whl"
+    wheel.write_bytes(b"wheel")
+
+    PythonVenvInstaller("/private/venv/bin/python").install(wheel, "3.12")
+
+    assert calls == [
+        (
+            [
+                "/private/venv/bin/python",
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--no-cache-dir",
+                "--force-reinstall",
+                str(wheel),
+            ],
+            {"check": True, "capture_output": True, "text": True},
+        )
+    ]

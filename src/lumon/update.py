@@ -223,6 +223,36 @@ class UvToolInstaller:
             raise UpdateError("uv failed while installing the Lumon update.") from exc
 
 
+class PythonVenvInstaller:
+    """Replace Lumon inside the venv created by the Shell installer."""
+
+    def __init__(self, python_executable: str) -> None:
+        self.python_executable = python_executable
+
+    def install(self, wheel: Path, python_version: str) -> None:
+        """Install a verified wheel into the current Python virtual environment."""
+
+        del python_version
+        try:
+            subprocess.run(
+                [
+                    self.python_executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-cache-dir",
+                    "--force-reinstall",
+                    str(wheel),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise UpdateError("pip failed while installing the Lumon update.") from exc
+
+
 class UpdateService:
     """Coordinate release discovery, verification, and CLI replacement."""
 
@@ -288,8 +318,17 @@ def default_service() -> UpdateService:
 
     return UpdateService(
         source=GitHubReleaseClient(token=os.environ.get("LUMON_GITHUB_TOKEN")),
-        installer=UvToolInstaller(),
+        installer=default_installer(),
     )
+
+
+def default_installer() -> ToolInstaller:
+    """Select the installer that matches the current Lumon installation."""
+
+    shell_marker = Path(sys.prefix).parent / ".lumon-shell-install"
+    if shell_marker.is_file():
+        return PythonVenvInstaller(sys.executable)
+    return UvToolInstaller()
 
 
 def _validate_repository(repository: str) -> None:
