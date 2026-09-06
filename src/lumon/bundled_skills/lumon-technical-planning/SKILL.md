@@ -138,7 +138,7 @@ Description：
 ### Repository Mapping
 - `<repository-name-that-will-change>`
 
-### Architecture / Diagrams（仅当需要时）
+### Architecture / Diagrams (when applicable)
 - **Type:** UML Class Diagram / Sequence Diagram / Component Diagram / State Diagram
 - **Artifact:** `technical-plan-uml.html`; PNG: `technical-plan-uml.png`
 - **Purpose:** <the relationship or flow this diagram makes reviewable>
@@ -172,7 +172,7 @@ Technical Planning 支持按需产出图表。是否画图由设计复杂度决�
 - 生成后先完成渲染、重叠 / 裁切 / 端点检查和可用导出检查，再把图表交给用户 review。
   图表中的设计关系发生实质变化时，需要重新审阅 Technical Plan。
 
-## Technical Plan 内容
+## Technical Plan Content
 
 根据实际需要使用以下结构，省略不适用的部分：
 
@@ -180,14 +180,14 @@ Technical Planning 支持按需产出图表。是否画图由设计复杂度决�
 ### Goal
 ### Scope and Boundaries
 ### Repository Mapping
-### Architecture / Diagrams（仅当需要时）
-### 上下文与证据
-### 设计决策
-### 模块与接口
-### 数据、配置与契约
-### 实现步骤
-### 验证方式
-### 风险与未决问题
+### Architecture / Diagrams (when applicable)
+### Context and Evidence
+### Design Decisions
+### Modules and Interfaces
+### Data, Configuration, and Contracts
+### Implementation Steps
+### Verification Approach
+### Risks and Open Questions
 ```
 
 要求：
