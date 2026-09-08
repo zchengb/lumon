@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.1
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.2
 ```
 
 The installer does not modify a Workspace or remove global Skills. To remove
@@ -51,7 +51,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.1` runs the release workflow, which attaches
+semantic version tag such as `v1.0.2` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -59,6 +59,28 @@ the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 ```text
 lumon init /path/to/lumon-workspace
 ```
+
+With one or more code Repositories, repeat `--repository`:
+
+```text
+lumon init /path/to/lumon-workspace \
+  --repository git@github.com:example/product.git \
+  --repository git@github.com:example/backend.git
+```
+
+When `--repository` is omitted in an interactive terminal, Lumon asks for
+clone URLs one at a time; an empty URL ends the collection. In a non-interactive
+process, or with `--json`, omission means an intentionally empty Workspace.
+Repository names are derived from the URLs, and credentials must come from the
+system Git SSH agent or credential helper rather than the URL itself.
+
+For each new Repository, Lumon probes `main` first and otherwise uses the
+remote's advertised default branch. It records the actual branch, revision,
+URL, and `repos/<name>` path in `lumon/workspace.toml`. A matching existing Git
+checkout is reused without fetch, reset, checkout, or deletion. A different
+remote or an existing non-Git directory is rejected. Initialization is
+transactional: newly cloned repositories and newly installed Skills are
+removed if the operation fails.
 
 Initialization creates the Workspace skeleton, including a local `AGENTS.md`,
 and installs the bundled `lumon-story-planning` and
@@ -76,6 +98,7 @@ lumon help
 lumon --version
 lumon doctor [--workspace /path/to/lumon-workspace]
 lumon init /path/to/lumon-workspace --dry-run
+lumon init /path/to/lumon-workspace --json
 ```
 
 The v1 source tree intentionally contains only `src/lumon` and `tests`.

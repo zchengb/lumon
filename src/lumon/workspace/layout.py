@@ -33,6 +33,10 @@ class WorkspaceLayout:
         return self.control_dir / "manifest.json"
 
     @property
+    def repositories_dir(self) -> Path:
+        return self.root / "repos"
+
+    @property
     def readme(self) -> Path:
         return self.root / "README.md"
 

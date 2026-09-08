@@ -1,6 +1,19 @@
 """Workspace initialization and inspection modules."""
 
 from lumon.workspace.initializer import WorkspaceInitializer
-from lumon.workspace.model import InitRequest, InitResult
+from lumon.workspace.model import (
+    InitRequest,
+    InitResult,
+    RepositoryRecord,
+    RepositoryResult,
+    RepositorySpec,
+)
 
-__all__ = ["InitRequest", "InitResult", "WorkspaceInitializer"]
+__all__ = [
+    "InitRequest",
+    "InitResult",
+    "RepositoryRecord",
+    "RepositoryResult",
+    "RepositorySpec",
+    "WorkspaceInitializer",
+]

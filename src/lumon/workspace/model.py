@@ -6,7 +6,49 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-InitStatus = Literal["initialized", "already_initialized", "dry_run"]
+InitStatus = Literal["initialized", "already_initialized", "updated", "dry_run"]
+RepositoryResultStatus = Literal["cloned", "reused", "will_clone", "will_reuse"]
+
+
+@dataclass(frozen=True, slots=True)
+class RepositorySpec:
+    """One user-provided Repository clone URL and its derived name."""
+
+    name: str
+    clone_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryRecord:
+    """The inspectable Repository metadata persisted in a Workspace."""
+
+    name: str
+    url: str
+    path: str
+    branch: str
+    revision: str
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryResult:
+    """The outcome of preparing one Repository for initialization."""
+
+    name: str
+    path: Path
+    status: RepositoryResultStatus
+    branch: str | None = None
+    revision: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert the result at the CLI output seam."""
+
+        return {
+            "name": self.name,
+            "path": str(self.path),
+            "status": self.status,
+            "branch": self.branch,
+            "revision": self.revision,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +57,7 @@ class InitRequest:
 
     target: Path
     name: str | None = None
+    repositories: tuple[RepositorySpec, ...] = ()
     dry_run: bool = False
 
 
@@ -29,6 +72,7 @@ class InitResult:
     installed_skills: tuple[str, ...] = ()
     skipped_skills: tuple[str, ...] = ()
     planned_skills: tuple[str, ...] = ()
+    repositories: tuple[RepositoryResult, ...] = ()
     warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
@@ -40,4 +84,5 @@ class InitResult:
             value[key] = [str(path) for path in value[key]]
         for key in ("installed_skills", "skipped_skills", "planned_skills", "warnings"):
             value[key] = list(value[key])
+        value["repositories"] = [repository.to_dict() for repository in self.repositories]
         return value

@@ -33,6 +33,10 @@ class SkillInstallError(InitializationError):
     """A new Skill could not be installed."""
 
 
+class RepositoryError(InitializationError):
+    """A Repository could not be inspected, cloned, or verified."""
+
+
 class UpdateError(LumonError):
     """A Lumon update could not be checked or applied."""
 

@@ -7,8 +7,10 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
+from lumon.workspace.repositories import RepositoryProvisioner
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,10 +39,15 @@ class DoctorReport:
 class Doctor:
     """Inspect the package runtime, Skills directory, and optional Workspace."""
 
-    def __init__(self, skills_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        skills_root: Path | None = None,
+        repository_provisioner: RepositoryProvisioner | None = None,
+    ) -> None:
         self.skills_root = (
             (skills_root or (Path.home() / ".agents" / "skills")).expanduser().resolve()
         )
+        self.repository_provisioner = repository_provisioner or RepositoryProvisioner()
 
     def inspect(self, workspace: Path | None = None) -> DoctorReport:
         checks = [
@@ -54,7 +61,7 @@ class Doctor:
         if workspace is None:
             checks.append(DoctorCheck("workspace", True, "not selected"))
         else:
-            checks.append(self._workspace_check(workspace))
+            checks.extend(self._workspace_checks(workspace))
         return DoctorReport(tuple(checks))
 
     def _skills_check(self) -> DoctorCheck:
@@ -77,6 +84,35 @@ class Doctor:
         except Exception as exc:
             return DoctorCheck("workspace", False, str(exc))
         return DoctorCheck("workspace", True, str(layout.root))
+
+    def _workspace_checks(self, workspace: Path) -> tuple[DoctorCheck, ...]:
+        """Check Workspace metadata and every registered Repository."""
+
+        workspace_check = self._workspace_check(workspace)
+        if not workspace_check.ok:
+            return (workspace_check,)
+
+        layout = WorkspaceLayout.from_root(workspace)
+        try:
+            config = load_workspace_config(layout.workspace_config)
+        except Exception as exc:
+            return (
+                workspace_check,
+                DoctorCheck("workspace_config", False, str(exc)),
+            )
+
+        checks = [
+            workspace_check,
+            DoctorCheck(
+                "repositories",
+                True,
+                "none registered" if not config.repositories else str(len(config.repositories)),
+            ),
+        ]
+        for record in config.repositories:
+            ok, detail = self.repository_provisioner.inspect(layout.root, record)
+            checks.append(DoctorCheck(f"repository:{record.name}", ok, detail))
+        return tuple(checks)
 
 
 def _nearest_existing_parent(path: Path) -> Path:

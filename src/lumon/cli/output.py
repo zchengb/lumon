@@ -28,6 +28,13 @@ def emit_init(result: InitResult, json_output: bool) -> None:
         typer.echo(f"Skills skipped: {', '.join(result.skipped_skills)}")
     if result.planned_skills:
         typer.echo(f"Skills to install: {', '.join(result.planned_skills)}")
+    if result.repositories:
+        typer.echo("Repositories:")
+        for repository in result.repositories:
+            detail = f"{repository.name} [{repository.status}] {repository.path}"
+            if repository.branch:
+                detail += f" (branch {repository.branch})"
+            typer.echo(f"  - {detail}")
     if result.created_paths:
         typer.echo(f"Created paths: {len(result.created_paths)}")
 
