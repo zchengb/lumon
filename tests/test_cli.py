@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
 from lumon.cli.app import main
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def test_version_command(capsys: pytest.CaptureFixture[str]) -> None:
@@ -23,7 +26,8 @@ def test_help_command_is_compatible_with_common_cli_usage(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert main(["help"]) == 0
-    assert "Usage: lumon" in capsys.readouterr().out
+    output = _ANSI_ESCAPE.sub("", capsys.readouterr().out)
+    assert "Usage: lumon" in output
 
 
 def test_unknown_command_has_a_friendly_error(capsys: pytest.CaptureFixture[str]) -> None:
