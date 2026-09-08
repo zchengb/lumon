@@ -4,7 +4,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 readonly DEFAULT_REPOSITORY="zchengb/lumon"
-readonly DEFAULT_VERSION="v1.0.0"
+readonly DEFAULT_VERSION="latest"
 
 repository="${LUMON_REPOSITORY:-$DEFAULT_REPOSITORY}"
 version="${LUMON_VERSION:-$DEFAULT_VERSION}"
@@ -27,7 +27,7 @@ Release API with LUMON_GITHUB_TOKEN and then falls back to Git over SSH.
 
 Options:
   --repository OWNER/REPOSITORY  GitHub repository (default: zchengb/lumon)
-  --version vX.Y.Z               Release tag (default: v1.0.0)
+  --version latest|vX.Y.Z        Release tag (default: latest stable Release)
   --install-root PATH            Installation directory
   --bin-dir PATH                 Directory for the lumon executable
   --force                        Replace an existing Shell installation
@@ -74,10 +74,21 @@ done
 [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || \
   die "GitHub repository must use OWNER/REPOSITORY format."
 
-normalized_version="${version#v}"
-[[ "$normalized_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
-  die "Version must use vX.Y.Z format."
-version="v${normalized_version}"
+normalize_version() {
+  local requested="$1"
+  local normalized="${requested#v}"
+
+  if [[ "$requested" == "latest" ]]; then
+    printf 'latest\n'
+    return
+  fi
+
+  [[ "$normalized" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+    die "Version must use latest or vX.Y.Z format."
+  printf 'v%s\n' "$normalized"
+}
+
+version="$(normalize_version "$version")"
 
 [[ -n "$install_root" && "$install_root" != "/" && "$install_root" != "$HOME" ]] || \
   die "Refusing to use a broad installation directory: $install_root"
@@ -128,6 +139,112 @@ resolve_python() {
   fi
 
   die "Python 3.12 was not found. Install it or set LUMON_PYTHON to its path."
+}
+
+resolve_latest_version() {
+  local resolved
+
+  if resolved="$("$python_command" - "$repository" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+
+repository = sys.argv[1]
+api_root = "https://api.github.com"
+headers = {
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "lumon-installer",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+token = os.environ.get("LUMON_GITHUB_TOKEN")
+if token:
+    headers["Authorization"] = f"Bearer {token}"
+
+
+def request(url: str, accept: str) -> urllib.request.Request:
+    request_headers = dict(headers)
+    request_headers["Accept"] = accept
+    return urllib.request.Request(url, headers=request_headers)
+
+
+def stable_tag(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    if re.fullmatch(r"v?\d+\.\d+\.\d+", value) is None:
+        return None
+    return value if value.startswith("v") else f"v{value}"
+
+
+try:
+    with urllib.request.urlopen(
+        request(f"{api_root}/repos/{repository}/releases/latest", headers["Accept"]),
+        timeout=30,
+    ) as response:
+        payload = json.loads(response.read())
+    tag = stable_tag(payload.get("tag_name"))
+    if tag is None:
+        raise ValueError("latest Release does not have a stable semantic-version tag")
+    print(tag)
+    raise SystemExit(0)
+except (KeyError, TypeError, ValueError, json.JSONDecodeError, urllib.error.URLError) as exc:
+    api_error = exc
+
+# The HTML endpoint follows the GitHub redirect to /releases/tag/<tag>. This is
+# useful for public repositories when the unauthenticated API is rate-limited.
+try:
+    with urllib.request.urlopen(
+        request(f"https://github.com/{repository}/releases/latest", "text/html"),
+        timeout=30,
+    ) as response:
+        match = re.search(r"/releases/tag/(v?\d+\.\d+\.\d+)$", response.geturl())
+    tag = stable_tag(match.group(1) if match else None)
+    if tag is None:
+        raise ValueError("latest Release redirect does not have a stable semantic-version tag")
+    print(tag)
+except (ValueError, urllib.error.URLError) as exc:
+    print(f"GitHub latest Release lookup unavailable: {api_error}; {exc}", file=sys.stderr)
+    raise SystemExit(1) from exc
+PY
+  )"; then
+    version="$(normalize_version "$resolved")"
+    return
+  fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    die "Could not resolve the latest Release. Install Git or pass --version vX.Y.Z."
+  fi
+
+  printf 'GitHub Release lookup was unavailable; checking semantic-version tags over SSH.\n' >&2
+  if ! resolved="$(git ls-remote --refs --tags "git@github.com:${repository}.git" | \
+    "$python_command" -c '
+import re
+import sys
+
+
+versions = []
+for line in sys.stdin:
+    fields = line.split()
+    if len(fields) != 2:
+        continue
+    match = re.fullmatch(r"refs/tags/(v?)(\d+)\.(\d+)\.(\d+)", fields[1])
+    if match is None:
+        continue
+    version = tuple(int(part) for part in match.groups()[1:])
+    versions.append((version, f"v{version[0]}.{version[1]}.{version[2]}"))
+
+if not versions:
+    raise SystemExit("No stable semantic-version tags were found.")
+print(max(versions)[1])
+')"; then
+    die "Could not resolve the latest Release over SSH. Pass --version vX.Y.Z."
+  fi
+  version="$(normalize_version "$resolved")"
 }
 
 download_release() {
@@ -225,6 +342,11 @@ install_from_source() {
 python_command="$(resolve_python)"
 python_version="$("$python_command" -c 'import platform; print(platform.python_version())')"
 printf 'Using Python %s\n' "$python_version"
+
+if [[ "$version" == "latest" ]]; then
+  resolve_latest_version
+fi
+normalized_version="${version#v}"
 
 parent_directory="$(dirname "$install_root")"
 mkdir -p "$parent_directory" "$bin_dir"

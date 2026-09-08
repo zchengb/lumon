@@ -12,23 +12,29 @@ Artifact. Lumon is not published to PyPI or another public package index.
 
 For a one-command Shell installation, use the installer in
 `packaging/install.sh`. It does not use uv; it creates an isolated Python 3.12
-virtual environment and installs Lumon with pip. On a private repository, the
-installer uses `LUMON_GITHUB_TOKEN` for the Release API when provided, or falls
-back to the SSH-accessible release tag. The matching uninstaller is
-`packaging/uninstall.sh`.
+virtual environment and installs Lumon with pip. When no version is provided,
+the installer resolves the latest stable GitHub Release and verifies the Wheel
+with its `SHA256SUMS` file. A specific version can still be pinned explicitly.
+On a private repository, provide `LUMON_GITHUB_TOKEN` or use an SSH-accessible
+repository. The matching uninstaller is `packaging/uninstall.sh`.
 
-For the current private repository, an authorized machine can run:
+For the public repository, install the latest stable Release with:
 
 ```text
-git clone --depth 1 --branch release git@github.com:zchengb/lumon.git /tmp/lumon-installer
-bash /tmp/lumon-installer/packaging/install.sh --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash
+```
+
+To pin a version, append the installer argument after `bash -s --`:
+
+```text
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.1
 ```
 
 The installer does not modify a Workspace or remove global Skills. To remove
 the Shell installation later, run:
 
 ```text
-bash /tmp/lumon-installer/packaging/uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/uninstall.sh | bash
 ```
 
 After a newer GitHub Release is published, a Shell-installed CLI can update
@@ -45,7 +51,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.0` runs the release workflow, which attaches
+semantic version tag such as `v1.0.1` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -66,6 +72,7 @@ Useful commands:
 
 ```text
 lumon --help
+lumon help
 lumon --version
 lumon doctor [--workspace /path/to/lumon-workspace]
 lumon init /path/to/lumon-workspace --dry-run

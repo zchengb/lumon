@@ -11,12 +11,28 @@ from lumon.cli.app import main
 
 def test_version_command(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["version"]) == 0
-    assert capsys.readouterr().out.strip() == "1.0.0"
+    assert capsys.readouterr().out.strip() == "1.0.1"
 
 
 def test_root_version_option(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--version"]) == 0
-    assert capsys.readouterr().out.strip() == "1.0.0"
+    assert capsys.readouterr().out.strip() == "1.0.1"
+
+
+def test_help_command_is_compatible_with_common_cli_usage(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["help"]) == 0
+    assert "Usage: lumon" in capsys.readouterr().out
+
+
+def test_unknown_command_has_a_friendly_error(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["not-a-command"]) == 2
+    output = capsys.readouterr()
+    combined_output = output.out + output.err
+
+    assert "No such command 'not-a-command'" in combined_output
+    assert "Traceback" not in combined_output
 
 
 def test_doctor_json_is_machine_readable(capsys: pytest.CaptureFixture[str]) -> None:

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import click
 import typer
 
-from lumon.cli.commands import doctor, init, update, version
+from lumon.cli.commands import doctor, help, init, update, version
 from lumon.version import __version__
 
 app = typer.Typer(
@@ -43,21 +42,18 @@ app.command("init")(init.command)
 app.command("doctor")(doctor.command)
 app.command("update")(update.command)
 app.command("version")(version.command)
+app.command("help")(help.command)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run Typer without allowing Click to call ``sys.exit`` internally."""
+    """Run Typer and translate its process exit into a return code."""
 
     try:
         result = app(
             prog_name="lumon",
             args=list(argv) if argv is not None else None,
-            standalone_mode=False,
+            standalone_mode=True,
         )
         return int(result or 0)
-    except click.exceptions.Exit as exc:
-        return int(exc.exit_code or 0)
-    except click.exceptions.ClickException as exc:
-        typer.echo(exc.format_message(), err=True)
-        return exc.exit_code
-    return 0
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 1
