@@ -8,6 +8,7 @@ from collections.abc import Callable
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
+from uuid import UUID
 
 from lumon.errors import InitializationError, InvalidInputError, PreflightError
 from lumon.skills.installer import SkillInstaller, SkillInstallResult, SkillPreview
@@ -16,7 +17,9 @@ from lumon.workspace.config import WorkspaceConfig, load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import WorkspaceManifest, load_manifest
 from lumon.workspace.model import InitRequest, InitResult, RepositoryRecord, RepositorySpec
+from lumon.workspace.registry import WorkspaceRegistry
 from lumon.workspace.repositories import RepositoryPreparation, RepositoryProvisioner
+from lumon.workspace.settings import WorkspaceSettingsStore
 
 
 class WorkspaceInitializer:
@@ -26,11 +29,15 @@ class WorkspaceInitializer:
         self,
         skill_installer: SkillInstaller | None = None,
         repository_provisioner: RepositoryProvisioner | None = None,
+        registry: WorkspaceRegistry | None = None,
+        settings_store: WorkspaceSettingsStore | None = None,
         now: Callable[[], datetime] | None = None,
         lumon_version: str = __version__,
     ) -> None:
         self.skill_installer = skill_installer or SkillInstaller()
         self.repository_provisioner = repository_provisioner or RepositoryProvisioner()
+        self.registry = registry or WorkspaceRegistry()
+        self.settings_store = settings_store or WorkspaceSettingsStore()
         self.now = now
         self.lumon_version = lumon_version
 
@@ -67,9 +74,30 @@ class WorkspaceInitializer:
                 workspace_is_managed=state == "managed",
             )
 
+        registry_snapshot = self.registry.raw_snapshot()
         if state == "managed" and not request.repositories:
-            skill_result = self.skill_installer.install()
-            return self._result_for_existing(layout, skill_result)
+            skill_result: SkillInstallResult | None = None
+            profile_workspace_id: UUID | None = None
+            profile_snapshot: bytes | None = None
+            user_state_touched = False
+            try:
+                skill_result = self.skill_installer.install()
+                profile_workspace_id, profile_snapshot = self._capture_user_profile(layout)
+                user_state_touched = True
+                self._register_workspace(layout)
+                return self._result_for_existing(layout, skill_result)
+            except Exception as exc:
+                if skill_result is not None:
+                    skill_result.rollback()
+                if user_state_touched and profile_workspace_id is not None:
+                    self._restore_user_state(
+                        profile_workspace_id,
+                        profile_snapshot,
+                        registry_snapshot,
+                    )
+                if isinstance(exc, (InitializationError, InvalidInputError, PreflightError)):
+                    raise
+                raise InitializationError(f"Unable to initialize Workspace: {target}") from exc
 
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -85,6 +113,9 @@ class WorkspaceInitializer:
         repositories_parent_created = False
         previous_config: bytes | None = None
         config_replaced = False
+        profile_workspace_id: UUID | None = None
+        profile_snapshot: bytes | None = None
+        user_state_touched = False
         try:
             if state != "managed":
                 self._write_workspace(stage, name)
@@ -120,6 +151,9 @@ class WorkspaceInitializer:
                 committed_paths, target_created = self._commit_stage(stage, target)
 
             self._verify_workspace(layout, name)
+            profile_workspace_id, profile_snapshot = self._capture_user_profile(layout)
+            user_state_touched = True
+            self._register_workspace(layout)
             existing_names = {record.name for record in existing_records}
             changed = (
                 state != "managed"
@@ -144,6 +178,12 @@ class WorkspaceInitializer:
         except Exception as exc:
             if skill_result is not None:
                 skill_result.rollback()
+            if user_state_touched and profile_workspace_id is not None:
+                self._restore_user_state(
+                    profile_workspace_id,
+                    profile_snapshot,
+                    registry_snapshot,
+                )
             if config_replaced and previous_config is not None:
                 layout.workspace_config.write_bytes(previous_config)
             if state == "managed":
@@ -160,6 +200,30 @@ class WorkspaceInitializer:
         finally:
             if stage.exists():
                 shutil.rmtree(stage)
+
+    def _capture_user_profile(self, layout: WorkspaceLayout) -> tuple[UUID, bytes | None]:
+        """Capture the profile state before this initialization registers a Workspace."""
+
+        manifest = load_manifest(layout.manifest)
+        return manifest.workspace_id, self.settings_store.raw_snapshot(manifest.workspace_id)
+
+    def _register_workspace(self, layout: WorkspaceLayout) -> None:
+        """Ensure a profile exists and register the validated Workspace path."""
+
+        manifest = load_manifest(layout.manifest)
+        self.settings_store.ensure(manifest.workspace_id)
+        self.registry.register(layout.root)
+
+    def _restore_user_state(
+        self,
+        workspace_id: UUID,
+        profile_snapshot: bytes | None,
+        registry_snapshot: bytes | None,
+    ) -> None:
+        """Restore user-level state when Workspace initialization cannot commit."""
+
+        self.settings_store.restore_raw(workspace_id, profile_snapshot)
+        self.registry.restore_raw(registry_snapshot)
 
     def _inspect_target(self, layout: WorkspaceLayout) -> str:
         if layout.root.exists() and not layout.root.is_dir():

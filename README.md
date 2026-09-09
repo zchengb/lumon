@@ -1,8 +1,9 @@
 # Lumon v1
 
-Lumon v1 is the greenfield Python CLI for creating and inspecting a local
-Workspace. The v1 runtime is intentionally limited to the CLI, Workspace
-skeleton, and bundled global planning Skills installation.
+Lumon v1 is the greenfield Python CLI and local Dashboard for creating,
+inspecting, and switching between local Workspaces. The v1 runtime contains
+the CLI, Workspace skeleton, bundled global planning Skills installation, and
+the Dashboard's Workspace overview and typed settings.
 
 ## Install from GitHub
 
@@ -99,6 +100,36 @@ lumon --version
 lumon doctor [--workspace /path/to/lumon-workspace]
 lumon init /path/to/lumon-workspace --dry-run
 lumon init /path/to/lumon-workspace --json
+lumon ui --no-open
 ```
 
-The v1 source tree intentionally contains only `src/lumon` and `tests`.
+## Dashboard
+
+Start the local Dashboard with:
+
+```text
+lumon ui
+```
+
+Lumon binds the Python API to `127.0.0.1`, selects an available port, and opens
+the browser. Use `lumon ui --no-open` when the browser should not be opened.
+The Dashboard can initialize a new Workspace, add an existing initialized
+Workspace, switch between registered Workspaces, inspect Repository health,
+and configure the current Workspace's Feishu Webhook.
+
+The machine-local registry and Workspace profiles live under `~/.lumon/`:
+
+```text
+~/.lumon/
+├── registry.toml
+└── workspaces/<workspace-id>/config.toml
+```
+
+The profile is per user and per Workspace. Webhook URLs are not written to
+the Workspace repository, returned by the Dashboard API, or included in
+Lumon logs. Existing Workspace directories are not discovered by scanning;
+add them explicitly from the onboarding page or with `lumon ui --workspace`.
+
+The v1 source tree intentionally contains only the new `src/lumon` modules,
+the Dashboard frontend source, and the unified `tests` directory. The old
+main branch Dashboard and runtime are not imported or packaged.

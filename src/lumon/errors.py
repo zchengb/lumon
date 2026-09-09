@@ -23,6 +23,12 @@ class PreflightError(LumonError):
     exit_code: ClassVar[int] = 3
 
 
+class WorkspaceNotFoundError(LumonError):
+    """A requested Workspace is not present in the user's registry."""
+
+    exit_code: ClassVar[int] = 4
+
+
 class InitializationError(LumonError):
     """Initialization failed after validation began."""
 

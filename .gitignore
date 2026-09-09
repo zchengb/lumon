@@ -8,3 +8,7 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+dashboard-ui/node_modules/
+dashboard-ui/coverage/
+dashboard-ui/dist/
+src/lumon/dashboard/static/*

@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "click>=8.1,<9",
+    "fastapi>=0.115,<1",
     "typer>=0.15,<1",
+    "uvicorn>=0.34,<1",
 ]
 
 [project.urls]
@@ -24,10 +26,15 @@ dev = [
     "pyright>=1.1.390,<2",
     "pytest>=8.3,<9",
     "ruff>=0.8,<1",
+    "httpx>=0.28,<1",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lumon"]
+artifacts = ["src/lumon/dashboard/static"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["src/lumon/dashboard/static"]
 
 [tool.hatch.version]
 path = "src/lumon/version.py"
