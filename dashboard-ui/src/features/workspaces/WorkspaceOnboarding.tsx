@@ -1,4 +1,4 @@
-import { FolderPlus, GitBranch, LoaderCircle, Plus, Sparkles } from "lucide-react";
+import { FolderPlus, GitBranch, LoaderCircle, Plus } from "lucide-react";
 import { useState } from "react";
 import { dashboardApi } from "../../app/api";
 import type { WorkspaceListItem } from "../../shared/types";
@@ -48,8 +48,8 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
   return (
     <main className="onboarding-wrap">
       <section className="onboarding-card">
-        <div className="onboarding-symbol"><Sparkles size={23} /></div>
-        <p className="eyebrow">Lumon Dashboard</p>
+        <div className="onboarding-brand"><img className="onboarding-logo" src="/lumon-mark.png" alt="Lumon" /><div><strong>Lumon</strong><span>Workspace console</span></div></div>
+        <p className="eyebrow">Local workspace console</p>
         <h1>先连接一个 Workspace</h1>
         <p className="onboarding-copy">Dashboard 会把 Workspace 列表和配置保存在当前用户的 Lumon 目录中。</p>
 

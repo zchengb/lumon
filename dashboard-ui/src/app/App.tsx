@@ -1,9 +1,10 @@
 import {
   AlertTriangle,
+  CheckCircle2,
   LayoutDashboard,
   LoaderCircle,
   Settings,
-  Sparkles,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, dashboardApi } from "./api";
@@ -150,20 +151,30 @@ export function App(): React.JSX.Element {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><Sparkles size={18} /></span><span>Lumon</span><small>Dashboard</small></div>
+        <div className="brand-lockup">
+          <img className="brand-logo" src="/lumon-mark.png" alt="Lumon" />
+          <span className="brand-copy"><strong>Lumon</strong><small>Workspace console</small></span>
+        </div>
         <div className="sidebar-section-label">当前 Workspace</div>
         <div className="sidebar-workspace">
-          {selectedWorkspace && <><WorkspaceHealthLabel health={selectedWorkspace.health} /><strong>{selectedWorkspace.name}</strong><code>{selectedWorkspace.path}</code></>}
+          {selectedWorkspace && <>
+            <div className="sidebar-workspace-top"><span>ACTIVE</span><WorkspaceHealthLabel health={selectedWorkspace.health} /></div>
+            <strong>{selectedWorkspace.name}</strong>
+            <code>{selectedWorkspace.path}</code>
+          </>}
         </div>
         <nav className="side-nav" aria-label="Dashboard sections">
           <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />总览</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />配置</button>
         </nav>
-        <div className="sidebar-footer"><span>Local only</span><span className="online-dot" />127.0.0.1</div>
+        <div className="sidebar-footer"><span className="local-badge"><span className="online-dot" />本机服务</span><code>127.0.0.1</code></div>
       </aside>
 
       <div className="main-shell">
-        <header className="topbar"><div className="topbar-context"><span className="topbar-label">Workspace</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div><div className="topbar-version">Lumon Dashboard</div></header>
+        <header className="topbar">
+          <div className="topbar-context"><span className="topbar-label">Workspace</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div>
+          <div className="topbar-status"><span className="online-dot" />Local only</div>
+        </header>
         {error && <Notice type="error" message={error} onClose={() => setError(null)} />}
         <main className="content-area">
           {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
@@ -177,7 +188,12 @@ export function App(): React.JSX.Element {
 }
 
 function Notice({ type, message, onClose }: { type: "success" | "error"; message: string; onClose?: () => void }): React.JSX.Element {
-  return <div className={`notice notice-${type}`} role="status"><AlertTriangle size={16} /> <span>{message}</span>{onClose && <button type="button" onClick={onClose} aria-label="关闭">×</button>}</div>;
+  const Icon = type === "success" ? CheckCircle2 : AlertTriangle;
+  return <div className={`notice notice-${type}`} role={type === "error" ? "alert" : "status"}>
+    <Icon size={16} />
+    <span>{message}</span>
+    {onClose && <button className="notice-close" type="button" onClick={onClose} aria-label="关闭"><X size={15} /></button>}
+  </div>;
 }
 
 function messageFor(reason: unknown): string {

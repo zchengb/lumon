@@ -51,7 +51,7 @@ class FakeToolInstaller:
 def _release(
     wheel_bytes: bytes, checksum: str | None = None
 ) -> tuple[ReleaseInfo, dict[str, bytes]]:
-    version = ReleaseVersion(1, 0, 3)
+    version = ReleaseVersion(1, 0, 4)
     wheel_name = f"lumon-{version}-py3-none-any.whl"
     digest = checksum or sha256(wheel_bytes).hexdigest()
     assets = (
@@ -62,7 +62,7 @@ def _release(
         wheel_name: wheel_bytes,
         "SHA256SUMS": f"{digest}  {wheel_name}\n".encode(),
     }
-    return ReleaseInfo("v1.0.3", version, assets), payloads
+    return ReleaseInfo("v1.0.4", version, assets), payloads
 
 
 def test_update_installs_verified_wheel() -> None:
@@ -77,8 +77,8 @@ def test_update_installs_verified_wheel() -> None:
 
     assert result.status is UpdateStatus.UPDATED
     assert result.current_version == "1.0.2"
-    assert result.latest_version == "1.0.3"
-    assert source.downloaded == ["lumon-1.0.3-py3-none-any.whl", "SHA256SUMS"]
+    assert result.latest_version == "1.0.4"
+    assert source.downloaded == ["lumon-1.0.4-py3-none-any.whl", "SHA256SUMS"]
     assert installer.installed_bytes == wheel_bytes
     assert installer.python_version == "3.12"
 
@@ -98,16 +98,16 @@ def test_check_only_reports_available_without_downloading() -> None:
 
 
 def test_update_is_noop_when_current_version_is_latest() -> None:
-    version = ReleaseVersion(1, 0, 3)
-    release = ReleaseInfo("v1.0.3", version, ())
+    version = ReleaseVersion(1, 0, 4)
+    release = ReleaseInfo("v1.0.4", version, ())
     source = FakeReleaseSource(release, {})
     installer = FakeToolInstaller()
 
     result = UpdateService(source, installer).update(UpdateRequest("zchengb/lumon"))
 
     assert result.status is UpdateStatus.UP_TO_DATE
-    assert result.current_version == "1.0.3"
-    assert result.latest_version == "1.0.3"
+    assert result.current_version == "1.0.4"
+    assert result.latest_version == "1.0.4"
     assert installer.installed_bytes is None
 
 
@@ -133,7 +133,7 @@ def test_python_venv_installer_uses_pip_without_uv(
         calls.append((command, kwargs))
 
     monkeypatch.setattr("lumon.update.subprocess.run", fake_run)
-    wheel = tmp_path / "lumon-1.0.3-py3-none-any.whl"
+    wheel = tmp_path / "lumon-1.0.4-py3-none-any.whl"
     wheel.write_bytes(b"wheel")
 
     PythonVenvInstaller("/private/venv/bin/python").install(wheel, "3.12")
