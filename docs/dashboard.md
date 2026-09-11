@@ -50,13 +50,13 @@ The Settings page supports:
 
 - enabling or disabling Feishu notifications;
 - saving a new HTTPS Webhook URL;
-- clearing the saved URL;
 - sending a test message without saving a draft URL.
 
 The API returns only whether a URL is configured and a display-safe masked
-value. The profile file is created with owner-only permissions. Future settings
-such as Auto Delivery must be introduced as typed settings domains with their
-own validation and UI; v1 has no arbitrary key-value editor.
+value that keeps the URL structure plus a short token prefix and suffix. The
+profile file is created with owner-only permissions. Future settings such as
+Auto Delivery must be introduced as typed settings domains with their own
+validation and UI; v1 has no arbitrary key-value editor.
 
 ## Build the frontend
 
@@ -73,3 +73,12 @@ The build writes static assets to
 `src/lumon/dashboard/static/`. GitHub Actions runs this build before `uv
 build`, so the release Wheel is self-contained and does not require Node at
 runtime.
+
+## Interface language
+
+The Dashboard supports English, Simplified Chinese, and Traditional Chinese.
+Use the language selector in the top bar, or in the onboarding card before a
+Workspace has been registered. The selected language is stored in the current
+browser's local preferences and applies to the Dashboard UI, status messages,
+confirmation prompts, and date formatting; it is not Workspace business
+configuration.

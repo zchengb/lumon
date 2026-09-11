@@ -110,13 +110,28 @@ class WorkspaceSettingsStore:
 
 
 def masked_webhook_url(url: str | None) -> str | None:
-    """Return a display-safe URL that never exposes the Webhook token."""
+    """Return a URL with the Webhook token's middle portion masked."""
 
     if not url:
         return None
     parsed = urlsplit(url)
     host = parsed.hostname or "configured"
-    return f"{parsed.scheme}://{host}/••••"
+    path = parsed.path or "/"
+    last_slash = path.rfind("/")
+    token = path[last_slash + 1 :]
+    if token:
+        path = f"{path[: last_slash + 1]}{_mask_middle(token)}"
+    return f"{parsed.scheme}://{host}{path}"
+
+
+def _mask_middle(value: str) -> str:
+    """Keep a short prefix and suffix while masking the value's middle."""
+
+    if len(value) <= 2:
+        return "*" * len(value)
+    visible = 1 if len(value) <= 8 else 4
+    middle_length = len(value) - (visible * 2)
+    return f"{value[:visible]}{'*' * middle_length}{value[-visible:]}"
 
 
 def _parse_settings(

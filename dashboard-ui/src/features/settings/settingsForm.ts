@@ -3,7 +3,6 @@ import type { SettingsUpdate } from "../../shared/types";
 export interface WebhookDraft {
   enabled: boolean;
   url: string;
-  clearSavedUrl: boolean;
 }
 
 export function buildSettingsUpdate(draft: WebhookDraft): SettingsUpdate {
@@ -12,8 +11,8 @@ export function buildSettingsUpdate(draft: WebhookDraft): SettingsUpdate {
       enabled: draft.enabled,
     },
   };
-  if (draft.clearSavedUrl || draft.url.trim()) {
-    payload.feishu_webhook.url = draft.clearSavedUrl ? "" : draft.url.trim();
+  if (draft.url.trim()) {
+    payload.feishu_webhook.url = draft.url.trim();
   }
   return payload;
 }

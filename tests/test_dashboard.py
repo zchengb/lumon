@@ -111,7 +111,7 @@ def test_settings_update_masks_webhook_and_test_does_not_persist_draft(
     assert saved.json()["feishu_webhook"] == {
         "enabled": True,
         "configured": True,
-        "masked_url": "https://open.feishu.cn/••••",
+        "masked_url": "https://open.feishu.cn/open-apis/bot/v2/hook/priv*****oken",
     }
     assert url not in saved.text
 

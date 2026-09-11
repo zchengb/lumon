@@ -32,7 +32,10 @@ def test_settings_round_trip_is_typed_and_owner_only(tmp_path: Path) -> None:
 
     assert store.load(workspace_id) == expected
     assert stat.S_IMODE(store.path_for(workspace_id).stat().st_mode) == 0o600
-    assert masked_webhook_url(expected.feishu_webhook.url) == "https://open.feishu.cn/••••"
+    assert (
+        masked_webhook_url(expected.feishu_webhook.url)
+        == "https://open.feishu.cn/open-apis/bot/v2/hook/priv*****oken"
+    )
 
 
 def test_settings_reject_profile_for_another_workspace(tmp_path: Path) -> None:
@@ -50,7 +53,7 @@ def test_settings_reject_profile_for_another_workspace(tmp_path: Path) -> None:
         store.load(first)
 
 
-def test_settings_reject_credentials_and_mask_only_hostname(tmp_path: Path) -> None:
+def test_settings_reject_credentials_and_mask_webhook_token(tmp_path: Path) -> None:
     store = WorkspaceSettingsStore(tmp_path / "lumon")
     workspace_id = uuid4()
     with pytest.raises(InvalidInputError, match="must not contain credentials"):
@@ -65,5 +68,5 @@ def test_settings_reject_credentials_and_mask_only_hostname(tmp_path: Path) -> N
 
     assert (
         masked_webhook_url("https://user:secret@open.feishu.cn/open-apis/bot/v2/hook/token")
-        == "https://open.feishu.cn/••••"
+        == "https://open.feishu.cn/open-apis/bot/v2/hook/t***n"
     )

@@ -1,6 +1,7 @@
-import { Bell, Check, EyeOff, LoaderCircle, Save, Send, Trash2 } from "lucide-react";
+import { Bell, Check, LoaderCircle, Save, Send, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
-import { buildSettingsUpdate, type WebhookDraft } from "./settingsForm";
+import { buildSettingsUpdate } from "./settingsForm";
+import { useI18n } from "../../shared/i18n";
 import type { SettingsUpdate, WorkspaceSettings } from "../../shared/types";
 
 interface SettingsPageProps {
@@ -16,16 +17,17 @@ export function SettingsPage({
   onTest,
   onDirtyChange,
 }: SettingsPageProps): React.JSX.Element {
+  const { t } = useI18n();
   const [enabled, setEnabled] = useState(settings.feishu_webhook.enabled);
   const [url, setUrl] = useState("");
-  const [clearSavedUrl, setClearSavedUrl] = useState(false);
+  const [urlDraftActive, setUrlDraftActive] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     setEnabled(settings.feishu_webhook.enabled);
     setUrl("");
-    setClearSavedUrl(false);
+    setUrlDraftActive(false);
     onDirtyChange(false);
   }, [settings.workspace_id, settings.feishu_webhook.enabled, settings.feishu_webhook.configured, onDirtyChange]);
 
@@ -36,11 +38,11 @@ export function SettingsPage({
   async function save(): Promise<void> {
     setSaving(true);
     try {
-      const saved = await onSave(buildSettingsUpdate({ enabled, url, clearSavedUrl }));
+      const saved = await onSave(buildSettingsUpdate({ enabled, url }));
       if (!saved) return;
       onDirtyChange(false);
       setUrl("");
-      setClearSavedUrl(false);
+      setUrlDraftActive(false);
     } finally {
       setSaving(false);
     }
@@ -49,53 +51,78 @@ export function SettingsPage({
   async function test(): Promise<void> {
     setTesting(true);
     try {
-      await onTest(url.trim() || undefined);
+      await onTest(urlDraftActive && url.trim() ? url.trim() : undefined);
     } finally {
       setTesting(false);
     }
   }
 
-  const draft: WebhookDraft = { enabled, url, clearSavedUrl };
-  const hasChanges = enabled !== settings.feishu_webhook.enabled || Boolean(url.trim()) || clearSavedUrl;
+  function startUrlEdit(): void {
+    if (urlDraftActive) return;
+    setUrlDraftActive(true);
+    setUrl("");
+  }
+
+  const displayedUrl = urlDraftActive ? url : (settings.feishu_webhook.masked_url ?? "");
+  const hasChanges = enabled !== settings.feishu_webhook.enabled || (urlDraftActive && Boolean(url.trim()));
 
   return (
     <div className="page-stack">
       <div className="page-heading">
-        <div><p className="eyebrow">Workspace settings</p><h1>配置</h1><p className="muted">只影响当前选中的 Workspace。</p></div>
-        {hasChanges && <span className="unsaved-label">有未保存更改</span>}
+        <div><p className="eyebrow">{t("settings.eyebrow")}</p><h1>{t("settings.title")}</h1><p className="muted">{t("settings.subtitle")}</p></div>
+        {hasChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
       </div>
 
       <section className="panel settings-panel">
         <div className="panel-heading">
-          <div className="settings-title"><span className="settings-icon"><Bell size={18} /></span><div><p className="eyebrow">Notifications</p><h2>飞书 Webhook</h2></div></div>
-          <span className={settings.feishu_webhook.configured ? "status-pill status-ready" : "status-pill status-neutral"}>{settings.feishu_webhook.configured ? <><Check size={13} />已配置</> : "未配置"}</span>
+          <div className="settings-title"><span className="settings-icon"><Bell size={18} /></span><div><p className="eyebrow">{t("settings.notifications")}</p><h2>{t("settings.feishu")}</h2></div></div>
+          <div className="settings-heading-actions">
+            <span className={settings.feishu_webhook.configured ? "status-pill status-ready" : "status-pill status-neutral"}>{settings.feishu_webhook.configured ? <><Check size={13} />{t("settings.configured")}</> : t("settings.notConfigured")}</span>
+            <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
+              <span>{enabled ? t("settings.enabled") : t("settings.disabled")}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={enabled}
+                aria-label={t("settings.toggleAria")}
+                onChange={(event) => { setEnabled(event.target.checked); markDirty(); }}
+              />
+              <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
+            </label>
+          </div>
         </div>
-        <p className="settings-description">保存后，未来的工作流可以使用此 Webhook 发送通知。当前页面不会回显已保存的完整地址。</p>
+        <p className="settings-description">{t("settings.description")}</p>
 
-        <label className="toggle-row">
-          <span><strong>启用飞书通知</strong><small>允许 Lumon 的通知流程使用此配置。</small></span>
-          <input type="checkbox" checked={enabled} onChange={(event) => { setEnabled(event.target.checked); markDirty(); }} />
-        </label>
-
-        <div className="form-divider" />
-        <label className="field-label" htmlFor="feishu-webhook-url">Webhook URL</label>
-        <div className="secret-input-wrap"><EyeOff size={16} /><input id="feishu-webhook-url" className="text-input" value={url} onChange={(event) => { setUrl(event.target.value); markDirty(); }} placeholder={settings.feishu_webhook.configured ? "已保存地址不会回显；输入新地址以替换" : "https://open.feishu.cn/open-apis/bot/v2/hook/..."} type="url" autoComplete="off" /></div>
-        {settings.feishu_webhook.masked_url && <p className="field-help"><EyeOff size={14} />当前地址：<code>{settings.feishu_webhook.masked_url}</code></p>}
-
-        <label className="clear-row"><input type="checkbox" checked={clearSavedUrl} onChange={(event) => { setClearSavedUrl(event.target.checked); markDirty(); }} /><Trash2 size={15} />清除已保存的 Webhook URL</label>
+        <div className={`webhook-config ${enabled ? "" : "is-disabled"}`} aria-disabled={!enabled}>
+          <div className="form-divider" />
+          <fieldset className="webhook-config-fields" disabled={!enabled}>
+            <legend className="sr-only">{t("settings.legend")}</legend>
+            <label className="field-label" htmlFor="feishu-webhook-url">{t("settings.webhookUrl")}</label>
+            <input
+              id="feishu-webhook-url"
+              className="text-input webhook-url-input"
+              value={displayedUrl}
+              onFocus={startUrlEdit}
+              onChange={(event) => { setUrlDraftActive(true); setUrl(event.target.value); markDirty(); }}
+              placeholder={settings.feishu_webhook.configured ? t("settings.replacePlaceholder") : t("settings.newPlaceholder")}
+              type="url"
+              autoComplete="off"
+            />
+          </fieldset>
+          <p className="security-note"><ShieldCheck size={14} />{t("settings.security")}</p>
+        </div>
 
         <div className="settings-actions">
-          <button className="button button-secondary" type="button" onClick={() => void test()} disabled={testing || saving || clearSavedUrl}>
-            {testing ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}测试 Webhook
+          <button className="button button-secondary" type="button" onClick={() => void test()} disabled={testing || saving || !enabled}>
+            {testing ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}{t("settings.test")}
           </button>
           <button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || testing || !hasChanges}>
-            {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}保存配置
+            {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{t("settings.save")}
           </button>
         </div>
-        <p className="security-note"><EyeOff size={14} />Webhook 地址只保存在当前用户的 Lumon profile 中，API 只返回脱敏结果。</p>
       </section>
 
-      <section className="future-panel"><p className="eyebrow">Future settings</p><h2>可扩展配置域</h2><p>Auto Delivery 等能力会以独立的类型化设置加入，不会变成一个不可校验的通用键值编辑器。</p></section>
+      <section className="future-panel"><p className="eyebrow">{t("settings.futureEyebrow")}</p><h2>{t("settings.futureTitle")}</h2><p>{t("settings.futureCopy")}</p></section>
     </div>
   );
 }

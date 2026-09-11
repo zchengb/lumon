@@ -1,6 +1,7 @@
 import { FolderPlus, GitBranch, LoaderCircle, Plus } from "lucide-react";
 import { useState } from "react";
 import { dashboardApi } from "../../app/api";
+import { LanguagePicker, useI18n } from "../../shared/i18n";
 import type { WorkspaceListItem } from "../../shared/types";
 
 interface WorkspaceOnboardingProps {
@@ -11,6 +12,7 @@ interface WorkspaceOnboardingProps {
 type OnboardingMode = "initialize" | "register";
 
 export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingProps): React.JSX.Element {
+  const { t } = useI18n();
   const [mode, setMode] = useState<OnboardingMode>("initialize");
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
@@ -20,7 +22,7 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
   async function submit(): Promise<void> {
     const normalizedPath = path.trim();
     if (!normalizedPath) {
-      onError("请先输入 Workspace 路径。");
+      onError(t("onboarding.pathRequired"));
       return;
     }
     setSubmitting(true);
@@ -35,11 +37,11 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
         });
         const workspaces = await dashboardApi.listWorkspaces();
         const created = workspaces.find((item) => item.workspace_id === response.workspace_id);
-        if (!created) throw new Error("Workspace 已初始化，但未能重新加载注册信息。");
+        if (!created) throw new Error(t("onboarding.reloadFailed"));
         onReady(created);
       }
     } catch (error) {
-      onError(error instanceof Error ? error.message : "Workspace 操作失败。");
+      onError(error instanceof Error ? error.message : t("onboarding.operationFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -48,36 +50,37 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
   return (
     <main className="onboarding-wrap">
       <section className="onboarding-card">
-        <div className="onboarding-brand"><img className="onboarding-logo" src="/lumon-mark.png" alt="Lumon" /><div><strong>Lumon</strong><span>Workspace console</span></div></div>
-        <p className="eyebrow">Local workspace console</p>
-        <h1>先连接一个 Workspace</h1>
-        <p className="onboarding-copy">Dashboard 会把 Workspace 列表和配置保存在当前用户的 Lumon 目录中。</p>
+        <LanguagePicker className="onboarding-language" />
+        <div className="onboarding-brand"><img className="onboarding-logo" src="/lumon-mark.png" alt={t("app.brandAlt")} /><div><strong>Lumon</strong><span>{t("app.workspaceConsole")}</span></div></div>
+        <p className="eyebrow">{t("onboarding.localEyebrow")}</p>
+        <h1>{t("onboarding.title")}</h1>
+        <p className="onboarding-copy">{t("onboarding.copy")}</p>
 
-        <div className="segmented-control" role="tablist" aria-label="Workspace 操作">
-          <button className={mode === "initialize" ? "active" : ""} type="button" onClick={() => setMode("initialize")}>
-            <FolderPlus size={16} />初始化新的
+        <div className="segmented-control" role="tablist" aria-label={t("onboarding.operationAria")}>
+          <button className={mode === "initialize" ? "active" : ""} type="button" role="tab" aria-selected={mode === "initialize"} onClick={() => setMode("initialize")}>
+            <FolderPlus size={16} />{t("onboarding.initializeNew")}
           </button>
-          <button className={mode === "register" ? "active" : ""} type="button" onClick={() => setMode("register")}>
-            <Plus size={16} />添加已有的
+          <button className={mode === "register" ? "active" : ""} type="button" role="tab" aria-selected={mode === "register"} onClick={() => setMode("register")}>
+            <Plus size={16} />{t("onboarding.addExisting")}
           </button>
         </div>
 
-        <label className="field-label" htmlFor="workspace-path">Workspace 路径</label>
-        <input id="workspace-path" className="text-input" value={path} onChange={(event) => setPath(event.target.value)} placeholder="例如：/Users/me/Projects/my-workspace" />
+        <label className="field-label" htmlFor="workspace-path">{t("onboarding.workspacePath")}</label>
+        <input id="workspace-path" className="text-input" value={path} onChange={(event) => setPath(event.target.value)} placeholder={t("onboarding.workspacePathPlaceholder")} />
 
         {mode === "initialize" && (
           <>
-            <label className="field-label" htmlFor="workspace-name">名称（可选）</label>
-            <input id="workspace-name" className="text-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="默认使用目录名称" />
-            <label className="field-label" htmlFor="workspace-repositories">Repository URL（可选，每行一个）</label>
-            <textarea id="workspace-repositories" className="text-input text-area" value={repositories} onChange={(event) => setRepositories(event.target.value)} placeholder="git@github.com:org/product.git" rows={3} />
-            <p className="field-help"><GitBranch size={14} />私有仓库认证继续使用系统 Git、SSH Agent 或 credential helper。</p>
+            <label className="field-label" htmlFor="workspace-name">{t("onboarding.nameOptional")}</label>
+            <input id="workspace-name" className="text-input" value={name} onChange={(event) => setName(event.target.value)} placeholder={t("onboarding.namePlaceholder")} />
+            <label className="field-label" htmlFor="workspace-repositories">{t("onboarding.repositoryUrlOptional")}</label>
+            <textarea id="workspace-repositories" className="text-input text-area" value={repositories} onChange={(event) => setRepositories(event.target.value)} placeholder={t("onboarding.repositoryPlaceholder")} rows={3} />
+            <p className="field-help"><GitBranch size={14} />{t("onboarding.authHelp")}</p>
           </>
         )}
 
         <button className="button button-primary button-wide" type="button" onClick={() => void submit()} disabled={submitting}>
           {submitting ? <LoaderCircle size={17} className="spin" /> : mode === "initialize" ? <FolderPlus size={17} /> : <Plus size={17} />}
-          {submitting ? "处理中…" : mode === "initialize" ? "初始化 Workspace" : "添加 Workspace"}
+          {submitting ? t("onboarding.processing") : mode === "initialize" ? t("onboarding.initializeAction") : t("onboarding.addAction")}
         </button>
       </section>
     </main>

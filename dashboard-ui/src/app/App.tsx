@@ -14,9 +14,11 @@ import { WorkspaceOnboarding } from "../features/workspaces/WorkspaceOnboarding"
 import { WorkspaceOverview } from "../features/workspaces/WorkspaceOverview";
 import { WorkspaceHealthLabel, WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { resolveWorkspaceSelection } from "../features/workspaces/workspaceSelection";
+import { LanguagePicker, useI18n, type Translator } from "../shared/i18n";
 import type { SettingsUpdate, View, WorkspaceListItem, WorkspaceOverview as WorkspaceOverviewData, WorkspaceSettings } from "../shared/types";
 
 export function App(): React.JSX.Element {
+  const { t } = useI18n();
   const initialNavigation = readNavigation(window.location.search);
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialNavigation.workspaceId);
@@ -40,9 +42,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void Promise.all([refreshWorkspaces(), dashboardApi.getBootstrap()])
       .then(([, bootstrap]) => setAppVersion(bootstrap.version))
-      .catch((reason: unknown) => setError(messageFor(reason)))
+      .catch((reason: unknown) => setError(messageFor(reason, t)))
       .finally(() => setLoading(false));
-  }, [refreshWorkspaces]);
+  }, [refreshWorkspaces, t]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -59,10 +61,10 @@ export function App(): React.JSX.Element {
         setOverview(nextOverview);
         setSettings(nextSettings);
       })
-      .catch((reason: unknown) => { if (!cancelled) setError(messageFor(reason)); })
+      .catch((reason: unknown) => { if (!cancelled) setError(messageFor(reason, t)); })
       .finally(() => { if (!cancelled) setRefreshing(false); });
     return () => { cancelled = true; };
-  }, [selectedId]);
+  }, [selectedId, t]);
 
   useEffect(() => {
     window.history.replaceState(null, "", writeNavigation({ workspaceId: selectedId, view }));
@@ -80,14 +82,14 @@ export function App(): React.JSX.Element {
   );
 
   function changeWorkspace(nextId: string): void {
-    if (settingsDirty && !window.confirm("当前配置尚未保存，确定要切换 Workspace 吗？")) return;
+    if (settingsDirty && !window.confirm(t("app.unsavedWorkspaceConfirm"))) return;
     setSettingsDirty(false);
     setSelectedId(nextId);
   }
 
   function changeView(nextView: View): void {
     if (nextView === view) return;
-    if (settingsDirty && !window.confirm("当前配置尚未保存，确定要离开设置页吗？")) return;
+    if (settingsDirty && !window.confirm(t("app.unsavedViewConfirm"))) return;
     setSettingsDirty(false);
     setView(nextView);
   }
@@ -97,10 +99,10 @@ export function App(): React.JSX.Element {
       setWorkspaces(await dashboardApi.listWorkspaces());
       setSelectedId(workspace.workspace_id);
       setView("overview");
-      setNotice(`Workspace「${workspace.name}」已准备完成。`);
+      setNotice(t("app.workspaceReady", { name: workspace.name }));
       setError(null);
     } catch (reason) {
-      setError(messageFor(reason));
+      setError(messageFor(reason, t));
     }
   }
 
@@ -109,11 +111,11 @@ export function App(): React.JSX.Element {
     try {
       const saved = await dashboardApi.updateSettings(selectedId, update);
       setSettings(saved);
-      setNotice("飞书 Webhook 配置已保存。");
+      setNotice(t("app.settingsSaved"));
       setError(null);
       return true;
     } catch (reason) {
-      setError(messageFor(reason));
+      setError(messageFor(reason, t));
       return false;
     }
   }
@@ -122,10 +124,10 @@ export function App(): React.JSX.Element {
     if (!selectedId) return;
     try {
       const result = await dashboardApi.testFeishu(selectedId, url);
-      setNotice(result.detail);
+      setNotice(result.success ? t("settings.testSuccess") : result.detail);
       setError(null);
     } catch (reason) {
-      setError(messageFor(reason));
+      setError(messageFor(reason, t));
     }
   }
 
@@ -139,48 +141,48 @@ export function App(): React.JSX.Element {
       ]);
       setOverview(nextOverview);
       setSettings(nextSettings);
-      setNotice("Workspace 数据已刷新。");
+      setNotice(t("app.workspaceRefreshed"));
     } catch (reason) {
-      setError(messageFor(reason));
+      setError(messageFor(reason, t));
     } finally {
       setRefreshing(false);
     }
   }
 
-  if (loading) return <div className="loading-screen"><LoaderCircle className="spin" size={25} /><span>正在加载 Lumon Dashboard…</span></div>;
+  if (loading) return <div className="loading-screen"><LoaderCircle className="spin" size={25} /><span>{t("app.loading")}</span></div>;
   if (workspaces.length === 0) {
-    return <><WorkspaceOnboarding onReady={(workspace) => void handleOnboardingReady(workspace)} onError={setError} />{error && <Notice type="error" message={error} />}</>;
+    return <><WorkspaceOnboarding onReady={(workspace) => void handleOnboardingReady(workspace)} onError={setError} />{error && <Notice type="error" message={error} closeLabel={t("app.close")} />}</>;
   }
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-lockup">
-          <img className="brand-logo" src="/lumon-mark.png" alt="Lumon" />
-          <span className="brand-copy"><strong>Lumon</strong><small>Workspace console</small></span>
+          <img className="brand-logo" src="/lumon-mark.png" alt={t("app.brandAlt")} />
+          <span className="brand-copy"><strong>Lumon</strong><small>{t("app.workspaceConsole")}</small></span>
         </div>
-        <div className="sidebar-section-label">当前 Workspace</div>
+        <div className="sidebar-section-label">{t("app.currentWorkspace")}</div>
         <div className="sidebar-workspace">
           {selectedWorkspace && <>
-            <div className="sidebar-workspace-top"><span>ACTIVE</span><WorkspaceHealthLabel health={selectedWorkspace.health} /></div>
+            <div className="sidebar-workspace-top"><span>{t("app.active")}</span><WorkspaceHealthLabel health={selectedWorkspace.health} /></div>
             <strong>{selectedWorkspace.name}</strong>
             <code>{selectedWorkspace.path}</code>
           </>}
         </div>
-        <nav className="side-nav" aria-label="Dashboard sections">
-          <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />总览</button>
-          <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />配置</button>
+        <nav className="side-nav" aria-label={t("app.dashboardSections")}>
+          <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />{t("app.overview")}</button>
+          <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />{t("app.settings")}</button>
         </nav>
         <div className="sidebar-footer">
           <div className="sidebar-footer-brand">
-            <p className="sidebar-slogan">Engineering, made legible.</p>
+            <p className="sidebar-slogan">{t("app.slogan")}</p>
             <span className="company-logo-surface">
-              <img className="company-logo" src="/inspire-group-logo.png" alt="Inspire Group" />
+              <img className="company-logo" src="/inspire-group-logo.png" alt={t("app.companyLogoAlt")} />
             </span>
           </div>
           <div className="sidebar-footer-meta">
             <span className="sidebar-version">Lumon v{appVersion ?? "—"}</span>
-            <span className="local-badge"><span className="online-dot" />本机服务</span>
+            <span className="local-badge"><span className="online-dot" />{t("app.localService")}</span>
             <code>127.0.0.1</code>
           </div>
         </div>
@@ -188,14 +190,17 @@ export function App(): React.JSX.Element {
 
       <div className="main-shell">
         <header className="topbar">
-          <div className="topbar-context"><span className="topbar-label">Workspace</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div>
-          <div className="topbar-status"><span className="online-dot" />Local only</div>
+          <div className="topbar-context"><span className="topbar-label">{t("app.currentWorkspace")}</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div>
+          <div className="topbar-actions">
+            <LanguagePicker />
+            <span className="topbar-status"><span className="online-dot" />{t("app.localOnly")}</span>
+          </div>
         </header>
-        {error && <Notice type="error" message={error} onClose={() => setError(null)} />}
+        {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}
         <main className="content-area">
           {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
           {selectedId && view === "settings" && settings && <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />}
-          {selectedId && refreshing && !overview && !settings && <div className="loading-inline"><LoaderCircle className="spin" size={22} />正在读取 Workspace…</div>}
+          {selectedId && refreshing && !overview && !settings && <div className="loading-inline"><LoaderCircle className="spin" size={22} />{t("app.readingWorkspace")}</div>}
         </main>
       </div>
       {notice && <Notice type="success" message={notice} />}
@@ -203,16 +208,16 @@ export function App(): React.JSX.Element {
   );
 }
 
-function Notice({ type, message, onClose }: { type: "success" | "error"; message: string; onClose?: () => void }): React.JSX.Element {
+function Notice({ type, message, onClose, closeLabel }: { type: "success" | "error"; message: string; onClose?: () => void; closeLabel?: string }): React.JSX.Element {
   const Icon = type === "success" ? CheckCircle2 : AlertTriangle;
   return <div className={`notice notice-${type}`} role={type === "error" ? "alert" : "status"}>
     <Icon size={16} />
     <span>{message}</span>
-    {onClose && <button className="notice-close" type="button" onClick={onClose} aria-label="关闭"><X size={15} /></button>}
+    {onClose && <button className="notice-close" type="button" onClick={onClose} aria-label={closeLabel}><X size={15} /></button>}
   </div>;
 }
 
-function messageFor(reason: unknown): string {
+function messageFor(reason: unknown, t: Translator): string {
   if (reason instanceof ApiError) return reason.message;
-  return reason instanceof Error ? reason.message : "Dashboard 请求失败，请稍后重试。";
+  return reason instanceof Error ? reason.message : t("app.dashboardRequestFailed");
 }

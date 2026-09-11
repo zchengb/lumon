@@ -1,4 +1,5 @@
 import { CheckCircle2, FolderGit2, GitBranch, HardDrive, RefreshCw } from "lucide-react";
+import { useI18n } from "../../shared/i18n";
 import type { WorkspaceOverview as WorkspaceOverviewData } from "../../shared/types";
 
 interface WorkspaceOverviewProps {
@@ -12,52 +13,54 @@ export function WorkspaceOverview({
   onRefresh,
   refreshing,
 }: WorkspaceOverviewProps): React.JSX.Element {
+  const { formatDate, t } = useI18n();
+
   return (
     <div className="page-stack">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Workspace overview</p>
+          <p className="eyebrow">{t("overview.eyebrow")}</p>
           <h1>{overview.name}</h1>
           <p className="muted path-line"><HardDrive size={15} />{overview.path}</p>
         </div>
         <button className="button button-secondary" type="button" onClick={onRefresh} disabled={refreshing}>
-          <RefreshCw size={16} className={refreshing ? "spin" : ""} />刷新
+          <RefreshCw size={16} className={refreshing ? "spin" : ""} />{t("overview.refresh")}
         </button>
       </div>
 
       <div className="metric-grid">
         <article className="metric-card">
           <span className="metric-icon accent-blue"><FolderGit2 size={18} /></span>
-          <span className="metric-label">Repositories</span>
+          <span className="metric-label">{t("overview.repositories")}</span>
           <strong>{overview.repositories.length}</strong>
-          <small>已登记代码仓库</small>
+          <small>{t("overview.registeredRepositories")}</small>
         </article>
         <article className="metric-card">
           <span className="metric-icon accent-green"><CheckCircle2 size={18} /></span>
-          <span className="metric-label">Workspace 状态</span>
-          <strong>已初始化</strong>
-          <small>Lumon {overview.lumon_version}</small>
+          <span className="metric-label">{t("overview.status")}</span>
+          <strong>{t("overview.initialized")}</strong>
+          <small>{t("overview.version", { version: overview.lumon_version })}</small>
         </article>
         <article className="metric-card">
           <span className="metric-icon accent-purple"><GitBranch size={18} /></span>
-          <span className="metric-label">Workspace ID</span>
+          <span className="metric-label">{t("overview.id")}</span>
           <strong className="mono metric-id">{overview.workspace_id.slice(0, 8)}</strong>
-          <small>创建于 {formatDate(overview.created_at)}</small>
+          <small>{t("overview.createdAt", { date: formatDate(overview.created_at) })}</small>
         </article>
       </div>
 
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Repository mapping</p>
-            <h2>代码仓库</h2>
+            <p className="eyebrow">{t("overview.mappingEyebrow")}</p>
+            <h2>{t("overview.repositoriesTitle")}</h2>
           </div>
           <span className="panel-count">{overview.repositories.length}</span>
         </div>
         {overview.repositories.length === 0 ? (
           <div className="empty-inline">
             <FolderGit2 size={22} />
-            <div><strong>还没有 Repository</strong><p>可以通过 CLI 的 init 流程添加代码仓库。</p></div>
+            <div><strong>{t("overview.emptyTitle")}</strong><p>{t("overview.emptyCopy")}</p></div>
           </div>
         ) : (
           <div className="repository-list">
@@ -70,7 +73,7 @@ export function WorkspaceOverview({
                 <div className="repository-meta">
                   <span><GitBranch size={14} />{repository.branch}</span>
                   <span className={repository.health === "ready" ? "health-ok" : "health-bad"}>
-                    {repository.health === "ready" ? "正常" : "异常"}
+                    {repository.health === "ready" ? t("overview.healthNormal") : t("overview.healthAbnormal")}
                   </span>
                   <code title={repository.revision}>{repository.revision.slice(0, 12)}</code>
                 </div>
@@ -81,9 +84,4 @@ export function WorkspaceOverview({
       </section>
     </div>
   );
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : date.toLocaleDateString("zh-CN");
 }
