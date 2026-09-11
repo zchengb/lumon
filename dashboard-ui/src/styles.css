@@ -10,7 +10,11 @@
   --line-soft: rgba(27, 28, 27, 0.08);
   --panel: rgba(255, 255, 255, 0.64);
   --shadow: 0 22px 60px rgba(27, 28, 27, 0.09);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --lumon-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Segoe UI", sans-serif;
+  font-family: var(--lumon-font-ui);
+  font-weight: 400;
   color: var(--ink);
   background: var(--cream);
   font-synthesis: none;
@@ -38,6 +42,11 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+b,
+strong {
+  font-weight: 500;
 }
 
 button {
@@ -82,7 +91,7 @@ code {
   margin: 0 0 8px;
   color: var(--copper);
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: 0.13em;
   line-height: 1.2;
   text-transform: uppercase;
@@ -132,7 +141,7 @@ code {
 .brand-copy strong {
   color: var(--cream);
   font-size: 19px;
-  font-weight: 760;
+  font-weight: 500;
   letter-spacing: -0.045em;
   line-height: 1;
 }
@@ -147,7 +156,7 @@ code {
   padding: 0 10px 9px;
   color: rgba(251, 247, 241, 0.52);
   font-size: 9px;
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -174,7 +183,7 @@ code {
 .sidebar-workspace-top > span {
   color: rgba(251, 247, 241, 0.48);
   font-size: 9px;
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: 0.12em;
 }
 
@@ -182,7 +191,7 @@ code {
   overflow: hidden;
   color: var(--cream);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -211,7 +220,7 @@ code {
   color: rgba(251, 247, 241, 0.6);
   background: transparent;
   font-size: 12px;
-  font-weight: 680;
+  font-weight: 500;
   text-align: left;
   transition: color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out;
 }
@@ -232,15 +241,60 @@ code {
 }
 
 .sidebar-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 9px;
+  display: grid;
+  gap: 12px;
   padding: 16px 10px 0;
   margin-top: auto;
   border-top: 1px solid rgba(251, 247, 241, 0.12);
   color: rgba(251, 247, 241, 0.5);
   font-size: 10px;
+}
+
+.sidebar-footer-brand {
+  display: grid;
+  gap: 9px;
+}
+
+.sidebar-slogan {
+  margin: 0;
+  color: rgba(251, 247, 241, 0.62);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+}
+
+.company-logo-surface {
+  display: flex;
+  width: fit-content;
+  min-height: 31px;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid rgba(251, 247, 241, 0.1);
+  border-radius: 7px;
+  background: rgba(251, 247, 241, 0.96);
+}
+
+.company-logo {
+  display: block;
+  width: 112px;
+  height: 25px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.sidebar-footer-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.sidebar-version {
+  color: rgba(251, 247, 241, 0.68);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .local-badge {
@@ -250,6 +304,7 @@ code {
 }
 
 .sidebar-footer code {
+  margin-left: auto;
   color: rgba(251, 247, 241, 0.38);
   font-size: 9px;
 }
@@ -295,7 +350,7 @@ code {
 .topbar-label {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 750;
+  font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -316,7 +371,7 @@ code {
   color: var(--ink);
   background: var(--panel);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
   appearance: none;
   transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
 }
@@ -343,7 +398,7 @@ code {
   gap: 9px;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -371,7 +426,7 @@ code {
   margin: 0;
   color: var(--ink);
   font-size: clamp(28px, 3.2vw, 38px);
-  font-weight: 710;
+  font-weight: 500;
   letter-spacing: -0.055em;
   line-height: 1;
 }
@@ -401,7 +456,7 @@ code {
   border: 1px solid transparent;
   border-radius: 9px;
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 500;
   transition: transform 160ms ease-out, border-color 160ms ease-out, background-color 160ms ease-out, box-shadow 160ms ease-out;
 }
 
@@ -503,7 +558,7 @@ code {
   margin: 1px 0 7px;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 720;
+  font-weight: 500;
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -511,7 +566,7 @@ code {
 .metric-card strong {
   color: var(--ink);
   font-size: 21px;
-  font-weight: 720;
+  font-weight: 500;
   letter-spacing: -0.045em;
 }
 
@@ -551,7 +606,7 @@ code {
   margin: 0;
   color: var(--ink);
   font-size: 16px;
-  font-weight: 720;
+  font-weight: 500;
   letter-spacing: -0.03em;
 }
 
@@ -569,7 +624,7 @@ code {
   color: var(--copper);
   background: rgba(248, 201, 93, 0.16);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .repository-list {
@@ -626,7 +681,7 @@ code {
   margin-bottom: 5px;
   color: var(--ink);
   font-size: 13px;
-  font-weight: 690;
+  font-weight: 500;
 }
 
 .repository-main code {
@@ -657,7 +712,7 @@ code {
 .health-ok,
 .health-bad {
   color: var(--copper);
-  font-weight: 750;
+  font-weight: 500;
 }
 
 .empty-inline {
@@ -671,7 +726,7 @@ code {
 .empty-inline strong {
   color: var(--ink);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .empty-inline p {
@@ -689,7 +744,7 @@ code {
   border: 1px solid transparent;
   border-radius: 99px;
   font-size: 9px;
-  font-weight: 780;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -848,7 +903,7 @@ code {
 .onboarding-brand strong {
   color: var(--ink);
   font-size: 18px;
-  font-weight: 760;
+  font-weight: 500;
   letter-spacing: -0.04em;
 }
 
@@ -866,7 +921,7 @@ code {
   margin: 0;
   color: var(--ink);
   font-size: 30px;
-  font-weight: 720;
+  font-weight: 500;
   letter-spacing: -0.06em;
   line-height: 1.08;
 }
@@ -901,7 +956,7 @@ code {
   color: var(--muted);
   background: transparent;
   font-size: 11px;
-  font-weight: 710;
+  font-weight: 500;
   transition: color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out;
 }
 
@@ -925,7 +980,7 @@ code {
   margin: 17px 0 8px;
   color: var(--ink);
   font-size: 10px;
-  font-weight: 760;
+  font-weight: 500;
   letter-spacing: 0.04em;
 }
 
@@ -1010,7 +1065,7 @@ code {
   margin-bottom: 4px;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 500;
 }
 
 .toggle-row small {
@@ -1131,7 +1186,7 @@ code {
   color: var(--copper);
   background: rgba(248, 201, 93, 0.18);
   font-size: 10px;
-  font-weight: 760;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -1164,9 +1219,10 @@ code {
     min-height: auto;
     grid-template-columns: 1fr auto;
     grid-template-areas:
-      "brand footer"
+      "brand brand"
       "workspace workspace"
-      "nav nav";
+      "nav nav"
+      "footer footer";
     gap: 17px;
     padding: 17px 16px 16px;
   }
@@ -1198,14 +1254,12 @@ code {
 
   .sidebar-footer {
     grid-area: footer;
-    align-self: center;
-    padding: 0;
+    padding: 16px 0 0;
     margin: 0;
-    border: 0;
   }
 
   .sidebar-footer code {
-    display: none;
+    display: inline;
   }
 
   .topbar {

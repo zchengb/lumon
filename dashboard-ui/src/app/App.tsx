@@ -21,6 +21,7 @@ export function App(): React.JSX.Element {
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialNavigation.workspaceId);
   const [view, setView] = useState<View>(initialNavigation.view);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [overview, setOverview] = useState<WorkspaceOverviewData | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,7 +38,10 @@ export function App(): React.JSX.Element {
   }, [initialNavigation.workspaceId]);
 
   useEffect(() => {
-    void refreshWorkspaces().catch((reason: unknown) => setError(messageFor(reason))).finally(() => setLoading(false));
+    void Promise.all([refreshWorkspaces(), dashboardApi.getBootstrap()])
+      .then(([, bootstrap]) => setAppVersion(bootstrap.version))
+      .catch((reason: unknown) => setError(messageFor(reason)))
+      .finally(() => setLoading(false));
   }, [refreshWorkspaces]);
 
   useEffect(() => {
@@ -167,7 +171,19 @@ export function App(): React.JSX.Element {
           <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />总览</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />配置</button>
         </nav>
-        <div className="sidebar-footer"><span className="local-badge"><span className="online-dot" />本机服务</span><code>127.0.0.1</code></div>
+        <div className="sidebar-footer">
+          <div className="sidebar-footer-brand">
+            <p className="sidebar-slogan">Engineering, made legible.</p>
+            <span className="company-logo-surface">
+              <img className="company-logo" src="/inspire-group-logo.png" alt="Inspire Group" />
+            </span>
+          </div>
+          <div className="sidebar-footer-meta">
+            <span className="sidebar-version">Lumon v{appVersion ?? "—"}</span>
+            <span className="local-badge"><span className="online-dot" />本机服务</span>
+            <code>127.0.0.1</code>
+          </div>
+        </div>
       </aside>
 
       <div className="main-shell">

@@ -2,6 +2,12 @@ export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
 export type View = "overview" | "settings";
 
+export interface BootstrapState {
+  version: string;
+  workspace_count: number;
+  has_workspaces: boolean;
+}
+
 export interface WorkspaceListItem {
   workspace_id: string;
   name: string;

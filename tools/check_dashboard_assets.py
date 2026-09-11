@@ -11,11 +11,15 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     index = root / "src" / "lumon" / "dashboard" / "static" / "index.html"
     logo = root / "src" / "lumon" / "dashboard" / "static" / "lumon-mark.png"
+    company_logo = root / "src" / "lumon" / "dashboard" / "static" / "inspire-group-logo.png"
     if not index.is_file():
         print(f"Dashboard assets are missing: {index}")
         return 1
     if not logo.is_file():
         print(f"Dashboard Logo is missing: {logo}")
+        return 1
+    if not company_logo.is_file():
+        print(f"Dashboard company Logo is missing: {company_logo}")
         return 1
     content = index.read_text(encoding="utf-8")
     if "/assets/" not in content:

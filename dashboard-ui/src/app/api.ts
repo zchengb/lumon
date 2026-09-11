@@ -1,4 +1,5 @@
 import type {
+  BootstrapState,
   InitializeWorkspaceRequest,
   InitializeWorkspaceResponse,
   SettingsUpdate,
@@ -54,6 +55,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dashboardApi = {
+  getBootstrap(): Promise<BootstrapState> {
+    return request<BootstrapState>("/api/bootstrap");
+  },
+
   listWorkspaces(): Promise<WorkspaceListItem[]> {
     return request<WorkspaceListItem[]>("/api/workspaces");
   },
