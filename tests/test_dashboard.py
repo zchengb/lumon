@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from urllib.request import Request
 from uuid import UUID
@@ -37,7 +38,10 @@ def _opener(request: Request, timeout: float) -> _Response:
     return _Response()
 
 
-def _service(tmp_path: Path) -> DashboardService:
+def _service(
+    tmp_path: Path,
+    folder_picker: Callable[[], Path | None] | None = None,
+) -> DashboardService:
     state_root = tmp_path / "user-state"
     registry = WorkspaceRegistry(state_root)
     settings = WorkspaceSettingsStore(state_root)
@@ -51,6 +55,7 @@ def _service(tmp_path: Path) -> DashboardService:
         settings_store=settings,
         initializer=initializer,
         webhook_sender=FeishuWebhookSender(opener=_opener),
+        folder_picker=folder_picker,
     )
 
 
@@ -67,11 +72,31 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.0.5",
+        "version": "1.0.6",
         "workspace_count": 0,
         "has_workspaces": False,
     }
     assert client.get("/api/workspaces").json() == []
+
+
+def test_workspace_folder_picker_returns_selected_path(tmp_path: Path) -> None:
+    selected = tmp_path / "selected-workspace"
+    selected.mkdir()
+    client = _client(_service(tmp_path, folder_picker=lambda: selected))
+
+    response = client.post("/api/workspaces/select-folder")
+
+    assert response.status_code == 200
+    assert response.json() == {"path": str(selected), "cancelled": False}
+
+
+def test_workspace_folder_picker_reports_cancellation(tmp_path: Path) -> None:
+    client = _client(_service(tmp_path, folder_picker=lambda: None))
+
+    response = client.post("/api/workspaces/select-folder")
+
+    assert response.status_code == 200
+    assert response.json() == {"path": None, "cancelled": True}
 
 
 def test_initialize_and_read_workspace_overview(tmp_path: Path) -> None:

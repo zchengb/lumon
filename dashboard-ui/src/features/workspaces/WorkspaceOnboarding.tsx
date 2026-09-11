@@ -1,4 +1,4 @@
-import { FolderPlus, GitBranch, LoaderCircle, Plus } from "lucide-react";
+import { FolderOpen, FolderPlus, GitBranch, LoaderCircle, Plus } from "lucide-react";
 import { useState } from "react";
 import { dashboardApi } from "../../app/api";
 import { LanguagePicker, useI18n } from "../../shared/i18n";
@@ -18,6 +18,19 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
   const [name, setName] = useState("");
   const [repositories, setRepositories] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pickingFolder, setPickingFolder] = useState(false);
+
+  async function chooseFolder(): Promise<void> {
+    setPickingFolder(true);
+    try {
+      const selection = await dashboardApi.selectWorkspaceFolder();
+      if (selection.path) setPath(selection.path);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : t("onboarding.folderSelectionFailed"));
+    } finally {
+      setPickingFolder(false);
+    }
+  }
 
   async function submit(): Promise<void> {
     const normalizedPath = path.trim();
@@ -66,7 +79,13 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
         </div>
 
         <label className="field-label" htmlFor="workspace-path">{t("onboarding.workspacePath")}</label>
-        <input id="workspace-path" className="text-input" value={path} onChange={(event) => setPath(event.target.value)} placeholder={t("onboarding.workspacePathPlaceholder")} />
+        <div className="path-picker">
+          <input id="workspace-path" className="text-input" value={path} onChange={(event) => setPath(event.target.value)} placeholder={t("onboarding.workspacePathPlaceholder")} />
+          <button className="button button-secondary path-picker-button" type="button" onClick={() => void chooseFolder()} disabled={submitting || pickingFolder} aria-label={t("onboarding.chooseFolderAria")}>
+            {pickingFolder ? <LoaderCircle size={16} className="spin" /> : <FolderOpen size={16} />}
+            {pickingFolder ? t("onboarding.processing") : t("onboarding.chooseFolder")}
+          </button>
+        </div>
 
         {mode === "initialize" && (
           <>

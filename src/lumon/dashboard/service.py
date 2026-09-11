@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
+from lumon.dashboard.folder_picker import FolderPicker
 from lumon.errors import PreflightError, WorkspaceNotFoundError
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
 from lumon.workspace.config import load_workspace_config
@@ -88,6 +90,7 @@ class DashboardService:
         initializer: WorkspaceInitializer | None = None,
         webhook_sender: FeishuWebhookSender | None = None,
         repository_provisioner: RepositoryProvisioner | None = None,
+        folder_picker: Callable[[], Path | None] | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
@@ -97,11 +100,17 @@ class DashboardService:
         )
         self.webhook_sender = webhook_sender or FeishuWebhookSender()
         self.repository_provisioner = repository_provisioner or RepositoryProvisioner()
+        self._folder_picker = folder_picker or FolderPicker().choose
 
     def list_workspaces(self) -> tuple[WorkspaceListItem, ...]:
         """Return registered Workspaces without scanning unregistered directories."""
 
         return tuple(self._health(item) for item in self.registry.list())
+
+    def select_workspace_folder(self) -> Path | None:
+        """Open the local folder selector for the Dashboard onboarding flow."""
+
+        return self._folder_picker()
 
     def register_workspace(self, path: Path) -> WorkspaceRegistration:
         """Validate and register an existing Workspace, creating its profile."""

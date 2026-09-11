@@ -4,6 +4,7 @@ import type {
   InitializeWorkspaceResponse,
   SettingsUpdate,
   WebhookTestResponse,
+  WorkspaceFolderSelection,
   WorkspaceListItem,
   WorkspaceOverview,
   WorkspaceSettings,
@@ -61,6 +62,12 @@ export const dashboardApi = {
 
   listWorkspaces(): Promise<WorkspaceListItem[]> {
     return request<WorkspaceListItem[]>("/api/workspaces");
+  },
+
+  selectWorkspaceFolder(): Promise<WorkspaceFolderSelection> {
+    return request<WorkspaceFolderSelection>("/api/workspaces/select-folder", {
+      method: "POST",
+    });
   },
 
   registerWorkspace(path: string): Promise<WorkspaceListItem> {

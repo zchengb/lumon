@@ -33,6 +33,12 @@ registry contains only Workspace IDs, names, paths, and registration times.
 The Dashboard can explicitly register an existing Workspace; v1 does not scan
 the home directory or any fixed directory.
 
+On the onboarding page, use **Choose folder** to open the local native folder
+selector and populate the Workspace path with an absolute path. Manual path
+entry remains available as a fallback. The macOS build uses the system folder
+selector; unsupported environments show an actionable error instead of
+silently returning a browser-relative path.
+
 The Workspace itself continues to contain:
 
 ```text

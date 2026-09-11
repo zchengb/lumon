@@ -1046,6 +1046,22 @@ code {
   transition: border-color 160ms ease-out, box-shadow 160ms ease-out, background-color 160ms ease-out;
 }
 
+.path-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.path-picker .text-input {
+  min-width: 0;
+}
+
+.path-picker-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
 .text-input:focus {
   border-color: var(--copper);
   background: rgba(255, 255, 255, 0.9);
@@ -1389,6 +1405,14 @@ code {
 
   .onboarding-card h1 {
     font-size: 28px;
+  }
+
+  .path-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .path-picker-button {
+    width: 100%;
   }
 
   .settings-actions {

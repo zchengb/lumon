@@ -65,6 +65,11 @@ export interface InitializeWorkspaceResponse {
   workspace_id: string;
 }
 
+export interface WorkspaceFolderSelection {
+  path: string | null;
+  cancelled: boolean;
+}
+
 export interface WebhookTestResponse {
   success: boolean;
   detail: string;

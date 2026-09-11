@@ -21,6 +21,7 @@ from lumon.dashboard.schemas import (
     RepositoryOverviewResponse,
     RepositoryResultResponse,
     WebhookTestResponse,
+    WorkspaceFolderSelectionResponse,
     WorkspaceOverviewResponse,
     WorkspaceResponse,
     WorkspaceSettingsResponse,
@@ -61,6 +62,14 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     @router.get("/workspaces", response_model=list[WorkspaceResponse])
     def list_workspaces(request: Request) -> list[WorkspaceResponse]:
         return [_workspace_response(item) for item in _service(request).list_workspaces()]
+
+    @router.post(
+        "/workspaces/select-folder",
+        response_model=WorkspaceFolderSelectionResponse,
+    )
+    def select_workspace_folder(request: Request) -> WorkspaceFolderSelectionResponse:
+        path = _service(request).select_workspace_folder()
+        return WorkspaceFolderSelectionResponse(path=path, cancelled=path is None)
 
     @router.post("/workspaces/register", response_model=WorkspaceResponse, status_code=201)
     def register_workspace(

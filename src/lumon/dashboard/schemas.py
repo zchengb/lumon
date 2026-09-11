@@ -35,6 +35,13 @@ class RegisterWorkspaceRequest(StrictModel):
     path: str = Field(min_length=1)
 
 
+class WorkspaceFolderSelectionResponse(StrictModel):
+    """Result of opening the local native Workspace folder selector."""
+
+    path: Path | None
+    cancelled: bool
+
+
 class InitializeWorkspaceRequest(StrictModel):
     """Request to create a Workspace through the existing initializer."""
 

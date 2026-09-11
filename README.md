@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.5
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.6
 ```
 
 The installer does not modify a Workspace or remove global Skills. To remove
@@ -52,7 +52,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.5` runs the release workflow, which attaches
+semantic version tag such as `v1.0.6` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace

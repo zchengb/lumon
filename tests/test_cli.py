@@ -14,12 +14,12 @@ _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 def test_version_command(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["version"]) == 0
-    assert capsys.readouterr().out.strip() == "1.0.5"
+    assert capsys.readouterr().out.strip() == "1.0.6"
 
 
 def test_root_version_option(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--version"]) == 0
-    assert capsys.readouterr().out.strip() == "1.0.5"
+    assert capsys.readouterr().out.strip() == "1.0.6"
 
 
 def test_help_command_is_compatible_with_common_cli_usage(
