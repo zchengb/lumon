@@ -1,4 +1,4 @@
-import { Bell, Check, LoaderCircle, Save, Send, ShieldCheck } from "lucide-react";
+import { Bell, Check, LoaderCircle, Save, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { buildSettingsUpdate } from "./settingsForm";
 import { useI18n } from "../../shared/i18n";
@@ -109,7 +109,6 @@ export function SettingsPage({
               autoComplete="off"
             />
           </fieldset>
-          <p className="security-note"><ShieldCheck size={14} />{t("settings.security")}</p>
         </div>
 
         <div className="settings-actions">

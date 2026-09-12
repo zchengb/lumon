@@ -6,13 +6,13 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "./api";
 import { readNavigation, writeNavigation } from "./navigation";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { WorkspaceOnboarding } from "../features/workspaces/WorkspaceOnboarding";
 import { WorkspaceOverview } from "../features/workspaces/WorkspaceOverview";
-import { WorkspaceHealthLabel, WorkspacePicker } from "../features/workspaces/WorkspacePicker";
+import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { resolveWorkspaceSelection } from "../features/workspaces/workspaceSelection";
 import { LanguagePicker, useI18n, type Translator } from "../shared/i18n";
 import type { SettingsUpdate, View, WorkspaceListItem, WorkspaceOverview as WorkspaceOverviewData, WorkspaceSettings } from "../shared/types";
@@ -75,11 +75,6 @@ export function App(): React.JSX.Element {
     const timer = window.setTimeout(() => setNotice(null), 3500);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  const selectedWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.workspace_id === selectedId) ?? null,
-    [selectedId, workspaces],
-  );
 
   function changeWorkspace(nextId: string): void {
     if (settingsDirty && !window.confirm(t("app.unsavedWorkspaceConfirm"))) return;
@@ -158,33 +153,21 @@ export function App(): React.JSX.Element {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-lockup">
-          <img className="brand-logo" src="/lumon-mark.png" alt={t("app.brandAlt")} />
-          <span className="brand-copy"><strong>Lumon</strong><small>{t("app.workspaceConsole")}</small></span>
-        </div>
-        <div className="sidebar-section-label">{t("app.currentWorkspace")}</div>
-        <div className="sidebar-workspace">
-          {selectedWorkspace && <>
-            <div className="sidebar-workspace-top"><span>{t("app.active")}</span><WorkspaceHealthLabel health={selectedWorkspace.health} /></div>
-            <strong>{selectedWorkspace.name}</strong>
-            <code>{selectedWorkspace.path}</code>
-          </>}
+          <div className="brand-lockup-main">
+            <img className="brand-logo" src="/lumon-mark.png" alt={t("app.brandAlt")} />
+            <span className="brand-copy"><strong>Lumon</strong><small>{t("app.workspaceConsole")}</small></span>
+          </div>
+          <p className="sidebar-slogan">{t("app.slogan")}</p>
         </div>
         <nav className="side-nav" aria-label={t("app.dashboardSections")}>
           <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />{t("app.overview")}</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />{t("app.settings")}</button>
         </nav>
         <div className="sidebar-footer">
-          <div className="sidebar-footer-brand">
-            <p className="sidebar-slogan">{t("app.slogan")}</p>
-            <span className="company-logo-surface">
-              <img className="company-logo" src="/inspire-group-logo.png" alt={t("app.companyLogoAlt")} />
-            </span>
-          </div>
-          <div className="sidebar-footer-meta">
-            <span className="sidebar-version">Lumon v{appVersion ?? "—"}</span>
-            <span className="local-badge"><span className="online-dot" />{t("app.localService")}</span>
-            <code>127.0.0.1</code>
-          </div>
+          <span className="company-logo-surface">
+            <img className="company-logo" src="/inspire-group-logo.png" alt={t("app.companyLogoAlt")} />
+          </span>
+          <span className="sidebar-version">Lumon v{appVersion ?? "—"}</span>
         </div>
       </aside>
 
