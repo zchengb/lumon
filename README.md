@@ -133,3 +133,32 @@ add them explicitly from the onboarding page or with `lumon ui --workspace`.
 The v1 source tree intentionally contains only the new `src/lumon` modules,
 the Dashboard frontend source, and the unified `tests` directory. The old
 main branch Dashboard and runtime are not imported or packaged.
+
+## Mark Agent
+
+Mark is the local Workspace Agent. It listens for Feishu messages over the
+official WebSocket Channel SDK, handles private messages and group messages
+that explicitly mention `@Mark`, and runs the user's request through the local
+Codex CLI in the configured Workspace. It sends short progress messages and a
+final answer back to the same chat thread.
+
+Configure and inspect it with:
+
+```text
+lumon agent configure
+lumon agent doctor
+lumon agent start
+```
+
+Use `lumon agent start --background`, `lumon agent status`, and
+`lumon agent stop` for a detached local process. Mark is deliberately not
+started by `lumon ui`.
+
+Mark configuration is kept separately from Workspace settings in
+`~/.lumon/agent.toml` (or `$LUMON_HOME/agent.toml`) and its SQLite state is in
+`~/.lumon/mark.sqlite3`. The App Secret is stored in the owner-only `600`
+configuration file and never appears in CLI output, logs, or Feishu replies.
+The default Mark instructions are packaged as `lumon/agents/mark/SOUL.md`; a
+user-owned override can be placed at `~/.lumon/agents/mark/SOUL.md` and is never
+overwritten automatically. See [docs/mark-agent.md](docs/mark-agent.md) for
+the Feishu application setup and the full local verification flow.

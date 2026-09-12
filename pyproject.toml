@@ -11,6 +11,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "click>=8.1,<9",
     "fastapi>=0.115,<1",
+    "lark-channel-sdk>=1,<2",
     "typer>=0.15,<1",
     "uvicorn>=0.34,<1",
 ]
@@ -33,8 +34,14 @@ dev = [
 packages = ["src/lumon"]
 artifacts = ["src/lumon/dashboard/static"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/lumon/agents/mark/SOUL.md" = "lumon/agents/mark/SOUL.md"
+
 [tool.hatch.build.targets.sdist]
 artifacts = ["src/lumon/dashboard/static"]
+
+[tool.hatch.build.targets.sdist.force-include]
+"src/lumon/agents/mark/SOUL.md" = "src/lumon/agents/mark/SOUL.md"
 
 [tool.hatch.version]
 path = "src/lumon/version.py"

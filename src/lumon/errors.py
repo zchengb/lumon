@@ -47,3 +47,17 @@ class UpdateError(LumonError):
     """A Lumon update could not be checked or applied."""
 
     exit_code: ClassVar[int] = 4
+
+
+class AgentError(LumonError):
+    """Base error for the Mark Agent lifecycle and message path."""
+
+
+class AgentConfigError(AgentError):
+    """Mark Agent configuration is missing, invalid, or unsafe to use."""
+
+    exit_code: ClassVar[int] = 3
+
+
+class AgentRuntimeError(AgentError):
+    """Mark Agent could not start or complete a runtime operation."""
