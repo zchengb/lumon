@@ -164,10 +164,8 @@ export function App(): React.JSX.Element {
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />{t("app.settings")}</button>
         </nav>
         <div className="sidebar-footer">
-          <span className="company-logo-surface">
-            <img className="company-logo" src="/inspire-group-logo.png" alt={t("app.companyLogoAlt")} />
-          </span>
-          <span className="sidebar-version">Lumon v{appVersion ?? "—"}</span>
+          <img className="company-logo" src="/inspire-group-logo-white.png" alt={t("app.companyLogoAlt")} />
+          <span className="sidebar-version">v{appVersion ?? "—"}</span>
         </div>
       </aside>
 

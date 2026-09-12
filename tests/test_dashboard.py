@@ -72,7 +72,7 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.0.6",
+        "version": "1.0.7",
         "workspace_count": 0,
         "has_workspaces": False,
     }
