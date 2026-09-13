@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 from importlib.resources import files
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from lumon.errors import InvalidInputError, PreflightError
+from lumon.skills.installer import SkillInstaller
 from lumon.workspace.doctor import Doctor
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.model import InitRequest
+from lumon.workspace.registry import WorkspaceRegistry
+from lumon.workspace.settings import WorkspaceSettingsStore
 
 
 def test_initialize_missing_workspace_and_install_missing_skill(
@@ -138,6 +142,33 @@ def test_existing_invalid_manifest_is_rejected(
 
     with pytest.raises(PreflightError, match="Unsupported Workspace manifest schema"):
         initializer.initialize(InitRequest(target))
+
+
+def test_registry_failure_rolls_back_workspace_and_user_profile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    state_root = tmp_path / "lumon-home"
+    skills_root = tmp_path / "skills"
+    registry = WorkspaceRegistry(state_root)
+    initializer = WorkspaceInitializer(
+        skill_installer=SkillInstaller(skills_root),
+        registry=registry,
+        settings_store=WorkspaceSettingsStore(state_root),
+    )
+
+    def fail_register(_path: Path) -> NoReturn:
+        raise PreflightError("simulated registry failure")
+
+    monkeypatch.setattr(registry, "register", fail_register)
+    target = tmp_path / "workspace"
+
+    with pytest.raises(PreflightError, match="simulated registry failure"):
+        initializer.initialize(InitRequest(target))
+
+    assert not target.exists()
+    assert not skills_root.exists()
+    assert not registry.layout.registry.exists()
+    assert tuple((state_root / "workspaces").glob("*/config.toml")) == ()
 
 
 def test_root_initialization_is_rejected(initializer: WorkspaceInitializer) -> None:

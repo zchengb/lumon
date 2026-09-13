@@ -5,9 +5,11 @@ from __future__ import annotations
 import shutil
 import tempfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from lumon.errors import InitializationError, InvalidInputError, PreflightError
@@ -20,6 +22,59 @@ from lumon.workspace.model import InitRequest, InitResult, RepositoryRecord, Rep
 from lumon.workspace.registry import WorkspaceRegistry
 from lumon.workspace.repositories import RepositoryPreparation, RepositoryProvisioner
 from lumon.workspace.settings import WorkspaceSettingsStore
+
+_TargetState = Literal["missing", "empty", "managed"]
+_PRESERVED_ERRORS = (InitializationError, InvalidInputError, PreflightError)
+
+
+@dataclass(frozen=True, slots=True)
+class _InitializationPlan:
+    """Validated inputs and discovered state for one initialization operation."""
+
+    target: Path
+    layout: WorkspaceLayout
+    state: _TargetState
+    name: str
+    existing_records: tuple[RepositoryRecord, ...]
+    specifications: tuple[RepositorySpec, ...]
+    previews: tuple[SkillPreview, ...]
+    dry_run: bool
+
+    @property
+    def refresh_only(self) -> bool:
+        """Return whether the operation only refreshes an existing Workspace."""
+
+        return self.state == "managed" and not self.specifications
+
+
+@dataclass(frozen=True, slots=True)
+class _UserStateSnapshot:
+    """User-level state captured before profile or registry writes."""
+
+    workspace_id: UUID
+    profile: bytes | None
+
+
+@dataclass(slots=True)
+class _CommitState:
+    """Filesystem state required to undo a successful commit phase."""
+
+    committed_paths: list[Path]
+    target_created: bool = False
+    repositories_parent_created: bool = False
+    previous_config: bytes | None = None
+    config_replaced: bool = False
+
+
+@dataclass(slots=True)
+class _InitializationState:
+    """Mutable transaction state kept separate from the phase orchestration."""
+
+    registry_snapshot: bytes | None
+    stage: Path | None = None
+    skill_result: SkillInstallResult | None = None
+    user_state: _UserStateSnapshot | None = None
+    commit_state: _CommitState | None = None
 
 
 class WorkspaceInitializer:
@@ -44,162 +99,246 @@ class WorkspaceInitializer:
     def initialize(self, request: InitRequest) -> InitResult:
         """Validate, stage, provision, and commit one Workspace operation."""
 
+        plan = self._build_plan(request)
+        if plan.dry_run:
+            return self._preview(plan)
+        return self._execute(plan)
+
+    def _build_plan(self, request: InitRequest) -> _InitializationPlan:
         target = request.target.expanduser().resolve()
         layout = WorkspaceLayout.from_root(target)
         state = self._inspect_target(layout)
-
-        if state == "managed":
-            config = load_workspace_config(layout.workspace_config)
-            name = config.name
-            existing_records = config.repositories
-        else:
-            name = _workspace_name(request.name, target)
-            existing_records = ()
-
+        name, existing_records = self._workspace_details(request, layout, state, target)
         self.repository_provisioner.validate_specs(request.repositories)
         previews = self.skill_installer.preview()
+        return _InitializationPlan(
+            target=target,
+            layout=layout,
+            state=state,
+            name=name,
+            existing_records=existing_records,
+            specifications=request.repositories,
+            previews=previews,
+            dry_run=request.dry_run,
+        )
 
-        if request.dry_run:
-            preparations = self.repository_provisioner.prepare(
-                target,
-                request.repositories,
-                existing_records,
-                dry_run=True,
-            )
-            return self._dry_run_result(
-                layout,
-                preparations,
-                previews,
-                request.repositories,
-                workspace_is_managed=state == "managed",
-            )
+    def _workspace_details(
+        self,
+        request: InitRequest,
+        layout: WorkspaceLayout,
+        state: _TargetState,
+        target: Path,
+    ) -> tuple[str, tuple[RepositoryRecord, ...]]:
+        if state == "managed":
+            config = load_workspace_config(layout.workspace_config)
+            return config.name, config.repositories
+        return _workspace_name(request.name, target), ()
 
-        registry_snapshot = self.registry.raw_snapshot()
-        if state == "managed" and not request.repositories:
-            skill_result: SkillInstallResult | None = None
-            profile_workspace_id: UUID | None = None
-            profile_snapshot: bytes | None = None
-            user_state_touched = False
-            try:
-                skill_result = self.skill_installer.install()
-                profile_workspace_id, profile_snapshot = self._capture_user_profile(layout)
-                user_state_touched = True
-                self._register_workspace(layout)
-                return self._result_for_existing(layout, skill_result)
-            except Exception as exc:
-                if skill_result is not None:
-                    skill_result.rollback()
-                if user_state_touched and profile_workspace_id is not None:
-                    self._restore_user_state(
-                        profile_workspace_id,
-                        profile_snapshot,
-                        registry_snapshot,
-                    )
-                if isinstance(exc, (InitializationError, InvalidInputError, PreflightError)):
-                    raise
-                raise InitializationError(f"Unable to initialize Workspace: {target}") from exc
+    def _preview(self, plan: _InitializationPlan) -> InitResult:
+        preparations = self.repository_provisioner.prepare(
+            plan.target,
+            plan.specifications,
+            plan.existing_records,
+            dry_run=True,
+        )
+        return self._dry_run_result(
+            plan.layout,
+            preparations,
+            plan.previews,
+            plan.specifications,
+            workspace_is_managed=plan.state == "managed",
+        )
+
+    def _execute(self, plan: _InitializationPlan) -> InitResult:
+        state = _InitializationState(registry_snapshot=self.registry.raw_snapshot())
+        try:
+            if plan.refresh_only:
+                return self._refresh_existing(plan, state)
+            preparations = self._prepare_workspace(plan, state)
+            state.skill_result = self.skill_installer.install()
+            self._commit_workspace(plan, state)
+            self._verify_workspace(plan.layout, plan.name)
+            self._capture_user_state(plan, state)
+            self._register_workspace(plan.layout)
+            return self._initialization_result(plan, state, preparations)
+        except Exception as exc:
+            self._rollback(plan, state)
+            if isinstance(exc, _PRESERVED_ERRORS):
+                raise
+            raise InitializationError(f"Unable to initialize Workspace: {plan.target}") from exc
+        finally:
+            self._cleanup_stage(state)
+
+    def _refresh_existing(
+        self, plan: _InitializationPlan, state: _InitializationState
+    ) -> InitResult:
+        """Refresh Skills and user registration for an existing Workspace."""
+
+        state.skill_result = self.skill_installer.install()
+        self._capture_user_state(plan, state)
+        self._register_workspace(plan.layout)
+        return self._result_for_existing(plan.layout, self._require_skill_result(state))
+
+    def _prepare_workspace(
+        self, plan: _InitializationPlan, state: _InitializationState
+    ) -> tuple[RepositoryPreparation, ...]:
+        """Build a staged Workspace and prepare its Repository metadata."""
+
+        stage = self._create_stage(plan)
+        state.stage = stage
+        if plan.state != "managed":
+            self._write_workspace(stage, plan.name)
+
+        preparations = self.repository_provisioner.prepare(
+            plan.target,
+            plan.specifications,
+            plan.existing_records,
+            staging_root=stage,
+        )
+        merged_records = _merge_records(
+            plan.existing_records,
+            tuple(
+                preparation.record for preparation in preparations if preparation.record is not None
+            ),
+        )
+        WorkspaceConfig(name=plan.name, repositories=merged_records).write(
+            WorkspaceLayout.from_root(stage).workspace_config
+        )
+        return preparations
+
+    def _create_stage(self, plan: _InitializationPlan) -> Path:
+        """Create the private staging directory after preflight succeeds."""
 
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            stage = Path(tempfile.mkdtemp(prefix=f".{target.name}.lumon-init-", dir=target.parent))
+            plan.target.parent.mkdir(parents=True, exist_ok=True)
+            return Path(
+                tempfile.mkdtemp(
+                    prefix=f".{plan.target.name}.lumon-init-",
+                    dir=plan.target.parent,
+                )
+            )
         except OSError as exc:
             raise PreflightError(
-                f"Unable to create Workspace staging area: {target.parent}"
+                f"Unable to create Workspace staging area: {plan.target.parent}"
             ) from exc
 
-        skill_result: SkillInstallResult | None = None
-        committed_paths: list[Path] = []
-        target_created = False
-        repositories_parent_created = False
-        previous_config: bytes | None = None
-        config_replaced = False
-        profile_workspace_id: UUID | None = None
-        profile_snapshot: bytes | None = None
-        user_state_touched = False
-        try:
-            if state != "managed":
-                self._write_workspace(stage, name)
+    def _commit_workspace(self, plan: _InitializationPlan, state: _InitializationState) -> None:
+        """Commit staged Workspace or Repository paths and record undo data."""
 
-            preparations = self.repository_provisioner.prepare(
-                target,
-                request.repositories,
-                existing_records,
-                staging_root=stage,
+        stage = self._require_stage(state)
+        if plan.state == "managed":
+            previous_config = plan.layout.workspace_config.read_bytes()
+            committed_paths, parent_created = self._commit_staged_repositories(stage, plan.layout)
+            commit_state = _CommitState(
+                committed_paths=committed_paths,
+                repositories_parent_created=parent_created,
+                previous_config=previous_config,
             )
-            merged_records = _merge_records(
-                existing_records,
-                tuple(
-                    preparation.record
-                    for preparation in preparations
-                    if preparation.record is not None
-                ),
-            )
-            WorkspaceConfig(name=name, repositories=merged_records).write(
-                WorkspaceLayout.from_root(stage).workspace_config
-            )
+            state.commit_state = commit_state
+            staged_config = WorkspaceLayout.from_root(stage).workspace_config
+            staged_config.replace(plan.layout.workspace_config)
+            commit_state.config_replaced = True
+            return
 
-            skill_result = self.skill_installer.install()
-            if state == "managed":
-                previous_config = layout.workspace_config.read_bytes()
-                committed_paths, repositories_parent_created = self._commit_staged_repositories(
-                    stage, layout
-                )
-                staged_config = WorkspaceLayout.from_root(stage).workspace_config
-                staged_config.replace(layout.workspace_config)
-                config_replaced = True
-            else:
-                committed_paths, target_created = self._commit_stage(stage, target)
+        committed_paths, target_created = self._commit_stage(stage, plan.target)
+        state.commit_state = _CommitState(
+            committed_paths=committed_paths,
+            target_created=target_created,
+        )
 
-            self._verify_workspace(layout, name)
-            profile_workspace_id, profile_snapshot = self._capture_user_profile(layout)
-            user_state_touched = True
-            self._register_workspace(layout)
-            existing_names = {record.name for record in existing_records}
-            changed = (
-                state != "managed"
-                or any(preparation.result.status == "cloned" for preparation in preparations)
-                or any(
-                    preparation.result.name not in existing_names for preparation in preparations
-                )
+    def _capture_user_state(self, plan: _InitializationPlan, state: _InitializationState) -> None:
+        """Capture profile bytes before the registration phase can mutate them."""
+
+        workspace_id, profile = self._capture_user_profile(plan.layout)
+        state.user_state = _UserStateSnapshot(workspace_id=workspace_id, profile=profile)
+
+    def _initialization_result(
+        self,
+        plan: _InitializationPlan,
+        state: _InitializationState,
+        preparations: tuple[RepositoryPreparation, ...],
+    ) -> InitResult:
+        """Translate committed phase state into the existing public result."""
+
+        skill_result = self._require_skill_result(state)
+        commit_state = self._require_commit_state(state)
+        existing_names = {record.name for record in plan.existing_records}
+        changed = (
+            plan.state != "managed"
+            or any(preparation.result.status == "cloned" for preparation in preparations)
+            or any(preparation.result.name not in existing_names for preparation in preparations)
+        )
+        status = (
+            "initialized"
+            if plan.state != "managed"
+            else ("updated" if changed else "already_initialized")
+        )
+        return InitResult(
+            status=status,
+            workspace=plan.target,
+            created_paths=tuple(commit_state.committed_paths),
+            installed_skills=skill_result.installed,
+            skipped_skills=skill_result.skipped_existing,
+            repositories=tuple(preparation.result for preparation in preparations),
+        )
+
+    def _rollback(self, plan: _InitializationPlan, state: _InitializationState) -> None:
+        """Compensate completed phases in their established order."""
+
+        if state.skill_result is not None:
+            state.skill_result.rollback()
+        if state.user_state is not None:
+            self._restore_user_state(
+                state.user_state.workspace_id,
+                state.user_state.profile,
+                state.registry_snapshot,
             )
-            status = (
-                "initialized"
-                if state != "managed"
-                else ("updated" if changed else "already_initialized")
+        self._rollback_commit(plan, state)
+
+    def _rollback_commit(self, plan: _InitializationPlan, state: _InitializationState) -> None:
+        """Undo committed Workspace or Repository paths and restored config."""
+
+        commit_state = state.commit_state
+        if commit_state is None:
+            return
+        if commit_state.config_replaced and commit_state.previous_config is not None:
+            plan.layout.workspace_config.write_bytes(commit_state.previous_config)
+        if plan.state == "managed":
+            self._rollback_staged_repositories(
+                plan.layout,
+                commit_state.committed_paths,
+                commit_state.repositories_parent_created,
             )
-            return InitResult(
-                status=status,
-                workspace=target,
-                created_paths=tuple(committed_paths),
-                installed_skills=skill_result.installed,
-                skipped_skills=skill_result.skipped_existing,
-                repositories=tuple(preparation.result for preparation in preparations),
-            )
-        except Exception as exc:
-            if skill_result is not None:
-                skill_result.rollback()
-            if user_state_touched and profile_workspace_id is not None:
-                self._restore_user_state(
-                    profile_workspace_id,
-                    profile_snapshot,
-                    registry_snapshot,
-                )
-            if config_replaced and previous_config is not None:
-                layout.workspace_config.write_bytes(previous_config)
-            if state == "managed":
-                self._rollback_staged_repositories(
-                    layout,
-                    committed_paths,
-                    repositories_parent_created,
-                )
-            else:
-                self._rollback_workspace(target, committed_paths, target_created)
-            if isinstance(exc, (InitializationError, InvalidInputError, PreflightError)):
-                raise
-            raise InitializationError(f"Unable to initialize Workspace: {target}") from exc
-        finally:
-            if stage.exists():
-                shutil.rmtree(stage)
+            return
+        self._rollback_workspace(
+            plan.target,
+            commit_state.committed_paths,
+            commit_state.target_created,
+        )
+
+    def _cleanup_stage(self, state: _InitializationState) -> None:
+        """Remove the private staging directory after success or rollback."""
+
+        if state.stage is not None and state.stage.exists():
+            shutil.rmtree(state.stage)
+
+    @staticmethod
+    def _require_stage(state: _InitializationState) -> Path:
+        if state.stage is None:
+            raise InitializationError("Workspace initialization staging area is not ready.")
+        return state.stage
+
+    @staticmethod
+    def _require_skill_result(state: _InitializationState) -> SkillInstallResult:
+        if state.skill_result is None:
+            raise InitializationError("Workspace Skills were not installed.")
+        return state.skill_result
+
+    @staticmethod
+    def _require_commit_state(state: _InitializationState) -> _CommitState:
+        if state.commit_state is None:
+            raise InitializationError("Workspace commit state is not ready.")
+        return state.commit_state
 
     def _capture_user_profile(self, layout: WorkspaceLayout) -> tuple[UUID, bytes | None]:
         """Capture the profile state before this initialization registers a Workspace."""
@@ -225,7 +364,7 @@ class WorkspaceInitializer:
         self.settings_store.restore_raw(workspace_id, profile_snapshot)
         self.registry.restore_raw(registry_snapshot)
 
-    def _inspect_target(self, layout: WorkspaceLayout) -> str:
+    def _inspect_target(self, layout: WorkspaceLayout) -> _TargetState:
         if layout.root.exists() and not layout.root.is_dir():
             raise PreflightError(f"Workspace target is not a directory: {layout.root}")
         if layout.root == Path(layout.root.anchor or "/"):

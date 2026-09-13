@@ -12,14 +12,26 @@ from typer.testing import CliRunner
 
 from lumon.cli.app import app
 from lumon.cli.commands import init as init_command
-from lumon.errors import InvalidInputError, PreflightError, RepositoryError
+from lumon.errors import InitializationError, InvalidInputError, PreflightError, RepositoryError
+from lumon.skills.installer import SkillInstaller
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.doctor import Doctor
 from lumon.workspace.initializer import WorkspaceInitializer
-from lumon.workspace.model import InitRequest
-from lumon.workspace.repositories import spec_from_url
+from lumon.workspace.model import InitRequest, RepositoryRecord
+from lumon.workspace.registry import WorkspaceRegistry
+from lumon.workspace.repositories import RepositoryProvisioner, spec_from_url
+from lumon.workspace.settings import WorkspaceSettingsStore
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="Git is required")
+
+
+class FailingVerificationProvisioner(RepositoryProvisioner):
+    """Fail verification for one newly committed Repository."""
+
+    def inspect(self, workspace: Path, record: RepositoryRecord) -> tuple[bool, str]:
+        if record.name == "backend":
+            return False, "simulated verification failure"
+        return super().inspect(workspace, record)
 
 
 def _git(*arguments: str) -> str:
@@ -145,6 +157,32 @@ def test_existing_workspace_can_add_a_new_repository(
         record.name
         for record in load_workspace_config(target / "lumon" / "workspace.toml").repositories
     ] == ["product", "backend"]
+
+
+def test_managed_repository_verification_failure_restores_config_and_checkout(
+    tmp_path: Path,
+) -> None:
+    product = _create_remote(tmp_path / "product", "product", "main")
+    backend = _create_remote(tmp_path / "backend", "backend", "main")
+    target = tmp_path / "workspace"
+    initializer = WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        repository_provisioner=FailingVerificationProvisioner(),
+        registry=WorkspaceRegistry(tmp_path / "lumon-home"),
+        settings_store=WorkspaceSettingsStore(tmp_path / "lumon-home"),
+    )
+    initializer.initialize(InitRequest(target, repositories=(spec_from_url(product),)))
+    config_path = target / "lumon" / "workspace.toml"
+    config_before = config_path.read_bytes()
+    product_notes = target / "repos" / "product" / "local-notes.txt"
+    product_notes.write_text("keep me\n", encoding="utf-8")
+
+    with pytest.raises(InitializationError, match="Repository verification failed"):
+        initializer.initialize(InitRequest(target, repositories=(spec_from_url(backend),)))
+
+    assert config_path.read_bytes() == config_before
+    assert not (target / "repos" / "backend").exists()
+    assert product_notes.read_text(encoding="utf-8") == "keep me\n"
 
 
 def test_doctor_reports_registered_repository(
