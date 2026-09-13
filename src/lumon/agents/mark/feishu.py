@@ -128,7 +128,17 @@ def normalize_message(raw: object) -> InboundMessage | None:
     if sender_is_bot and sender_type == "unknown":
         sender_type = "bot"
     thread_id = _optional_text(_value(conversation, "thread_id", _value(raw, "thread_id", None)))
-    root_id = _optional_text(_value(raw, "root_id", None))
+    root_id = _optional_text(
+        _value(
+            raw,
+            "root_id",
+            _value(
+                conversation,
+                "root_id",
+                _value(conversation, "root_message_id", None),
+            ),
+        )
+    )
     return InboundMessage(
         event_id=message_id,
         message_id=message_id,

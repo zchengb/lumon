@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from lumon.agents.mark.codex import CodexRunner, parse_codex_line, sanitize_output
+from lumon.agents.mark.codex import CodexRunner, parse_codex_line
+from lumon.agents.mark.safety import sanitize_output
 
 
 def test_codex_jsonl_parser_exposes_final_and_safe_progress() -> None:
@@ -35,6 +36,8 @@ def test_codex_runner_uses_argument_vector_and_reads_stdin(tmp_path: Path) -> No
 
     assert result.status == "succeeded"
     assert result.final_text == "done"
+    assert runner.provider == "codex"
+    assert runner.display_name == "Codex"
     assert runner.build_command(tmp_path)[1:] == (
         "exec",
         "--json",

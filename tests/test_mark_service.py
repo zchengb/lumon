@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from pathlib import Path
 
-from lumon.agents.mark.codex import CodexRunner, ProgressCallback
 from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
 from lumon.agents.mark.feishu import MarkFeishuChannel, MessageHandler
-from lumon.agents.mark.model import CodexResult, InboundMessage
+from lumon.agents.mark.model import AgentResult, InboundMessage
+from lumon.agents.mark.runner import ProgressCallback
 from lumon.agents.mark.service import MarkAgentService
 from lumon.agents.mark.session_store import MarkSessionStore
 from lumon.skills.installer import SkillInstaller
@@ -17,27 +18,35 @@ from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
 
 
-class FakeRunner(CodexRunner):
+class FakeRunner:
     def __init__(self) -> None:
-        super().__init__(binary="unused")
         self.prompts: list[str] = []
+        self.provider = "test-agent"
+        self.display_name = "Test Agent"
+        self.executable = "test-agent"
+
+    def is_available(self) -> bool:
+        return True
+
+    def is_authenticated(self) -> bool:
+        return True
 
     async def run(
         self,
         workspace: Path,
         prompt: str,
         on_progress: ProgressCallback | None = None,
-    ) -> CodexResult:
+    ) -> AgentResult:
         del workspace
         self.prompts.append(prompt)
         if on_progress is not None:
-            await on_progress("Codex 正在检查 Workspace 文件…")
-        return CodexResult(status="succeeded", final_text="Workspace 已检查")
+            await on_progress("Test Agent 正在检查 Workspace 文件…")
+        return AgentResult(status="succeeded", final_text="Workspace 已检查")
 
 
-class BlockingRunner(CodexRunner):
+class BlockingRunner(FakeRunner):
     def __init__(self) -> None:
-        super().__init__(binary="unused")
+        super().__init__()
         self.started = asyncio.Event()
 
     async def run(
@@ -45,7 +54,7 @@ class BlockingRunner(CodexRunner):
         workspace: Path,
         prompt: str,
         on_progress: ProgressCallback | None = None,
-    ) -> CodexResult:
+    ) -> AgentResult:
         del workspace, prompt, on_progress
         self.started.set()
         await asyncio.Event().wait()
@@ -91,7 +100,7 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
-        codex_runner=runner,
+        agent_runner=runner,
         channel=channel,
     )
     message = InboundMessage(
@@ -107,6 +116,18 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     async def run() -> None:
         await service.handle_message(message)
         await service.wait_for_idle()
+        follow_up = InboundMessage(
+            event_id="evt-2",
+            message_id="om-2",
+            chat_id="oc-1",
+            chat_type="p2p",
+            text="请继续说明目录",
+            sender_id="ou-1",
+            sender_type="user",
+            thread_id="a-new-feishu-thread-metadata-value",
+        )
+        await service.handle_message(follow_up)
+        await service.wait_for_idle()
         await service.handle_message(message)
         await service.wait_for_idle()
 
@@ -114,11 +135,25 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
 
     assert channel.replies == [
         "Mark 正在读取当前 Workspace…",
-        "Codex 正在检查 Workspace 文件…",
+        "Test Agent 正在检查 Workspace 文件…",
+        "Workspace 已检查",
+        "Mark 正在读取当前 Workspace…",
+        "Test Agent 正在检查 Workspace 文件…",
         "Workspace 已检查",
     ]
-    assert len(runner.prompts) == 1
+    assert len(runner.prompts) == 2
+    assert "请检查 README" in runner.prompts[1]
+    assert "Workspace 已检查" in runner.prompts[1]
     assert store.event_status("evt-1") == "succeeded"
+    with sqlite3.connect(store.path) as connection:
+        rows = connection.execute(
+            "SELECT status, session_id, prompt_text FROM runs ORDER BY started_at"
+        ).fetchall()
+    assert len(rows) == 2
+    assert rows[0][0] == "succeeded"
+    assert rows[0][1] == rows[1][1]
+    assert rows[0][2] == runner.prompts[0]
+    assert rows[1][2] == runner.prompts[1]
 
 
 def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -> None:
@@ -143,7 +178,7 @@ def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
-        codex_runner=runner,
+        agent_runner=runner,
         channel=FakeChannel(config),
     )
     message = InboundMessage(

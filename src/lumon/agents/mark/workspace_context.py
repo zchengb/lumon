@@ -1,4 +1,4 @@
-"""Resolve a Workspace and build the bounded prompt sent to Codex."""
+"""Resolve a Workspace and build the bounded prompt sent to an Agent runner."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class WorkspaceContextBuilder:
         history: tuple[Message, ...],
         user_message: str,
     ) -> str:
-        """Build a self-contained Codex prompt from identity, rules, and history."""
+        """Build a self-contained Agent prompt from identity, rules, and history."""
 
         soul = self.soul_loader.load()
         history_text = _render_history(history)

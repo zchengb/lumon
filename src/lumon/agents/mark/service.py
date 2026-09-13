@@ -1,4 +1,4 @@
-"""Orchestrate Feishu messages, Workspace context, Codex, and persistence."""
+"""Orchestrate Feishu messages, Workspace context, Agent execution, and persistence."""
 
 from __future__ import annotations
 
@@ -8,10 +8,17 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from lumon.agents.mark.codex import CodexRunner, sanitize_output
 from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
 from lumon.agents.mark.feishu import MarkFeishuChannel
-from lumon.agents.mark.model import InboundMessage, MarkRunResult, MarkRunStatus, Message
+from lumon.agents.mark.model import (
+    AgentErrorCode,
+    InboundMessage,
+    MarkRunResult,
+    MarkRunStatus,
+    Message,
+)
+from lumon.agents.mark.runner import AgentRunner, create_agent_runner
+from lumon.agents.mark.safety import sanitize_output
 from lumon.agents.mark.session_store import MarkSessionStore
 from lumon.agents.mark.soul import MarkSoulLoader
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
@@ -28,7 +35,7 @@ class MarkAgentService:
         registry: WorkspaceRegistry | None = None,
         session_store: MarkSessionStore | None = None,
         soul_loader: MarkSoulLoader | None = None,
-        codex_runner: CodexRunner | None = None,
+        agent_runner: AgentRunner | None = None,
         channel: MarkFeishuChannel | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
@@ -36,7 +43,7 @@ class MarkAgentService:
         self.registry = registry or WorkspaceRegistry()
         self.session_store = session_store or MarkSessionStore()
         self.soul_loader = soul_loader or MarkSoulLoader()
-        self.codex_runner = codex_runner
+        self.agent_runner = agent_runner
         self._channel = channel
         self._now = now or (lambda: datetime.now(UTC))
         self._config: MarkAgentConfig | None = None
@@ -56,7 +63,8 @@ class MarkAgentService:
         self._stop_event = asyncio.Event()
         for message in self.session_store.recover_pending():
             if message.admitted:
-                self._schedule(message)
+                session = self.session_store.get_or_create_session(message)
+                self._schedule(message, session.session_id)
         try:
             await self._channel.connect(self.handle_message)
         except asyncio.CancelledError:
@@ -80,9 +88,10 @@ class MarkAgentService:
         if not message.admitted:
             return
         self._ensure_runtime()
+        session_id = self.session_store.get_or_create_session(message).session_id
         if not self.session_store.claim_event(message.event_id, message):
             return
-        self._schedule(message)
+        self._schedule(message, session_id)
 
     async def wait_for_idle(self) -> None:
         """Wait for currently scheduled messages; useful for integration tests."""
@@ -102,26 +111,30 @@ class MarkAgentService:
             registry=self.registry,
             soul_loader=self.soul_loader,
         )
-        if self.codex_runner is None:
-            self.codex_runner = CodexRunner(model=config.codex_model)
+        if self.agent_runner is None:
+            self.agent_runner = create_agent_runner(config)
         if self._channel is None:
             self._channel = MarkFeishuChannel(config)
 
-    def _schedule(self, message: InboundMessage) -> None:
-        task = asyncio.create_task(self._process(message))
+    def _schedule(self, message: InboundMessage, session_id: str) -> None:
+        task = asyncio.create_task(self._process(message, session_id))
         self._tasks.add(task)
         task.add_done_callback(self._task_finished)
 
-    async def _process(self, message: InboundMessage) -> None:
+    async def _process(self, message: InboundMessage, session_id: str) -> None:
         lock = self._conversation_locks.setdefault(message.conversation_key, asyncio.Lock())
         async with lock:
             self.session_store.mark_event_status(message.event_id, "processing")
+            self.session_store.bind_event_session(message.event_id, session_id)
             started_at = _timestamp(self._now())
             run_id = str(uuid4())
             workspace_id: UUID | None = None
             final_text: str | None = None
             status: MarkRunStatus = "failed"
             error_code: str | None = None
+            agent_provider: str | None = None
+            prompt: str | None = None
+            run_started = False
             completed = False
             try:
                 self.session_store.record_message(
@@ -131,6 +144,7 @@ class MarkAgentService:
                         message_id=message.message_id,
                         text=message.text,
                         created_at=started_at,
+                        session_id=session_id,
                     )
                 )
                 context_builder = self._context_builder
@@ -140,18 +154,35 @@ class MarkAgentService:
                 workspace_id = context.workspace_id
                 self.session_store.attach_workspace(message.event_id, workspace_id)
                 await self._send(message, "Mark 正在读取当前 Workspace…")
-                history = self.session_store.load_history(message.conversation_key)
+                history = self.session_store.load_history(
+                    session_id,
+                    conversation_key=message.conversation_key,
+                    legacy_conversation_key=message.legacy_conversation_key,
+                )
                 prompt = context_builder.build_prompt(context, history, message.text)
+                runner = self.agent_runner
+                if runner is None:
+                    raise AgentRuntimeError("Agent runtime is not ready.")
+                agent_provider = runner.provider
+                self.session_store.record_run_started(
+                    run_id=run_id,
+                    event_id=message.event_id,
+                    session_id=session_id,
+                    conversation_key=message.conversation_key,
+                    workspace_id=workspace_id,
+                    agent_provider=agent_provider,
+                    prompt_text=prompt,
+                    started_at=started_at,
+                )
+                run_started = True
                 reporter = _ProgressReporter(self._channel, message)
-                if self.codex_runner is None:
-                    raise AgentRuntimeError("Codex runtime is not ready.")
-                result = await self.codex_runner.run(
+                result = await runner.run(
                     context.path,
                     prompt,
                     on_progress=reporter.notify,
                 )
                 status = result.status
-                error_code = result.error_code
+                error_code = result.error_code.value if result.error_code is not None else None
                 if result.status == "succeeded" and result.final_text:
                     final_text = sanitize_output(result.final_text)
                     await self._send(message, final_text)
@@ -163,25 +194,40 @@ class MarkAgentService:
                             workspace_id=workspace_id,
                             text=final_text,
                             created_at=_timestamp(self._now()),
+                            session_id=session_id,
                         )
                     )
                 else:
                     if status == "succeeded":
                         status = "failed"
-                        error_code = error_code or "codex_empty_result"
-                    await self._send(message, _failure_message(error_code))
+                        error_code = error_code or AgentErrorCode.EMPTY_RESULT.value
+                    await self._send(
+                        message,
+                        _failure_message(
+                            error_code,
+                            status=status,
+                            agent_name=runner.display_name,
+                        ),
+                    )
                 completed = True
             except asyncio.CancelledError:
+                if run_started:
+                    self.session_store.mark_run_interrupted(
+                        run_id,
+                        _timestamp(self._now()),
+                    )
                 # Leave the event in ``processing`` so the next service start
                 # can move it back to ``queued`` and recover it.
                 raise
             except LumonError as exc:
                 error_code = _error_code(exc)
-                await self._send(message, _failure_message(error_code))
+                agent_name = self.agent_runner.display_name if self.agent_runner else "Agent CLI"
+                await self._send(message, _failure_message(error_code, agent_name=agent_name))
                 completed = True
             except Exception:
                 error_code = "mark_unexpected_error"
-                await self._send(message, _failure_message(error_code))
+                agent_name = self.agent_runner.display_name if self.agent_runner else "Agent CLI"
+                await self._send(message, _failure_message(error_code, agent_name=agent_name))
                 completed = True
             finally:
                 if completed:
@@ -196,7 +242,10 @@ class MarkAgentService:
                             started_at=started_at,
                             ended_at=ended_at,
                             final_text=final_text,
+                            agent_provider=agent_provider,
                             error_code=error_code,
+                            session_id=session_id,
+                            prompt_text=prompt if run_started else None,
                         )
                     )
 
@@ -224,7 +273,7 @@ class MarkAgentService:
 
 
 class _ProgressReporter:
-    """Throttle provider events so a busy Codex turn does not spam Feishu."""
+    """Throttle runner events so a busy Agent turn does not spam Feishu."""
 
     def __init__(self, channel: MarkFeishuChannel, message: InboundMessage) -> None:
         self.channel = channel
@@ -244,12 +293,20 @@ class _ProgressReporter:
             return
 
 
-def _failure_message(error_code: str | None) -> str:
-    if error_code == "codex_timeout":
-        return "Mark 处理超时了。请稍后重试，或先运行 `lumon agent doctor` 检查本机环境。"
-    if error_code == "codex_not_found":
-        return "找不到本机 Codex CLI。请安装并登录 Codex 后，再运行 `lumon agent doctor`。"
-    if error_code == "codex_empty_result":
+def _failure_message(
+    error_code: str | None,
+    *,
+    status: MarkRunStatus | None = None,
+    agent_name: str = "Agent CLI",
+) -> str:
+    if error_code == AgentErrorCode.TIMEOUT.value or status == "timed_out":
+        return f"{agent_name} 处理超时了。请稍后重试，或先运行 `lumon agent doctor` 检查本机环境。"
+    if error_code == AgentErrorCode.CLI_NOT_FOUND.value:
+        return (
+            f"找不到当前配置的 Agent CLI（{agent_name}）。"
+            "请安装并登录后，再运行 `lumon agent doctor`。"
+        )
+    if error_code == AgentErrorCode.EMPTY_RESULT.value:
         return "Mark 没有得到可用回答。请稍后重试。"
     return "Mark 暂时无法完成这次请求。请运行 `lumon agent doctor` 检查配置和运行环境。"
 

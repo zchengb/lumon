@@ -16,8 +16,8 @@ from uuid import UUID
 
 import typer
 
-from lumon.agents.mark.codex import CodexRunner
 from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.mark.runner import create_agent_runner
 from lumon.agents.mark.service import MarkAgentService
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentConfigError, AgentRuntimeError, LumonError
@@ -70,7 +70,8 @@ def configure() -> None:
     config = MarkAgentConfig(
         enabled=True,
         default_workspace_id=default_id,
-        codex_model=existing.codex_model if existing else None,
+        agent_provider=existing.agent_provider if existing else "codex",
+        agent_model=existing.agent_model if existing else None,
         feishu_app_id=app_id.strip(),
         feishu_app_secret=app_secret,
     )
@@ -87,7 +88,7 @@ def configure() -> None:
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Render a JSON report.")] = False,
 ) -> None:
-    """Check Mark configuration, dependencies, Codex login, and Workspace."""
+    """Check Mark configuration, dependencies, Agent CLI login, and Workspace."""
 
     report = _inspect_agent()
     if json_output:
@@ -201,29 +202,39 @@ def _inspect_agent() -> AgentDoctorReport:
         )
     )
 
-    runner = CodexRunner()
-    binary = Path(runner.binary)
-    binary_ok = binary.is_file() and os.access(binary, os.X_OK)
-    checks.append(
-        AgentDoctorCheck(
-            "codex_cli",
-            binary_ok,
-            str(binary) if binary_ok else "Codex CLI not found",
-        )
-    )
-    if binary_ok:
-        login_ok = _codex_login_ok(runner.binary)
+    try:
+        runner = create_agent_runner(config)
+    except AgentConfigError as exc:
+        checks.append(AgentDoctorCheck("agent_cli", False, str(exc)))
         checks.append(
-            AgentDoctorCheck(
-                "codex_login",
-                login_ok,
-                "logged in" if login_ok else "Codex login is unavailable",
-            )
+            AgentDoctorCheck("agent_login", False, "skipped until Agent CLI is available")
         )
     else:
+        binary_ok = runner.is_available()
         checks.append(
-            AgentDoctorCheck("codex_login", False, "skipped because Codex CLI is missing")
+            AgentDoctorCheck(
+                "agent_cli",
+                binary_ok,
+                f"{runner.display_name} executable: {runner.executable}"
+                if binary_ok
+                else f"{runner.display_name} CLI not found: {runner.executable}",
+            )
         )
+        if binary_ok:
+            login_ok = runner.is_authenticated()
+            checks.append(
+                AgentDoctorCheck(
+                    "agent_login",
+                    login_ok,
+                    f"{runner.display_name} session is ready"
+                    if login_ok
+                    else f"{runner.display_name} login is unavailable",
+                )
+            )
+        else:
+            checks.append(
+                AgentDoctorCheck("agent_login", False, "skipped because Agent CLI is missing")
+            )
 
     if config is not None:
         try:
@@ -413,17 +424,3 @@ def _owner_only(path: Path) -> bool:
         return path.stat().st_mode & 0o777 == 0o600
     except OSError:
         return False
-
-
-def _codex_login_ok(binary: str) -> bool:
-    try:
-        result = subprocess.run(
-            [binary, "login", "status"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return result.returncode == 0

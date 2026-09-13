@@ -31,7 +31,37 @@ def test_private_message_is_admitted() -> None:
 
     assert message is not None
     assert message.admitted
-    assert message.conversation_key == "oc_1:thread-1"
+    assert message.conversation_key == "oc_1"
+
+
+def test_group_thread_is_the_session_boundary() -> None:
+    first = normalize_message(_raw("group", "@Mark first"))
+    second = normalize_message(
+        {
+            **_raw("group", "@Mark second"),
+            "id": "om_2",
+            "conversation": {
+                "chat_id": "oc_1",
+                "chat_type": "group",
+                "thread_id": "thread-1",
+            },
+        }
+    )
+    other_thread = normalize_message(
+        {
+            **_raw("group", "@Mark other"),
+            "id": "om_3",
+            "conversation": {
+                "chat_id": "oc_1",
+                "chat_type": "group",
+                "thread_id": "thread-2",
+            },
+        }
+    )
+
+    assert first is not None and second is not None and other_thread is not None
+    assert first.conversation_key == second.conversation_key
+    assert first.conversation_key != other_thread.conversation_key
 
 
 def test_group_message_requires_mark_mention() -> None:

@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import shutil
-from collections.abc import Awaitable, Callable, Mapping
+import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
+from os import X_OK, access
 from pathlib import Path
 from typing import Literal, cast
 
-from lumon.agents.mark.model import CodexResult
+from lumon.agents.mark.model import AgentErrorCode, AgentResult
+from lumon.agents.mark.runner import ProgressCallback
+from lumon.agents.mark.safety import sanitize_output
 
-ProgressCallback = Callable[[str], Awaitable[None]]
 CodexEventKind = Literal["final", "progress", "error"]
 
 
@@ -28,6 +30,9 @@ class ParsedCodexEvent:
 class CodexRunner:
     """Execute one isolated full-access Codex turn in a Workspace."""
 
+    provider = "codex"
+    display_name = "Codex"
+
     def __init__(
         self,
         binary: str | None = None,
@@ -39,6 +44,32 @@ class CodexRunner:
         self.timeout_seconds = timeout_seconds
         self.environment = dict(environment) if environment is not None else None
         self.model = model or None
+
+    @property
+    def executable(self) -> str:
+        """Return the resolved Codex executable for diagnostics."""
+
+        return self.binary
+
+    def is_available(self) -> bool:
+        """Return whether the configured Codex executable is runnable."""
+
+        path = Path(self.executable)
+        return path.is_file() and access(path, X_OK)
+
+    def is_authenticated(self) -> bool:
+        """Return whether the local Codex session reports a successful login."""
+
+        try:
+            result = subprocess.run(
+                [self.executable, "login", "status"],
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0
 
     def build_command(self, workspace: Path) -> tuple[str, ...]:
         """Return the exact argument vector used for one Codex execution."""
@@ -61,7 +92,7 @@ class CodexRunner:
         workspace: Path,
         prompt: str,
         on_progress: ProgressCallback | None = None,
-    ) -> CodexResult:
+    ) -> AgentResult:
         """Run Codex with a bounded timeout and no shell interpolation."""
 
         try:
@@ -70,18 +101,18 @@ class CodexRunner:
                 timeout=self.timeout_seconds,
             )
         except TimeoutError:
-            return CodexResult(status="timed_out", error_code="codex_timeout")
+            return AgentResult(status="timed_out", error_code=AgentErrorCode.TIMEOUT)
         except FileNotFoundError:
-            return CodexResult(status="failed", error_code="codex_not_found")
+            return AgentResult(status="failed", error_code=AgentErrorCode.CLI_NOT_FOUND)
         except OSError:
-            return CodexResult(status="failed", error_code="codex_start_failed")
+            return AgentResult(status="failed", error_code=AgentErrorCode.START_FAILED)
 
     async def _run_process(
         self,
         workspace: Path,
         prompt: str,
         on_progress: ProgressCallback | None,
-    ) -> CodexResult:
+    ) -> AgentResult:
         process: asyncio.subprocess.Process | None = None
         try:
             process = await asyncio.create_subprocess_exec(
@@ -120,20 +151,20 @@ class CodexRunner:
             await stderr_task
 
             if process.returncode != 0 or error_seen:
-                return CodexResult(
+                return AgentResult(
                     status="failed",
                     progress=tuple(progress),
-                    error_code="codex_execution_failed",
+                    error_code=AgentErrorCode.EXECUTION_FAILED,
                     return_code=process.returncode,
                 )
             if not final_text:
-                return CodexResult(
+                return AgentResult(
                     status="failed",
                     progress=tuple(progress),
-                    error_code="codex_empty_result",
+                    error_code=AgentErrorCode.EMPTY_RESULT,
                     return_code=process.returncode,
                 )
-            return CodexResult(
+            return AgentResult(
                 status="succeeded",
                 final_text=sanitize_output(final_text),
                 progress=tuple(progress),
@@ -186,23 +217,6 @@ def parse_codex_line(raw_line: bytes | str) -> ParsedCodexEvent | None:
     if effective_type in {"error", "turn.failed", "response.failed"}:
         return ParsedCodexEvent("error")
     return None
-
-
-def sanitize_output(value: str) -> str:
-    """Redact common credential-shaped values before they cross the channel."""
-
-    result = re.sub(
-        r"(?i)(https?://open\.feishu\.(?:cn|com)/[^\s]*?/hook/)[A-Za-z0-9_-]+",
-        r"\1[REDACTED]",
-        value,
-    )
-    credential_pattern = (
-        r"(?i)((?:app[_ -]?secret|access[_ -]?token|refresh[_ -]?token|"
-        r"api[_ -]?key|password|private[_ -]?key|webhook(?:\s+url)?|token)"
-        r"\s*[:=]\s*)[^\s,;]+"
-    )
-    result = re.sub(credential_pattern, r"\1[REDACTED]", result)
-    return result
 
 
 def _extract_text(value: object) -> str | None:

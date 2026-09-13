@@ -1,4 +1,4 @@
-"""SQLite persistence for Mark messages, de-duplication, and runs."""
+"""SQLite persistence for Mark sessions, messages, de-duplication, and runs."""
 
 from __future__ import annotations
 
@@ -7,16 +7,27 @@ import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from lumon.agents.mark.codex import sanitize_output
-from lumon.agents.mark.model import InboundMessage, MarkRunResult, Message
+from lumon.agents.mark.model import (
+    InboundMessage,
+    MarkRunResult,
+    MarkSession,
+    Message,
+)
+from lumon.agents.mark.safety import sanitize_output
 from lumon.errors import AgentRuntimeError
 from lumon.workspace.registry import UserStateLayout
 
 
 class MarkSessionStore:
-    """Expose a small durable interface over a private SQLite database."""
+    """Expose a small durable interface over Mark's private SQLite database.
+
+    A session is the durable conversation boundary: one direct chat maps to
+    one session, while one group Thread maps to one session. The full prompt
+    sent to an Agent is stored on its run before execution starts so a later
+    review can reconstruct the Agent's perspective without relying on logs.
+    """
 
     def __init__(
         self,
@@ -30,24 +41,93 @@ class MarkSessionStore:
         self._lock = threading.RLock()
         self._prepare_database()
 
+    def get_or_create_session(self, message: InboundMessage) -> MarkSession:
+        """Return the stable Session for a direct chat or group Thread."""
+
+        session_key = message.conversation_key
+        timestamp = _timestamp(self._now())
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM sessions WHERE session_key = ?",
+                (session_key,),
+            ).fetchone()
+            if row is None:
+                session_id = str(uuid4())
+                try:
+                    connection.execute(
+                        """
+                        INSERT INTO sessions (
+                            session_id, session_key, chat_id, chat_type,
+                            thread_id, root_id, workspace_id, created_at,
+                            last_activity_at, status
+                        ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 'active')
+                        """,
+                        (
+                            session_id,
+                            session_key,
+                            message.chat_id,
+                            message.chat_type,
+                            message.thread_id,
+                            message.root_id,
+                            timestamp,
+                            timestamp,
+                        ),
+                    )
+                except sqlite3.IntegrityError:
+                    # Another Mark process may have created this key between
+                    # the SELECT and INSERT. Reuse that durable identity.
+                    row = connection.execute(
+                        "SELECT * FROM sessions WHERE session_key = ?",
+                        (session_key,),
+                    ).fetchone()
+                    if row is None:
+                        raise AgentRuntimeError(
+                            "Unable to create the Mark conversation session."
+                        ) from None
+                else:
+                    row = connection.execute(
+                        "SELECT * FROM sessions WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()
+            else:
+                connection.execute(
+                    """
+                    UPDATE sessions
+                    SET last_activity_at = ?,
+                        thread_id = COALESCE(thread_id, ?),
+                        root_id = COALESCE(root_id, ?)
+                    WHERE session_id = ?
+                    """,
+                    (timestamp, message.thread_id, message.root_id, row["session_id"]),
+                )
+                row = connection.execute(
+                    "SELECT * FROM sessions WHERE session_id = ?",
+                    (row["session_id"],),
+                ).fetchone()
+            if row is None:
+                raise AgentRuntimeError("Mark SQLite session disappeared during creation.")
+            return _session_from_row(row)
+
     def claim_event(self, event_id: str, message: InboundMessage | None = None) -> bool:
         """Atomically claim an event ID, returning ``False`` for duplicates."""
 
         if not event_id.strip():
             return False
         item = message or _placeholder_message(event_id)
+        session = self.get_or_create_session(item)
         with self._lock, self._connect() as connection:
             cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO events (
-                    event_id, message_id, conversation_key, chat_id, chat_type,
-                    thread_id, root_id, text, sender_id, sender_type,
+                    event_id, message_id, session_id, conversation_key, chat_id,
+                    chat_type, thread_id, root_id, text, sender_id, sender_type,
                     received_at, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
                 """,
                 (
                     event_id,
                     item.message_id,
+                    session.session_id,
                     item.conversation_key,
                     item.chat_id,
                     item.chat_type,
@@ -80,11 +160,13 @@ class MarkSessionStore:
             connection.execute(
                 """
                 INSERT INTO messages (
-                    conversation_key, direction, message_id, workspace_id, text, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    conversation_key, session_id, direction, message_id,
+                    workspace_id, text, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     message.conversation_key,
+                    message.session_id,
                     message.direction,
                     message.message_id,
                     str(message.workspace_id) if message.workspace_id else None,
@@ -93,21 +175,38 @@ class MarkSessionStore:
                 ),
             )
 
-    def load_history(self, conversation_key: str, limit: int = 20) -> tuple[Message, ...]:
-        """Load the most recent transcript messages in chronological order."""
+    def load_history(
+        self,
+        session_id: str,
+        limit: int = 20,
+        *,
+        conversation_key: str | None = None,
+        legacy_conversation_key: str | None = None,
+    ) -> tuple[Message, ...]:
+        """Load recent history for a Session, with a legacy-key fallback.
+
+        The fallback keeps transcripts written by older Lumon versions usable
+        while all new rows are associated with the explicit Session ID.
+        """
 
         if limit < 1:
             return ()
+        history_key = conversation_key or session_id
+        conversation_keys = [history_key]
+        if legacy_conversation_key and legacy_conversation_key not in conversation_keys:
+            conversation_keys.append(legacy_conversation_key)
+        placeholders = ", ".join("?" for _ in conversation_keys)
         with self._lock, self._connect() as connection:
             rows = connection.execute(
-                """
-                SELECT conversation_key, direction, message_id, workspace_id, text, created_at
+                f"""
+                SELECT conversation_key, session_id, direction, message_id,
+                       workspace_id, text, created_at
                 FROM messages
-                WHERE conversation_key = ?
+                WHERE session_id = ? OR conversation_key IN ({placeholders})
                 ORDER BY id DESC
                 LIMIT ?
                 """,
-                (conversation_key, limit),
+                (session_id, *conversation_keys, limit),
             ).fetchall()
         return tuple(_message_from_row(row) for row in reversed(rows))
 
@@ -121,19 +220,37 @@ class MarkSessionStore:
                 "UPDATE events SET status = ? WHERE event_id = ?", (status, event_id)
             )
 
+    def bind_event_session(self, event_id: str, session_id: str) -> None:
+        """Backfill the Session link for events created by an older schema."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE events
+                SET session_id = COALESCE(session_id, ?)
+                WHERE event_id = ?
+                """,
+                (session_id, event_id),
+            )
+
     def attach_workspace(self, event_id: str, workspace_id: UUID) -> None:
-        """Associate the resolved Workspace with an accepted event and its message."""
+        """Associate the resolved Workspace with an event, message, and Session."""
 
         with self._lock, self._connect() as connection:
             row = connection.execute(
-                "SELECT conversation_key, message_id FROM events WHERE event_id = ?",
+                """
+                SELECT conversation_key, message_id, session_id
+                FROM events
+                WHERE event_id = ?
+                """,
                 (event_id,),
             ).fetchone()
             if row is None:
                 return
+            workspace_value = str(workspace_id)
             connection.execute(
                 "UPDATE events SET workspace_id = ? WHERE event_id = ?",
-                (str(workspace_id), event_id),
+                (workspace_value, event_id),
             )
             connection.execute(
                 """
@@ -141,41 +258,144 @@ class MarkSessionStore:
                 SET workspace_id = ?
                 WHERE conversation_key = ? AND message_id = ? AND direction = 'inbound'
                 """,
-                (str(workspace_id), str(row["conversation_key"]), str(row["message_id"])),
+                (workspace_value, str(row["conversation_key"]), str(row["message_id"])),
             )
+            if row["session_id"]:
+                connection.execute(
+                    "UPDATE sessions SET workspace_id = ? WHERE session_id = ?",
+                    (workspace_value, str(row["session_id"])),
+                )
 
-    def record_result(self, result: MarkRunResult) -> None:
-        """Persist a run result and close the associated event in one transaction."""
+    def record_run_started(
+        self,
+        *,
+        run_id: str,
+        event_id: str,
+        session_id: str,
+        conversation_key: str,
+        workspace_id: UUID,
+        agent_provider: str,
+        prompt_text: str,
+        started_at: str,
+    ) -> None:
+        """Persist the exact Agent prompt before starting the external process."""
 
         with self._lock, self._connect() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO runs (
-                    run_id, event_id, conversation_key, workspace_id, status,
-                    error_code, started_at, ended_at, final_text
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    run_id, event_id, session_id, conversation_key, workspace_id,
+                    agent_provider, status, error_code, started_at, ended_at,
+                    final_text, prompt_text
+                ) VALUES (?, ?, ?, ?, ?, ?, 'running', NULL, ?, ?, NULL, ?)
                 """,
                 (
-                    result.run_id,
+                    run_id,
+                    event_id,
+                    session_id,
+                    conversation_key,
+                    str(workspace_id),
+                    agent_provider,
+                    started_at,
+                    started_at,
+                    prompt_text,
+                ),
+            )
+
+    def record_result(self, result: MarkRunResult) -> None:
+        """Persist a terminal run result and close the associated event."""
+
+        final_text = sanitize_output(result.final_text) if result.final_text else None
+        with self._lock, self._connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE runs
+                SET event_id = ?,
+                    session_id = COALESCE(?, session_id),
+                    conversation_key = ?,
+                    workspace_id = ?,
+                    agent_provider = COALESCE(?, agent_provider),
+                    status = ?,
+                    error_code = ?,
+                    started_at = ?,
+                    ended_at = ?,
+                    final_text = ?,
+                    prompt_text = COALESCE(?, prompt_text)
+                WHERE run_id = ?
+                """,
+                (
                     result.event_id,
+                    result.session_id,
                     result.conversation_key,
                     str(result.workspace_id) if result.workspace_id else None,
+                    result.agent_provider,
                     result.status,
                     result.error_code,
                     result.started_at,
                     result.ended_at,
-                    sanitize_output(result.final_text) if result.final_text else None,
+                    final_text,
+                    result.prompt_text,
+                    result.run_id,
                 ),
-            )
+            ).rowcount
+            if updated == 0:
+                connection.execute(
+                    """
+                    INSERT INTO runs (
+                        run_id, event_id, session_id, conversation_key, workspace_id,
+                        agent_provider, status, error_code, started_at, ended_at,
+                        final_text, prompt_text
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        result.run_id,
+                        result.event_id,
+                        result.session_id,
+                        result.conversation_key,
+                        str(result.workspace_id) if result.workspace_id else None,
+                        result.agent_provider,
+                        result.status,
+                        result.error_code,
+                        result.started_at,
+                        result.ended_at,
+                        final_text,
+                        result.prompt_text,
+                    ),
+                )
             connection.execute(
                 "UPDATE events SET status = ? WHERE event_id = ?",
                 (result.status, result.event_id),
             )
 
+    def mark_run_interrupted(self, run_id: str, ended_at: str) -> None:
+        """Close an in-flight run after service cancellation without closing its event."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET status = 'interrupted', error_code = 'interrupted', ended_at = ?
+                WHERE run_id = ? AND status = 'running'
+                """,
+                (ended_at, run_id),
+            )
+
     def recover_pending(self) -> tuple[InboundMessage, ...]:
         """Return queued or interrupted events, making interrupted work runnable again."""
 
+        timestamp = _timestamp(self._now())
         with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET status = 'interrupted', error_code = 'interrupted', ended_at = ?
+                WHERE status = 'running'
+                  AND event_id IN (
+                      SELECT event_id FROM events WHERE status = 'processing'
+                  )
+                """,
+                (timestamp,),
+            )
             connection.execute("UPDATE events SET status = 'queued' WHERE status = 'processing'")
             rows = connection.execute(
                 """
@@ -206,9 +426,22 @@ class MarkSessionStore:
             with self._connect() as connection:
                 connection.executescript(
                     """
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        session_id TEXT PRIMARY KEY,
+                        session_key TEXT NOT NULL UNIQUE,
+                        chat_id TEXT NOT NULL,
+                        chat_type TEXT NOT NULL,
+                        thread_id TEXT,
+                        root_id TEXT,
+                        workspace_id TEXT,
+                        created_at TEXT NOT NULL,
+                        last_activity_at TEXT NOT NULL,
+                        status TEXT NOT NULL
+                    );
                     CREATE TABLE IF NOT EXISTS events (
                         event_id TEXT PRIMARY KEY,
                         message_id TEXT NOT NULL,
+                        session_id TEXT,
                         conversation_key TEXT NOT NULL,
                         chat_id TEXT NOT NULL,
                         chat_type TEXT NOT NULL,
@@ -224,6 +457,7 @@ class MarkSessionStore:
                     CREATE TABLE IF NOT EXISTS messages (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         conversation_key TEXT NOT NULL,
+                        session_id TEXT,
                         direction TEXT NOT NULL,
                         message_id TEXT,
                         workspace_id TEXT,
@@ -233,26 +467,41 @@ class MarkSessionStore:
                     CREATE TABLE IF NOT EXISTS runs (
                         run_id TEXT PRIMARY KEY,
                         event_id TEXT NOT NULL,
+                        session_id TEXT,
                         conversation_key TEXT NOT NULL,
                         workspace_id TEXT,
+                        agent_provider TEXT,
                         status TEXT NOT NULL,
                         error_code TEXT,
                         started_at TEXT NOT NULL,
                         ended_at TEXT NOT NULL,
-                        final_text TEXT
+                        final_text TEXT,
+                        prompt_text TEXT
                     );
-                    CREATE INDEX IF NOT EXISTS messages_conversation_idx
-                        ON messages (conversation_key, id);
-                    CREATE INDEX IF NOT EXISTS events_status_idx
-                        ON events (status, received_at);
                     """
                 )
-                columns = {
-                    str(row["name"])
-                    for row in connection.execute("PRAGMA table_info(events)").fetchall()
-                }
-                if "workspace_id" not in columns:
-                    connection.execute("ALTER TABLE events ADD COLUMN workspace_id TEXT")
+                _ensure_column(connection, "events", "workspace_id", "TEXT")
+                _ensure_column(connection, "events", "session_id", "TEXT")
+                _ensure_column(connection, "messages", "session_id", "TEXT")
+                _ensure_column(connection, "runs", "agent_provider", "TEXT")
+                _ensure_column(connection, "runs", "session_id", "TEXT")
+                _ensure_column(connection, "runs", "prompt_text", "TEXT")
+                connection.executescript(
+                    """
+                    CREATE INDEX IF NOT EXISTS sessions_activity_idx
+                        ON sessions (last_activity_at);
+                    CREATE INDEX IF NOT EXISTS events_status_idx
+                        ON events (status, received_at);
+                    CREATE INDEX IF NOT EXISTS events_session_idx
+                        ON events (session_id, received_at);
+                    CREATE INDEX IF NOT EXISTS messages_conversation_idx
+                        ON messages (conversation_key, id);
+                    CREATE INDEX IF NOT EXISTS messages_session_idx
+                        ON messages (session_id, id);
+                    CREATE INDEX IF NOT EXISTS runs_session_idx
+                        ON runs (session_id, started_at);
+                    """
+                )
             self.path.chmod(0o600)
         except OSError as exc:
             raise AgentRuntimeError(f"Unable to prepare Mark SQLite database: {self.path}") from exc
@@ -270,15 +519,45 @@ class MarkSessionStore:
         return connection
 
 
+def _ensure_column(
+    connection: sqlite3.Connection,
+    table: str,
+    column: str,
+    definition: str,
+) -> None:
+    columns = {
+        str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def _placeholder_message(event_id: str) -> InboundMessage:
     return InboundMessage(
         event_id=event_id,
         message_id=event_id,
-        chat_id="",
+        chat_id=f"event:{event_id}",
         chat_type="p2p",
         text="",
         sender_id="",
         sender_type="user",
+    )
+
+
+def _session_from_row(row: sqlite3.Row) -> MarkSession:
+    raw_workspace_id = row["workspace_id"]
+    workspace_id = UUID(str(raw_workspace_id)) if raw_workspace_id else None
+    return MarkSession(
+        session_id=str(row["session_id"]),
+        session_key=str(row["session_key"]),
+        chat_id=str(row["chat_id"]),
+        chat_type=str(row["chat_type"]),
+        thread_id=str(row["thread_id"]) if row["thread_id"] else None,
+        root_id=str(row["root_id"]) if row["root_id"] else None,
+        workspace_id=workspace_id,
+        created_at=str(row["created_at"]),
+        last_activity_at=str(row["last_activity_at"]),
+        status=str(row["status"]),
     )
 
 
@@ -295,6 +574,7 @@ def _message_from_row(row: sqlite3.Row) -> Message:
         workspace_id=workspace_id,
         text=str(row["text"]),
         created_at=str(row["created_at"]),
+        session_id=str(row["session_id"]) if row["session_id"] else None,
     )
 
 
