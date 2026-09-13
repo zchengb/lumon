@@ -109,17 +109,14 @@ class _FakeSdkChannel:
 def test_channel_explicitly_configures_message_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_import(_name: str) -> SimpleNamespace:
-        return SimpleNamespace(
+    monkeypatch.setattr(
+        feishu_module,
+        "_sdk_module",
+        SimpleNamespace(
             FeishuChannel=_FakeSdkChannel,
             PolicyConfig=_FakePolicy,
             InboundConfig=_FakeInbound,
-        )
-
-    monkeypatch.setattr(
-        feishu_module.importlib,
-        "import_module",
-        fake_import,
+        ),
     )
     channel = MarkFeishuChannel(
         MarkAgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")

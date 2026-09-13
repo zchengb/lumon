@@ -18,11 +18,11 @@ from lumon.agents.mark.model import (
     Message,
 )
 from lumon.agents.mark.runner import AgentRunner, create_agent_runner
-from lumon.agents.mark.safety import sanitize_output
 from lumon.agents.mark.session_store import MarkSessionStore
 from lumon.agents.mark.soul import MarkSoulLoader
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentConfigError, AgentRuntimeError, LumonError
+from lumon.tools.safety import sanitize_output
 from lumon.workspace.registry import WorkspaceRegistry
 
 

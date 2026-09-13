@@ -164,10 +164,17 @@ configuration file and never appears in CLI output, logs, or Feishu replies.
 The configuration uses the provider-neutral `agent_provider` and `agent_model`
 fields; existing `codex_model` files are read for compatibility and normalized
 when they are next saved.
-The default Mark instructions are packaged as `lumon/agents/mark/SOUL.md`; a
-user-owned override can be placed at `~/.lumon/agents/mark/SOUL.md` and is never
-overwritten automatically. See [docs/mark-agent.md](docs/mark-agent.md) for
-the Feishu application setup and the full local verification flow.
+Mark's packaged templates are kept together under
+`lumon/agents/mark/templates/`, including `SOUL.md` and the Workspace Prompt
+template. A user-owned SOUL override can be placed at
+`~/.lumon/agents/mark/templates/SOUL.md` and is never overwritten
+automatically. See [docs/mark-agent.md](docs/mark-agent.md) for the Feishu
+application setup and the full local verification flow.
+
+Codex execution is a reusable tool under `lumon/tools/codex.py`, not a Mark-only
+implementation. Mark adds its conversational progress and final-text policy in
+its own runner; future flows such as Auto Scan can call the same tool and use
+only the execution status or file events.
 
 Mark keeps conversation state in explicit SQLite tables. A direct Feishu chat
 uses one durable Session regardless of reply-thread metadata; a group Feishu

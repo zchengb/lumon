@@ -1,4 +1,4 @@
-"""Run the local Codex CLI and reduce JSONL events to safe typed results."""
+"""Reusable local Codex execution tool for Lumon flows and Agents."""
 
 from __future__ import annotations
 
@@ -6,32 +6,65 @@ import asyncio
 import json
 import shutil
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from os import X_OK, access
 from pathlib import Path
 from typing import Literal, cast
 
-from lumon.agents.mark.model import AgentErrorCode, AgentResult
-from lumon.agents.mark.runner import ProgressCallback
-from lumon.agents.mark.safety import sanitize_output
+from lumon.tools.safety import sanitize_output
 
-CodexEventKind = Literal["final", "progress", "error"]
+CodexEventKind = Literal["message", "command_execution", "file_change", "error"]
+CodexExecutionStatus = Literal["succeeded", "failed", "timed_out"]
+CodexEventCallback = Callable[["CodexEvent"], Awaitable[None]]
+
+
+class CodexErrorCode(StrEnum):
+    """Stable errors produced by the local Codex process tool."""
+
+    TIMEOUT = "timeout"
+    CLI_NOT_FOUND = "cli_not_found"
+    START_FAILED = "start_failed"
+    EXECUTION_FAILED = "execution_failed"
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedCodexEvent:
-    """The deliberately small event shape consumed by the runner."""
+class CodexRequest:
+    """Input required to execute one Codex request in a Workspace."""
+
+    workspace: Path
+    prompt: str
+
+
+@dataclass(frozen=True, slots=True)
+class CodexEvent:
+    """A safe, provider-specific event emitted by the Codex JSONL stream."""
 
     kind: CodexEventKind
     text: str | None = None
 
 
-class CodexRunner:
-    """Execute one isolated full-access Codex turn in a Workspace."""
+@dataclass(frozen=True, slots=True)
+class CodexExecutionResult:
+    """The process outcome returned by the Codex tool.
+
+    A successful process may have no ``final_text``. Callers that need a user
+    facing answer, such as Mark, apply that policy themselves; file-oriented
+    flows can use the successful status without requiring a textual response.
+    """
+
+    status: CodexExecutionStatus
+    final_text: str | None = None
+    events: tuple[CodexEvent, ...] = ()
+    error_code: CodexErrorCode | None = None
+    return_code: int | None = None
+
+
+class CodexTool:
+    """Execute Codex without imposing a caller-specific output policy."""
 
     provider = "codex"
-    display_name = "Codex"
 
     def __init__(
         self,
@@ -72,7 +105,7 @@ class CodexRunner:
         return result.returncode == 0
 
     def build_command(self, workspace: Path) -> tuple[str, ...]:
-        """Return the exact argument vector used for one Codex execution."""
+        """Return the exact argument vector used for one execution."""
 
         command = [
             self.binary,
@@ -87,87 +120,86 @@ class CodexRunner:
             command.extend(("--model", self.model))
         return tuple(command)
 
-    async def run(
+    async def execute(
         self,
-        workspace: Path,
-        prompt: str,
-        on_progress: ProgressCallback | None = None,
-    ) -> AgentResult:
-        """Run Codex with a bounded timeout and no shell interpolation."""
+        request: CodexRequest,
+        on_event: CodexEventCallback | None = None,
+    ) -> CodexExecutionResult:
+        """Execute a request and optionally observe safe stream events."""
 
         try:
             return await asyncio.wait_for(
-                self._run_process(workspace, prompt, on_progress),
+                self._execute_process(request, on_event),
                 timeout=self.timeout_seconds,
             )
         except TimeoutError:
-            return AgentResult(status="timed_out", error_code=AgentErrorCode.TIMEOUT)
+            return CodexExecutionResult(
+                status="timed_out",
+                error_code=CodexErrorCode.TIMEOUT,
+            )
         except FileNotFoundError:
-            return AgentResult(status="failed", error_code=AgentErrorCode.CLI_NOT_FOUND)
+            return CodexExecutionResult(
+                status="failed",
+                error_code=CodexErrorCode.CLI_NOT_FOUND,
+            )
         except OSError:
-            return AgentResult(status="failed", error_code=AgentErrorCode.START_FAILED)
+            return CodexExecutionResult(
+                status="failed",
+                error_code=CodexErrorCode.START_FAILED,
+            )
 
-    async def _run_process(
+    async def _execute_process(
         self,
-        workspace: Path,
-        prompt: str,
-        on_progress: ProgressCallback | None,
-    ) -> AgentResult:
+        request: CodexRequest,
+        on_event: CodexEventCallback | None,
+    ) -> CodexExecutionResult:
         process: asyncio.subprocess.Process | None = None
         try:
             process = await asyncio.create_subprocess_exec(
-                *self.build_command(workspace),
+                *self.build_command(request.workspace),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=workspace,
+                cwd=request.workspace,
                 env=self.environment,
             )
             assert process.stdin is not None
             assert process.stdout is not None
             assert process.stderr is not None
-            process.stdin.write(prompt.encode("utf-8"))
+            process.stdin.write(request.prompt.encode("utf-8"))
             await process.stdin.drain()
             process.stdin.close()
             await process.stdin.wait_closed()
 
             stderr_task = asyncio.create_task(process.stderr.read())
-            progress: list[str] = []
+            events: list[CodexEvent] = []
             final_text: str | None = None
             error_seen = False
             async for raw_line in process.stdout:
                 event = parse_codex_line(raw_line)
                 if event is None:
                     continue
-                if event.kind == "final" and event.text:
+                events.append(event)
+                if event.kind == "message" and event.text:
                     final_text = event.text
-                elif event.kind == "progress" and event.text:
-                    progress.append(event.text)
-                    if on_progress is not None:
-                        await on_progress(event.text)
                 elif event.kind == "error":
                     error_seen = True
+                if on_event is not None:
+                    await on_event(event)
             await process.wait()
             await stderr_task
 
             if process.returncode != 0 or error_seen:
-                return AgentResult(
+                return CodexExecutionResult(
                     status="failed",
-                    progress=tuple(progress),
-                    error_code=AgentErrorCode.EXECUTION_FAILED,
+                    events=tuple(events),
+                    error_code=CodexErrorCode.EXECUTION_FAILED,
                     return_code=process.returncode,
                 )
-            if not final_text:
-                return AgentResult(
-                    status="failed",
-                    progress=tuple(progress),
-                    error_code=AgentErrorCode.EMPTY_RESULT,
-                    return_code=process.returncode,
-                )
-            return AgentResult(
+            return CodexExecutionResult(
                 status="succeeded",
-                final_text=sanitize_output(final_text),
-                progress=tuple(progress),
+                final_text=final_text,
+                events=tuple(events),
                 return_code=process.returncode,
             )
         except asyncio.CancelledError:
@@ -187,7 +219,7 @@ def resolve_codex_binary() -> str:
     return str(local)
 
 
-def parse_codex_line(raw_line: bytes | str) -> ParsedCodexEvent | None:
+def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
     """Parse one Codex JSONL line without exposing arbitrary event payloads."""
 
     try:
@@ -205,17 +237,13 @@ def parse_codex_line(raw_line: bytes | str) -> ParsedCodexEvent | None:
     effective_type = item_type or event_type
     if effective_type in {"agent_message", "assistant_message", "message", "final"}:
         text = _extract_text(item_payload if item_payload is not None else payload)
-        return ParsedCodexEvent("final", sanitize_output(text) if text else None)
-    if effective_type in {
-        "command_execution",
-        "command",
-        "file_change",
-        "file_changes",
-        "tool_call",
-    }:
-        return ParsedCodexEvent("progress", _progress_label(effective_type))
+        return CodexEvent("message", sanitize_output(text) if text else None)
+    if effective_type in {"command_execution", "command", "tool_call"}:
+        return CodexEvent("command_execution")
+    if effective_type in {"file_change", "file_changes"}:
+        return CodexEvent("file_change")
     if effective_type in {"error", "turn.failed", "response.failed"}:
-        return ParsedCodexEvent("error")
+        return CodexEvent("error")
     return None
 
 
@@ -235,11 +263,3 @@ def _extract_text(value: object) -> str | None:
     if isinstance(value, str):
         return value.strip() or None
     return None
-
-
-def _progress_label(event_type: str) -> str:
-    if event_type in {"command_execution", "command", "tool_call"}:
-        return "Codex 正在执行 Workspace 操作…"
-    if event_type in {"file_change", "file_changes"}:
-        return "Codex 正在检查 Workspace 文件…"
-    return "Codex 正在处理 Workspace…"

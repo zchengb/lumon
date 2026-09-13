@@ -9,6 +9,7 @@ import pytest
 
 from lumon.agents.mark.config import MarkAgentConfig
 from lumon.agents.mark.model import Message
+from lumon.agents.mark.prompt import MarkPromptRenderer
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
 from lumon.skills.installer import SkillInstaller
@@ -61,7 +62,9 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert context.workspace_id == registration.workspace_id
     assert "Inspect the README" in prompt
     assert "AGENTS.md" in prompt
-    assert "Do not store secrets" in prompt
+    assert "不要读取、复制或在回复中暴露凭据" in prompt
+    assert "<mark-soul>" in prompt
+    assert "<conversation-history>" in prompt
 
 
 def test_explicit_missing_workspace_does_not_fallback(tmp_path: Path) -> None:
@@ -81,3 +84,21 @@ def test_multiple_workspaces_require_explicit_default(tmp_path: Path) -> None:
 
     with pytest.raises(AgentRuntimeError, match="multiple Workspaces"):
         builder.resolve_workspace()
+
+
+def test_prompt_renderer_can_use_a_local_template_without_changing_context_resolution(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    _workspace(tmp_path, state_root, "template-lab")
+    builder = WorkspaceContextBuilder(
+        _config(),
+        WorkspaceRegistry(state_root),
+        prompt_renderer=MarkPromptRenderer(
+            "workspace=${workspace_name}\nmessage=${user_message}\n"
+        ),
+    )
+
+    prompt = builder.build_prompt(builder.resolve_workspace(), (), "Inspect the template")
+
+    assert prompt == "workspace=template-lab\nmessage=Inspect the template\n"

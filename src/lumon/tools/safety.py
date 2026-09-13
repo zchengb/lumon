@@ -1,4 +1,4 @@
-"""Output sanitization shared by Agent runners, persistence, and Feishu replies."""
+"""Output sanitization shared by tools and external communication channels."""
 
 from __future__ import annotations
 

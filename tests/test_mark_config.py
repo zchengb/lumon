@@ -90,6 +90,7 @@ def test_packaged_soul_is_available_and_user_override_wins(tmp_path: Path) -> No
     state_root = tmp_path / "lumon"
     loader = MarkSoulLoader(state_root)
 
+    assert loader.override_path == state_root / "agents" / "mark" / "templates" / "SOUL.md"
     packaged = loader.load()
     assert "Mark" in packaged
     assert "Workspace" in packaged
@@ -98,3 +99,14 @@ def test_packaged_soul_is_available_and_user_override_wins(tmp_path: Path) -> No
     loader.override_path.write_text("user-owned Mark instructions\n", encoding="utf-8")
 
     assert loader.load() == "user-owned Mark instructions\n"
+
+
+def test_legacy_soul_override_is_read_without_becoming_the_new_write_path(tmp_path: Path) -> None:
+    state_root = tmp_path / "lumon"
+    loader = MarkSoulLoader(state_root)
+    legacy_path = state_root / "agents" / "mark" / "SOUL.md"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text("legacy Mark instructions\n", encoding="utf-8")
+
+    assert loader.override_path != legacy_path
+    assert loader.load() == "legacy Mark instructions\n"

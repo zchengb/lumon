@@ -19,6 +19,24 @@ Mark 是 Lumon 的本地 Workspace Agent。它通过飞书 WebSocket 长连接�
 - 使用本地 SQLite 做 Session、消息去重、历史记录、运行结果和中断恢复。
 - 在启动 Agent CLI 前保存实际发送的完整 Prompt，便于分析 Mark 当时看到的上下文。
 
+## Codex 工具与输出策略
+
+Codex 不是 Mark 的专属模块。共享的执行工具位于：
+
+```text
+lumon/tools/codex.py
+```
+
+它只负责在指定 Workspace 中启动本机 Codex、读取 JSONL 事件、返回执行状态、
+安全后的文本和文件/命令事件。它不负责发送消息，也不要求必须产生最终文本。
+因此 Auto Scan、Auto Delivery 等 Flow 可以只检查执行状态或消费文件变化，忽略
+文本输出。
+
+Mark 的对话适配器位于 `lumon/agents/mark/runner.py`。它调用共享的
+`CodexTool`，把命令/文件事件转换为聊天进度，并额外要求有可回复的最终文本；
+没有最终文本时，才由 Mark 转换为 `EMPTY_RESULT`。这样聊天输出策略不会反向
+污染其他 Flow。
+
 Mark 不会因为打开 Dashboard 自动启动；必须明确运行 `lumon agent start`。
 
 ## 配置
@@ -81,19 +99,23 @@ Mark 的 Session 边界是稳定的：
 
 `runs` 的一行对应一次 Agent CLI 调用，不对应 Agent 内部执行的每一条命令；命令和文件操作事件不会各自产生新的 Run。
 
-Mark 的默认 SOUL 位于安装包中：
+Mark 的默认模板集中位于安装包中：
 
 ```text
-lumon/agents/mark/SOUL.md
+lumon/agents/mark/templates/
+├── SOUL.md
+└── workspace_prompt.md
 ```
 
 用户可以创建覆盖文件来加入本机规则：
 
 ```text
-$LUMON_HOME/agents/mark/SOUL.md
+$LUMON_HOME/agents/mark/templates/SOUL.md
 ```
 
-Lumon 只读取现有覆盖文件，不会自动覆盖或升级它。
+Lumon 只读取现有覆盖文件，不会自动覆盖或升级它。为兼容旧版本，旧路径
+`$LUMON_HOME/agents/mark/SOUL.md` 仍会作为回退路径读取，但新配置应使用
+`templates/SOUL.md`。
 
 ## 运行与检查
 

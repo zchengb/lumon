@@ -15,8 +15,8 @@ from lumon.agents.mark.model import (
     MarkSession,
     Message,
 )
-from lumon.agents.mark.safety import sanitize_output
 from lumon.errors import AgentRuntimeError
+from lumon.tools.safety import sanitize_output
 from lumon.workspace.registry import UserStateLayout
 
 

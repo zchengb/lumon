@@ -13,6 +13,17 @@ from lumon.errors import AgentRuntimeError
 
 MessageHandler = Callable[[InboundMessage], Awaitable[None]]
 
+# Load the SDK before ``asyncio.run`` creates Mark's runtime loop. The SDK's
+# WebSocket client captures a module-level loop during import and later runs
+# its synchronous starter on that loop; importing it inside Mark's loop causes
+# the SDK to call ``run_until_complete`` on an already-running loop.
+try:
+    _sdk_module: Any | None = importlib.import_module("lark_channel")
+    _sdk_import_error: ImportError | None = None
+except ImportError as exc:
+    _sdk_module = None
+    _sdk_import_error = exc
+
 
 class MarkFeishuChannel:
     """Keep the third-party Channel SDK behind one concrete integration module."""
@@ -25,19 +36,17 @@ class MarkFeishuChannel:
     async def connect(self, on_message: MessageHandler) -> None:
         """Connect the SDK's WebSocket transport and keep it running."""
 
-        try:
-            module = importlib.import_module("lark_channel")
-            channel_type: Any = module.FeishuChannel
-        except ImportError as exc:
+        module = _sdk_module
+        if module is None:
             raise AgentRuntimeError(
                 "The lark-channel-sdk dependency is unavailable; reinstall Lumon."
-            ) from exc
+            ) from _sdk_import_error
+        channel_type: Any = module.FeishuChannel
 
         self._handler = on_message
         try:
-            sdk = cast(Any, module)
-            policy_type = sdk.PolicyConfig
-            inbound_type = sdk.InboundConfig
+            policy_type = module.PolicyConfig
+            inbound_type = module.InboundConfig
             self._channel = channel_type(
                 app_id=self.config.feishu_app_id,
                 app_secret=self.config.feishu_app_secret,
