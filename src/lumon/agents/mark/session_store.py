@@ -202,7 +202,8 @@ class MarkSessionStore:
                 SELECT conversation_key, session_id, direction, message_id,
                        workspace_id, text, created_at
                 FROM messages
-                WHERE session_id = ? OR conversation_key IN ({placeholders})
+                WHERE recalled = 0
+                  AND (session_id = ? OR conversation_key IN ({placeholders}))
                 ORDER BY id DESC
                 LIMIT ?
                 """,
@@ -213,7 +214,15 @@ class MarkSessionStore:
     def mark_event_status(self, event_id: str, status: str) -> None:
         """Update an event lifecycle state used by restart recovery."""
 
-        if status not in {"queued", "processing", "succeeded", "failed", "timed_out"}:
+        if status not in {
+            "queued",
+            "processing",
+            "cancel_requested",
+            "cancelled",
+            "succeeded",
+            "failed",
+            "timed_out",
+        }:
             raise AgentRuntimeError(f"Invalid Mark event status: {status}")
         with self._lock, self._connect() as connection:
             connection.execute(
@@ -231,6 +240,85 @@ class MarkSessionStore:
                 WHERE event_id = ?
                 """,
                 (session_id, event_id),
+            )
+
+    def request_message_cancellation(self, message_id: str) -> str | None:
+        """Request cancellation for the active event carrying a message ID."""
+
+        if not message_id.strip():
+            return None
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT event_id, status
+                FROM events
+                WHERE message_id = ?
+                  AND status IN ('queued', 'processing', 'cancel_requested', 'cancelled')
+                ORDER BY received_at DESC
+                LIMIT 1
+                """,
+                (message_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            event_id = str(row["event_id"])
+            if str(row["status"]) in {"queued", "processing"}:
+                connection.execute(
+                    "UPDATE events SET status = 'cancel_requested' WHERE event_id = ?",
+                    (event_id,),
+                )
+            return event_id
+
+    def is_cancellation_requested(self, event_id: str) -> bool:
+        """Return whether an event is cancelled or awaiting cancellation."""
+
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM events
+                WHERE event_id = ? AND status IN ('cancel_requested', 'cancelled')
+                """,
+                (event_id,),
+            ).fetchone()
+        return row is not None
+
+    def mark_event_cancelled(self, event_id: str) -> None:
+        """Finalize user-requested cancellation and exclude its message from history."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE messages
+                SET recalled = 1
+                WHERE direction = 'inbound'
+                  AND message_id IN (
+                      SELECT message_id FROM events WHERE event_id = ?
+                  )
+                """,
+                (event_id,),
+            )
+            connection.execute(
+                """
+                UPDATE events
+                SET status = 'cancelled'
+                WHERE event_id = ?
+                  AND status IN ('queued', 'processing', 'cancel_requested')
+                """,
+                (event_id,),
+            )
+
+    def mark_run_cancelled(self, run_id: str, ended_at: str) -> None:
+        """Close an in-flight run because its inbound message was recalled."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET status = 'cancelled', error_code = 'message_recalled', ended_at = ?
+                WHERE run_id = ? AND status = 'running'
+                """,
+                (ended_at, run_id),
             )
 
     def attach_workspace(self, event_id: str, workspace_id: UUID) -> None:
@@ -396,6 +484,30 @@ class MarkSessionStore:
                 """,
                 (timestamp,),
             )
+            connection.execute(
+                """
+                UPDATE runs
+                SET status = 'cancelled', error_code = 'message_recalled', ended_at = ?
+                WHERE status = 'running'
+                  AND event_id IN (
+                      SELECT event_id FROM events WHERE status = 'cancel_requested'
+                  )
+                """,
+                (timestamp,),
+            )
+            connection.execute(
+                """
+                UPDATE messages
+                SET recalled = 1
+                WHERE direction = 'inbound'
+                  AND message_id IN (
+                      SELECT message_id FROM events WHERE status = 'cancel_requested'
+                  )
+                """
+            )
+            connection.execute(
+                "UPDATE events SET status = 'cancelled' WHERE status = 'cancel_requested'"
+            )
             connection.execute("UPDATE events SET status = 'queued' WHERE status = 'processing'")
             rows = connection.execute(
                 """
@@ -462,7 +574,8 @@ class MarkSessionStore:
                         message_id TEXT,
                         workspace_id TEXT,
                         text TEXT NOT NULL,
-                        created_at TEXT NOT NULL
+                        created_at TEXT NOT NULL,
+                        recalled INTEGER NOT NULL DEFAULT 0
                     );
                     CREATE TABLE IF NOT EXISTS runs (
                         run_id TEXT PRIMARY KEY,
@@ -483,6 +596,12 @@ class MarkSessionStore:
                 _ensure_column(connection, "events", "workspace_id", "TEXT")
                 _ensure_column(connection, "events", "session_id", "TEXT")
                 _ensure_column(connection, "messages", "session_id", "TEXT")
+                _ensure_column(
+                    connection,
+                    "messages",
+                    "recalled",
+                    "INTEGER NOT NULL DEFAULT 0",
+                )
                 _ensure_column(connection, "runs", "agent_provider", "TEXT")
                 _ensure_column(connection, "runs", "session_id", "TEXT")
                 _ensure_column(connection, "runs", "prompt_text", "TEXT")

@@ -25,4 +25,4 @@ def test_mark_requires_final_text_even_when_the_shared_tool_succeeds(tmp_path: P
 
     assert result.status == "failed"
     assert result.error_code == AgentErrorCode.EMPTY_RESULT
-    assert result.progress == ("Codex 正在执行 Workspace 操作…",)
+    assert result.progress == ()

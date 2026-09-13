@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from lumon.agents.mark.model import AgentErrorCode, AgentResult
+from lumon.agents.mark.model import AgentErrorCode, AgentProgress, AgentResult, ProgressPhase
 from lumon.errors import AgentConfigError
 from lumon.tools.codex import (
     CodexErrorCode,
@@ -18,7 +18,7 @@ from lumon.tools.codex import (
 if TYPE_CHECKING:
     from lumon.agents.mark.config import MarkAgentConfig
 
-ProgressCallback = Callable[[str], Awaitable[None]]
+ProgressCallback = Callable[[AgentProgress], Awaitable[None]]
 
 
 class CodexAgentRunner:
@@ -54,15 +54,15 @@ class CodexAgentRunner:
     ) -> AgentResult:
         """Run Codex and apply Mark's requirement for a replyable final text."""
 
-        progress: list[str] = []
+        progress: list[AgentProgress] = []
 
         async def observe(event: CodexEvent) -> None:
-            label = _progress_label(event)
-            if label is None:
+            candidate = _progress_from_event(event)
+            if candidate is None:
                 return
-            progress.append(label)
+            progress.append(candidate)
             if on_progress is not None:
-                await on_progress(label)
+                await on_progress(candidate)
 
         result = await self.tool.execute(
             CodexRequest(workspace=workspace, prompt=prompt),
@@ -158,12 +158,23 @@ def create_agent_runner(config: MarkAgentConfig | None = None) -> AgentRunner:
     raise AgentConfigError(f"Unsupported Mark Agent provider: {provider}")
 
 
-def _progress_label(event: CodexEvent) -> str | None:
-    if event.kind == "command_execution":
-        return "Codex 正在执行 Workspace 操作…"
-    if event.kind == "file_change":
-        return "Codex 正在检查 Workspace 文件…"
-    return None
+def _progress_from_event(event: CodexEvent) -> AgentProgress | None:
+    """Convert an explicit Codex progress event into Mark's typed contract."""
+
+    if event.kind != "progress" or event.phase is None or not event.text:
+        return None
+    try:
+        phase = ProgressPhase(event.phase)
+    except ValueError:
+        return None
+    message = event.text.strip()
+    if not message or len(message) > 60:
+        return None
+    return AgentProgress(
+        phase=phase,
+        message=message,
+        notify_requested=event.notify_requested,
+    )
 
 
 def _map_error_code(error_code: CodexErrorCode | None) -> AgentErrorCode:

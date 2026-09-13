@@ -159,6 +159,30 @@ def test_full_prompt_is_stored_with_the_run_before_execution(tmp_path: Path) -> 
     assert row == (session_id, "running", prompt)
 
 
+def test_recalled_event_is_cancelled_and_removed_from_future_history(tmp_path: Path) -> None:
+    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    message = _message()
+    assert store.claim_event(message.event_id, message)
+    session_id = store.get_or_create_session(message).session_id
+    store.record_message(
+        Message(
+            conversation_key=message.conversation_key,
+            direction="inbound",
+            message_id=message.message_id,
+            text=message.text,
+            created_at="2026-01-01T00:00:00+00:00",
+            session_id=session_id,
+        )
+    )
+
+    assert store.request_message_cancellation(message.message_id) == message.event_id
+    store.mark_event_cancelled(message.event_id)
+
+    assert store.event_status(message.event_id) == "cancelled"
+    assert store.load_history(session_id, conversation_key=message.conversation_key) == ()
+    assert store.request_message_cancellation(message.message_id) == message.event_id
+
+
 def test_existing_mark_database_is_migrated_before_new_indexes_are_created(
     tmp_path: Path,
 ) -> None:
@@ -217,6 +241,7 @@ def test_existing_mark_database_is_migrated_before_new_indexes_are_created(
     assert "session_id" in event_columns
     assert "session_id" in message_columns
     assert {"session_id", "prompt_text"} <= run_columns
+    assert "recalled" in message_columns
     assert store.path == database.resolve()
 
 

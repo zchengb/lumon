@@ -23,6 +23,21 @@ def test_codex_jsonl_parser_is_provider_specific_but_not_mark_specific() -> None
     )
 
 
+def test_codex_parser_accepts_explicit_agent_progress() -> None:
+    event = parse_codex_line(
+        '{"type":"item","item":{"type":"agent_message",'
+        '"text":"<lumon-progress>{\\"phase\\":\\"inspecting\\",'
+        '\\"message\\":\\"正在检查 Workspace。\\",\\"notify\\":true}'
+        '</lumon-progress>"}}'
+    )
+
+    assert event is not None
+    assert event.kind == "progress"
+    assert event.phase == "inspecting"
+    assert event.text == "正在检查 Workspace。"
+    assert event.notify_requested
+
+
 def test_codex_tool_uses_argument_vector_and_reads_stdin(tmp_path: Path) -> None:
     fake = tmp_path / "fake-codex"
     fake.write_text(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 from collections.abc import Awaitable, Callable, Mapping
@@ -15,7 +16,13 @@ from typing import Literal, cast
 
 from lumon.tools.safety import sanitize_output
 
-CodexEventKind = Literal["message", "command_execution", "file_change", "error"]
+CodexEventKind = Literal[
+    "message",
+    "progress",
+    "command_execution",
+    "file_change",
+    "error",
+]
 CodexExecutionStatus = Literal["succeeded", "failed", "timed_out"]
 CodexEventCallback = Callable[["CodexEvent"], Awaitable[None]]
 
@@ -43,6 +50,8 @@ class CodexEvent:
 
     kind: CodexEventKind
     text: str | None = None
+    phase: str | None = None
+    notify_requested: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,8 +244,13 @@ def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
     item_payload = cast(dict[str, object], item) if isinstance(item, dict) else None
     item_type = str(item_payload.get("type", "")) if item_payload is not None else ""
     effective_type = item_type or event_type
+    if effective_type in {"lumon_progress", "agent_progress", "progress"}:
+        return _progress_event(item_payload if item_payload is not None else payload)
     if effective_type in {"agent_message", "assistant_message", "message", "final"}:
         text = _extract_text(item_payload if item_payload is not None else payload)
+        progress = _progress_marker(text)
+        if progress is not None:
+            return progress
         return CodexEvent("message", sanitize_output(text) if text else None)
     if effective_type in {"command_execution", "command", "tool_call"}:
         return CodexEvent("command_execution")
@@ -245,6 +259,49 @@ def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
     if effective_type in {"error", "turn.failed", "response.failed"}:
         return CodexEvent("error")
     return None
+
+
+_PROGRESS_MARKER = re.compile(
+    r"<lumon-progress>\s*(?P<payload>\{.*?\})\s*</lumon-progress>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _progress_marker(text: str | None) -> CodexEvent | None:
+    """Extract one explicit progress marker emitted by the Agent."""
+
+    if not text:
+        return None
+    match = _PROGRESS_MARKER.fullmatch(text.strip())
+    if match is None:
+        return None
+    try:
+        payload = json.loads(match.group("payload"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _progress_event(cast(dict[str, object], payload))
+
+
+def _progress_event(payload: Mapping[str, object]) -> CodexEvent | None:
+    phase = payload.get("phase")
+    message = payload.get("message", payload.get("text"))
+    notify_requested = payload.get("notify", True)
+    if not isinstance(phase, str) or not isinstance(message, str):
+        return None
+    if not isinstance(notify_requested, bool):
+        return None
+    phase = phase.strip()
+    message = message.strip()
+    if not phase or not message:
+        return None
+    return CodexEvent(
+        kind="progress",
+        text=sanitize_output(message),
+        phase=phase,
+        notify_requested=notify_requested,
+    )
 
 
 def _extract_text(value: object) -> str | None:

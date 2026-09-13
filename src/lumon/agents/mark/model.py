@@ -9,10 +9,17 @@ from typing import Literal
 from uuid import UUID
 
 MessageDirection = Literal["inbound", "outbound"]
-MarkRunStatus = Literal["succeeded", "failed", "timed_out"]
+MarkRunStatus = Literal["succeeded", "failed", "timed_out", "cancelled"]
 AgentProvider = Literal["codex"]
 AgentResultStatus = Literal["succeeded", "failed", "timed_out"]
-RunStatus = Literal["running", "succeeded", "failed", "timed_out", "interrupted"]
+RunStatus = Literal[
+    "running",
+    "succeeded",
+    "failed",
+    "timed_out",
+    "interrupted",
+    "cancelled",
+]
 
 
 class AgentErrorCode(StrEnum):
@@ -24,6 +31,25 @@ class AgentErrorCode(StrEnum):
     EXECUTION_FAILED = "execution_failed"
     EMPTY_RESULT = "empty_result"
     INTERRUPTED = "interrupted"
+
+
+class ProgressPhase(StrEnum):
+    """User-visible stages that an Agent may report during a long request."""
+
+    UNDERSTANDING = "understanding"
+    INSPECTING = "inspecting"
+    EXECUTING = "executing"
+    VERIFYING = "verifying"
+    WAITING = "waiting"
+
+
+@dataclass(frozen=True, slots=True)
+class AgentProgress:
+    """A concise, validated candidate status from an Agent runner."""
+
+    phase: ProgressPhase
+    message: str
+    notify_requested: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +106,15 @@ class InboundMessage:
 
 
 @dataclass(frozen=True, slots=True)
+class RecalledMessage:
+    """A normalized Feishu event indicating that an inbound message was recalled."""
+
+    event_id: str
+    message_id: str
+    chat_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Message:
     """One persisted inbound or outbound transcript message."""
 
@@ -132,7 +167,7 @@ class AgentResult:
 
     status: AgentResultStatus
     final_text: str | None = None
-    progress: tuple[str, ...] = ()
+    progress: tuple[AgentProgress, ...] = ()
     error_code: AgentErrorCode | None = None
     return_code: int | None = None
 

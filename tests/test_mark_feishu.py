@@ -10,8 +10,12 @@ import pytest
 
 import lumon.agents.mark.feishu as feishu_module
 from lumon.agents.mark.config import MarkAgentConfig
-from lumon.agents.mark.feishu import MarkFeishuChannel, normalize_message
-from lumon.agents.mark.model import InboundMessage
+from lumon.agents.mark.feishu import (
+    MarkFeishuChannel,
+    normalize_message,
+    normalize_recalled_message,
+)
+from lumon.agents.mark.model import InboundMessage, RecalledMessage
 
 
 def _raw(chat_type: str, text: str, sender_type: str = "user") -> dict[str, object]:
@@ -78,6 +82,21 @@ def test_bot_messages_are_ignored() -> None:
     assert message is not None and not message.admitted
 
 
+def test_recalled_message_is_normalized_from_raw_event() -> None:
+    message = normalize_recalled_message(
+        {
+            "header": {"event_id": "recall-event"},
+            "event": {"message_id": "om-1", "chat_id": "oc-1"},
+        }
+    )
+
+    assert message == RecalledMessage(
+        event_id="recall-event",
+        message_id="om-1",
+        chat_id="oc-1",
+    )
+
+
 class _FakePolicy:
     def __init__(self, **kwargs: object) -> None:
         self.values = kwargs
@@ -94,10 +113,14 @@ class _FakeSdkChannel:
     def __init__(self, **kwargs: object) -> None:
         self.values = kwargs
         self.handlers: dict[str, Any] = {}
+        self.raw_handlers: dict[str, Any] = {}
         _FakeSdkChannel.instance = self
 
     def on(self, event: str, handler: Any) -> None:
         self.handlers[event] = handler
+
+    def on_raw_event(self, event: str, handler: Any) -> None:
+        self.raw_handlers[event] = handler
 
     async def connect(self) -> None:
         return None
@@ -143,3 +166,41 @@ def test_channel_explicitly_configures_message_policy(
         "require_mention": True,
     }
     assert inbound.values == {"drop_self_sent": True}
+
+
+def test_channel_registers_recalled_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        feishu_module,
+        "_sdk_module",
+        SimpleNamespace(
+            FeishuChannel=_FakeSdkChannel,
+            PolicyConfig=_FakePolicy,
+            InboundConfig=_FakeInbound,
+        ),
+    )
+    channel = MarkFeishuChannel(
+        MarkAgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    recalled: list[RecalledMessage] = []
+
+    async def run() -> None:
+        async def handler(_message: InboundMessage) -> None:
+            return None
+
+        async def on_recalled(message: RecalledMessage) -> None:
+            recalled.append(message)
+
+        await channel.connect(handler, on_recalled)
+        sdk_channel = _FakeSdkChannel.instance
+        assert sdk_channel is not None
+        await sdk_channel.raw_handlers["im.message.recalled_v1"](
+            {
+                "header": {"event_id": "recall-event"},
+                "event": {"message_id": "om-1", "chat_id": "oc-1"},
+            }
+        )
+        await channel.disconnect()
+
+    asyncio.run(run())
+
+    assert recalled == [RecalledMessage(event_id="recall-event", message_id="om-1", chat_id="oc-1")]

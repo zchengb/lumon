@@ -3,16 +3,20 @@
 from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
 from lumon.agents.mark.model import (
     AgentErrorCode,
+    AgentProgress,
     AgentResult,
     InboundMessage,
     MarkRunResult,
     MarkSession,
     Message,
+    ProgressPhase,
+    RecalledMessage,
 )
 from lumon.agents.mark.runner import AgentRunner
 
 __all__ = [
     "AgentErrorCode",
+    "AgentProgress",
     "AgentResult",
     "AgentRunner",
     "InboundMessage",
@@ -21,4 +25,6 @@ __all__ = [
     "MarkRunResult",
     "MarkSession",
     "Message",
+    "ProgressPhase",
+    "RecalledMessage",
 ]
