@@ -157,6 +157,9 @@ class MarkAgentService:
                 return
             self.session_store.mark_event_status(message.event_id, "processing")
             self.session_store.bind_event_session(message.event_id, session_id)
+            session = self.session_store.get_session(session_id)
+            if session is None:
+                raise AgentRuntimeError("Mark conversation session is not available.")
             started_at = _timestamp(self._now())
             run_id = str(uuid4())
             workspace_id: UUID | None = None
@@ -187,12 +190,23 @@ class MarkAgentService:
                 workspace_id = context.workspace_id
                 self.session_store.attach_workspace(message.event_id, workspace_id)
                 self._raise_if_cancellation_requested(message.event_id)
-                history = self.session_store.load_history(
-                    session_id,
-                    conversation_key=message.conversation_key,
-                    legacy_conversation_key=message.legacy_conversation_key,
-                )
-                prompt = context_builder.build_prompt(context, history, message.text)
+                resume_session_id = session.agent_session_id
+                if (
+                    resume_session_id is not None
+                    and session.workspace_id is not None
+                    and session.workspace_id != workspace_id
+                ):
+                    self.session_store.clear_agent_session(session_id)
+                    resume_session_id = None
+                if resume_session_id is None:
+                    history = self.session_store.load_history(
+                        session_id,
+                        conversation_key=message.conversation_key,
+                        legacy_conversation_key=message.legacy_conversation_key,
+                    )
+                    prompt = context_builder.build_prompt(context, history, message.text)
+                else:
+                    prompt = message.text
                 runner = self.agent_runner
                 if runner is None:
                     raise AgentRuntimeError("Agent runtime is not ready.")
@@ -212,9 +226,17 @@ class MarkAgentService:
                 result = await runner.run(
                     context.path,
                     prompt,
+                    agent_session_id=resume_session_id,
                     on_progress=reporter.notify,
                 )
                 self._raise_if_cancellation_requested(message.event_id)
+                if resume_session_id is not None and result.status == "failed":
+                    self.session_store.clear_agent_session(session_id)
+                elif result.agent_session_id is not None:
+                    self.session_store.bind_agent_session(
+                        session_id,
+                        result.agent_session_id,
+                    )
                 status = result.status
                 error_code = result.error_code.value if result.error_code is not None else None
                 if result.status == "succeeded" and result.final_text:

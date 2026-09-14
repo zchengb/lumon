@@ -24,9 +24,10 @@ class MarkSessionStore:
     """Expose a small durable interface over Mark's private SQLite database.
 
     A session is the durable conversation boundary: one direct chat maps to
-    one session, while one group Thread maps to one session. The full prompt
-    sent to an Agent is stored on its run before execution starts so a later
-    review can reconstruct the Agent's perspective without relying on logs.
+    one session, while one group Thread maps to one session. The prompt
+    payload sent to an Agent is stored on its run before execution starts.
+    The native provider session ID is stored separately so later turns can
+    resume the provider conversation without rebuilding its bootstrap context.
     """
 
     def __init__(
@@ -58,9 +59,9 @@ class MarkSessionStore:
                         """
                         INSERT INTO sessions (
                             session_id, session_key, chat_id, chat_type,
-                            thread_id, root_id, workspace_id, created_at,
-                            last_activity_at, status
-                        ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 'active')
+                            thread_id, root_id, workspace_id, agent_session_id,
+                            created_at, last_activity_at, status
+                        ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 'active')
                         """,
                         (
                             session_id,
@@ -107,6 +108,44 @@ class MarkSessionStore:
             if row is None:
                 raise AgentRuntimeError("Mark SQLite session disappeared during creation.")
             return _session_from_row(row)
+
+    def get_session(self, session_id: str) -> MarkSession | None:
+        """Return one durable conversation session by its Lumon ID."""
+
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        return _session_from_row(row) if row is not None else None
+
+    def bind_agent_session(self, session_id: str, agent_session_id: str) -> None:
+        """Persist the provider-native session used by one Lumon Session."""
+
+        normalized = agent_session_id.strip()
+        if not normalized:
+            return
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE sessions
+                SET agent_session_id = ?, last_activity_at = ?
+                WHERE session_id = ?
+                """,
+                (normalized, _timestamp(self._now()), session_id),
+            )
+
+    def clear_agent_session(self, session_id: str) -> None:
+        """Forget a provider session so the next turn starts a new bootstrap."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE sessions
+                SET agent_session_id = NULL, last_activity_at = ?
+                WHERE session_id = ?
+                """,
+                (_timestamp(self._now()), session_id),
+            )
 
     def claim_event(self, event_id: str, message: InboundMessage | None = None) -> bool:
         """Atomically claim an event ID, returning ``False`` for duplicates."""
@@ -546,6 +585,7 @@ class MarkSessionStore:
                         thread_id TEXT,
                         root_id TEXT,
                         workspace_id TEXT,
+                        agent_session_id TEXT,
                         created_at TEXT NOT NULL,
                         last_activity_at TEXT NOT NULL,
                         status TEXT NOT NULL
@@ -595,6 +635,7 @@ class MarkSessionStore:
                 )
                 _ensure_column(connection, "events", "workspace_id", "TEXT")
                 _ensure_column(connection, "events", "session_id", "TEXT")
+                _ensure_column(connection, "sessions", "agent_session_id", "TEXT")
                 _ensure_column(connection, "messages", "session_id", "TEXT")
                 _ensure_column(
                     connection,
@@ -674,6 +715,7 @@ def _session_from_row(row: sqlite3.Row) -> MarkSession:
         thread_id=str(row["thread_id"]) if row["thread_id"] else None,
         root_id=str(row["root_id"]) if row["root_id"] else None,
         workspace_id=workspace_id,
+        agent_session_id=(str(row["agent_session_id"]) if row["agent_session_id"] else None),
         created_at=str(row["created_at"]),
         last_activity_at=str(row["last_activity_at"]),
         status=str(row["status"]),

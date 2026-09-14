@@ -50,6 +50,8 @@ class CodexAgentRunner:
         self,
         workspace: Path,
         prompt: str,
+        *,
+        agent_session_id: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
         """Run Codex and apply Mark's requirement for a replyable final text."""
@@ -65,7 +67,11 @@ class CodexAgentRunner:
                 await on_progress(candidate)
 
         result = await self.tool.execute(
-            CodexRequest(workspace=workspace, prompt=prompt),
+            CodexRequest(
+                workspace=workspace,
+                prompt=prompt,
+                resume_session_id=agent_session_id,
+            ),
             on_event=observe,
         )
         if result.status == "timed_out":
@@ -73,6 +79,7 @@ class CodexAgentRunner:
                 status="timed_out",
                 progress=tuple(progress),
                 error_code=AgentErrorCode.TIMEOUT,
+                agent_session_id=result.agent_session_id,
             )
         if result.status == "failed":
             return AgentResult(
@@ -80,6 +87,7 @@ class CodexAgentRunner:
                 progress=tuple(progress),
                 error_code=_map_error_code(result.error_code),
                 return_code=result.return_code,
+                agent_session_id=result.agent_session_id,
             )
         if not result.final_text:
             return AgentResult(
@@ -87,12 +95,14 @@ class CodexAgentRunner:
                 progress=tuple(progress),
                 error_code=AgentErrorCode.EMPTY_RESULT,
                 return_code=result.return_code,
+                agent_session_id=result.agent_session_id,
             )
         return AgentResult(
             status="succeeded",
             final_text=result.final_text,
             progress=tuple(progress),
             return_code=result.return_code,
+            agent_session_id=result.agent_session_id,
         )
 
 
@@ -136,6 +146,8 @@ class AgentRunner(Protocol):
         self,
         workspace: Path,
         prompt: str,
+        *,
+        agent_session_id: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
         """Run one bounded request and return safe progress and final output."""

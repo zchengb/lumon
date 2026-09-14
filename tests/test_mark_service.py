@@ -27,6 +27,7 @@ from lumon.workspace.registry import WorkspaceRegistry
 class FakeRunner:
     def __init__(self) -> None:
         self.prompts: list[str] = []
+        self.agent_session_ids: list[str | None] = []
         self.provider = "test-agent"
         self.display_name = "Test Agent"
         self.executable = "test-agent"
@@ -41,10 +42,13 @@ class FakeRunner:
         self,
         workspace: Path,
         prompt: str,
+        *,
+        agent_session_id: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
         del workspace
         self.prompts.append(prompt)
+        self.agent_session_ids.append(agent_session_id)
         if on_progress is not None:
             await on_progress(
                 AgentProgress(
@@ -52,7 +56,11 @@ class FakeRunner:
                     message="Test Agent 正在检查 Workspace 文件…",
                 )
             )
-        return AgentResult(status="succeeded", final_text="Workspace 已检查")
+        return AgentResult(
+            status="succeeded",
+            final_text="Workspace 已检查",
+            agent_session_id="provider-session-1",
+        )
 
 
 class BlockingRunner(FakeRunner):
@@ -64,9 +72,11 @@ class BlockingRunner(FakeRunner):
         self,
         workspace: Path,
         prompt: str,
+        *,
+        agent_session_id: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
-        del workspace, prompt, on_progress
+        del workspace, prompt, agent_session_id, on_progress
         self.started.set()
         await asyncio.Event().wait()
         raise AssertionError("blocking runner should only finish by cancellation")
@@ -169,18 +179,22 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         ("om-2", "reaction:om-2"),
     ]
     assert len(runner.prompts) == 2
-    assert "请检查 README" in runner.prompts[1]
-    assert "Workspace 已检查" in runner.prompts[1]
+    assert runner.agent_session_ids == [None, "provider-session-1"]
+    assert runner.prompts[1] == "请继续说明目录"
+    assert "请检查 README" not in runner.prompts[1]
+    assert "Workspace 已检查" not in runner.prompts[1]
     assert store.event_status("evt-1") == "succeeded"
     with sqlite3.connect(store.path) as connection:
         rows = connection.execute(
             "SELECT status, session_id, prompt_text FROM runs ORDER BY started_at"
         ).fetchall()
+        session_row = connection.execute("SELECT agent_session_id FROM sessions").fetchone()
     assert len(rows) == 2
     assert rows[0][0] == "succeeded"
     assert rows[0][1] == rows[1][1]
     assert rows[0][2] == runner.prompts[0]
     assert rows[1][2] == runner.prompts[1]
+    assert session_row == ("provider-session-1",)
 
 
 def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -> None:

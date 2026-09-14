@@ -178,11 +178,15 @@ only the execution status or file events.
 
 Mark keeps conversation state in explicit SQLite tables. A direct Feishu chat
 uses one durable Session regardless of reply-thread metadata; a group Feishu
-Thread uses its own Session. Messages are loaded from that Session when the
-next request is assembled, so a restart does not break the conversation.
-Before starting the Agent CLI, Lumon stores the exact complete Prompt in the
-corresponding `runs.prompt_text` field. It contains the Mark instructions,
-Workspace instructions and metadata, bounded conversation history, and the
-current user request. The prompt is never written to logs, CLI output, or
-Feishu replies, but it may contain Workspace-sensitive context; protect the
-owner-only `600` SQLite file accordingly.
+Thread uses its own Session. The Session stores the native Codex thread ID, so
+a restart does not break the conversation. The first turn sends and stores the
+complete bootstrap Prompt in `runs.prompt_text`; later turns call
+`codex exec resume <session-id>` and send only the new user message. The later
+`prompt_text` value is therefore the actual incremental input, while the first
+Run retains the full Mark, Workspace, history, and user context used to
+establish the native Codex Session. If the native Session is lost or the
+Workspace changes, Lumon clears the binding and starts a new bootstrap on the
+next message instead of automatically retrying the failed request. Prompts are
+never written to logs, CLI output, or Feishu replies, but they may contain
+Workspace-sensitive context; protect the owner-only `600` SQLite file
+accordingly.

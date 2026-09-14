@@ -10,10 +10,13 @@ from lumon.tools.safety import sanitize_output
 
 
 def test_codex_jsonl_parser_is_provider_specific_but_not_mark_specific() -> None:
+    session = parse_codex_line('{"type":"thread.started","thread_id":"thread-1"}')
     final = parse_codex_line('{"type":"item","item":{"type":"agent_message","text":"done"}}')
     command = parse_codex_line('{"type":"item","item":{"type":"command_execution"}}')
     file_change = parse_codex_line('{"type":"item","item":{"type":"file_change"}}')
 
+    assert session is not None and session.kind == "session"
+    assert session.agent_session_id == "thread-1"
     assert final is not None and final.kind == "message" and final.text == "done"
     assert command is not None and command.kind == "command_execution"
     assert file_change is not None and file_change.kind == "file_change"
@@ -62,6 +65,46 @@ def test_codex_tool_uses_argument_vector_and_reads_stdin(tmp_path: Path) -> None
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
     )
+
+
+def test_codex_tool_resumes_a_native_session(tmp_path: Path) -> None:
+    args_file = tmp_path / "args"
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$@\" > '{args_file}'\n"
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"thread-1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item","item":{"type":"agent_message","text":"continued"}}\'\n',
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    tool = CodexTool(binary=str(fake), timeout_seconds=5)
+
+    result = asyncio.run(
+        tool.execute(
+            CodexRequest(
+                tmp_path,
+                "follow-up",
+                resume_session_id="thread-1",
+            )
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert result.final_text == "continued"
+    assert result.agent_session_id == "thread-1"
+    assert args_file.read_text(encoding="utf-8").splitlines() == [
+        "exec",
+        "resume",
+        "--json",
+        "--cd",
+        str(tmp_path),
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "thread-1",
+        "-",
+    ]
 
 
 def test_codex_tool_success_does_not_require_final_text_for_flows(tmp_path: Path) -> None:

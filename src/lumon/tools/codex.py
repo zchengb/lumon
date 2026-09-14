@@ -17,6 +17,7 @@ from typing import Literal, cast
 from lumon.tools.safety import sanitize_output
 
 CodexEventKind = Literal[
+    "session",
     "message",
     "progress",
     "command_execution",
@@ -42,6 +43,7 @@ class CodexRequest:
 
     workspace: Path
     prompt: str
+    resume_session_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +54,7 @@ class CodexEvent:
     text: str | None = None
     phase: str | None = None
     notify_requested: bool = True
+    agent_session_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +71,7 @@ class CodexExecutionResult:
     events: tuple[CodexEvent, ...] = ()
     error_code: CodexErrorCode | None = None
     return_code: int | None = None
+    agent_session_id: str | None = None
 
 
 class CodexTool:
@@ -113,20 +117,32 @@ class CodexTool:
             return False
         return result.returncode == 0
 
-    def build_command(self, workspace: Path) -> tuple[str, ...]:
+    def build_command(
+        self,
+        workspace: Path,
+        resume_session_id: str | None = None,
+    ) -> tuple[str, ...]:
         """Return the exact argument vector used for one execution."""
 
         command = [
             self.binary,
             "exec",
-            "--json",
-            "--cd",
-            str(workspace),
-            "--skip-git-repo-check",
-            "--dangerously-bypass-approvals-and-sandbox",
         ]
+        if resume_session_id:
+            command.append("resume")
+        command.extend(
+            (
+                "--json",
+                "--cd",
+                str(workspace),
+                "--skip-git-repo-check",
+                "--dangerously-bypass-approvals-and-sandbox",
+            )
+        )
         if self.model:
             command.extend(("--model", self.model))
+        if resume_session_id:
+            command.extend((resume_session_id, "-"))
         return tuple(command)
 
     async def execute(
@@ -163,9 +179,10 @@ class CodexTool:
         on_event: CodexEventCallback | None,
     ) -> CodexExecutionResult:
         process: asyncio.subprocess.Process | None = None
+        agent_session_id: str | None = None
         try:
             process = await asyncio.create_subprocess_exec(
-                *self.build_command(request.workspace),
+                *self.build_command(request.workspace, request.resume_session_id),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -189,6 +206,8 @@ class CodexTool:
                 if event is None:
                     continue
                 events.append(event)
+                if event.agent_session_id:
+                    agent_session_id = event.agent_session_id
                 if event.kind == "message" and event.text:
                     final_text = event.text
                 elif event.kind == "error":
@@ -204,12 +223,14 @@ class CodexTool:
                     events=tuple(events),
                     error_code=CodexErrorCode.EXECUTION_FAILED,
                     return_code=process.returncode,
+                    agent_session_id=agent_session_id,
                 )
             return CodexExecutionResult(
                 status="succeeded",
                 final_text=final_text,
                 events=tuple(events),
                 return_code=process.returncode,
+                agent_session_id=agent_session_id,
             )
         except asyncio.CancelledError:
             if process is not None and process.returncode is None:
@@ -244,20 +265,34 @@ def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
     item_payload = cast(dict[str, object], item) if isinstance(item, dict) else None
     item_type = str(item_payload.get("type", "")) if item_payload is not None else ""
     effective_type = item_type or event_type
+    agent_session_id = _extract_agent_session_id(payload)
+    if agent_session_id is None and item_payload is not None:
+        agent_session_id = _extract_agent_session_id(item_payload)
+    if effective_type in {"thread.started", "session.started", "thread_start", "session_start"}:
+        if agent_session_id is None:
+            return None
+        return CodexEvent("session", agent_session_id=agent_session_id)
     if effective_type in {"lumon_progress", "agent_progress", "progress"}:
-        return _progress_event(item_payload if item_payload is not None else payload)
+        return _progress_event(
+            item_payload if item_payload is not None else payload,
+            agent_session_id=agent_session_id,
+        )
     if effective_type in {"agent_message", "assistant_message", "message", "final"}:
         text = _extract_text(item_payload if item_payload is not None else payload)
-        progress = _progress_marker(text)
+        progress = _progress_marker(text, agent_session_id=agent_session_id)
         if progress is not None:
             return progress
-        return CodexEvent("message", sanitize_output(text) if text else None)
+        return CodexEvent(
+            "message",
+            sanitize_output(text) if text else None,
+            agent_session_id=agent_session_id,
+        )
     if effective_type in {"command_execution", "command", "tool_call"}:
-        return CodexEvent("command_execution")
+        return CodexEvent("command_execution", agent_session_id=agent_session_id)
     if effective_type in {"file_change", "file_changes"}:
-        return CodexEvent("file_change")
+        return CodexEvent("file_change", agent_session_id=agent_session_id)
     if effective_type in {"error", "turn.failed", "response.failed"}:
-        return CodexEvent("error")
+        return CodexEvent("error", agent_session_id=agent_session_id)
     return None
 
 
@@ -267,7 +302,11 @@ _PROGRESS_MARKER = re.compile(
 )
 
 
-def _progress_marker(text: str | None) -> CodexEvent | None:
+def _progress_marker(
+    text: str | None,
+    *,
+    agent_session_id: str | None = None,
+) -> CodexEvent | None:
     """Extract one explicit progress marker emitted by the Agent."""
 
     if not text:
@@ -281,10 +320,17 @@ def _progress_marker(text: str | None) -> CodexEvent | None:
         return None
     if not isinstance(payload, dict):
         return None
-    return _progress_event(cast(dict[str, object], payload))
+    return _progress_event(
+        cast(dict[str, object], payload),
+        agent_session_id=agent_session_id,
+    )
 
 
-def _progress_event(payload: Mapping[str, object]) -> CodexEvent | None:
+def _progress_event(
+    payload: Mapping[str, object],
+    *,
+    agent_session_id: str | None = None,
+) -> CodexEvent | None:
     phase = payload.get("phase")
     message = payload.get("message", payload.get("text"))
     notify_requested = payload.get("notify", True)
@@ -301,7 +347,25 @@ def _progress_event(payload: Mapping[str, object]) -> CodexEvent | None:
         text=sanitize_output(message),
         phase=phase,
         notify_requested=notify_requested,
+        agent_session_id=agent_session_id,
     )
+
+
+def _extract_agent_session_id(payload: Mapping[str, object]) -> str | None:
+    """Extract a native Codex thread ID without exposing arbitrary payloads."""
+
+    for key in ("thread_id", "session_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    thread = payload.get("thread")
+    if isinstance(thread, dict):
+        nested = cast(dict[str, object], thread)
+        for key in ("id", "thread_id", "session_id"):
+            value = nested.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
 
 
 def _extract_text(value: object) -> str | None:

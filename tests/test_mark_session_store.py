@@ -132,6 +132,21 @@ def test_sessions_are_stable_for_direct_chats_and_group_threads(tmp_path: Path) 
     )
 
 
+def test_provider_session_binding_is_durable_and_clearable(tmp_path: Path) -> None:
+    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    session_id = store.get_or_create_session(_message()).session_id
+
+    store.bind_agent_session(session_id, "codex-thread-1")
+    session = store.get_session(session_id)
+    assert session is not None
+    assert session.agent_session_id == "codex-thread-1"
+
+    store.clear_agent_session(session_id)
+    session = store.get_session(session_id)
+    assert session is not None
+    assert session.agent_session_id is None
+
+
 def test_full_prompt_is_stored_with_the_run_before_execution(tmp_path: Path) -> None:
     store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
     message = _message()

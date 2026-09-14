@@ -138,6 +138,7 @@ class MarkSession:
     thread_id: str | None
     root_id: str | None
     workspace_id: UUID | None
+    agent_session_id: str | None
     created_at: str
     last_activity_at: str
     status: str = "active"
@@ -170,6 +171,7 @@ class AgentResult:
     progress: tuple[AgentProgress, ...] = ()
     error_code: AgentErrorCode | None = None
     return_code: int | None = None
+    agent_session_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
