@@ -37,6 +37,11 @@ class CodexErrorCode(StrEnum):
     EXECUTION_FAILED = "execution_failed"
 
 
+# Codex JSONL events can include large tool outputs; keep the line buffer
+# bounded while allowing records larger than asyncio's 64 KiB default.
+_CODEX_STREAM_LIMIT_BYTES = 16 * 1024 * 1024
+
+
 @dataclass(frozen=True, slots=True)
 class CodexRequest:
     """Input required to execute one Codex request in a Workspace."""
@@ -193,6 +198,7 @@ class CodexTool:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=request.workspace,
                 env=self.environment,
+                limit=_CODEX_STREAM_LIMIT_BYTES,
             )
             assert process.stdin is not None
             assert process.stdout is not None

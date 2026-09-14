@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import sys
 from pathlib import Path
 
 from lumon.tools.codex import CodexRequest, CodexTool, parse_codex_line
@@ -65,6 +67,33 @@ def test_codex_tool_uses_argument_vector_and_reads_stdin(tmp_path: Path) -> None
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
     )
+
+
+def test_codex_tool_reads_jsonl_event_larger_than_asyncio_default_limit(
+    tmp_path: Path,
+) -> None:
+    json_line = json.dumps(
+        {
+            "type": "item",
+            "item": {"type": "command_execution", "output": "x" * 100_000},
+        }
+    )
+    output_literal = json.dumps(json_line + "\n")
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "sys.stdin.buffer.read()\n"
+        f"sys.stdout.write({output_literal})\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    tool = CodexTool(binary=str(fake), timeout_seconds=5)
+
+    result = asyncio.run(tool.execute(CodexRequest(tmp_path, "inspect this")))
+
+    assert result.status == "succeeded"
+    assert result.events[0].kind == "command_execution"
 
 
 def test_codex_tool_resumes_a_native_session(tmp_path: Path) -> None:
