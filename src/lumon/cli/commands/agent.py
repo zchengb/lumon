@@ -16,7 +16,12 @@ from uuid import UUID
 
 import typer
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.mark.config import (
+    DEFAULT_AGENT_MODEL,
+    DEFAULT_AGENT_REASONING_EFFORT,
+    MarkAgentConfig,
+    MarkConfigStore,
+)
 from lumon.agents.mark.runner import create_agent_runner
 from lumon.agents.mark.service import MarkAgentService
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
@@ -71,7 +76,10 @@ def configure() -> None:
         enabled=True,
         default_workspace_id=default_id,
         agent_provider=existing.agent_provider if existing else "codex",
-        agent_model=existing.agent_model if existing else None,
+        agent_model=existing.agent_model if existing else DEFAULT_AGENT_MODEL,
+        agent_reasoning_effort=(
+            existing.agent_reasoning_effort if existing else DEFAULT_AGENT_REASONING_EFFORT
+        ),
         feishu_app_id=app_id.strip(),
         feishu_app_secret=app_secret,
     )
@@ -190,6 +198,14 @@ def _inspect_agent() -> AgentDoctorReport:
                 "agent_enabled",
                 config.enabled,
                 "enabled" if config.enabled else "disabled; run lumon agent configure",
+            )
+        )
+        checks.append(
+            AgentDoctorCheck(
+                "agent_model",
+                True,
+                f"Codex model: {config.agent_model} "
+                f"(reasoning effort: {config.agent_reasoning_effort})",
             )
         )
 

@@ -160,6 +160,7 @@ class MarkRunResult:
     agent_provider: str | None = None
     session_id: str | None = None
     prompt_text: str | None = None
+    failure_diagnostic: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

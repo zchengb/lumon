@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
+from lumon.agents.mark.config import (
+    DEFAULT_AGENT_MODEL,
+    DEFAULT_AGENT_REASONING_EFFORT,
+    MarkAgentConfig,
+)
 from lumon.agents.mark.model import AgentErrorCode, AgentProgress, AgentResult, ProgressPhase
 from lumon.errors import AgentConfigError
 from lumon.tools.codex import (
@@ -14,9 +19,6 @@ from lumon.tools.codex import (
     CodexRequest,
     CodexTool,
 )
-
-if TYPE_CHECKING:
-    from lumon.agents.mark.config import MarkAgentConfig
 
 ProgressCallback = Callable[[AgentProgress], Awaitable[None]]
 
@@ -27,8 +29,13 @@ class CodexAgentRunner:
     provider = "codex"
     display_name = "Codex"
 
-    def __init__(self, tool: CodexTool | None = None, model: str | None = None) -> None:
-        self.tool = tool or CodexTool(model=model)
+    def __init__(
+        self,
+        tool: CodexTool | None = None,
+        model: str = DEFAULT_AGENT_MODEL,
+        reasoning_effort: str = DEFAULT_AGENT_REASONING_EFFORT,
+    ) -> None:
+        self.tool = tool or CodexTool(model=model, reasoning_effort=reasoning_effort)
 
     @property
     def executable(self) -> str:
@@ -165,8 +172,11 @@ def create_agent_runner(config: MarkAgentConfig | None = None) -> AgentRunner:
 
     provider = config.agent_provider if config is not None else "codex"
     if provider == "codex":
-        model = config.agent_model if config is not None else None
-        return CodexAgentRunner(model=model)
+        model = config.agent_model if config is not None else DEFAULT_AGENT_MODEL
+        reasoning_effort = (
+            config.agent_reasoning_effort if config is not None else DEFAULT_AGENT_REASONING_EFFORT
+        )
+        return CodexAgentRunner(model=model, reasoning_effort=reasoning_effort)
     raise AgentConfigError(f"Unsupported Mark Agent provider: {provider}")
 
 

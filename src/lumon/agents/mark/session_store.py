@@ -444,6 +444,7 @@ class MarkSessionStore:
                     agent_provider = COALESCE(?, agent_provider),
                     status = ?,
                     error_code = ?,
+                    failure_diagnostic = ?,
                     started_at = ?,
                     ended_at = ?,
                     final_text = ?,
@@ -458,6 +459,7 @@ class MarkSessionStore:
                     result.agent_provider,
                     result.status,
                     result.error_code,
+                    result.failure_diagnostic,
                     result.started_at,
                     result.ended_at,
                     final_text,
@@ -471,8 +473,8 @@ class MarkSessionStore:
                     INSERT INTO runs (
                         run_id, event_id, session_id, conversation_key, workspace_id,
                         agent_provider, status, error_code, started_at, ended_at,
-                        final_text, prompt_text
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        final_text, prompt_text, failure_diagnostic
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         result.run_id,
@@ -487,6 +489,7 @@ class MarkSessionStore:
                         result.ended_at,
                         final_text,
                         result.prompt_text,
+                        result.failure_diagnostic,
                     ),
                 )
             connection.execute(
@@ -629,7 +632,8 @@ class MarkSessionStore:
                         started_at TEXT NOT NULL,
                         ended_at TEXT NOT NULL,
                         final_text TEXT,
-                        prompt_text TEXT
+                        prompt_text TEXT,
+                        failure_diagnostic TEXT
                     );
                     """
                 )
@@ -646,6 +650,7 @@ class MarkSessionStore:
                 _ensure_column(connection, "runs", "agent_provider", "TEXT")
                 _ensure_column(connection, "runs", "session_id", "TEXT")
                 _ensure_column(connection, "runs", "prompt_text", "TEXT")
+                _ensure_column(connection, "runs", "failure_diagnostic", "TEXT")
                 connection.executescript(
                     """
                     CREATE INDEX IF NOT EXISTS sessions_activity_idx

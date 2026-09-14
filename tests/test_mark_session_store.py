@@ -255,7 +255,7 @@ def test_existing_mark_database_is_migrated_before_new_indexes_are_created(
     assert {"session_id", "session_key"} <= session_columns
     assert "session_id" in event_columns
     assert "session_id" in message_columns
-    assert {"session_id", "prompt_text"} <= run_columns
+    assert {"session_id", "prompt_text", "failure_diagnostic"} <= run_columns
     assert "recalled" in message_columns
     assert store.path == database.resolve()
 
@@ -273,11 +273,17 @@ def test_record_result_closes_event_without_storing_provider_stderr(tmp_path: Pa
         ended_at="end",
         agent_provider="codex",
         error_code="execution_failed",
+        failure_diagnostic="run_agent:RuntimeError:runner.py:run:42",
     )
 
     store.record_result(result)
 
     assert store.event_status(message.event_id) == "failed"
+    with sqlite3.connect(store.path) as connection:
+        diagnostic = connection.execute(
+            "SELECT failure_diagnostic FROM runs WHERE run_id = ?", ("run-1",)
+        ).fetchone()
+    assert diagnostic == ("run_agent:RuntimeError:runner.py:run:42",)
     database_text = store.path.read_bytes()
     assert b"stderr" not in database_text
 

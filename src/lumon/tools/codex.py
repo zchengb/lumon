@@ -85,11 +85,13 @@ class CodexTool:
         timeout_seconds: float = 900.0,
         environment: Mapping[str, str] | None = None,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         self.binary = binary or resolve_codex_binary()
         self.timeout_seconds = timeout_seconds
         self.environment = dict(environment) if environment is not None else None
         self.model = model or None
+        self.reasoning_effort = reasoning_effort or None
 
     @property
     def executable(self) -> str:
@@ -141,6 +143,9 @@ class CodexTool:
         )
         if self.model:
             command.extend(("--model", self.model))
+        if self.reasoning_effort:
+            serialized_effort = json.dumps(self.reasoning_effort)
+            command.extend(("--config", f"model_reasoning_effort={serialized_effort}"))
         if resume_session_id:
             command.extend((resume_session_id, "-"))
         return tuple(command)

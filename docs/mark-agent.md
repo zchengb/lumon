@@ -64,6 +64,17 @@ $LUMON_HOME/agent.toml
 owner-only 的 `600` 文件中；Lumon 不会把它写入 Workspace、日志、CLI 输出或飞书
 消息。运行前请确保本机用户目录本身受到保护。
 
+Codex CLI 默认使用 GPT-5.6 Luna 和 `max` reasoning effort。对应的配置项是：
+
+```toml
+agent_model = "gpt-5.6-luna"
+agent_reasoning_effort = "max"
+```
+
+直接编辑 `$LUMON_HOME/agent.toml`（默认 `~/.lumon/agent.toml`）即可更改模型或
+reasoning effort；`lumon agent configure` 会保留已有设置。运行
+`lumon agent doctor` 可以确认当前生效的模型与 effort。
+
 持久化状态写入：
 
 ```text
@@ -98,7 +109,7 @@ Mark 的 Session 边界是稳定的：
 | `sessions` | 保存私聊或群组 Thread 的稳定 Session 身份、Workspace 绑定、Codex 原生 Session ID 和最近活动时间 |
 | `events` | 保存飞书事件去重、入队和恢复状态，并关联 Session |
 | `messages` | 保存用于上下文连续性的入站与出站消息 |
-| `runs` | 保存一次实际 Agent 调用的状态、Provider、实际发送的 Prompt（首轮为完整 bootstrap，后续为增量输入）和安全后的最终结果 |
+| `runs` | 保存一次实际 Agent 调用的状态、Provider、实际发送的 Prompt（首轮为完整 bootstrap，后续为增量输入）、安全后的最终结果，以及异常阶段/类型/源码位置（不保存异常文本） |
 
 `runs` 的一行对应一次 Agent CLI 调用，不对应 Agent 内部执行的每一条命令；命令和文件操作事件不会各自产生新的 Run。
 

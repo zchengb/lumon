@@ -82,6 +82,19 @@ class BlockingRunner(FakeRunner):
         raise AssertionError("blocking runner should only finish by cancellation")
 
 
+class FailingRunner(FakeRunner):
+    async def run(
+        self,
+        workspace: Path,
+        prompt: str,
+        *,
+        agent_session_id: str | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> AgentResult:
+        del workspace, prompt, agent_session_id, on_progress
+        raise RuntimeError("private request content must not be stored")
+
+
 class FakeChannel(MarkFeishuChannel):
     def __init__(self, config: MarkAgentConfig) -> None:
         super().__init__(config)
@@ -195,6 +208,60 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     assert rows[0][2] == runner.prompts[0]
     assert rows[1][2] == runner.prompts[1]
     assert session_row == ("provider-session-1",)
+
+
+def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        registry=WorkspaceRegistry(state_root),
+    ).initialize(InitRequest(workspace, name="failure-diagnostic-test"))
+    workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
+    config = MarkAgentConfig(
+        enabled=True,
+        default_workspace_id=workspace_id,
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+    )
+    config_store = MarkConfigStore(state_root)
+    config_store.save(config)
+    store = MarkSessionStore(state_root)
+    channel = FakeChannel(config)
+    service = MarkAgentService(
+        config_store=config_store,
+        registry=WorkspaceRegistry(state_root),
+        session_store=store,
+        agent_runner=FailingRunner(),
+        channel=channel,
+    )
+    message = InboundMessage(
+        event_id="evt-failure-diagnostic",
+        message_id="om-failure-diagnostic",
+        chat_id="oc-failure-diagnostic",
+        chat_type="p2p",
+        text="test request",
+        sender_id="ou-1",
+        sender_type="user",
+    )
+
+    async def run() -> None:
+        await service.handle_message(message)
+        await service.wait_for_idle()
+
+    asyncio.run(run())
+
+    with sqlite3.connect(store.path) as connection:
+        run_row = connection.execute(
+            "SELECT error_code, failure_diagnostic FROM runs WHERE event_id = ?",
+            (message.event_id,),
+        ).fetchone()
+
+    assert run_row is not None
+    assert run_row[0] == "mark_unexpected_error"
+    assert run_row[1].startswith("run_agent:RuntimeError:")
+    assert "private request content" not in run_row[1]
+    assert channel.replies[-1].startswith("Mark 暂时无法完成这次请求")
 
 
 def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -> None:

@@ -15,8 +15,12 @@ from lumon.errors import AgentConfigError
 from lumon.workspace.registry import UserStateLayout
 
 MARK_CONFIG_SCHEMA_VERSION = 1
+DEFAULT_AGENT_MODEL = "gpt-5.6-luna"
+DEFAULT_AGENT_REASONING_EFFORT = "max"
 ExecutionMode = Literal["full_access"]
 ResponseMode = Literal["progress_and_final"]
+AgentReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+_AGENT_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "xhigh", "max", "ultra"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +33,8 @@ class MarkAgentConfig:
     execution_mode: ExecutionMode = "full_access"
     response_mode: ResponseMode = "progress_and_final"
     agent_provider: AgentProvider = "codex"
-    agent_model: str | None = None
+    agent_model: str = DEFAULT_AGENT_MODEL
+    agent_reasoning_effort: AgentReasoningEffort = DEFAULT_AGENT_REASONING_EFFORT
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
 
@@ -48,8 +53,10 @@ class MarkAgentConfig:
             raise AgentConfigError("Feishu App Secret is missing from Mark configuration.")
         if self.agent_provider != "codex":
             raise AgentConfigError(f"Unsupported Mark Agent provider: {self.agent_provider}")
-        if self.agent_model is not None and not self.agent_model.strip():
-            raise AgentConfigError("Agent model must be empty or a non-empty name.")
+        if not self.agent_model.strip():
+            raise AgentConfigError("Agent model must be a non-empty name.")
+        if self.agent_reasoning_effort not in _AGENT_REASONING_EFFORTS:
+            raise AgentConfigError("Unsupported Agent reasoning effort.")
 
     def to_safe_dict(self) -> dict[str, object]:
         """Return a diagnostic representation that excludes the App Secret."""
@@ -64,6 +71,7 @@ class MarkAgentConfig:
             "response_mode": self.response_mode,
             "agent_provider": self.agent_provider,
             "agent_model": self.agent_model,
+            "agent_reasoning_effort": self.agent_reasoning_effort,
             "feishu_app_id": self.feishu_app_id,
             "feishu_app_configured": bool(self.feishu_app_secret),
         }
@@ -131,7 +139,8 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
     response_mode = payload.get("response_mode")
     raw_provider = payload.get("agent_provider", "codex")
     # ``codex_model`` is read only for existing v1 files; new files never write it.
-    raw_model = payload.get("agent_model", payload.get("codex_model", ""))
+    raw_model = payload.get("agent_model", payload.get("codex_model", DEFAULT_AGENT_MODEL))
+    raw_reasoning_effort = payload.get("agent_reasoning_effort", DEFAULT_AGENT_REASONING_EFFORT)
     raw_feishu = payload.get("feishu")
 
     if (
@@ -153,6 +162,11 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
         raise AgentConfigError(f"Mark configuration must use progress_and_final: {source}")
     if raw_model is not None and not isinstance(raw_model, str):
         raise AgentConfigError(f"Invalid Agent model value: {source}")
+    if (
+        not isinstance(raw_reasoning_effort, str)
+        or raw_reasoning_effort not in _AGENT_REASONING_EFFORTS
+    ):
+        raise AgentConfigError(f"Invalid Agent reasoning effort: {source}")
     if not isinstance(raw_feishu, dict):
         raise AgentConfigError(f"Missing Feishu configuration: {source}")
     feishu = cast(dict[str, object], raw_feishu)
@@ -170,7 +184,8 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
         execution_mode="full_access",
         response_mode="progress_and_final",
         agent_provider="codex",
-        agent_model=raw_model or None,
+        agent_model=raw_model or DEFAULT_AGENT_MODEL,
+        agent_reasoning_effort=cast(AgentReasoningEffort, raw_reasoning_effort),
         feishu_app_id=app_id,
         feishu_app_secret=app_secret,
     )
@@ -187,7 +202,6 @@ def _parse_optional_uuid(value: str, source: Path) -> UUID | None:
 
 def _render(config: MarkAgentConfig) -> str:
     workspace_id = str(config.default_workspace_id) if config.default_workspace_id else ""
-    model = config.agent_model or ""
     lines = [
         f"schema_version = {config.schema_version}",
         f"enabled = {'true' if config.enabled else 'false'}",
@@ -195,7 +209,8 @@ def _render(config: MarkAgentConfig) -> str:
         'execution_mode = "full_access"',
         'response_mode = "progress_and_final"',
         f"agent_provider = {_toml_string(config.agent_provider)}",
-        f"agent_model = {_toml_string(model)}",
+        f"agent_model = {_toml_string(config.agent_model)}",
+        f"agent_reasoning_effort = {_toml_string(config.agent_reasoning_effort)}",
         "",
         "[feishu]",
         f"app_id = {_toml_string(config.feishu_app_id)}",

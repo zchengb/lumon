@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.8
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.9
 ```
 
 The installer does not modify a Workspace or remove global Skills. To remove
@@ -52,7 +52,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.8` runs the release workflow, which attaches
+semantic version tag such as `v1.0.9` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -161,9 +161,11 @@ Mark configuration is kept separately from Workspace settings in
 `~/.lumon/agent.toml` (or `$LUMON_HOME/agent.toml`) and its SQLite state is in
 `~/.lumon/mark.sqlite3`. The App Secret is stored in the owner-only `600`
 configuration file and never appears in CLI output, logs, or Feishu replies.
-The configuration uses the provider-neutral `agent_provider` and `agent_model`
-fields; existing `codex_model` files are read for compatibility and normalized
-when they are next saved.
+Mark uses Codex CLI model `gpt-5.6-luna` with `max` reasoning effort by default.
+The `agent_model` and `agent_reasoning_effort` fields in `agent.toml` can be
+edited to choose another supported model and effort; `lumon agent doctor`
+shows the selected pair. Existing `codex_model` files are read for compatibility
+and normalized when they are next saved.
 Mark's packaged templates are kept together under
 `lumon/agents/mark/templates/`, including `SOUL.md` and the Workspace Prompt
 template. A user-owned SOUL override can be placed at

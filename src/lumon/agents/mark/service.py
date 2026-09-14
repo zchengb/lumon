@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import time
+import traceback
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
@@ -168,11 +170,14 @@ class MarkAgentService:
             error_code: str | None = None
             agent_provider: str | None = None
             prompt: str | None = None
+            failure_diagnostic: str | None = None
             run_started = False
             completed = False
             typing_reaction_id: str | None = None
+            stage = "add_typing_reaction"
             try:
                 typing_reaction_id = await self._add_typing_reaction(message)
+                stage = "record_inbound_message"
                 self.session_store.record_message(
                     Message(
                         conversation_key=message.conversation_key,
@@ -186,8 +191,10 @@ class MarkAgentService:
                 context_builder = self._context_builder
                 if context_builder is None or self._channel is None:
                     raise AgentRuntimeError("Mark runtime is not ready.")
+                stage = "resolve_workspace"
                 context = context_builder.resolve_workspace()
                 workspace_id = context.workspace_id
+                stage = "attach_workspace"
                 self.session_store.attach_workspace(message.event_id, workspace_id)
                 self._raise_if_cancellation_requested(message.event_id)
                 resume_session_id = session.agent_session_id
@@ -196,14 +203,17 @@ class MarkAgentService:
                     and session.workspace_id is not None
                     and session.workspace_id != workspace_id
                 ):
+                    stage = "clear_mismatched_agent_session"
                     self.session_store.clear_agent_session(session_id)
                     resume_session_id = None
                 if resume_session_id is None:
+                    stage = "load_history"
                     history = self.session_store.load_history(
                         session_id,
                         conversation_key=message.conversation_key,
                         legacy_conversation_key=message.legacy_conversation_key,
                     )
+                    stage = "build_prompt"
                     prompt = context_builder.build_prompt(context, history, message.text)
                 else:
                     prompt = message.text
@@ -211,6 +221,7 @@ class MarkAgentService:
                 if runner is None:
                     raise AgentRuntimeError("Agent runtime is not ready.")
                 agent_provider = runner.provider
+                stage = "record_run_started"
                 self.session_store.record_run_started(
                     run_id=run_id,
                     event_id=message.event_id,
@@ -223,6 +234,7 @@ class MarkAgentService:
                 )
                 run_started = True
                 reporter = _ProgressReporter(self._channel, message)
+                stage = "run_agent"
                 result = await runner.run(
                     context.path,
                     prompt,
@@ -231,8 +243,10 @@ class MarkAgentService:
                 )
                 self._raise_if_cancellation_requested(message.event_id)
                 if resume_session_id is not None and result.status == "failed":
+                    stage = "clear_failed_agent_session"
                     self.session_store.clear_agent_session(session_id)
                 elif result.agent_session_id is not None:
+                    stage = "bind_agent_session"
                     self.session_store.bind_agent_session(
                         session_id,
                         result.agent_session_id,
@@ -240,8 +254,11 @@ class MarkAgentService:
                 status = result.status
                 error_code = result.error_code.value if result.error_code is not None else None
                 if result.status == "succeeded" and result.final_text:
+                    stage = "sanitize_final_text"
                     final_text = sanitize_output(result.final_text)
+                    stage = "send_final_reply"
                     await self._send(message, final_text)
+                    stage = "record_outbound_message"
                     self.session_store.record_message(
                         Message(
                             conversation_key=message.conversation_key,
@@ -257,6 +274,7 @@ class MarkAgentService:
                     if status == "succeeded":
                         status = "failed"
                         error_code = error_code or AgentErrorCode.EMPTY_RESULT.value
+                    stage = "send_failure_reply"
                     await self._send(
                         message,
                         _failure_message(
@@ -284,11 +302,13 @@ class MarkAgentService:
                 raise
             except LumonError as exc:
                 error_code = _error_code(exc)
+                failure_diagnostic = _safe_error_diagnostic(stage, exc)
                 agent_name = self.agent_runner.display_name if self.agent_runner else "Agent CLI"
                 await self._send(message, _failure_message(error_code, agent_name=agent_name))
                 completed = True
-            except Exception:
+            except Exception as exc:
                 error_code = "mark_unexpected_error"
+                failure_diagnostic = _safe_error_diagnostic(stage, exc)
                 agent_name = self.agent_runner.display_name if self.agent_runner else "Agent CLI"
                 await self._send(message, _failure_message(error_code, agent_name=agent_name))
                 completed = True
@@ -310,6 +330,7 @@ class MarkAgentService:
                             error_code=error_code,
                             session_id=session_id,
                             prompt_text=prompt if run_started else None,
+                            failure_diagnostic=failure_diagnostic,
                         )
                     )
 
@@ -420,3 +441,14 @@ def _error_code(error: LumonError) -> str:
 
 def _timestamp(now: datetime) -> str:
     return now.astimezone(UTC).isoformat()
+
+
+def _safe_error_diagnostic(stage: str, error: Exception) -> str:
+    """Describe an exception without retaining its message or user data."""
+
+    frames = traceback.extract_tb(error.__traceback__)
+    location = ""
+    if frames:
+        frame = frames[-1]
+        location = f":{Path(frame.filename).name}:{frame.name}:{frame.lineno}"
+    return f"{stage}:{type(error).__name__}{location}"
