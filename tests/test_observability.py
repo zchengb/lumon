@@ -1,0 +1,326 @@
+"""Tests for optional Langfuse telemetry and content redaction."""
+
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+from typing import Any
+from uuid import uuid4
+
+import pytest
+
+import lumon.observability as observability
+from lumon.agents.mark.config import MarkAgentConfig, ObservabilityConfig
+from lumon.observability import LangfuseAgentTelemetry, NoopAgentTelemetry, redact_text
+from lumon.version import __version__
+
+
+class FakeContext:
+    def __init__(self, value: Any) -> None:
+        self.value = value
+        self.entered = False
+        self.exited = False
+
+    def __enter__(self) -> Any:
+        self.entered = True
+        return self.value
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        del exc_type, exc_value, traceback
+        self.exited = True
+
+
+class FakeObservation:
+    def __init__(self, name: str, as_type: str, **arguments: object) -> None:
+        self.name = name
+        self.as_type = as_type
+        self.arguments = arguments
+        self.updates: list[dict[str, object]] = []
+        self.children: list[FakeObservation] = []
+        self.contexts: list[FakeContext] = []
+
+    def update(self, **arguments: object) -> None:
+        self.updates.append(arguments)
+
+    def start_as_current_observation(self, **arguments: object) -> FakeContext:
+        observation_arguments = dict(arguments)
+        observation_arguments.pop("name", None)
+        observation_arguments.pop("as_type", None)
+        child = FakeObservation(
+            str(arguments["name"]),
+            str(arguments.get("as_type", "span")),
+            **observation_arguments,
+        )
+        self.children.append(child)
+        context = FakeContext(child)
+        self.contexts.append(context)
+        return context
+
+
+class FakeClient:
+    def __init__(self) -> None:
+        self.root: FakeObservation | None = None
+        self.root_context: FakeContext | None = None
+        self.shutdown_calls = 0
+
+    def start_as_current_observation(self, **arguments: object) -> FakeContext:
+        observation_arguments = dict(arguments)
+        observation_arguments.pop("name", None)
+        observation_arguments.pop("as_type", None)
+        self.root = FakeObservation(
+            str(arguments["name"]),
+            str(arguments.get("as_type", "span")),
+            **observation_arguments,
+        )
+        self.root_context = FakeContext(self.root)
+        return self.root_context
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
+
+
+class FakePropagation:
+    def __init__(self, calls: list[dict[str, object]], **arguments: object) -> None:
+        self.calls = calls
+        self.arguments = arguments
+        self.context = FakeContext(self)
+
+    def __enter__(self) -> FakePropagation:
+        self.calls.append(self.arguments)
+        self.context.entered = True
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        del exc_type, exc_value, traceback
+        self.context.exited = True
+
+
+def _config(*, capture_content: bool = False) -> MarkAgentConfig:
+    return MarkAgentConfig(
+        enabled=True,
+        feishu_app_id="cli_test",
+        feishu_app_secret="feishu-secret",
+        observability=ObservabilityConfig(
+            enabled=True,
+            capture_content=capture_content,
+        ),
+    )
+
+
+def _start_trace(
+    client: FakeClient,
+    *,
+    capture_content: bool,
+) -> tuple[LangfuseAgentTelemetry, observability.AgentTrace, list[dict[str, object]]]:
+    propagation_calls: list[dict[str, object]] = []
+
+    def propagate(**arguments: object) -> FakePropagation:
+        return FakePropagation(propagation_calls, **arguments)
+
+    telemetry = LangfuseAgentTelemetry(
+        client,
+        propagate,
+        capture_content=capture_content,
+        sensitive_values=("feishu-secret",),
+    )
+    trace = telemetry.start_trace(
+        run_id="run-1",
+        session_id="session-1",
+        event_id="event-1",
+        sender_id="sender-1",
+        chat_type="p2p",
+        workspace_id=uuid4(),
+        provider="codex",
+        model="gpt-5.6-luna",
+        reasoning_effort="max",
+        input_text="private request",
+    )
+    return telemetry, trace, propagation_calls
+
+
+def test_redact_text_masks_configured_and_common_credentials() -> None:
+    value = (
+        'password = "feishu-secret"\n'
+        "Authorization: Bearer abc.def.ghi\n"
+        'OPENAI_API_KEY = "openai-secret-value"\n'
+        "GITHUB_TOKEN=github-token-value\n"
+        "DATABASE_URL=postgres://lumon:db-password@database.internal\n"
+        "api_key=sk-123456789\n"
+        "-----BEGIN PRIVATE KEY-----\nprivate material\n-----END PRIVATE KEY-----"
+    )
+
+    redacted = redact_text(value, ("feishu-secret",))
+
+    assert "feishu-secret" not in redacted
+    assert "abc.def.ghi" not in redacted
+    assert "openai-secret-value" not in redacted
+    assert "github-token-value" not in redacted
+    assert "db-password" not in redacted
+    assert "sk-123456789" not in redacted
+    assert "private material" not in redacted
+    assert redacted.count("[REDACTED]") >= 4
+
+
+def test_langfuse_trace_keeps_content_out_by_default() -> None:
+    client = FakeClient()
+    telemetry, trace, propagation_calls = _start_trace(client, capture_content=False)
+
+    async def run() -> None:
+        trace.update(input_text="private prompt", metadata={"workspace_id": "workspace-1"})
+        async with trace.span("codex.exec", as_type="tool", metadata={"status": "running"}) as span:
+            span.update(output_text="private result", metadata={"status": "succeeded"})
+        trace.finish(status="succeeded", final_text="private result")
+
+    asyncio.run(run())
+    telemetry.shutdown()
+
+    assert client.root is not None
+    assert client.root.arguments["input"] is None
+    assert client.root.children[0].arguments["metadata"] == {"status": "running"}
+    assert all("input" not in update and "output" not in update for update in client.root.updates)
+    assert all(
+        "input" not in update and "output" not in update
+        for update in client.root.children[0].updates
+    )
+    assert propagation_calls[0]["session_id"] == "session-1"
+    assert propagation_calls[0]["user_id"] != "sender-1"
+    assert client.root_context is not None and client.root_context.exited
+    assert client.root.contexts[0].exited
+    assert client.shutdown_calls == 1
+
+
+def test_langfuse_trace_redacts_opt_in_content() -> None:
+    client = FakeClient()
+    _, trace, _ = _start_trace(client, capture_content=True)
+
+    async def run() -> None:
+        trace.update(
+            input_text='password = "feishu-secret" Authorization: Bearer abc123',
+        )
+        async with trace.span("prompt.build") as span:
+            span.update(output_text="api_key=sk-123456789")
+        trace.finish(status="succeeded", final_text="secret answer")
+
+    asyncio.run(run())
+
+    assert client.root is not None
+    assert client.root.arguments["input"] == "private request"
+    root_content = str(client.root.updates[0]["input"])
+    child_content = str(client.root.children[0].updates[0]["output"])
+    final_content = str(client.root.updates[-1]["output"])
+    assert "feishu-secret" not in root_content
+    assert "abc123" not in root_content
+    assert "sk-123456789" not in child_content
+    assert final_content == "secret answer"
+
+
+def test_create_agent_telemetry_requires_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+
+    telemetry = observability.create_agent_telemetry(_config())
+
+    assert isinstance(telemetry, NoopAgentTelemetry)
+
+
+def test_disabled_telemetry_does_not_import_or_initialize_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_import(name: str) -> Any:
+        raise AssertionError(f"unexpected SDK import: {name}")
+
+    monkeypatch.setattr(observability.importlib, "import_module", unexpected_import)
+
+    config = MarkAgentConfig(
+        enabled=True,
+        feishu_app_id="cli_test",
+        feishu_app_secret="feishu-secret",
+        observability=ObservabilityConfig(enabled=False),
+    )
+
+    telemetry = observability.create_agent_telemetry(config)
+
+    assert isinstance(telemetry, NoopAgentTelemetry)
+
+
+def test_create_agent_telemetry_passes_cloud_settings_to_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    client = FakeClient()
+    constructor_arguments: dict[str, object] = {}
+
+    class FakeLangfuse:
+        def __new__(cls, **arguments: object) -> FakeClient:
+            constructor_arguments.update(arguments)
+            return client
+
+    def fake_propagate(**arguments: object) -> FakePropagation:
+        return FakePropagation([], **arguments)
+
+    fake_module = SimpleNamespace(
+        Langfuse=FakeLangfuse,
+        propagate_attributes=fake_propagate,
+    )
+
+    def fake_import(name: str) -> SimpleNamespace:
+        del name
+        return fake_module
+
+    monkeypatch.setattr(observability.importlib, "import_module", fake_import)
+    config = MarkAgentConfig(
+        enabled=True,
+        feishu_app_id="cli_test",
+        feishu_app_secret="feishu-secret",
+        observability=ObservabilityConfig(
+            enabled=True,
+            base_url="https://us.cloud.langfuse.com",
+            capture_content=True,
+            sample_rate=0.25,
+        ),
+    )
+
+    telemetry = observability.create_agent_telemetry(config)
+
+    assert isinstance(telemetry, LangfuseAgentTelemetry)
+    assert constructor_arguments == {
+        "public_key": "pk-lf-test",
+        "secret_key": "sk-lf-test",
+        "base_url": "https://us.cloud.langfuse.com",
+        "sample_rate": 0.25,
+        "release": __version__,
+        "environment": "production",
+    }
+
+
+def test_create_agent_telemetry_falls_back_when_sdk_initialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+
+    class FailingLangfuse:
+        def __new__(cls, **arguments: object) -> Any:
+            del cls, arguments
+            raise RuntimeError("test SDK failure")
+
+    def fake_propagate(**arguments: object) -> dict[str, object]:
+        return arguments
+
+    fake_module = SimpleNamespace(
+        Langfuse=FailingLangfuse,
+        propagate_attributes=fake_propagate,
+    )
+
+    def fake_import(name: str) -> SimpleNamespace:
+        del name
+        return fake_module
+
+    monkeypatch.setattr(observability.importlib, "import_module", fake_import)
+
+    telemetry = observability.create_agent_telemetry(_config())
+
+    assert isinstance(telemetry, NoopAgentTelemetry)

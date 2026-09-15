@@ -1,6 +1,6 @@
 """Mark Agent: the Workspace-focused Feishu assistant."""
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore, ObservabilityConfig
 from lumon.agents.mark.model import (
     AgentErrorCode,
     AgentProgress,
@@ -25,6 +25,7 @@ __all__ = [
     "MarkRunResult",
     "MarkSession",
     "Message",
+    "ObservabilityConfig",
     "ProgressPhase",
     "RecalledMessage",
 ]

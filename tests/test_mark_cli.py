@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore, ObservabilityConfig
 from lumon.agents.mark.runner import AgentRunner, CodexAgentRunner
 from lumon.cli.app import app
 from lumon.cli.commands import agent as agent_commands
@@ -65,6 +65,42 @@ def test_agent_doctor_reports_the_configured_model_and_effort(
     payload = json.loads(result.stdout)
     model_check = next(check for check in payload["checks"] if check["name"] == "agent_model")
     assert model_check["detail"] == ("Codex model: gpt-5.6-terra (reasoning effort: high)")
+
+
+def test_agent_doctor_reports_langfuse_cloud_without_exposing_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_root = tmp_path / "lumon"
+    monkeypatch.setenv("LUMON_HOME", str(state_root))
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    MarkConfigStore(state_root).save(
+        MarkAgentConfig(
+            enabled=True,
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret-value",
+            observability=ObservabilityConfig(enabled=True),
+        )
+    )
+
+    def unavailable_runner(_config: MarkAgentConfig | None) -> AgentRunner:
+        return CodexAgentRunner(tool=CodexTool(binary=str(tmp_path / "missing-codex")))
+
+    monkeypatch.setattr(agent_commands, "create_agent_runner", unavailable_runner)
+    result = CliRunner().invoke(app, ["agent", "doctor", "--json"])
+
+    payload = json.loads(result.stdout)
+    observability_check = next(
+        check for check in payload["checks"] if check["name"] == "observability"
+    )
+    credentials_check = next(
+        check for check in payload["checks"] if check["name"] == "observability_credentials"
+    )
+    assert "https://cloud.langfuse.com" in observability_check["detail"]
+    assert credentials_check["ok"] is True
+    assert "pk-lf-test" not in result.stdout
+    assert "sk-lf-test" not in result.stdout
 
 
 def test_agent_status_json_reports_stopped_without_creating_a_process(

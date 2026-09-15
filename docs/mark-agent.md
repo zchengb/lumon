@@ -75,6 +75,69 @@ agent_reasoning_effort = "max"
 reasoning effort；`lumon agent configure` 会保留已有设置。运行
 `lumon agent doctor` 可以确认当前生效的模型与 effort。
 
+## Langfuse Cloud 可观测性（可选）
+
+Mark 可以把每条已处理的飞书消息记录为一个 Langfuse trace。该能力默认关闭，
+并且不会阻止 Agent 执行：Langfuse SDK 不可用、凭据缺失或发送失败时，消息仍按
+原有流程处理。
+
+开发环境通过 uv 安装可选依赖：
+
+```text
+.venv/bin/uv sync --dev --extra observability
+```
+
+Shell 安装则使用安装器选项：
+
+```text
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --observability
+```
+
+在 Langfuse Cloud 创建项目并生成 project API keys，然后把凭据放在运行 Agent 的
+进程环境中。不要把它们写入 `agent.toml`、Workspace、日志或 commit：
+
+```text
+export LANGFUSE_PUBLIC_KEY='pk-lf-...'
+export LANGFUSE_SECRET_KEY='sk-lf-...'
+```
+
+编辑 `$LUMON_HOME/agent.toml` 开启 Cloud trace。`base_url` 可以换成组织所需的
+Langfuse Cloud 区域地址，默认值是 `https://cloud.langfuse.com`：
+
+```toml
+[observability]
+enabled = true
+provider = "langfuse"
+base_url = "https://cloud.langfuse.com"
+capture_content = false
+sample_rate = 1.0
+```
+
+运行 `lumon agent doctor` 会显示 endpoint、content capture、sample rate、SDK
+安装状态和凭据是否存在；它只输出 presence，不输出 key 的值。启动前台或后台
+Agent 时，确保这两个环境变量仍然对该进程可见。
+
+默认的 `capture_content = false` 只导出 trace 和 span 元数据，不导出原始消息、
+Workspace context、rendered Prompt 或最终回复。启用 `capture_content = true` 后，
+Lumon 会在客户端先遮盖已配置的 App/API secrets、Bearer token、密码、私钥和常见
+key 格式，再把入站消息、rendered Prompt 和最终回复交给 Langfuse SDK；只有在确认
+metadata 视图不足时才建议打开它。
+
+每条 trace 使用 Feishu 对话的 Session ID 做多轮分组，并记录 Lumon run/event ID、
+Workspace ID、Provider、实际模型、reasoning effort、版本、结果状态、安全错误码和
+SDK 记录的耗时。当前 Codex 是子进程，因此 trace 表示 Codex execution boundary，
+不会伪造 token usage、cost 或 Codex 内部模型调用数据。常见的子 span 包括
+`workspace.resolve`、`history.load`、`prompt.build`、`codex.exec` 和
+`feishu.reply`。
+
+Pilot 验证流程：
+
+1. 在 Cloud 项目中确认 API keys 和 endpoint。
+2. 先保持 `capture_content = false`，运行 `lumon agent doctor` 和 `lumon agent start`。
+3. 从 Feishu 发送几条私聊或群聊测试消息。
+4. 在 Langfuse UI 检查 trace tree、Session grouping、model/reasoning metadata、耗时、失败状态和 error code。
+5. 确认 metadata-only trace 没有原始消息或未遮盖内容后，再按需启用 redacted content capture。
+
 持久化状态写入：
 
 ```text
@@ -101,6 +164,10 @@ Mark 的 Session 边界是稳定的：
 一个 Lumon Session 只绑定一个 Codex 原生 Session：私聊按 `chat_id` 绑定，群聊按 Thread 绑定，互不共享。如果 Workspace 发生变化，或原生 Session resume 失败，Lumon 会清除绑定；当前失败请求不会自动重试，下一条消息会重新发送 bootstrap Prompt，避免重复执行用户动作。
 
 这是为分析 Agent 视角保留的本机审计数据，不会出现在日志、CLI 输出、诊断结果或飞书回复中。由于 Prompt 可能包含工作区中的敏感上下文，完整记录只保存在 `$LUMON_HOME/mark.sqlite3`，文件和父目录分别限制为当前用户可读写（`600` / `700`）。不要把该数据库同步到外部系统。
+
+Langfuse telemetry 与本机审计是两条边界：telemetry 默认关闭；开启后默认只发送
+上述 metadata。只有显式设置 `capture_content = true` 时，客户端脱敏后的内容子集才
+会进入 Langfuse Cloud。
 
 当前 SQLite 主要表：
 

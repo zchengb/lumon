@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
 from lumon.agents.mark.feishu import MarkFeishuChannel, MessageHandler
 from lumon.agents.mark.model import (
+    AgentErrorCode,
     AgentProgress,
     AgentResult,
     InboundMessage,
@@ -18,6 +20,14 @@ from lumon.agents.mark.model import (
 from lumon.agents.mark.runner import ProgressCallback
 from lumon.agents.mark.service import MarkAgentService
 from lumon.agents.mark.session_store import MarkSessionStore
+from lumon.errors import AgentRuntimeError
+from lumon.observability import (
+    AgentTrace,
+    ObservationType,
+    TelemetryLevel,
+    TelemetryMetadata,
+    TelemetryStatus,
+)
 from lumon.skills.installer import SkillInstaller
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
@@ -95,12 +105,26 @@ class FailingRunner(FakeRunner):
         raise RuntimeError("private request content must not be stored")
 
 
+class TimedOutRunner(FakeRunner):
+    async def run(
+        self,
+        workspace: Path,
+        prompt: str,
+        *,
+        agent_session_id: str | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> AgentResult:
+        del workspace, prompt, agent_session_id, on_progress
+        return AgentResult(status="timed_out", error_code=AgentErrorCode.TIMEOUT)
+
+
 class FakeChannel(MarkFeishuChannel):
     def __init__(self, config: MarkAgentConfig) -> None:
         super().__init__(config)
         self.replies: list[str] = []
         self.typing_added: list[str] = []
         self.typing_removed: list[tuple[str, str]] = []
+        self.fail_replies = False
 
     async def connect(
         self,
@@ -114,6 +138,8 @@ class FakeChannel(MarkFeishuChannel):
 
     async def reply(self, message: InboundMessage, text: str) -> None:
         del message
+        if self.fail_replies:
+            raise AgentRuntimeError("test reply failure")
         self.replies.append(text)
 
     async def add_typing(self, message_id: str) -> str:
@@ -122,6 +148,124 @@ class FakeChannel(MarkFeishuChannel):
 
     async def remove_typing(self, message_id: str, reaction_id: str) -> None:
         self.typing_removed.append((message_id, reaction_id))
+
+
+class RecordingSpan:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.updates: list[dict[str, object]] = []
+
+    def update(
+        self,
+        *,
+        input_text: str | None = None,
+        output_text: str | None = None,
+        metadata: TelemetryMetadata | None = None,
+        level: TelemetryLevel | None = None,
+        status_message: str | None = None,
+    ) -> None:
+        self.updates.append(
+            {
+                "input_text": input_text,
+                "output_text": output_text,
+                "metadata": dict(metadata) if metadata else None,
+                "level": level,
+                "status_message": status_message,
+            }
+        )
+
+
+class RecordingTrace:
+    def __init__(self, arguments: dict[str, object]) -> None:
+        self.arguments = arguments
+        self.span_names: list[str] = []
+        self.spans: list[RecordingSpan] = []
+        self.finished: tuple[TelemetryStatus, str | None, str | None] | None = None
+        self.updates: list[dict[str, object]] = []
+
+    def update(
+        self,
+        *,
+        input_text: str | None = None,
+        output_text: str | None = None,
+        metadata: TelemetryMetadata | None = None,
+        level: TelemetryLevel | None = None,
+        status_message: str | None = None,
+    ) -> None:
+        self.updates.append(
+            {
+                "input_text": input_text,
+                "output_text": output_text,
+                "metadata": dict(metadata) if metadata else None,
+                "level": level,
+                "status_message": status_message,
+            }
+        )
+
+    def finish(
+        self,
+        *,
+        status: TelemetryStatus,
+        error_code: str | None = None,
+        final_text: str | None = None,
+    ) -> None:
+        self.finished = (status, error_code, final_text)
+
+    @asynccontextmanager
+    async def span(
+        self,
+        name: str,
+        *,
+        as_type: ObservationType = "span",
+        metadata: TelemetryMetadata | None = None,
+    ):
+        del as_type, metadata
+        self.span_names.append(name)
+        span = RecordingSpan(name)
+        self.spans.append(span)
+        try:
+            yield span
+        finally:
+            pass
+
+
+class RecordingTelemetry:
+    def __init__(self) -> None:
+        self.traces: list[RecordingTrace] = []
+        self.shutdown_calls = 0
+
+    def start_trace(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+        event_id: str,
+        sender_id: str,
+        chat_type: str,
+        workspace_id: object,
+        provider: str,
+        model: str,
+        reasoning_effort: str,
+        input_text: str,
+    ) -> AgentTrace:
+        arguments = {
+            "run_id": run_id,
+            "session_id": session_id,
+            "event_id": event_id,
+            "sender_id": sender_id,
+            "chat_type": chat_type,
+            "workspace_id": workspace_id,
+            "provider": provider,
+            "model": model,
+            "reasoning_effort": reasoning_effort,
+            "input_text": input_text,
+        }
+        trace = RecordingTrace(arguments)
+        self.traces.append(trace)
+        return trace
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
 
 
 def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
@@ -142,6 +286,7 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     config_store.save(config)
     channel = FakeChannel(config)
     runner = FakeRunner()
+    telemetry = RecordingTelemetry()
     store = MarkSessionStore(state_root)
     service = MarkAgentService(
         config_store=config_store,
@@ -149,6 +294,7 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         session_store=store,
         agent_runner=runner,
         channel=channel,
+        telemetry=telemetry,
     )
     message = InboundMessage(
         event_id="evt-1",
@@ -177,6 +323,7 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         await service.wait_for_idle()
         await service.handle_message(message)
         await service.wait_for_idle()
+        await service.stop()
 
     asyncio.run(run())
 
@@ -208,6 +355,25 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     assert rows[0][2] == runner.prompts[0]
     assert rows[1][2] == runner.prompts[1]
     assert session_row == ("provider-session-1",)
+    assert len(telemetry.traces) == 2
+    assert telemetry.traces[0].span_names == [
+        "workspace.resolve",
+        "history.load",
+        "prompt.build",
+        "codex.exec",
+        "feishu.reply",
+    ]
+    assert telemetry.traces[1].span_names == [
+        "workspace.resolve",
+        "codex.exec",
+        "feishu.reply",
+    ]
+    assert (
+        telemetry.traces[0].arguments["session_id"] == telemetry.traces[1].arguments["session_id"]
+    )
+    assert telemetry.traces[0].finished == ("succeeded", None, "Workspace 已检查")
+    assert telemetry.traces[1].finished == ("succeeded", None, "Workspace 已检查")
+    assert telemetry.shutdown_calls == 1
 
 
 def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) -> None:
@@ -228,12 +394,14 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
     config_store.save(config)
     store = MarkSessionStore(state_root)
     channel = FakeChannel(config)
+    telemetry = RecordingTelemetry()
     service = MarkAgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
         agent_runner=FailingRunner(),
         channel=channel,
+        telemetry=telemetry,
     )
     message = InboundMessage(
         event_id="evt-failure-diagnostic",
@@ -262,6 +430,111 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
     assert run_row[1].startswith("run_agent:RuntimeError:")
     assert "private request content" not in run_row[1]
     assert channel.replies[-1].startswith("Mark 暂时无法完成这次请求")
+    assert len(telemetry.traces) == 1
+    assert telemetry.traces[0].finished == ("failed", "mark_unexpected_error", None)
+    assert telemetry.traces[0].span_names[-2:] == ["codex.exec", "feishu.reply"]
+    asyncio.run(service.stop())
+
+
+def test_service_records_timeout_in_trace(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        registry=WorkspaceRegistry(state_root),
+    ).initialize(InitRequest(workspace, name="timeout-test"))
+    workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
+    config = MarkAgentConfig(
+        enabled=True,
+        default_workspace_id=workspace_id,
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+    )
+    config_store = MarkConfigStore(state_root)
+    config_store.save(config)
+    store = MarkSessionStore(state_root)
+    telemetry = RecordingTelemetry()
+    service = MarkAgentService(
+        config_store=config_store,
+        registry=WorkspaceRegistry(state_root),
+        session_store=store,
+        agent_runner=TimedOutRunner(),
+        channel=FakeChannel(config),
+        telemetry=telemetry,
+    )
+    message = InboundMessage(
+        event_id="evt-timeout",
+        message_id="om-timeout",
+        chat_id="oc-timeout",
+        chat_type="p2p",
+        text="请检查状态",
+        sender_id="ou-1",
+        sender_type="user",
+    )
+
+    async def run() -> None:
+        await service.handle_message(message)
+        await service.wait_for_idle()
+
+    asyncio.run(run())
+
+    assert telemetry.traces[0].finished == ("timed_out", "timeout", None)
+    asyncio.run(service.stop())
+
+
+def test_service_records_feishu_reply_failure_without_changing_agent_result(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        registry=WorkspaceRegistry(state_root),
+    ).initialize(InitRequest(workspace, name="reply-failure-test"))
+    workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
+    config = MarkAgentConfig(
+        enabled=True,
+        default_workspace_id=workspace_id,
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+    )
+    config_store = MarkConfigStore(state_root)
+    config_store.save(config)
+    store = MarkSessionStore(state_root)
+    channel = FakeChannel(config)
+    channel.fail_replies = True
+    telemetry = RecordingTelemetry()
+    service = MarkAgentService(
+        config_store=config_store,
+        registry=WorkspaceRegistry(state_root),
+        session_store=store,
+        agent_runner=FakeRunner(),
+        channel=channel,
+        telemetry=telemetry,
+    )
+    message = InboundMessage(
+        event_id="evt-reply-failure",
+        message_id="om-reply-failure",
+        chat_id="oc-reply-failure",
+        chat_type="p2p",
+        text="请检查状态",
+        sender_id="ou-1",
+        sender_type="user",
+    )
+
+    async def run() -> None:
+        await service.handle_message(message)
+        await service.wait_for_idle()
+
+    asyncio.run(run())
+
+    assert channel.replies == []
+    assert telemetry.traces[0].finished == ("failed", "feishu_reply_failed", "Workspace 已检查")
+    assert telemetry.traces[0].spans[-1].updates[-1]["metadata"] == {
+        "delivered": False,
+        "error_code": "feishu_reply_failed",
+    }
+    asyncio.run(service.stop())
 
 
 def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -> None:
@@ -282,12 +555,14 @@ def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -
     config_store.save(config)
     store = MarkSessionStore(state_root)
     runner = BlockingRunner()
+    telemetry = RecordingTelemetry()
     service = MarkAgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
         agent_runner=runner,
         channel=FakeChannel(config),
+        telemetry=telemetry,
     )
     message = InboundMessage(
         event_id="evt-recovery",
@@ -308,6 +583,7 @@ def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -
 
     assert store.event_status(message.event_id) == "processing"
     assert store.recover_pending() == (message,)
+    assert telemetry.traces[0].finished == ("interrupted", "interrupted", None)
 
 
 def test_recalled_message_cancels_only_its_running_task(tmp_path: Path) -> None:
@@ -329,12 +605,14 @@ def test_recalled_message_cancels_only_its_running_task(tmp_path: Path) -> None:
     store = MarkSessionStore(state_root)
     channel = FakeChannel(config)
     runner = BlockingRunner()
+    telemetry = RecordingTelemetry()
     service = MarkAgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
         agent_runner=runner,
         channel=channel,
+        telemetry=telemetry,
     )
     message = InboundMessage(
         event_id="evt-recall",
@@ -366,3 +644,4 @@ def test_recalled_message_cancels_only_its_running_task(tmp_path: Path) -> None:
             (message.event_id,),
         ).fetchone()
     assert row == ("cancelled", "message_recalled")
+    assert telemetry.traces[0].finished == ("cancelled", "message_recalled", None)

@@ -21,6 +21,7 @@ from lumon.agents.mark.config import (
     DEFAULT_AGENT_REASONING_EFFORT,
     MarkAgentConfig,
     MarkConfigStore,
+    ObservabilityConfig,
 )
 from lumon.agents.mark.runner import create_agent_runner
 from lumon.agents.mark.service import MarkAgentService
@@ -82,6 +83,7 @@ def configure() -> None:
         ),
         feishu_app_id=app_id.strip(),
         feishu_app_secret=app_secret,
+        observability=existing.observability if existing else ObservabilityConfig(),
     )
     try:
         store.save(config)
@@ -208,6 +210,7 @@ def _inspect_agent() -> AgentDoctorReport:
                 f"(reasoning effort: {config.agent_reasoning_effort})",
             )
         )
+        checks.extend(_observability_checks(config))
 
     sdk_available = importlib.util.find_spec("lark_channel") is not None
     checks.append(
@@ -286,6 +289,39 @@ def _inspect_agent() -> AgentDoctorReport:
         )
     )
     return AgentDoctorReport(tuple(checks))
+
+
+def _observability_checks(config: MarkAgentConfig) -> list[AgentDoctorCheck]:
+    settings = config.observability
+    if not settings.enabled:
+        return [AgentDoctorCheck("observability", True, "disabled")]
+
+    sdk_available = importlib.util.find_spec("langfuse") is not None
+    credentials_configured = bool(
+        os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
+        and os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
+    )
+    capture_detail = "enabled" if settings.capture_content else "disabled"
+    return [
+        AgentDoctorCheck(
+            "observability",
+            True,
+            f"Langfuse Cloud enabled: {settings.base_url}; "
+            f"content capture {capture_detail}; sample rate {settings.sample_rate:g}",
+        ),
+        AgentDoctorCheck(
+            "observability_sdk",
+            sdk_available,
+            "langfuse SDK available" if sdk_available else "install the observability extra",
+        ),
+        AgentDoctorCheck(
+            "observability_credentials",
+            credentials_configured,
+            "Langfuse project credentials are configured"
+            if credentials_configured
+            else "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are required",
+        ),
+    ]
 
 
 def _load_existing(store: MarkConfigStore) -> MarkAgentConfig | None:

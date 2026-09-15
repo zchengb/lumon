@@ -11,8 +11,10 @@ import pytest
 from lumon.agents.mark.config import (
     DEFAULT_AGENT_MODEL,
     DEFAULT_AGENT_REASONING_EFFORT,
+    DEFAULT_LANGFUSE_BASE_URL,
     MarkAgentConfig,
     MarkConfigStore,
+    ObservabilityConfig,
 )
 from lumon.agents.mark.soul import MarkSoulLoader
 from lumon.errors import AgentConfigError
@@ -39,6 +41,8 @@ def test_mark_config_round_trip_is_owner_only_and_safe_dict_excludes_secret(
     assert config.agent_provider == "codex"
     assert config.agent_model == DEFAULT_AGENT_MODEL
     assert config.agent_reasoning_effort == DEFAULT_AGENT_REASONING_EFFORT
+    assert config.observability.base_url == DEFAULT_LANGFUSE_BASE_URL
+    assert not config.observability.enabled
     assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
     assert "secret-value" not in str(config.to_safe_dict())
     assert "app_secret" not in config.to_safe_dict()
@@ -47,6 +51,8 @@ def test_mark_config_round_trip_is_owner_only_and_safe_dict_excludes_secret(
     assert f'agent_model = "{DEFAULT_AGENT_MODEL}"' in rendered
     assert f'agent_reasoning_effort = "{DEFAULT_AGENT_REASONING_EFFORT}"' in rendered
     assert "codex_model" not in rendered
+    assert "[observability]" in rendered
+    assert "capture_content = false" in rendered
 
 
 def test_agent_model_and_reasoning_effort_can_be_overridden(tmp_path: Path) -> None:
@@ -88,6 +94,7 @@ def test_existing_empty_model_config_uses_the_codex_default(tmp_path: Path) -> N
 
     assert loaded.agent_model == DEFAULT_AGENT_MODEL
     assert loaded.agent_reasoning_effort == DEFAULT_AGENT_REASONING_EFFORT
+    assert not loaded.observability.enabled
 
 
 def test_invalid_config_does_not_expose_secret(tmp_path: Path) -> None:
@@ -133,6 +140,45 @@ def test_legacy_codex_model_is_read_but_normalized_on_save(tmp_path: Path) -> No
     rendered = store.path.read_text(encoding="utf-8")
     assert 'agent_model = "gpt-test"' in rendered
     assert "codex_model" not in rendered
+
+
+def test_observability_config_round_trip_is_safe(tmp_path: Path) -> None:
+    store = MarkConfigStore(tmp_path / "lumon")
+    config = MarkAgentConfig(
+        enabled=True,
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+        observability=ObservabilityConfig(
+            enabled=True,
+            base_url="https://us.cloud.langfuse.com",
+            capture_content=True,
+            sample_rate=0.25,
+        ),
+    )
+
+    store.save(config)
+
+    loaded = store.load()
+    assert loaded.observability == config.observability
+    assert loaded.to_safe_dict()["observability"] == {
+        "enabled": True,
+        "provider": "langfuse",
+        "base_url": "https://us.cloud.langfuse.com",
+        "capture_content": True,
+        "sample_rate": 0.25,
+    }
+    assert "secret-value" not in str(loaded.to_safe_dict())
+
+
+def test_invalid_observability_sample_rate_is_rejected() -> None:
+    config = MarkAgentConfig(
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+        observability=ObservabilityConfig(sample_rate=1.1),
+    )
+
+    with pytest.raises(AgentConfigError, match="sample rate"):
+        config.validate()
 
 
 def test_packaged_soul_is_available_and_user_override_wins(tmp_path: Path) -> None:

@@ -16,6 +16,8 @@ For a one-command Shell installation, use the installer in
 virtual environment and installs Lumon with pip. When no version is provided,
 the installer resolves the latest stable GitHub Release and verifies the Wheel
 with its `SHA256SUMS` file. A specific version can still be pinned explicitly.
+Pass `--observability` when the Mark Agent should include the optional Langfuse
+Cloud SDK in the installation.
 On a private repository, provide `LUMON_GITHUB_TOKEN` or use an SSH-accessible
 repository. The matching uninstaller is `packaging/uninstall.sh`.
 
@@ -29,6 +31,13 @@ To pin a version, append the installer argument after `bash -s --`:
 
 ```text
 curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.10
+```
+
+To install the optional Langfuse Cloud telemetry support, add the installer
+flag:
+
+```text
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --observability
 ```
 
 The installer does not modify a Workspace or remove global Skills. To remove
@@ -171,7 +180,8 @@ Mark's packaged templates are kept together under
 template. A user-owned SOUL override can be placed at
 `~/.lumon/agents/mark/templates/SOUL.md` and is never overwritten
 automatically. See [docs/mark-agent.md](docs/mark-agent.md) for the Feishu
-application setup and the full local verification flow.
+application setup, Langfuse Cloud pilot configuration, and the full local
+verification flow.
 
 Codex execution is a reusable tool under `lumon/tools/codex.py`, not a Mark-only
 implementation. Mark adds its conversational progress and final-text policy in

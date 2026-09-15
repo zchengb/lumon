@@ -22,6 +22,11 @@ Repository = "https://github.com/zchengb/lumon"
 [project.scripts]
 lumon = "lumon.cli.app:main"
 
+[project.optional-dependencies]
+observability = [
+    "langfuse>=4,<5",
+]
+
 [dependency-groups]
 dev = [
     "pyright>=1.1.390,<2",

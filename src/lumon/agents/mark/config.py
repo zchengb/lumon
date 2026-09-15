@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 import tempfile
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import Literal, cast
+from urllib.parse import urlparse
 from uuid import UUID
 
 from lumon.agents.mark.model import AgentProvider
@@ -17,10 +19,56 @@ from lumon.workspace.registry import UserStateLayout
 MARK_CONFIG_SCHEMA_VERSION = 1
 DEFAULT_AGENT_MODEL = "gpt-5.6-luna"
 DEFAULT_AGENT_REASONING_EFFORT = "max"
+DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
 ExecutionMode = Literal["full_access"]
 ResponseMode = Literal["progress_and_final"]
 AgentReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+ObservabilityProvider = Literal["langfuse"]
 _AGENT_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "xhigh", "max", "ultra"})
+
+
+@dataclass(frozen=True, slots=True)
+class ObservabilityConfig:
+    """Optional Langfuse Cloud settings for Mark telemetry."""
+
+    enabled: bool = False
+    provider: ObservabilityProvider = "langfuse"
+    base_url: str = DEFAULT_LANGFUSE_BASE_URL
+    capture_content: bool = False
+    sample_rate: float = 1.0
+
+    def validate(self) -> None:
+        """Validate the provider settings before they cross the config seam."""
+
+        if self.provider != "langfuse":
+            raise AgentConfigError(f"Unsupported observability provider: {self.provider}")
+        if not self.base_url.strip():
+            raise AgentConfigError("Observability base URL must be a non-empty URL.")
+        try:
+            parsed_url = urlparse(self.base_url)
+        except ValueError as exc:
+            raise AgentConfigError("Observability base URL must be a valid URL.") from exc
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            raise AgentConfigError(
+                "Observability base URL must include an HTTP(S) scheme and host."
+            )
+        if parsed_url.username or parsed_url.password or parsed_url.query or parsed_url.fragment:
+            raise AgentConfigError(
+                "Observability base URL must not include credentials or query data."
+            )
+        if not isfinite(self.sample_rate) or not 0.0 <= self.sample_rate <= 1.0:
+            raise AgentConfigError("Observability sample rate must be between 0 and 1.")
+
+    def to_safe_dict(self) -> dict[str, object]:
+        """Return settings that contain no observability credentials."""
+
+        return {
+            "enabled": self.enabled,
+            "provider": self.provider,
+            "base_url": self.base_url,
+            "capture_content": self.capture_content,
+            "sample_rate": self.sample_rate,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +85,7 @@ class MarkAgentConfig:
     agent_reasoning_effort: AgentReasoningEffort = DEFAULT_AGENT_REASONING_EFFORT
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
+    observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
 
     def validate(self) -> None:
         """Validate values before they cross the on-disk configuration seam."""
@@ -57,6 +106,7 @@ class MarkAgentConfig:
             raise AgentConfigError("Agent model must be a non-empty name.")
         if self.agent_reasoning_effort not in _AGENT_REASONING_EFFORTS:
             raise AgentConfigError("Unsupported Agent reasoning effort.")
+        self.observability.validate()
 
     def to_safe_dict(self) -> dict[str, object]:
         """Return a diagnostic representation that excludes the App Secret."""
@@ -74,6 +124,7 @@ class MarkAgentConfig:
             "agent_reasoning_effort": self.agent_reasoning_effort,
             "feishu_app_id": self.feishu_app_id,
             "feishu_app_configured": bool(self.feishu_app_secret),
+            "observability": self.observability.to_safe_dict(),
         }
 
 
@@ -142,6 +193,7 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
     raw_model = payload.get("agent_model", payload.get("codex_model", DEFAULT_AGENT_MODEL))
     raw_reasoning_effort = payload.get("agent_reasoning_effort", DEFAULT_AGENT_REASONING_EFFORT)
     raw_feishu = payload.get("feishu")
+    raw_observability = payload.get("observability", {})
 
     if (
         not isinstance(schema_version, int)
@@ -176,6 +228,9 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
         raise AgentConfigError(f"Missing Feishu App ID: {source}")
     if not isinstance(app_secret, str) or not app_secret.strip():
         raise AgentConfigError(f"Missing Feishu App Secret: {source}")
+    if not isinstance(raw_observability, dict):
+        raise AgentConfigError(f"Invalid observability configuration: {source}")
+    observability = _parse_observability(cast(dict[str, object], raw_observability), source)
 
     return MarkAgentConfig(
         schema_version=schema_version,
@@ -188,7 +243,38 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
         agent_reasoning_effort=cast(AgentReasoningEffort, raw_reasoning_effort),
         feishu_app_id=app_id,
         feishu_app_secret=app_secret,
+        observability=observability,
     )
+
+
+def _parse_observability(payload: dict[str, object], source: Path) -> ObservabilityConfig:
+    enabled = payload.get("enabled", False)
+    provider = payload.get("provider", "langfuse")
+    base_url = payload.get("base_url", DEFAULT_LANGFUSE_BASE_URL)
+    capture_content = payload.get("capture_content", False)
+    sample_rate = payload.get("sample_rate", 1.0)
+    if not isinstance(enabled, bool):
+        raise AgentConfigError(f"Invalid observability enabled value: {source}")
+    if not isinstance(provider, str) or provider != "langfuse":
+        raise AgentConfigError(f"Unsupported observability provider: {source}")
+    if not isinstance(base_url, str):
+        raise AgentConfigError(f"Invalid observability base URL: {source}")
+    if not isinstance(capture_content, bool):
+        raise AgentConfigError(f"Invalid observability content capture value: {source}")
+    if isinstance(sample_rate, bool) or not isinstance(sample_rate, (int, float)):
+        raise AgentConfigError(f"Invalid observability sample rate: {source}")
+    config = ObservabilityConfig(
+        enabled=enabled,
+        provider="langfuse",
+        base_url=base_url,
+        capture_content=capture_content,
+        sample_rate=float(sample_rate),
+    )
+    try:
+        config.validate()
+    except AgentConfigError as exc:
+        raise AgentConfigError(f"Invalid observability configuration: {source}") from exc
+    return config
 
 
 def _parse_optional_uuid(value: str, source: Path) -> UUID | None:
@@ -215,6 +301,13 @@ def _render(config: MarkAgentConfig) -> str:
         "[feishu]",
         f"app_id = {_toml_string(config.feishu_app_id)}",
         f"app_secret = {_toml_string(config.feishu_app_secret)}",
+        "",
+        "[observability]",
+        f"enabled = {'true' if config.observability.enabled else 'false'}",
+        f"provider = {_toml_string(config.observability.provider)}",
+        f"base_url = {_toml_string(config.observability.base_url)}",
+        f"capture_content = {'true' if config.observability.capture_content else 'false'}",
+        f"sample_rate = {config.observability.sample_rate}",
     ]
     return "\n".join(lines) + "\n"
 
