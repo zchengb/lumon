@@ -12,7 +12,6 @@ from typing import cast
 
 from lumon.errors import PreflightError
 from lumon.flows.model import FlowCatalogSnapshot, FlowDefinition, FlowDiagnostic
-from lumon.workspace.layout import WorkspaceLayout
 
 _FLOW_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _FLOW_SUFFIX = ".md"
@@ -29,6 +28,10 @@ class FlowCatalog:
     """Read and atomically update flows below one Workspace root."""
 
     def __init__(self, workspace: Path) -> None:
+        # Import lazily because WorkspaceInitializer imports the packaged sample
+        # from this module while the ``lumon.workspace`` package is loading.
+        from lumon.workspace.layout import WorkspaceLayout
+
         self.layout = WorkspaceLayout.from_root(workspace)
 
     def discover(self) -> FlowCatalogSnapshot:
