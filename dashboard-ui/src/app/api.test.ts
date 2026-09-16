@@ -44,7 +44,6 @@ describe("Dashboard API", () => {
         observability: {
           enabled: true,
           base_url: "https://cloud.langfuse.com",
-          capture_content: false,
           sample_rate: 1,
         },
       }),
@@ -60,7 +59,6 @@ describe("Dashboard API", () => {
         observability: {
           enabled: true,
           base_url: "https://cloud.langfuse.com",
-          capture_content: false,
           sample_rate: 1,
         },
       }),

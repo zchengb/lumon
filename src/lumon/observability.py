@@ -208,9 +208,12 @@ class LangfuseAgentTelemetry:
     ) -> None:
         # The SDK is optional and loaded dynamically in ``create_agent_telemetry``.
         # ``Any`` is confined to this third-party adapter boundary.
+        # Keep the argument for compatibility with callers from the opt-in pilot;
+        # content capture is now always enabled by the configuration policy.
+        del capture_content
         self._client = client
         self._propagate_attributes = propagate_attributes
-        self._redactor = _TextRedactor(capture_content, sensitive_values)
+        self._redactor = _TextRedactor(sensitive_values)
         self._closed = False
 
     def start_trace(
@@ -447,8 +450,7 @@ class _LangfuseObservation:
 
 
 class _TextRedactor:
-    def __init__(self, capture_content: bool, sensitive_values: Iterable[str]) -> None:
-        self._capture_content = capture_content
+    def __init__(self, sensitive_values: Iterable[str]) -> None:
         self._sensitive_values = tuple(
             sorted(
                 {value.strip() for value in sensitive_values if len(value.strip()) >= 4},
@@ -459,10 +461,6 @@ class _TextRedactor:
 
     def content(self, value: str | None) -> str | None:
         if value is None:
-            return None
-        # Content capture is an explicit opt-in. The value is still redacted
-        # before it reaches the SDK queue whenever capture is enabled.
-        if not self._capture_content:
             return None
         return redact_text(value, self._sensitive_values)
 
@@ -535,7 +533,7 @@ def create_agent_telemetry(config: MarkAgentConfig) -> AgentTelemetry:
     return LangfuseAgentTelemetry(
         client,
         propagate_attributes,
-        capture_content=settings.capture_content,
+        capture_content=True,
         sensitive_values=_configured_sensitive_values(config, public_key, secret_key),
     )
 

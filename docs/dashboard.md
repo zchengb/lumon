@@ -76,6 +76,10 @@ accepted by the update endpoint but never returned to the browser. Lumon saves
 them in `$LUMON_HOME/agent.toml` (normally `~/.lumon/agent.toml`) with owner-only
 file mode `600`. Environment variables `LANGFUSE_PUBLIC_KEY` and
 `LANGFUSE_SECRET_KEY` continue to override saved Langfuse values.
+Langfuse content capture is always enabled when observability is enabled. Lumon
+redacts credentials client-side before sending prompt and response content, and
+the Dashboard does not expose a content capture switch.
+
 
 Saving the page updates the on-disk configuration. Restart Mark with
 `lumon agent stop` and `lumon agent start --background` for the running process

@@ -301,13 +301,12 @@ def _observability_checks(config: MarkAgentConfig) -> list[AgentDoctorCheck]:
         (os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip() or settings.public_key.strip())
         and (os.environ.get("LANGFUSE_SECRET_KEY", "").strip() or settings.secret_key.strip())
     )
-    capture_detail = "enabled" if settings.capture_content else "disabled"
     return [
         AgentDoctorCheck(
             "observability",
             True,
             f"Langfuse Cloud enabled: {settings.base_url}; "
-            f"content capture {capture_detail}; sample rate {settings.sample_rate:g}",
+            f"redacted content capture always enabled; sample rate {settings.sample_rate:g}",
         ),
         AgentDoctorCheck(
             "observability_sdk",

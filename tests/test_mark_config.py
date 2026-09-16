@@ -43,6 +43,7 @@ def test_mark_config_round_trip_is_owner_only_and_safe_dict_excludes_secret(
     assert config.agent_reasoning_effort == DEFAULT_AGENT_REASONING_EFFORT
     assert config.observability.base_url == DEFAULT_LANGFUSE_BASE_URL
     assert not config.observability.enabled
+    assert config.observability.capture_content is True
     assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
     assert "secret-value" not in str(config.to_safe_dict())
     assert "app_secret" not in config.to_safe_dict()
@@ -52,7 +53,7 @@ def test_mark_config_round_trip_is_owner_only_and_safe_dict_excludes_secret(
     assert f'agent_reasoning_effort = "{DEFAULT_AGENT_REASONING_EFFORT}"' in rendered
     assert "codex_model" not in rendered
     assert "[observability]" in rendered
-    assert "capture_content = false" in rendered
+    assert "capture_content = true" in rendered
 
 
 def test_agent_model_and_reasoning_effort_can_be_overridden(tmp_path: Path) -> None:
@@ -95,6 +96,33 @@ def test_existing_empty_model_config_uses_the_codex_default(tmp_path: Path) -> N
     assert loaded.agent_model == DEFAULT_AGENT_MODEL
     assert loaded.agent_reasoning_effort == DEFAULT_AGENT_REASONING_EFFORT
     assert not loaded.observability.enabled
+    assert loaded.observability.capture_content is True
+
+
+def test_existing_disabled_content_capture_is_normalized_on_load(tmp_path: Path) -> None:
+    store = MarkConfigStore(tmp_path / "lumon")
+    store.path.parent.mkdir(parents=True)
+    store.path.write_text(
+        "schema_version = 1\n"
+        "enabled = true\n"
+        'default_workspace_id = ""\n'
+        'execution_mode = "full_access"\n'
+        'response_mode = "progress_and_final"\n'
+        'agent_provider = "codex"\n'
+        'agent_model = "gpt-5.6-luna"\n'
+        'agent_reasoning_effort = "max"\n'
+        "[feishu]\n"
+        'app_id = "cli_test"\n'
+        'app_secret = "secret-value"\n'
+        "[observability]\n"
+        "capture_content = false\n",
+        encoding="utf-8",
+    )
+    store.path.chmod(0o600)
+
+    loaded = store.load()
+
+    assert loaded.observability.capture_content is True
 
 
 def test_invalid_config_does_not_expose_secret(tmp_path: Path) -> None:

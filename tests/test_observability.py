@@ -161,57 +161,40 @@ def test_redact_text_masks_configured_and_common_credentials() -> None:
     assert redacted.count("[REDACTED]") >= 4
 
 
-def test_langfuse_trace_keeps_content_out_by_default() -> None:
+def test_langfuse_trace_captures_redacted_content_when_legacy_toggle_is_false() -> None:
     client = FakeClient()
     telemetry, trace, propagation_calls = _start_trace(client, capture_content=False)
 
     async def run() -> None:
-        trace.update(input_text="private prompt", metadata={"workspace_id": "workspace-1"})
+        trace.update(
+            input_text='password = "feishu-secret" Authorization: Bearer abc123',
+            metadata={"workspace_id": "workspace-1"},
+        )
         async with trace.span("codex.exec", as_type="tool", metadata={"status": "running"}) as span:
-            span.update(output_text="private result", metadata={"status": "succeeded"})
-        trace.finish(status="succeeded", final_text="private result")
+            span.update(output_text="api_key=sk-123456789", metadata={"status": "succeeded"})
+        trace.finish(status="succeeded", final_text="secret answer")
 
     asyncio.run(run())
     telemetry.shutdown()
 
     assert client.root is not None
-    assert client.root.arguments["input"] is None
-    assert client.root.children[0].arguments["metadata"] == {"status": "running"}
-    assert all("input" not in update and "output" not in update for update in client.root.updates)
-    assert all(
-        "input" not in update and "output" not in update
-        for update in client.root.children[0].updates
-    )
+    assert client.root.arguments["input"] == "private request"
+    root_update = client.root.updates[0]
+    child_update = client.root.children[0].updates[0]
+    final_update = client.root.updates[-1]
+    root_metadata = root_update["metadata"]
+    assert isinstance(root_metadata, dict)
+    assert root_metadata["workspace_id"] == "workspace-1"
+    assert child_update["metadata"] == {"status": "succeeded"}
+    assert "feishu-secret" not in str(root_update["input"])
+    assert "abc123" not in str(root_update["input"])
+    assert "sk-123456789" not in str(child_update["output"])
+    assert final_update["output"] == "secret answer"
     assert propagation_calls[0]["session_id"] == "session-1"
     assert propagation_calls[0]["user_id"] != "sender-1"
     assert client.root_context is not None and client.root_context.exited
     assert client.root.contexts[0].exited
     assert client.shutdown_calls == 1
-
-
-def test_langfuse_trace_redacts_opt_in_content() -> None:
-    client = FakeClient()
-    _, trace, _ = _start_trace(client, capture_content=True)
-
-    async def run() -> None:
-        trace.update(
-            input_text='password = "feishu-secret" Authorization: Bearer abc123',
-        )
-        async with trace.span("prompt.build") as span:
-            span.update(output_text="api_key=sk-123456789")
-        trace.finish(status="succeeded", final_text="secret answer")
-
-    asyncio.run(run())
-
-    assert client.root is not None
-    assert client.root.arguments["input"] == "private request"
-    root_content = str(client.root.updates[0]["input"])
-    child_content = str(client.root.children[0].updates[0]["output"])
-    final_content = str(client.root.updates[-1]["output"])
-    assert "feishu-secret" not in root_content
-    assert "abc123" not in root_content
-    assert "sk-123456789" not in child_content
-    assert final_content == "secret answer"
 
 
 def test_create_agent_telemetry_requires_credentials(

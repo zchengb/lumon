@@ -43,9 +43,6 @@ export function AgentSettingsPage({
   const [feishuAppSecret, setFeishuAppSecret] = useState("");
   const [langfuseEnabled, setLangfuseEnabled] = useState(settings.observability.enabled);
   const [langfuseBaseUrl, setLangfuseBaseUrl] = useState(settings.observability.base_url);
-  const [langfuseCaptureContent, setLangfuseCaptureContent] = useState(
-    settings.observability.capture_content,
-  );
   const [langfuseSampleRate, setLangfuseSampleRate] = useState(
     String(settings.observability.sample_rate),
   );
@@ -63,7 +60,6 @@ export function AgentSettingsPage({
     setFeishuAppSecret("");
     setLangfuseEnabled(settings.observability.enabled);
     setLangfuseBaseUrl(settings.observability.base_url);
-    setLangfuseCaptureContent(settings.observability.capture_content);
     setLangfuseSampleRate(String(settings.observability.sample_rate));
     setLangfusePublicKey("");
     setLangfuseSecretKey("");
@@ -87,7 +83,6 @@ export function AgentSettingsPage({
         feishuAppSecret,
         langfuseEnabled,
         langfuseBaseUrl,
-        langfuseCaptureContent,
         langfuseSampleRate,
         langfusePublicKey,
         langfuseSecretKey,
@@ -109,7 +104,6 @@ export function AgentSettingsPage({
   const hasLangfuseChanges =
     langfuseEnabled !== settings.observability.enabled ||
     langfuseBaseUrl.trim() !== settings.observability.base_url ||
-    langfuseCaptureContent !== settings.observability.capture_content ||
     Number.parseFloat(langfuseSampleRate) !== settings.observability.sample_rate ||
     Boolean(langfusePublicKey.trim()) ||
     Boolean(langfuseSecretKey.trim()) ||
@@ -307,10 +301,6 @@ export function AgentSettingsPage({
                 onChange={(event) => { setLangfuseSampleRate(event.target.value); markDirty(); }}
               />
             </div>
-            <label className="checkbox-row checkbox-row-panel">
-              <input type="checkbox" checked={langfuseCaptureContent} onChange={(event) => { setLangfuseCaptureContent(event.target.checked); markDirty(); }} />
-              <span><strong>{t("agent.captureContent")}</strong><small>{t("agent.captureContentHelp")}</small></span>
-            </label>
           </div>
           {langfuseCredentialsConfigured && (
             <label className="checkbox-row">

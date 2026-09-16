@@ -59,7 +59,6 @@ export interface AgentObservabilitySettings {
   enabled: boolean;
   provider: string;
   base_url: string;
-  capture_content: boolean;
   sample_rate: number;
   public_key_configured: boolean;
   secret_key_configured: boolean;
@@ -86,7 +85,6 @@ export interface SettingsUpdate {
 export interface AgentObservabilityUpdate {
   enabled: boolean;
   base_url: string;
-  capture_content: boolean;
   sample_rate: number;
   public_key?: string;
   secret_key?: string;

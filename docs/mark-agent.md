@@ -113,7 +113,7 @@ Cloud trace。Dashboard 会写入同一份 owner-only Agent 配置。`base_url` 
 enabled = true
 provider = "langfuse"
 base_url = "https://cloud.langfuse.com"
-capture_content = false
+capture_content = true
 sample_rate = 1.0
 ```
 
@@ -122,11 +122,10 @@ sample_rate = 1.0
 配置后需要重启 Mark，运行中的进程不会自动重新加载模型、Feishu 凭据或 Langfuse
 客户端设置。使用环境变量时，启动前台或后台 Agent 也要确保变量对该进程可见。
 
-默认的 `capture_content = false` 只导出 trace 和 span 元数据，不导出原始消息、
-Workspace context、rendered Prompt 或最终回复。启用 `capture_content = true` 后，
-Lumon 会在客户端先遮盖已配置的 App/API secrets、Bearer token、密码、私钥和常见
-key 格式，再把入站消息、rendered Prompt 和最终回复交给 Langfuse SDK；只有在确认
-metadata 视图不足时才建议打开它。
+`capture_content = true` 是固定设置，Dashboard 不再提供关闭开关。Lumon 会在客户端先
+遮盖已配置的 App/API secrets、Bearer token、密码、私钥和常见 key 格式，再把入站消息、
+rendered Prompt 和最终回复交给 Langfuse SDK；旧配置中的 `false` 会在加载时归一化为
+`true`。
 
 每条 trace 使用 Feishu 对话的 Session ID 做多轮分组，并记录 Lumon run/event ID、
 Workspace ID、Provider、实际模型、reasoning effort、版本、结果状态、安全错误码和
@@ -138,10 +137,10 @@ SDK 记录的耗时。当前 Codex 是子进程，因此 trace 表示 Codex exec
 Pilot 验证流程：
 
 1. 在 Cloud 项目中确认 API keys 和 endpoint。
-2. 先保持 `capture_content = false`，运行 `lumon agent doctor` 和 `lumon agent start`。
+2. 确认 redacted content capture 为 enabled，运行 `lumon agent doctor` 和 `lumon agent start`。
 3. 从 Feishu 发送几条私聊或群聊测试消息。
 4. 在 Langfuse UI 检查 trace tree、Session grouping、model/reasoning metadata、耗时、失败状态和 error code。
-5. 确认 metadata-only trace 没有原始消息或未遮盖内容后，再按需启用 redacted content capture。
+5. 确认 Langfuse 中的输入和输出已经经过客户端脱敏，并且没有未遮盖内容。
 
 持久化状态写入：
 
@@ -170,9 +169,9 @@ Mark 的 Session 边界是稳定的：
 
 这是为分析 Agent 视角保留的本机审计数据，不会出现在日志、CLI 输出、诊断结果或飞书回复中。由于 Prompt 可能包含工作区中的敏感上下文，完整记录只保存在 `$LUMON_HOME/mark.sqlite3`，文件和父目录分别限制为当前用户可读写（`600` / `700`）。不要把该数据库同步到外部系统。
 
-Langfuse telemetry 与本机审计是两条边界：telemetry 默认关闭；开启后默认只发送
-上述 metadata。只有显式设置 `capture_content = true` 时，客户端脱敏后的内容子集才
-会进入 Langfuse Cloud。
+Langfuse telemetry 与本机审计是两条边界：telemetry 默认关闭；开启后会发送上述
+metadata 以及客户端脱敏后的输入、rendered Prompt 和最终回复。每个新 Workspace 都
+继承这个固定的内容捕获策略。
 
 当前 SQLite 主要表：
 

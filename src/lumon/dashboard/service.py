@@ -93,7 +93,6 @@ class AgentObservabilitySettingsView:
     enabled: bool
     provider: str
     base_url: str
-    capture_content: bool
     sample_rate: float
     public_key_configured: bool
     secret_key_configured: bool
@@ -119,7 +118,6 @@ class AgentObservabilitySettingsUpdate:
 
     enabled: bool
     base_url: str
-    capture_content: bool
     sample_rate: float
     public_key: str | None = None
     secret_key: str | None = None
@@ -263,7 +261,6 @@ class DashboardService:
         next_observability = AgentObservabilitySettingsUpdate(
             enabled=update.observability.enabled,
             base_url=update.observability.base_url.strip(),
-            capture_content=update.observability.capture_content,
             sample_rate=update.observability.sample_rate,
             public_key=update.observability.public_key,
             secret_key=update.observability.secret_key,
@@ -284,7 +281,6 @@ class DashboardService:
                 enabled=next_observability.enabled,
                 provider=current_observability.provider,
                 base_url=next_observability.base_url,
-                capture_content=next_observability.capture_content,
                 sample_rate=next_observability.sample_rate,
                 public_key=_updated_secret(
                     current_observability.public_key,
@@ -420,7 +416,6 @@ def _agent_settings_view(config: MarkAgentConfig) -> AgentSettingsView:
             enabled=observability.enabled,
             provider=observability.provider,
             base_url=observability.base_url,
-            capture_content=observability.capture_content,
             sample_rate=observability.sample_rate,
             public_key_configured=public_key_configured,
             secret_key_configured=secret_key_configured,

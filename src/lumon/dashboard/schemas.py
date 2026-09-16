@@ -36,7 +36,6 @@ class AgentObservabilityResponse(StrictModel):
     enabled: bool
     provider: str
     base_url: str
-    capture_content: bool
     sample_rate: float
     public_key_configured: bool
     secret_key_configured: bool
@@ -60,7 +59,6 @@ class AgentObservabilityUpdate(StrictModel):
 
     enabled: bool
     base_url: str = Field(min_length=1)
-    capture_content: bool
     sample_rate: float = Field(ge=0.0, le=1.0)
     public_key: str | None = None
     secret_key: str | None = None

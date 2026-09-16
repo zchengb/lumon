@@ -87,7 +87,6 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                 observability=AgentObservabilitySettingsUpdate(
                     enabled=observability.enabled,
                     base_url=observability.base_url,
-                    capture_content=observability.capture_content,
                     sample_rate=observability.sample_rate,
                     public_key=observability.public_key,
                     secret_key=observability.secret_key,
@@ -271,7 +270,6 @@ def _agent_settings_response(settings: AgentSettingsView) -> AgentSettingsRespon
             enabled=observability.enabled,
             provider=observability.provider,
             base_url=observability.base_url,
-            capture_content=observability.capture_content,
             sample_rate=observability.sample_rate,
             public_key_configured=observability.public_key_configured,
             secret_key_configured=observability.secret_key_configured,

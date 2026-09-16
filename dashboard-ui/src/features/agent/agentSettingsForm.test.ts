@@ -10,7 +10,6 @@ const draft: AgentSettingsDraft = {
   feishuAppSecret: "",
   langfuseEnabled: true,
   langfuseBaseUrl: "  https://cloud.langfuse.com  ",
-  langfuseCaptureContent: false,
   langfuseSampleRate: "0.25",
   langfusePublicKey: "",
   langfuseSecretKey: "",
@@ -28,7 +27,6 @@ describe("Agent settings form", () => {
       observability: {
         enabled: true,
         base_url: "https://cloud.langfuse.com",
-        capture_content: false,
         sample_rate: 0.25,
         clear_credentials: false,
       },

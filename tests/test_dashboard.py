@@ -73,7 +73,7 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.0.15",
+        "version": "1.0.16",
         "workspace_count": 0,
         "has_workspaces": False,
     }
@@ -102,7 +102,6 @@ def test_agent_settings_are_available_with_safe_defaults(
             "enabled": False,
             "provider": "langfuse",
             "base_url": "https://cloud.langfuse.com",
-            "capture_content": False,
             "sample_rate": 1.0,
             "public_key_configured": False,
             "secret_key_configured": False,
@@ -134,7 +133,6 @@ def test_agent_settings_update_persists_secrets_without_returning_them(
             "observability": {
                 "enabled": True,
                 "base_url": "https://us.cloud.langfuse.com",
-                "capture_content": False,
                 "sample_rate": 0.25,
                 "public_key": "pk-lf-dashboard-test",
                 "secret_key": "sk-lf-dashboard-test",
@@ -148,7 +146,6 @@ def test_agent_settings_update_persists_secrets_without_returning_them(
         "enabled": True,
         "provider": "langfuse",
         "base_url": "https://us.cloud.langfuse.com",
-        "capture_content": False,
         "sample_rate": 0.25,
         "public_key_configured": True,
         "secret_key_configured": True,
@@ -174,7 +171,6 @@ def test_agent_settings_update_persists_secrets_without_returning_them(
             "observability": {
                 "enabled": True,
                 "base_url": "https://us.cloud.langfuse.com",
-                "capture_content": True,
                 "sample_rate": 0.5,
             },
         },
@@ -187,7 +183,6 @@ def test_agent_settings_update_persists_secrets_without_returning_them(
     assert updated_config.observability.secret_key == "sk-lf-dashboard-test"
     assert updated_config.agent_model == "gpt-5.6-sol"
     assert updated_config.agent_reasoning_effort == "high"
-    assert updated_config.observability.capture_content is True
 
 
 def test_agent_settings_rejects_an_unregistered_default_workspace(tmp_path: Path) -> None:
@@ -205,7 +200,6 @@ def test_agent_settings_rejects_an_unregistered_default_workspace(tmp_path: Path
             "observability": {
                 "enabled": False,
                 "base_url": "https://cloud.langfuse.com",
-                "capture_content": False,
                 "sample_rate": 1.0,
             },
         },

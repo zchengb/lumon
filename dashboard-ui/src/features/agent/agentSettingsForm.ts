@@ -9,7 +9,6 @@ export interface AgentSettingsDraft {
   feishuAppSecret: string;
   langfuseEnabled: boolean;
   langfuseBaseUrl: string;
-  langfuseCaptureContent: boolean;
   langfuseSampleRate: string;
   langfusePublicKey: string;
   langfuseSecretKey: string;
@@ -20,7 +19,6 @@ export function buildAgentSettingsUpdate(draft: AgentSettingsDraft): AgentSettin
   const observability: AgentSettingsUpdate["observability"] = {
     enabled: draft.langfuseEnabled,
     base_url: draft.langfuseBaseUrl.trim(),
-    capture_content: draft.langfuseCaptureContent,
     sample_rate: Number(draft.langfuseSampleRate),
     clear_credentials: draft.clearLangfuseCredentials,
   };

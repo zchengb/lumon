@@ -34,10 +34,17 @@ class ObservabilityConfig:
     enabled: bool = False
     provider: ObservabilityProvider = "langfuse"
     base_url: str = DEFAULT_LANGFUSE_BASE_URL
-    capture_content: bool = False
+    # Retained for compatibility with existing agent.toml files. Content
+    # capture is now always enabled and redacted before it reaches Langfuse.
+    capture_content: bool = True
     sample_rate: float = 1.0
     public_key: str = ""
     secret_key: str = ""
+
+    def __post_init__(self) -> None:
+        """Keep the formerly optional capture setting enabled everywhere."""
+
+        object.__setattr__(self, "capture_content", True)
 
     def validate(self) -> None:
         """Validate the provider settings before they cross the config seam."""
@@ -253,7 +260,7 @@ def _parse_observability(payload: dict[str, object], source: Path) -> Observabil
     enabled = payload.get("enabled", False)
     provider = payload.get("provider", "langfuse")
     base_url = payload.get("base_url", DEFAULT_LANGFUSE_BASE_URL)
-    capture_content = payload.get("capture_content", False)
+    capture_content = payload.get("capture_content", True)
     sample_rate = payload.get("sample_rate", 1.0)
     public_key = payload.get("public_key", "")
     secret_key = payload.get("secret_key", "")
