@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.11
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.12
 ```
 
 To install the optional Langfuse Cloud telemetry support, add the installer
@@ -61,7 +61,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.11` runs the release workflow, which attaches
+semantic version tag such as `v1.0.12` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -109,8 +109,21 @@ lumon --version
 lumon doctor [--workspace /path/to/lumon-workspace]
 lumon init /path/to/lumon-workspace --dry-run
 lumon init /path/to/lumon-workspace --json
+lumon workspace list
+lumon workspace set-default <workspace-id-or-path>
+lumon workspace remove <workspace-id-or-path>
 lumon ui --no-open
 ```
+
+Workspace registrations are managed outside the Workspace directory. Use
+`lumon workspace list` to find a Workspace ID, then
+`lumon workspace set-default <workspace-id-or-path>` when Mark has more than
+one registered Workspace. Use `lumon workspace set-default --clear` to remove
+the default selection. `lumon workspace remove <workspace-id-or-path>` removes
+the registry entry and its user-level profile while keeping the Workspace
+files; add `--delete` to permanently delete the Workspace directory and its
+cloned Repositories, and use `--yes` to skip the confirmation prompt. Lumon
+will not remove Mark's current default until the default is changed or cleared.
 
 ## Dashboard
 

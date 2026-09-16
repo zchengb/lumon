@@ -85,6 +85,19 @@ class WorkspaceSettingsStore:
         _secure_directory(path.parent)
         _atomic_write(path, _render(settings).encode("utf-8"), mode=0o600)
 
+    def remove(self, workspace_id: UUID) -> None:
+        """Remove one user-level profile and any empty profile directories."""
+
+        path = self.path_for(workspace_id)
+        try:
+            path.unlink(missing_ok=True)
+            if path.parent.is_dir() and not any(path.parent.iterdir()):
+                path.parent.rmdir()
+            if self.layout.profiles.is_dir() and not any(self.layout.profiles.iterdir()):
+                self.layout.profiles.rmdir()
+        except OSError as exc:
+            raise PreflightError(f"Unable to remove Workspace settings: {path}") from exc
+
     def raw_snapshot(self, workspace_id: UUID) -> bytes | None:
         """Capture one profile's exact bytes for a surrounding transaction."""
 

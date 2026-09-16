@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
-from lumon.errors import PreflightError
+from lumon.errors import PreflightError, WorkspaceNotFoundError
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
@@ -182,6 +182,17 @@ class WorkspaceRegistry:
             replacements.append(registration)
         self._write(replacements)
         return registration
+
+    def unregister(self, workspace_id: UUID) -> WorkspaceRegistration:
+        """Remove one Workspace from the user-level registry without deleting files."""
+
+        existing = self.list()
+        removed = next((item for item in existing if item.workspace_id == workspace_id), None)
+        if removed is None:
+            raise WorkspaceNotFoundError(f"Workspace is not registered: {workspace_id}")
+        replacements = [item for item in existing if item.workspace_id != workspace_id]
+        self._write(replacements)
+        return removed
 
     def raw_snapshot(self) -> bytes | None:
         """Capture the exact registry bytes for a surrounding transaction."""

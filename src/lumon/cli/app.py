@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import typer
 
-from lumon.cli.commands import agent, doctor, help, init, ui, update, version
+from lumon.cli.commands import agent, doctor, help, init, ui, update, version, workspace
 from lumon.version import __version__
 
 app = typer.Typer(
@@ -45,6 +45,7 @@ app.command("ui")(ui.command)
 app.command("version")(version.command)
 app.command("help")(help.command)
 app.add_typer(agent.agent_app, name="agent")
+app.add_typer(workspace.workspace_app, name="workspace")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

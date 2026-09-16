@@ -50,6 +50,21 @@ The manifest identifies the Workspace. The Workspace TOML records Repository
 metadata. User-level settings, including the Feishu Webhook URL, stay in the
 corresponding profile and are not copied into the Workspace.
 
+Manage registrations from the CLI:
+
+```text
+lumon workspace list
+lumon workspace set-default <workspace-id-or-path>
+lumon workspace set-default --clear
+lumon workspace remove <workspace-id-or-path>
+lumon workspace remove <workspace-id-or-path> --delete
+```
+
+`workspace remove` unregisters the Workspace and removes its user-level
+profile. It keeps the Workspace directory unless `--delete` is supplied, and
+it asks for confirmation before changing the registry. Mark's current default
+must be changed or cleared first.
+
 ## Feishu Webhook
 
 The Settings page supports:
