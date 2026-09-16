@@ -11,7 +11,7 @@ from uuid import UUID
 
 import typer
 
-from lumon.agents.mark.config import MarkConfigStore
+from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
 from lumon.cli.output import emit_error
 from lumon.errors import (
     AgentConfigError,
@@ -155,22 +155,34 @@ def remove(
 
     registry = WorkspaceRegistry()
     settings = WorkspaceSettingsStore()
+    config_store = MarkConfigStore()
     try:
         registration = _resolve_target(registry.list(), target)
-        default_workspace_id = _load_default_workspace_id()
-        if default_workspace_id == registration.workspace_id:
-            raise InvalidInputError(
-                "Cannot remove Mark's default Workspace. Run `lumon workspace set-default "
-                "<another-workspace>` or `lumon workspace set-default --clear` first."
-            )
+        config = _load_config(config_store)
+        default_cleared = bool(
+            config is not None and config.default_workspace_id == registration.workspace_id
+        )
 
-        action = "unregister and permanently delete" if delete else "unregister"
+        if default_cleared and delete:
+            action = "clear Mark's default, unregister, and permanently delete"
+        elif default_cleared:
+            action = "clear Mark's default and unregister"
+        elif delete:
+            action = "unregister and permanently delete"
+        else:
+            action = "unregister"
         question = f"Confirm {action} Workspace '{registration.name}' at {registration.path}?"
         if delete:
             question += " This also deletes its cloned repositories."
+        if default_cleared:
+            question += " This also clears Mark's default Workspace."
         if not yes:
             typer.confirm(question, abort=True)
 
+        if default_cleared:
+            if config is None:  # pragma: no cover - guarded by default_cleared
+                raise AgentConfigError("Mark configuration is unavailable.")
+            config_store.save(replace(config, default_workspace_id=None))
         registry.unregister(registration.workspace_id)
         settings.remove(registration.workspace_id)
         deleted = _delete_directory(registration.path) if delete else False
@@ -186,6 +198,7 @@ def remove(
                     "name": registration.name,
                     "path": str(registration.path),
                     "unregistered": True,
+                    "default_cleared": default_cleared,
                     "deleted": deleted,
                 },
                 ensure_ascii=False,
@@ -196,6 +209,8 @@ def remove(
         return
 
     typer.echo(f"Workspace unregistered: {registration.name} ({registration.workspace_id}).")
+    if default_cleared:
+        typer.echo("Mark's default Workspace cleared.")
     if deleted:
         typer.echo(f"Workspace directory deleted: {registration.path}")
     else:
@@ -227,8 +242,15 @@ def _resolve_target(
 def _load_default_workspace_id() -> UUID | None:
     """Return the configured default without making listing depend on Agent setup."""
 
+    config = _load_config(MarkConfigStore())
+    return config.default_workspace_id if config else None
+
+
+def _load_config(config_store: MarkConfigStore) -> MarkAgentConfig | None:
+    """Load Mark configuration when available without blocking registry inspection."""
+
     try:
-        return MarkConfigStore().load().default_workspace_id
+        return config_store.load()
     except AgentConfigError:
         return None
 

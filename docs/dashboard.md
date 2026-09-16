@@ -60,10 +60,10 @@ lumon workspace remove <workspace-id-or-path>
 lumon workspace remove <workspace-id-or-path> --delete
 ```
 
-`workspace remove` unregisters the Workspace and removes its user-level
-profile. It keeps the Workspace directory unless `--delete` is supplied, and
-it asks for confirmation before changing the registry. Mark's current default
-must be changed or cleared first.
+`workspace remove` clears Mark's default when the target is selected, then
+unregisters the Workspace and removes its user-level profile. It keeps the
+Workspace directory unless `--delete` is supplied, and it asks for confirmation
+before changing the registry or default selection.
 
 ## Feishu Webhook
 

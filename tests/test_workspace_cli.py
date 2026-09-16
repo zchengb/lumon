@@ -105,7 +105,7 @@ def test_workspace_remove_delete_requires_confirmation_and_deletes_directory(
     assert "Workspace directory deleted" in result.stdout
 
 
-def test_workspace_remove_refuses_mark_default_workspace(
+def test_workspace_remove_clears_mark_default_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state_root = tmp_path / "lumon"
@@ -118,7 +118,8 @@ def test_workspace_remove_refuses_mark_default_workspace(
         ["workspace", "remove", str(registration.workspace_id), "--yes"],
     )
 
-    assert result.exit_code == 2
-    assert "set-default" in result.output
+    assert result.exit_code == 0, result.stdout
+    assert MarkConfigStore(state_root).load().default_workspace_id is None
     assert target.is_dir()
-    assert WorkspaceRegistry(state_root).find(registration.workspace_id) is not None
+    assert WorkspaceRegistry(state_root).find(registration.workspace_id) is None
+    assert "default Workspace cleared" in result.stdout
