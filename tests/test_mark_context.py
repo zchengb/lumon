@@ -12,6 +12,7 @@ from lumon.agents.mark.model import Message
 from lumon.agents.mark.prompt import MarkPromptRenderer
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
+from lumon.flows.catalog import sample_flow_content
 from lumon.skills.installer import SkillInstaller
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
@@ -65,6 +66,30 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "不要读取、复制或在回复中暴露凭据" in prompt
     assert "<mark-soul>" in prompt
     assert "<conversation-history>" in prompt
+    assert context.flow_briefs[0].flow_id == "test-case-generation"
+    assert "<available-flows>" in prompt
+    assert "Treat acceptance criteria as the primary authority" not in prompt
+
+
+def test_resumed_prompt_reloads_workspace_flow_briefs(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    target = _workspace(tmp_path, state_root, "flow-refresh-lab")
+    builder = WorkspaceContextBuilder(_config(), WorkspaceRegistry(state_root))
+    context = builder.resolve_workspace()
+    sample_path = target / "lumon" / "flows" / "test-case-generation.md"
+    sample_path.write_text(
+        sample_flow_content().replace(
+            "Generate executable manual test cases from a story and its acceptance criteria.",
+            "Generate test cases with the refreshed brief.",
+        ),
+        encoding="utf-8",
+    )
+
+    prompt = builder.build_resume_prompt(context, "generate test cases")
+
+    assert "Generate test cases with the refreshed brief." in prompt
+    assert "Generate executable manual test cases from a story" not in prompt
+    assert "<lumon-flow-context>" in prompt
 
 
 def test_explicit_missing_workspace_does_not_fallback(tmp_path: Path) -> None:

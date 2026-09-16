@@ -17,6 +17,8 @@ from lumon.agents.mark.config import (
 )
 from lumon.dashboard.folder_picker import FolderPicker
 from lumon.errors import AgentConfigError, PreflightError, WorkspaceNotFoundError
+from lumon.flows.catalog import FlowCatalog, FlowValidationError
+from lumon.flows.model import FlowDefinition
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -84,6 +86,33 @@ class WorkspaceSettingsView:
 
     workspace_id: UUID
     feishu_webhook: WebhookSettingsView
+
+
+@dataclass(frozen=True, slots=True)
+class FlowSummaryView:
+    """Display-safe metadata for one Workspace flow."""
+
+    flow_id: str
+    name: str
+    enabled: bool
+    brief: str
+    path: str
+    valid: bool
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FlowDocumentView:
+    """One validated flow document returned to the local Dashboard editor."""
+
+    flow_id: str
+    name: str
+    enabled: bool
+    brief: str
+    path: str
+    valid: bool
+    content: str
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +275,77 @@ class DashboardService:
         settings = self.settings_store.load(workspace_id)
         return _settings_view(settings)
 
+    def flows(self, workspace_id: UUID) -> tuple[FlowSummaryView, ...]:
+        """List valid and invalid flow files for one Workspace."""
+
+        registration = self._require(workspace_id)
+        catalog = FlowCatalog(registration.path)
+        snapshot = catalog.discover()
+        summaries = [_flow_summary(item) for item in snapshot.definitions]
+        summaries.extend(
+            FlowSummaryView(
+                flow_id=item.path.stem,
+                name=item.path.name,
+                enabled=False,
+                brief="",
+                path=_relative_flow_path(registration.path, item.path),
+                valid=False,
+                error=item.message,
+            )
+            for item in snapshot.diagnostics
+        )
+        return tuple(summaries)
+
+    def flow(self, workspace_id: UUID, flow_id: str) -> FlowDocumentView:
+        """Read one flow for the Dashboard editor, including invalid source."""
+
+        registration = self._require(workspace_id)
+        catalog = FlowCatalog(registration.path)
+        try:
+            return _flow_document(catalog.read(flow_id))
+        except FlowValidationError as validation_error:
+            try:
+                path, content = catalog.read_raw(flow_id)
+            except FlowValidationError:
+                raise validation_error from None
+            return FlowDocumentView(
+                flow_id=flow_id,
+                name=path.stem,
+                enabled=False,
+                brief="",
+                path=path.as_posix(),
+                valid=False,
+                content=content,
+                error=str(validation_error),
+            )
+
+    def create_flow(self, workspace_id: UUID, content: str) -> FlowDocumentView:
+        """Create a flow file from Dashboard-provided Markdown."""
+
+        registration = self._require(workspace_id)
+        definition = FlowCatalog(registration.path).create(content)
+        return _flow_document(definition)
+
+    def update_flow(self, workspace_id: UUID, flow_id: str, content: str) -> FlowDocumentView:
+        """Replace one flow while keeping its stable ID and file path."""
+
+        registration = self._require(workspace_id)
+        definition = FlowCatalog(registration.path).save(content, expected_id=flow_id)
+        return _flow_document(definition)
+
+    def delete_flow(self, workspace_id: UUID, flow_id: str) -> None:
+        """Delete one user-authored flow file."""
+
+        registration = self._require(workspace_id)
+        FlowCatalog(registration.path).delete(flow_id)
+
+    def install_sample_flow(self, workspace_id: UUID) -> FlowDocumentView:
+        """Install the bundled test-case flow without overwriting user content."""
+
+        registration = self._require(workspace_id)
+        definition = FlowCatalog(registration.path).install_sample()
+        return _flow_document(definition)
+
     def agent_settings(self) -> AgentSettingsView:
         """Read display-safe global Mark Agent settings."""
 
@@ -394,6 +494,37 @@ def _settings_view(settings: WorkspaceSettings) -> WorkspaceSettingsView:
             masked_url=masked_webhook_url(webhook.url),
         ),
     )
+
+
+def _flow_summary(definition: FlowDefinition) -> FlowSummaryView:
+    return FlowSummaryView(
+        flow_id=definition.flow_id,
+        name=definition.name,
+        enabled=definition.enabled,
+        brief=definition.brief,
+        path=definition.path.as_posix(),
+        valid=True,
+    )
+
+
+def _flow_document(definition: FlowDefinition) -> FlowDocumentView:
+    summary = _flow_summary(definition)
+    return FlowDocumentView(
+        flow_id=summary.flow_id,
+        name=summary.name,
+        enabled=summary.enabled,
+        brief=summary.brief,
+        path=summary.path,
+        valid=True,
+        content=definition.content,
+    )
+
+
+def _relative_flow_path(workspace: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(workspace.expanduser().resolve()).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _agent_settings_view(config: MarkAgentConfig) -> AgentSettingsView:

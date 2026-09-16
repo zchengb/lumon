@@ -65,4 +65,51 @@ describe("Dashboard API", () => {
       headers: { Accept: "application/json", "Content-Type": "application/json" },
     });
   });
+
+  it("uses the Workspace flow CRUD endpoints", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify([{ flow_id: "sample" }]) })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "sample", content: "old" }) })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "created", content: "new" }) })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "created", content: "saved" }) })
+      .mockResolvedValueOnce({ ok: true, text: async () => "" })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "sample", content: "sample" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await dashboardApi.listFlows("workspace-1");
+    await dashboardApi.getFlow("workspace-1", "sample");
+    await dashboardApi.createFlow("workspace-1", "new");
+    await dashboardApi.updateFlow("workspace-1", "created", "saved");
+    await dashboardApi.deleteFlow("workspace-1", "created");
+    await dashboardApi.installSampleFlow("workspace-1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/workspaces/workspace-1/flows", {
+      headers: { Accept: "application/json" },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/workspaces/workspace-1/flows/sample", {
+      headers: { Accept: "application/json" },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/workspaces/workspace-1/flows", {
+      method: "POST",
+      body: JSON.stringify({ content: "new" }),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/workspaces/workspace-1/flows/created",
+      {
+        method: "PUT",
+        body: JSON.stringify({ content: "saved" }),
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+      },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/workspaces/workspace-1/flows/created", {
+      method: "DELETE",
+      headers: { Accept: "application/json" },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(6, "/api/workspaces/workspace-1/flows/sample", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    });
+  });
 });

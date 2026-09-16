@@ -13,6 +13,7 @@ from lumon.agents.mark.config import (
 )
 from lumon.agents.mark.model import AgentErrorCode, AgentProgress, AgentResult, ProgressPhase
 from lumon.errors import AgentConfigError
+from lumon.flows.protocol import extract_flow_selection
 from lumon.tools.codex import (
     CodexErrorCode,
     CodexEvent,
@@ -64,8 +65,17 @@ class CodexAgentRunner:
         """Run Codex and apply Mark's requirement for a replyable final text."""
 
         progress: list[AgentProgress] = []
+        selected_flow_id: str | None = None
+        last_reply_text: str | None = None
 
         async def observe(event: CodexEvent) -> None:
+            nonlocal last_reply_text, selected_flow_id
+            if event.kind == "message" and event.text:
+                marker_flow_id, _marker_status, cleaned_text = extract_flow_selection(event.text)
+                if marker_flow_id is not None:
+                    selected_flow_id = marker_flow_id
+                if cleaned_text.strip():
+                    last_reply_text = cleaned_text
             candidate = _progress_from_event(event)
             if candidate is None:
                 return
@@ -87,6 +97,7 @@ class CodexAgentRunner:
                 progress=tuple(progress),
                 error_code=AgentErrorCode.TIMEOUT,
                 agent_session_id=result.agent_session_id,
+                flow_id=selected_flow_id,
             )
         if result.status == "failed":
             return AgentResult(
@@ -95,21 +106,29 @@ class CodexAgentRunner:
                 error_code=_map_error_code(result.error_code),
                 return_code=result.return_code,
                 agent_session_id=result.agent_session_id,
+                flow_id=selected_flow_id,
             )
-        if not result.final_text:
+        source_text = result.final_text or last_reply_text
+        if not source_text:
             return AgentResult(
                 status="failed",
                 progress=tuple(progress),
                 error_code=AgentErrorCode.EMPTY_RESULT,
                 return_code=result.return_code,
                 agent_session_id=result.agent_session_id,
+                flow_id=selected_flow_id,
             )
+        flow_id, _flow_status, final_text = extract_flow_selection(source_text)
+        flow_id = flow_id or selected_flow_id
+        if not final_text.strip() and last_reply_text is not None:
+            final_text = last_reply_text
         return AgentResult(
             status="succeeded",
-            final_text=result.final_text,
+            final_text=final_text,
             progress=tuple(progress),
             return_code=result.return_code,
             agent_session_id=result.agent_session_id,
+            flow_id=flow_id,
         )
 
 

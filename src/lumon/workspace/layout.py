@@ -29,6 +29,10 @@ class WorkspaceLayout:
         return self.control_dir / "workspace.toml"
 
     @property
+    def flows_dir(self) -> Path:
+        return self.control_dir / "flows"
+
+    @property
     def manifest(self) -> Path:
         return self.control_dir / "manifest.json"
 
@@ -64,4 +68,10 @@ class WorkspaceLayout:
 
     @property
     def generated_paths(self) -> tuple[Path, ...]:
-        return (self.control_dir, *self.runtime_directories, *self.generated_files)
+        return (
+            self.control_dir,
+            self.flows_dir,
+            self.flows_dir / "test-case-generation.md",
+            *self.runtime_directories,
+            *self.generated_files,
+        )

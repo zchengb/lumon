@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 
 from lumon.agents.mark.config import MarkAgentConfig
@@ -27,6 +28,31 @@ def test_mark_requires_final_text_even_when_the_shared_tool_succeeds(tmp_path: P
     assert result.status == "failed"
     assert result.error_code == AgentErrorCode.EMPTY_RESULT
     assert result.progress == ()
+
+
+def test_mark_extracts_a_flow_marker_emitted_before_the_final_reply(tmp_path: Path) -> None:
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json\n"
+        "import sys\n"
+        "sys.stdin.buffer.read()\n"
+        "for text in [\n"
+        '    \'<lumon-flow>{"flow_id":"test-case-generation","status":"selected"}</lumon-flow>\',\n'
+        "    'Generated test cases.',\n"
+        "]:\n"
+        "    event = {'type': 'item', 'item': {'type': 'agent_message', 'text': text}}\n"
+        "    print(json.dumps(event))\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    runner = CodexAgentRunner(tool=CodexTool(binary=str(fake), timeout_seconds=5))
+
+    result = asyncio.run(runner.run(tmp_path, "generate test cases"))
+
+    assert result.status == "succeeded"
+    assert result.flow_id == "test-case-generation"
+    assert result.final_text == "Generated test cases."
 
 
 def test_mark_defaults_to_codex_luna_max(tmp_path: Path) -> None:

@@ -1,0 +1,335 @@
+"""Discover and safely manage Workspace flow Markdown files."""
+
+from __future__ import annotations
+
+import os
+import re
+import tempfile
+import tomllib
+from importlib.resources import files
+from pathlib import Path
+from typing import cast
+
+from lumon.errors import PreflightError
+from lumon.flows.model import FlowCatalogSnapshot, FlowDefinition, FlowDiagnostic
+from lumon.workspace.layout import WorkspaceLayout
+
+_FLOW_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_FLOW_SUFFIX = ".md"
+_FLOW_DELIMITER = "---"
+_SAMPLE_FLOW_FILENAME = "test-case-generation.md"
+_SAMPLE_FLOW_PACKAGE = "lumon.workspace.templates"
+
+
+class FlowValidationError(PreflightError):
+    """Raised when a flow file or flow mutation is invalid."""
+
+
+class FlowCatalog:
+    """Read and atomically update flows below one Workspace root."""
+
+    def __init__(self, workspace: Path) -> None:
+        self.layout = WorkspaceLayout.from_root(workspace)
+
+    def discover(self) -> FlowCatalogSnapshot:
+        """Load every Markdown flow, retaining safe diagnostics for invalid files."""
+
+        directory = self.layout.flows_dir
+        if not directory.exists():
+            return FlowCatalogSnapshot()
+        if not directory.is_dir() or directory.is_symlink():
+            return FlowCatalogSnapshot(
+                diagnostics=(
+                    FlowDiagnostic(directory, "flow directory is not a regular directory"),
+                )
+            )
+
+        definitions: list[FlowDefinition] = []
+        diagnostics: list[FlowDiagnostic] = []
+        for path in sorted(directory.glob(f"*{_FLOW_SUFFIX}"), key=lambda item: item.name):
+            if path.name.startswith("."):
+                continue
+            if path.is_symlink():
+                diagnostics.append(FlowDiagnostic(path, "flow path must not be a symbolic link"))
+                continue
+            if not path.is_file():
+                diagnostics.append(FlowDiagnostic(path, "flow path must be a regular file"))
+                continue
+            try:
+                definitions.append(self._read(path))
+            except FlowValidationError as exc:
+                diagnostics.append(FlowDiagnostic(path, str(exc)))
+
+        duplicate_ids = _duplicate_ids(definitions)
+        if duplicate_ids:
+            kept: list[FlowDefinition] = []
+            for definition in definitions:
+                if definition.flow_id in duplicate_ids:
+                    diagnostics.append(
+                        FlowDiagnostic(
+                            self.layout.root / definition.path,
+                            f"duplicate flow id: {definition.flow_id}",
+                        )
+                    )
+                else:
+                    kept.append(definition)
+            definitions = kept
+        return FlowCatalogSnapshot(tuple(definitions), tuple(diagnostics))
+
+    def read(self, flow_id: str) -> FlowDefinition:
+        """Read one flow by its validated ID."""
+
+        self._path_for_id(flow_id)
+        matches = tuple(item for item in self.discover().definitions if item.flow_id == flow_id)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise FlowValidationError(f"duplicate flow id: {flow_id}")
+
+        path = self._path_for_id(flow_id)
+        if path.is_file() and not path.is_symlink():
+            definition = self._read(path)
+            raise FlowValidationError(
+                f"Flow id is not present in its requested file: {definition.flow_id}"
+            )
+        raise FlowValidationError(f"Flow does not exist: {flow_id}")
+
+    def read_raw(self, flow_name: str) -> tuple[Path, str]:
+        """Read safe Markdown so the Dashboard can repair invalid content."""
+
+        path = self._path_for_name(flow_name)
+        if not path.is_file() or path.is_symlink():
+            raise FlowValidationError(f"Flow does not exist: {flow_name}")
+        try:
+            return self._display_path(path), path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise FlowValidationError(f"Unable to read flow: {path.name}") from exc
+
+    def create(self, content: str) -> FlowDefinition:
+        """Validate and create a new flow without replacing an existing file."""
+
+        definition = _parse_flow(content, None)
+        self._ensure_directory()
+        path = self._path_for_id(definition.flow_id)
+        if path.exists() or path.is_symlink():
+            raise FlowValidationError(f"Flow already exists: {definition.flow_id}")
+        _atomic_write(path, definition.content.encode("utf-8"))
+        return self._read(path)
+
+    def save(self, content: str, *, expected_id: str | None = None) -> FlowDefinition:
+        """Validate and atomically save one flow file."""
+
+        definition = _parse_flow(content, self._path_for_id(expected_id) if expected_id else None)
+        if expected_id is not None and definition.flow_id != expected_id:
+            raise FlowValidationError(
+                f"Flow ID cannot change while editing {expected_id}: {definition.flow_id}"
+            )
+        self._ensure_directory()
+        current = self._find_definition(expected_id) if expected_id is not None else None
+        path = self._path_for_id(definition.flow_id)
+        if current is not None:
+            path = self._absolute_path(current.path)
+        if path.is_symlink():
+            raise FlowValidationError(f"Flow path is a symbolic link: {path.name}")
+        _atomic_write(path, definition.content.encode("utf-8"))
+        return self._read(path)
+
+    def delete(self, flow_id: str) -> None:
+        """Delete one flow file without touching any other Workspace path."""
+
+        current = self._find_definition(flow_id) if _FLOW_ID_RE.fullmatch(flow_id.strip()) else None
+        path = (
+            self._absolute_path(current.path)
+            if current is not None
+            else self._path_for_name(flow_id)
+        )
+        if path.is_symlink():
+            raise FlowValidationError(f"Flow path is a symbolic link: {path.name}")
+        try:
+            path.unlink()
+        except FileNotFoundError as exc:
+            raise FlowValidationError(f"Flow does not exist: {flow_id}") from exc
+        except OSError as exc:
+            raise FlowValidationError(f"Unable to delete flow: {flow_id}") from exc
+
+    def install_sample(self) -> FlowDefinition:
+        """Install the bundled sample without overwriting a user flow."""
+
+        sample_id = _SAMPLE_FLOW_FILENAME.removesuffix(_FLOW_SUFFIX)
+        current = self._find_definition(sample_id)
+        if current is not None:
+            return current
+        path = self._path_for_id(sample_id)
+        if path.exists() or path.is_symlink():
+            return self.read(sample_id)
+        return self.save(sample_flow_content())
+
+    def _read(self, path: Path) -> FlowDefinition:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise FlowValidationError(f"Unable to read flow: {path.name}") from exc
+        return _parse_flow(content, self._display_path(path))
+
+    def _display_path(self, path: Path) -> Path:
+        try:
+            return path.resolve().relative_to(self.layout.root)
+        except ValueError as exc:
+            raise FlowValidationError("Flow path must stay inside the Workspace.") from exc
+
+    def _absolute_path(self, display_path: Path) -> Path:
+        path = display_path if display_path.is_absolute() else self.layout.root / display_path
+        try:
+            path.resolve().relative_to(self.layout.root)
+        except ValueError as exc:
+            raise FlowValidationError("Flow path must stay inside the Workspace.") from exc
+        return path
+
+    def _find_definition(self, flow_id: str | None) -> FlowDefinition | None:
+        if flow_id is None:
+            return None
+        matches = tuple(item for item in self.discover().definitions if item.flow_id == flow_id)
+        if len(matches) > 1:
+            raise FlowValidationError(f"duplicate flow id: {flow_id}")
+        return matches[0] if matches else None
+
+    def _path_for_id(self, flow_id: str | None) -> Path:
+        normalized = str(flow_id or "").strip()
+        if not _FLOW_ID_RE.fullmatch(normalized):
+            raise FlowValidationError(
+                "Flow ID must use lowercase letters, numbers, '.', '_' or '-'."
+            )
+        directory = self.layout.flows_dir
+        path = directory / f"{normalized}{_FLOW_SUFFIX}"
+        try:
+            path.resolve().relative_to(self.layout.root)
+        except ValueError as exc:
+            raise FlowValidationError("Flow path must stay inside the Workspace.") from exc
+        return path
+
+    def _path_for_name(self, flow_name: str) -> Path:
+        normalized = str(flow_name).strip()
+        if (
+            not normalized
+            or normalized in {".", ".."}
+            or Path(normalized).name != normalized
+            or any(character in normalized for character in "\\/\0\r\n")
+        ):
+            raise FlowValidationError("Flow path must stay inside the Workspace.")
+        path = self.layout.flows_dir / f"{normalized}{_FLOW_SUFFIX}"
+        try:
+            path.resolve().relative_to(self.layout.root)
+        except ValueError as exc:
+            raise FlowValidationError("Flow path must stay inside the Workspace.") from exc
+        return path
+
+    def _ensure_directory(self) -> None:
+        directory = self.layout.flows_dir
+        if directory.exists() and (not directory.is_dir() or directory.is_symlink()):
+            raise FlowValidationError("Flow directory is not a regular directory.")
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise FlowValidationError("Unable to create the Workspace flow directory.") from exc
+
+
+def sample_flow_content() -> str:
+    """Load the packaged test-case generation flow template."""
+
+    try:
+        return (
+            files(_SAMPLE_FLOW_PACKAGE)
+            .joinpath("flows")
+            .joinpath(_SAMPLE_FLOW_FILENAME)
+            .read_text(encoding="utf-8")
+        )
+    except (ModuleNotFoundError, OSError, UnicodeDecodeError) as exc:
+        raise FlowValidationError("The bundled test-case flow template is unavailable.") from exc
+
+
+def _parse_flow(content: str, path: Path | None) -> FlowDefinition:
+    if not content.strip():
+        raise FlowValidationError("Flow content must not be empty.")
+    lines = content.replace("\r\n", "\n").replace("\r", "\n").splitlines(keepends=True)
+    if not lines or lines[0].strip() != _FLOW_DELIMITER:
+        raise FlowValidationError("Flow must start with TOML frontmatter.")
+    closing_index = next(
+        (index for index in range(1, len(lines)) if lines[index].strip() == _FLOW_DELIMITER),
+        None,
+    )
+    if closing_index is None:
+        raise FlowValidationError("Flow frontmatter is not closed.")
+    header = "".join(lines[1:closing_index])
+    body = "".join(lines[closing_index + 1 :]).strip()
+    try:
+        payload = tomllib.loads(header)
+    except tomllib.TOMLDecodeError as exc:
+        raise FlowValidationError("Flow frontmatter is invalid TOML.") from exc
+    flow_id = _required_text(payload.get("id"), "id")
+    if _FLOW_ID_RE.fullmatch(flow_id) is None:
+        raise FlowValidationError("Flow id must use lowercase letters, numbers, '.', '_' or '-'.")
+    name = _required_text(payload.get("name"), "name")
+    brief = _required_text(payload.get("brief"), "brief")
+    enabled = payload.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise FlowValidationError("Flow enabled must be boolean.")
+    match_hints = _text_list(payload.get("match", []), "match")
+    if not body:
+        raise FlowValidationError("Flow detail must not be empty.")
+    if path is None:
+        path = Path(f"{flow_id}{_FLOW_SUFFIX}")
+    return FlowDefinition(
+        flow_id=flow_id,
+        name=name,
+        enabled=enabled,
+        brief=brief,
+        match_hints=tuple(match_hints),
+        path=path,
+        content=content,
+        body=body,
+    )
+
+
+def _required_text(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise FlowValidationError(f"Flow {field_name} must be a non-empty string.")
+    normalized = value.strip()
+    if any(character in normalized for character in "\r\n\0"):
+        raise FlowValidationError(f"Flow {field_name} must not contain control characters.")
+    return normalized
+
+
+def _text_list(value: object, field_name: str) -> list[str]:
+    if not isinstance(value, list):
+        raise FlowValidationError(f"Flow {field_name} must be an array of strings.")
+    result: list[str] = []
+    for item in cast(list[object], value):
+        if not isinstance(item, str) or not item.strip():
+            raise FlowValidationError(f"Flow {field_name} must contain non-empty strings.")
+        result.append(item.strip())
+    return result
+
+
+def _duplicate_ids(definitions: list[FlowDefinition]) -> set[str]:
+    counts: dict[str, int] = {}
+    for definition in definitions:
+        counts[definition.flow_id] = counts.get(definition.flow_id, 0) + 1
+    return {flow_id for flow_id, count in counts.items() if count > 1}
+
+
+def _atomic_write(path: Path, content: bytes) -> None:
+    temporary: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        temporary = Path(temporary_name)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    except OSError as exc:
+        raise FlowValidationError(f"Unable to write flow: {path.name}") from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

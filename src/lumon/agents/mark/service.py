@@ -7,6 +7,7 @@ import logging
 import time
 import traceback
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -22,12 +23,15 @@ from lumon.agents.mark.model import (
     Message,
     ProgressPhase,
     RecalledMessage,
+    WorkspaceContext,
 )
 from lumon.agents.mark.runner import AgentRunner, create_agent_runner
 from lumon.agents.mark.session_store import MarkSessionStore
 from lumon.agents.mark.soul import MarkSoulLoader
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentConfigError, AgentRuntimeError, LumonError
+from lumon.flows.catalog import FlowCatalog
+from lumon.flows.protocol import extract_flow_selection
 from lumon.observability import (
     AgentTelemetry,
     AgentTrace,
@@ -206,6 +210,7 @@ class MarkAgentService:
             trace_status: TelemetryStatus = "failed"
             trace_error_code: str | None = None
             reply_failed = False
+            flow_id: str | None = None
             stage = "add_typing_reaction"
             trace = self._start_trace(
                 run_id=run_id,
@@ -271,7 +276,7 @@ class MarkAgentService:
                         prompt = context_builder.build_prompt(context, history, message.text)
                         prompt_span.update(metadata={"prompt_length": len(prompt)})
                 else:
-                    prompt = message.text
+                    prompt = context_builder.build_resume_prompt(context, message.text)
                 trace.update(
                     input_text=prompt,
                     metadata={"resumed_agent_session": resume_session_id is not None},
@@ -310,6 +315,18 @@ class MarkAgentService:
                         agent_session_id=resume_session_id,
                         on_progress=reporter.notify,
                     )
+                    marker_flow_id, _marker_status, cleaned_result_text = extract_flow_selection(
+                        result.final_text
+                    )
+                    if result.final_text is not None:
+                        result = replace(
+                            result,
+                            final_text=cleaned_result_text,
+                            flow_id=result.flow_id or marker_flow_id,
+                        )
+                    flow_id = _validated_flow_id(result.flow_id, context)
+                    if flow_id is not None:
+                        trace.update(metadata={"flow_id": flow_id})
                     result_metadata: dict[str, str | int | bool] = {
                         "status": result.status,
                         "progress_count": len(result.progress),
@@ -469,6 +486,7 @@ class MarkAgentService:
                                 agent_provider=agent_provider,
                                 error_code=error_code,
                                 session_id=session_id,
+                                flow_id=flow_id,
                                 prompt_text=prompt if run_started else None,
                                 failure_diagnostic=failure_diagnostic,
                             )
@@ -660,3 +678,13 @@ def _reply_metadata(delivered: bool) -> dict[str, str | bool]:
     if not delivered:
         metadata["error_code"] = "feishu_reply_failed"
     return metadata
+
+
+def _validated_flow_id(flow_id: str | None, context: WorkspaceContext) -> str | None:
+    """Keep only a flow ID present in the current Workspace catalog."""
+
+    if not isinstance(flow_id, str) or not flow_id.strip():
+        return None
+    normalized = flow_id.strip()
+    available_ids = {brief.flow_id for brief in FlowCatalog(context.path).discover().briefs}
+    return normalized if normalized in available_ids else None

@@ -22,6 +22,18 @@ ${repository_text}
 ${agents_text}
 </workspace-agents>
 
+<available-flows>
+${flow_briefs}
+</available-flows>
+
+<flow-routing>
+- Treat the enabled flow briefs as candidates for the current user request.
+- Match at most one flow. If the request is ambiguous or no flow clearly applies, ask for clarification or continue normally.
+- Before executing a matched flow, read its full Markdown detail from the listed Workspace-relative path.
+- Follow the matched flow's stated steps, tools, commands, and output contract after checking the current Workspace rules and the user's request.
+- When a flow is selected, emit `<lumon-flow>{"flow_id":"<id>","status":"selected"}</lumon-flow>` as a separate control message before the final answer. Do not explain or expose this marker to the user.
+</flow-routing>
+
 <conversation-history>
 ${history_text}
 </conversation-history>

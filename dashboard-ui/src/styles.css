@@ -1267,6 +1267,185 @@ code {
   white-space: nowrap;
 }
 
+.flows-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 1.45fr);
+  gap: 16px;
+}
+
+.flows-list-panel,
+.flow-editor-panel {
+  min-width: 0;
+}
+
+.flows-panel-heading {
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.icon-button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  flex: 0 0 31px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: rgba(169, 109, 43, 0.5);
+  color: var(--copper);
+  background: rgba(248, 201, 93, 0.13);
+}
+
+.flows-list-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.flows-list-actions .button {
+  min-width: 0;
+  flex: 1;
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+.flows-list {
+  padding: 4px 10px 9px;
+}
+
+.flow-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+}
+
+.flow-row:hover:not(:disabled) {
+  background: rgba(248, 201, 93, 0.1);
+}
+
+.flow-row.active {
+  border-color: rgba(169, 109, 43, 0.25);
+  background: rgba(248, 201, 93, 0.18);
+}
+
+.flow-row:disabled {
+  cursor: default;
+}
+
+.flow-row-icon {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--copper);
+  background: rgba(169, 109, 43, 0.1);
+}
+
+.flow-row-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.flow-row-copy strong,
+.flow-row-copy small,
+.flow-row-copy em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-row-copy strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.flow-row-copy small,
+.flow-row-copy em {
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.flow-row-copy em {
+  color: var(--copper);
+}
+
+.flows-loading {
+  min-height: 180px;
+}
+
+.flow-editor-path {
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-editor {
+  display: block;
+  width: calc(100% - 36px);
+  min-height: 560px;
+  padding: 18px;
+  margin: 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: 0;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.62;
+  resize: vertical;
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.flow-editor-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 18px;
+  margin: -7px 0 18px;
+  color: var(--copper);
+  font-size: 10px;
+}
+
+.flow-editor:focus {
+  border-color: var(--copper);
+  box-shadow: 0 0 0 3px rgba(169, 109, 43, 0.14);
+}
+
+.flow-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 0 18px 18px;
+}
+
+.flow-editor-empty {
+  min-height: 350px;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     width: 232px;
@@ -1281,6 +1460,14 @@ code {
 
   .repository-meta {
     gap: 11px;
+  }
+
+  .flows-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-editor {
+    min-height: 420px;
   }
 }
 
@@ -1415,6 +1602,19 @@ code {
 
   .settings-actions .button {
     width: 100%;
+  }
+
+  .flows-list-actions {
+    flex-direction: column;
+  }
+
+  .flows-list-actions .button,
+  .flow-editor-actions .button {
+    width: 100%;
+  }
+
+  .flow-editor-actions {
+    flex-direction: column-reverse;
   }
 
   .notice {

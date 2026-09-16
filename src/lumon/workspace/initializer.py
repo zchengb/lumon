@@ -13,6 +13,7 @@ from typing import Literal
 from uuid import UUID
 
 from lumon.errors import InitializationError, InvalidInputError, PreflightError
+from lumon.flows.catalog import sample_flow_content
 from lumon.skills.installer import SkillInstaller, SkillInstallResult, SkillPreview
 from lumon.version import __version__
 from lumon.workspace.config import WorkspaceConfig, load_workspace_config
@@ -429,6 +430,7 @@ class WorkspaceInitializer:
     def _write_workspace(self, root: Path, name: str) -> None:
         layout = WorkspaceLayout.from_root(root)
         layout.control_dir.mkdir(parents=True, exist_ok=True)
+        layout.flows_dir.mkdir(parents=True, exist_ok=True)
         for directory in layout.runtime_directories:
             directory.mkdir(parents=True, exist_ok=True)
 
@@ -442,6 +444,10 @@ class WorkspaceInitializer:
             encoding="utf-8",
         )
         WorkspaceConfig(name=name).write(layout.workspace_config)
+        layout.flows_dir.joinpath("test-case-generation.md").write_text(
+            sample_flow_content(),
+            encoding="utf-8",
+        )
         manifest = WorkspaceManifest.create(
             name, self.lumon_version, self.now() if self.now else None
         )

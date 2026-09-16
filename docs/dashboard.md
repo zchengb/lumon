@@ -76,14 +76,29 @@ accepted by the update endpoint but never returned to the browser. Lumon saves
 them in `$LUMON_HOME/agent.toml` (normally `~/.lumon/agent.toml`) with owner-only
 file mode `600`. Environment variables `LANGFUSE_PUBLIC_KEY` and
 `LANGFUSE_SECRET_KEY` continue to override saved Langfuse values.
+
 Langfuse content capture is always enabled when observability is enabled. Lumon
 redacts credentials client-side before sending prompt and response content, and
 the Dashboard does not expose a content capture switch.
 
-
 Saving the page updates the on-disk configuration. Restart Mark with
 `lumon agent stop` and `lumon agent start --background` for the running process
 to load the new settings.
+
+## Workspace flows
+
+The **Flows** page edits Markdown files under the selected Workspace's
+`lumon/flows/` directory. The list shows enabled and disabled valid flows as
+well as validation errors for files that Mark will ignore. The editor supports
+creating, updating, and deleting flow files, and **Install sample flow** adds
+the bundled test-case generation flow when that file is absent.
+
+The Dashboard and Mark use the same files, so saving a flow does not require a
+second synchronization step. Mark receives only each enabled flow's ID, name,
+brief, match hints, and relative file path in its initial prompt. It reads the
+full Markdown body after selecting a flow. A resumed Codex session receives a
+fresh brief list on every turn, so Dashboard edits are picked up without
+restarting the Agent.
 
 ## Feishu Webhook
 

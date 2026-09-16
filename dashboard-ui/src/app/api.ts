@@ -2,6 +2,8 @@ import type {
   AgentSettings,
   AgentSettingsUpdate,
   BootstrapState,
+  FlowDocument,
+  FlowSummary,
   InitializeWorkspaceRequest,
   InitializeWorkspaceResponse,
   SettingsUpdate,
@@ -105,6 +107,43 @@ export const dashboardApi = {
 
   getSettings(workspaceId: string): Promise<WorkspaceSettings> {
     return request<WorkspaceSettings>(`/api/workspaces/${workspaceId}/settings`);
+  },
+
+  listFlows(workspaceId: string): Promise<FlowSummary[]> {
+    return request<FlowSummary[]>(`/api/workspaces/${workspaceId}/flows`);
+  },
+
+  getFlow(workspaceId: string, flowId: string): Promise<FlowDocument> {
+    return request<FlowDocument>(`/api/workspaces/${workspaceId}/flows/${encodeURIComponent(flowId)}`);
+  },
+
+  createFlow(workspaceId: string, content: string): Promise<FlowDocument> {
+    return request<FlowDocument>(`/api/workspaces/${workspaceId}/flows`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  updateFlow(workspaceId: string, flowId: string, content: string): Promise<FlowDocument> {
+    return request<FlowDocument>(
+      `/api/workspaces/${workspaceId}/flows/${encodeURIComponent(flowId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      },
+    );
+  },
+
+  deleteFlow(workspaceId: string, flowId: string): Promise<void> {
+    return request<void>(`/api/workspaces/${workspaceId}/flows/${encodeURIComponent(flowId)}`, {
+      method: "DELETE",
+    });
+  },
+
+  installSampleFlow(workspaceId: string): Promise<FlowDocument> {
+    return request<FlowDocument>(`/api/workspaces/${workspaceId}/flows/sample`, {
+      method: "POST",
+    });
   },
 
   updateSettings(workspaceId: string, payload: SettingsUpdate): Promise<WorkspaceSettings> {

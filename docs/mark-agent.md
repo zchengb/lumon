@@ -18,6 +18,36 @@ Mark 是 Lumon 的本地 Workspace Agent。它通过飞书 WebSocket 长连接�
 - 发送简短进度消息和一条最终回答。
 - 使用本地 SQLite 做 Session、消息去重、历史记录、运行结果和中断恢复。
 - 首次调用保存完整 bootstrap Prompt；后续调用复用 Codex 原生 Session，只发送新的用户消息，减少重复上下文。
+- 根据当前 Workspace 的 Flow brief 选择最多一个匹配流程，并在执行前读取流程文件的完整说明。
+
+## Workspace Flow
+
+每个 Workspace 的流程文件位于：
+
+```text
+<workspace>/lumon/flows/*.md
+```
+
+文件由 TOML frontmatter 和 Markdown 正文组成。frontmatter 至少需要
+`id`、`name`、`brief` 和 `enabled`，也可以通过 `match` 提供自然语言匹配提示。
+Dashboard 的 **Flows** 页面直接编辑这些文件；新 Workspace 会自动带有
+`test-case-generation.md` 示例，已有 Workspace 可以在页面中安装示例而不会覆盖同名文件。
+
+Mark 的初始 Prompt 只包含启用流程的 brief、匹配提示和相对路径，不会预先加载流程正文。
+它会在请求匹配时读取唯一流程的完整 Markdown；请求同时匹配多个流程时应先向用户澄清，
+没有匹配流程时继续普通 Agent 行为。选中的流程可以在回复前发出内部控制标记：
+
+```text
+<lumon-flow>{"flow_id":"test-case-generation","status":"selected"}</lumon-flow>
+```
+
+Lumon 会移除这个标记后再回复飞书，并把经过 Workspace 校验的 `flow_id` 写入本地
+`runs.flow_id` 和 Langfuse trace metadata。标记是兼容性辅助信息；缺失或无效时不会使
+普通 Agent 回复失败。
+
+示例测试用例流程只使用 Workspace 本地的 `stories/<issue-key>/story.md`、`repos/` 和现有
+测试证据，并把结果写到 `lumon/artifacts/test-cases/<issue-key>.json` 与 `.md`。它沿用
+现有测试用例字段和 case type 约束，不会自动连接 Jira、Feishu Sheets 或 Bitable。
 
 ## Codex 工具与输出策略
 

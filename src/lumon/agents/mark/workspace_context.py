@@ -9,6 +9,7 @@ from lumon.agents.mark.model import Message, WorkspaceContext
 from lumon.agents.mark.prompt import MarkPromptRenderer
 from lumon.agents.mark.soul import MarkSoulLoader
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
+from lumon.flows.catalog import FlowCatalog
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
@@ -57,6 +58,7 @@ class WorkspaceContextBuilder:
             )
 
         agents_text = _read_agents(layout.agents_instructions)
+        flow_snapshot = FlowCatalog(layout.root).discover()
         repositories = tuple(
             f"{record.name} ({record.path}, branch {record.branch})"
             for record in workspace_config.repositories
@@ -70,6 +72,7 @@ class WorkspaceContextBuilder:
             workspace_config_path=layout.workspace_config,
             agents_text=agents_text,
             repositories=repositories,
+            flow_briefs=flow_snapshot.briefs,
         )
 
     def build_prompt(
@@ -84,6 +87,14 @@ class WorkspaceContextBuilder:
             context=context,
             history=history,
             soul=self.soul_loader.load(),
+            user_message=user_message,
+        )
+
+    def build_resume_prompt(self, context: WorkspaceContext, user_message: str) -> str:
+        """Build a small prompt that refreshes flow briefs for a resumed Session."""
+
+        return self.prompt_renderer.render_resume(
+            flow_briefs=FlowCatalog(context.path).discover().briefs,
             user_message=user_message,
         )
 

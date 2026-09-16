@@ -41,6 +41,10 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     assert "Global Agent Skills live under `~/.agents/skills/`" in agents
     assert "lumon/manifest.json" in agents
     assert (target / ".gitignore").is_file()
+    sample_flow = target / "lumon" / "flows" / "test-case-generation.md"
+    assert sample_flow.read_text(encoding="utf-8") == files("lumon.workspace.templates").joinpath(
+        "flows"
+    ).joinpath("test-case-generation.md").read_text(encoding="utf-8")
     assert (target / "lumon" / "workspace.toml").read_text(encoding="utf-8") == (
         'schema_version = 1\nname = "lumon-lab"\n'
     )

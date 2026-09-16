@@ -159,6 +159,30 @@ class WorkspaceSettingsUpdate(StrictModel):
     feishu_webhook: FeishuWebhookUpdate
 
 
+class FlowSummaryResponse(StrictModel):
+    """Display-safe metadata for one Workspace flow."""
+
+    flow_id: str
+    name: str
+    enabled: bool
+    brief: str
+    path: str
+    valid: bool
+    error: str | None = None
+
+
+class FlowDocumentResponse(FlowSummaryResponse):
+    """One flow document returned to the Dashboard editor."""
+
+    content: str
+
+
+class FlowContentRequest(StrictModel):
+    """Markdown content submitted for flow creation or replacement."""
+
+    content: str = Field(min_length=1)
+
+
 class FeishuWebhookTestRequest(StrictModel):
     """Optional draft URL for a non-persisting Webhook test."""
 

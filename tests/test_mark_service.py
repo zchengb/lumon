@@ -38,6 +38,8 @@ class FakeRunner:
     def __init__(self) -> None:
         self.prompts: list[str] = []
         self.agent_session_ids: list[str | None] = []
+        self.next_flow_id: str | None = None
+        self.next_final_text = "Workspace 已检查"
         self.provider = "test-agent"
         self.display_name = "Test Agent"
         self.executable = "test-agent"
@@ -68,8 +70,9 @@ class FakeRunner:
             )
         return AgentResult(
             status="succeeded",
-            final_text="Workspace 已检查",
+            final_text=self.next_final_text,
             agent_session_id="provider-session-1",
+            flow_id=self.next_flow_id,
         )
 
 
@@ -309,6 +312,10 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     async def run() -> None:
         await service.handle_message(message)
         await service.wait_for_idle()
+        runner.next_final_text = (
+            '<lumon-flow>{"flow_id":"test-case-generation","status":"selected"}</lumon-flow>\n'
+            "Workspace 已检查"
+        )
         follow_up = InboundMessage(
             event_id="evt-2",
             message_id="om-2",
@@ -340,13 +347,15 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     ]
     assert len(runner.prompts) == 2
     assert runner.agent_session_ids == [None, "provider-session-1"]
-    assert runner.prompts[1] == "请继续说明目录"
+    assert "<lumon-flow-context>" in runner.prompts[1]
+    assert "test-case-generation" in runner.prompts[1]
+    assert "请继续说明目录" in runner.prompts[1]
     assert "请检查 README" not in runner.prompts[1]
     assert "Workspace 已检查" not in runner.prompts[1]
     assert store.event_status("evt-1") == "succeeded"
     with sqlite3.connect(store.path) as connection:
         rows = connection.execute(
-            "SELECT status, session_id, prompt_text FROM runs ORDER BY started_at"
+            "SELECT status, session_id, prompt_text, flow_id FROM runs ORDER BY started_at"
         ).fetchall()
         session_row = connection.execute("SELECT agent_session_id FROM sessions").fetchone()
     assert len(rows) == 2
@@ -354,6 +363,8 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     assert rows[0][1] == rows[1][1]
     assert rows[0][2] == runner.prompts[0]
     assert rows[1][2] == runner.prompts[1]
+    assert rows[0][3] is None
+    assert rows[1][3] == "test-case-generation"
     assert session_row == ("provider-session-1",)
     assert len(telemetry.traces) == 2
     assert telemetry.traces[0].span_names == [
@@ -373,6 +384,10 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     )
     assert telemetry.traces[0].finished == ("succeeded", None, "Workspace 已检查")
     assert telemetry.traces[1].finished == ("succeeded", None, "Workspace 已检查")
+    assert any(
+        update["metadata"] == {"flow_id": "test-case-generation"}
+        for update in telemetry.traces[1].updates
+    )
     assert telemetry.shutdown_calls == 1
 
 

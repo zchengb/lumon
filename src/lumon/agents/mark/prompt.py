@@ -7,6 +7,7 @@ from string import Template
 
 from lumon.agents.mark.model import Message, WorkspaceContext
 from lumon.errors import AgentConfigError
+from lumon.flows.model import FlowBrief
 
 _TEMPLATE_PACKAGE = "lumon.agents.mark.templates"
 _PROMPT_TEMPLATE_NAME = "workspace_prompt.md"
@@ -42,6 +43,7 @@ class MarkPromptRenderer:
             "\n".join(f"- {repository}" for repository in context.repositories)
             or "(none registered)"
         )
+        flow_text = _render_flow_briefs(context.flow_briefs)
         return self._template.substitute(
             soul=soul,
             workspace_name=context.name,
@@ -51,9 +53,23 @@ class MarkPromptRenderer:
             manifest_path=context.manifest_path,
             workspace_config_path=context.workspace_config_path,
             repository_text=repository_text,
+            flow_briefs=flow_text,
             agents_text=context.agents_text,
             history_text=_render_history(history),
             user_message=user_message,
+        )
+
+    def render_resume(self, *, flow_briefs: tuple[FlowBrief, ...], user_message: str) -> str:
+        """Render fresh flow routing context for a resumed Codex session."""
+
+        return (
+            "<lumon-flow-context>\n"
+            "The following enabled Workspace flow briefs are current for this turn.\n"
+            f"{_render_flow_briefs(flow_briefs)}\n"
+            "Read a matching flow's full Markdown file before following it.\n"
+            "If the request is ambiguous, ask the user to choose a flow.\n"
+            "</lumon-flow-context>\n\n"
+            f"<user-message>\n{user_message}\n</user-message>"
         )
 
 
@@ -71,4 +87,17 @@ def _render_history(history: tuple[Message, ...]) -> str:
     for item in history:
         speaker = "user" if item.direction == "inbound" else "mark"
         lines.append(f"[{speaker}] {item.text}")
+    return "\n".join(lines)
+
+
+def _render_flow_briefs(flow_briefs: tuple[FlowBrief, ...]) -> str:
+    if not flow_briefs:
+        return "(no enabled Workspace flows)"
+    lines: list[str] = []
+    for flow in flow_briefs:
+        hints = ", ".join(flow.match_hints) if flow.match_hints else "(semantic match)"
+        lines.append(
+            f"- id: {flow.flow_id}; name: {flow.name}; brief: {flow.brief}; "
+            f"match hints: {hints}; full detail: {flow.path}"
+        )
     return "\n".join(lines)

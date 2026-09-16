@@ -7,6 +7,7 @@ This directory is a Lumon Workspace initialized by Lumon.
 - Treat `lumon/manifest.json` as the identity and initialization record for this Workspace.
 - Keep cloned code Repositories under `repos/`; Lumon does not modify their working trees during initialization.
 - Keep runtime outputs under `lumon/runs`, `lumon/artifacts`, `lumon/logs`, and `lumon/tmp`.
+- Keep user-defined Agent flows under `lumon/flows/`; each flow is a Markdown file with TOML frontmatter.
 - Do not store secrets in this Workspace.
 - Global Agent Skills live under `~/.agents/skills/`; do not copy them into this Workspace.
 - Use `lumon doctor --workspace <path>` for read-only Workspace checks.

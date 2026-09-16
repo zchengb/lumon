@@ -17,6 +17,9 @@ from lumon.dashboard.schemas import (
     BootstrapResponse,
     FeishuWebhookResponse,
     FeishuWebhookTestRequest,
+    FlowContentRequest,
+    FlowDocumentResponse,
+    FlowSummaryResponse,
     HealthResponse,
     InitializeWorkspaceRequest,
     InitializeWorkspaceResponse,
@@ -34,6 +37,8 @@ from lumon.dashboard.service import (
     AgentObservabilitySettingsUpdate,
     AgentSettingsView,
     DashboardService,
+    FlowDocumentView,
+    FlowSummaryView,
     WorkspaceListItem,
     WorkspaceSettingsView,
 )
@@ -182,6 +187,55 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     def workspace_settings(request: Request, workspace_id: UUID) -> WorkspaceSettingsResponse:
         return _settings_response(_service(request).settings(workspace_id))
 
+    @router.get(
+        "/workspaces/{workspace_id}/flows",
+        response_model=list[FlowSummaryResponse],
+    )
+    def list_flows(request: Request, workspace_id: UUID) -> list[FlowSummaryResponse]:
+        return [_flow_summary_response(item) for item in _service(request).flows(workspace_id)]
+
+    @router.post(
+        "/workspaces/{workspace_id}/flows/sample",
+        response_model=FlowDocumentResponse,
+    )
+    def install_sample_flow(request: Request, workspace_id: UUID) -> FlowDocumentResponse:
+        return _flow_document_response(_service(request).install_sample_flow(workspace_id))
+
+    @router.post(
+        "/workspaces/{workspace_id}/flows",
+        response_model=FlowDocumentResponse,
+        status_code=201,
+    )
+    def create_flow(
+        request: Request, workspace_id: UUID, payload: FlowContentRequest
+    ) -> FlowDocumentResponse:
+        return _flow_document_response(_service(request).create_flow(workspace_id, payload.content))
+
+    @router.get(
+        "/workspaces/{workspace_id}/flows/{flow_id}",
+        response_model=FlowDocumentResponse,
+    )
+    def get_flow(request: Request, workspace_id: UUID, flow_id: str) -> FlowDocumentResponse:
+        return _flow_document_response(_service(request).flow(workspace_id, flow_id))
+
+    @router.put(
+        "/workspaces/{workspace_id}/flows/{flow_id}",
+        response_model=FlowDocumentResponse,
+    )
+    def update_flow(
+        request: Request,
+        workspace_id: UUID,
+        flow_id: str,
+        payload: FlowContentRequest,
+    ) -> FlowDocumentResponse:
+        return _flow_document_response(
+            _service(request).update_flow(workspace_id, flow_id, payload.content)
+        )
+
+    @router.delete("/workspaces/{workspace_id}/flows/{flow_id}", status_code=204)
+    def delete_flow(request: Request, workspace_id: UUID, flow_id: str) -> None:
+        _service(request).delete_flow(workspace_id, flow_id)
+
     @router.put(
         "/workspaces/{workspace_id}/settings",
         response_model=WorkspaceSettingsResponse,
@@ -251,6 +305,31 @@ def _settings_response(settings: WorkspaceSettingsView) -> WorkspaceSettingsResp
             configured=webhook.configured,
             masked_url=webhook.masked_url,
         ),
+    )
+
+
+def _flow_summary_response(summary: FlowSummaryView) -> FlowSummaryResponse:
+    return FlowSummaryResponse(
+        flow_id=summary.flow_id,
+        name=summary.name,
+        enabled=summary.enabled,
+        brief=summary.brief,
+        path=summary.path,
+        valid=summary.valid,
+        error=summary.error,
+    )
+
+
+def _flow_document_response(document: FlowDocumentView) -> FlowDocumentResponse:
+    return FlowDocumentResponse(
+        flow_id=document.flow_id,
+        name=document.name,
+        enabled=document.enabled,
+        brief=document.brief,
+        path=document.path,
+        valid=document.valid,
+        error=document.error,
+        content=document.content,
     )
 
 

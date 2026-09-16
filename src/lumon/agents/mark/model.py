@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
+from lumon.flows.model import FlowBrief
+
 MessageDirection = Literal["inbound", "outbound"]
 MarkRunStatus = Literal["succeeded", "failed", "timed_out", "cancelled"]
 AgentProvider = Literal["codex"]
@@ -159,6 +161,7 @@ class MarkRunResult:
     error_code: str | None = None
     agent_provider: str | None = None
     session_id: str | None = None
+    flow_id: str | None = None
     prompt_text: str | None = None
     failure_diagnostic: str | None = None
 
@@ -173,6 +176,7 @@ class AgentResult:
     error_code: AgentErrorCode | None = None
     return_code: int | None = None
     agent_session_id: str | None = None
+    flow_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,3 +191,4 @@ class WorkspaceContext:
     workspace_config_path: Path
     agents_text: str
     repositories: tuple[str, ...]
+    flow_briefs: tuple[FlowBrief, ...] = ()

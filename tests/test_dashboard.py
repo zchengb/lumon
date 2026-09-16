@@ -23,6 +23,22 @@ from lumon.workspace.registry import WorkspaceRegistry
 from lumon.workspace.settings import WorkspaceSettingsStore
 
 
+def _flow_content(
+    flow_id: str = "dashboard-flow", brief: str = "Handle a dashboard request."
+) -> str:
+    return (
+        "---\n"
+        f'id = "{flow_id}"\n'
+        'name = "Dashboard flow"\n'
+        "enabled = true\n"
+        f'brief = "{brief}"\n'
+        'match = ["dashboard request"]\n'
+        "---\n\n"
+        "# Dashboard flow\n\n"
+        "Follow the dashboard flow.\n"
+    )
+
+
 class _Response:
     status = 200
 
@@ -73,7 +89,7 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.0.16",
+        "version": "1.0.17",
         "workspace_count": 0,
         "has_workspaces": False,
     }
@@ -261,6 +277,79 @@ def test_initialize_and_read_workspace_overview(tmp_path: Path) -> None:
     assert overview.status_code == 200
     assert overview.json()["name"] == "created-workspace"
     assert overview.json()["repositories"] == []
+
+
+def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    target = tmp_path / "flow-workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(target), "repositories": []},
+    ).json()["workspace_id"]
+
+    listed = client.get(f"/api/workspaces/{workspace_id}/flows")
+    assert listed.status_code == 200
+    assert listed.json()[0]["flow_id"] == "test-case-generation"
+    assert listed.json()[0]["path"] == "lumon/flows/test-case-generation.md"
+    assert listed.json()[0]["valid"] is True
+
+    sample = client.get(f"/api/workspaces/{workspace_id}/flows/test-case-generation")
+    assert sample.status_code == 200
+    assert "Treat acceptance criteria as the primary authority" in sample.json()["content"]
+
+    created = client.post(
+        f"/api/workspaces/{workspace_id}/flows",
+        json={"content": _flow_content()},
+    )
+    assert created.status_code == 201
+    assert created.json()["flow_id"] == "dashboard-flow"
+    assert (target / "lumon" / "flows" / "dashboard-flow.md").read_text(
+        encoding="utf-8"
+    ) == _flow_content()
+
+    updated_content = _flow_content(brief="Updated from the Dashboard.")
+    updated = client.put(
+        f"/api/workspaces/{workspace_id}/flows/dashboard-flow",
+        json={"content": updated_content},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["brief"] == "Updated from the Dashboard."
+    assert (target / "lumon" / "flows" / "dashboard-flow.md").read_text(
+        encoding="utf-8"
+    ) == updated_content
+
+    (target / "lumon" / "flows" / "broken.md").write_text("broken", encoding="utf-8")
+    invalid = client.get(f"/api/workspaces/{workspace_id}/flows").json()
+    broken = next(item for item in invalid if item["path"] == "lumon/flows/broken.md")
+    assert broken["valid"] is False
+    assert "frontmatter" in broken["error"]
+    broken_document = client.get(f"/api/workspaces/{workspace_id}/flows/broken")
+    assert broken_document.status_code == 200
+    assert broken_document.json()["valid"] is False
+    assert broken_document.json()["content"] == "broken"
+
+    sample_path = target / "lumon" / "flows" / "test-case-generation.md"
+    sample_path.unlink()
+    restored = client.post(f"/api/workspaces/{workspace_id}/flows/sample")
+    assert restored.status_code == 200
+    assert restored.json()["flow_id"] == "test-case-generation"
+    assert sample_path.is_file()
+
+    deleted = client.delete(f"/api/workspaces/{workspace_id}/flows/dashboard-flow")
+    assert deleted.status_code == 204
+    assert not (target / "lumon" / "flows" / "dashboard-flow.md").exists()
+    assert client.delete(f"/api/workspaces/{workspace_id}/flows/broken").status_code == 204
+    assert not (target / "lumon" / "flows" / "broken.md").exists()
+
+    changed_id = client.put(
+        f"/api/workspaces/{workspace_id}/flows/test-case-generation",
+        json={"content": _flow_content("other-id")},
+    )
+    assert changed_id.status_code == 409
+    assert "cannot change" in changed_id.json()["error"]["message"]
 
 
 def test_settings_update_masks_webhook_and_test_does_not_persist_draft(

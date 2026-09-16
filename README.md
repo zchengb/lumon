@@ -3,7 +3,7 @@
 Lumon v1 is the greenfield Python CLI and local Dashboard for creating,
 inspecting, and switching between local Workspaces. The v1 runtime contains
 the CLI, Workspace skeleton, bundled global planning Skills installation, and
-the Dashboard's Workspace overview and typed settings.
+the Dashboard's Workspace overview, typed settings, and editable flows.
 
 ## Install from GitHub
 
@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.16
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.17
 ```
 
 To install the optional Langfuse Cloud telemetry support, add the installer
@@ -61,7 +61,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.16` runs the release workflow, which attaches
+semantic version tag such as `v1.0.17` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -142,8 +142,9 @@ Lumon binds the Python API to `127.0.0.1`, selects an available port, and opens
 the browser. Use `lumon ui --no-open` when the browser should not be opened.
 The Dashboard can initialize a new Workspace, add an existing initialized
 Workspace, switch between registered Workspaces, inspect Repository health,
-configure the current Workspace's Feishu Webhook, and manage the global Mark
-Agent settings, including its Codex model and Langfuse Cloud telemetry.
+configure the current Workspace's Feishu Webhook, edit Workspace flows, and
+manage the global Mark Agent settings, including its Codex model and Langfuse
+Cloud telemetry.
 
 The machine-local registry and Workspace profiles live under `~/.lumon/`:
 
@@ -207,6 +208,33 @@ Codex execution is a reusable tool under `lumon/tools/codex.py`, not a Mark-only
 implementation. Mark adds its conversational progress and final-text policy in
 its own runner; future flows such as Auto Scan can call the same tool and use
 only the execution status or file events.
+
+## Workspace flows
+
+Each Workspace stores user-editable flows as Markdown files under
+`lumon/flows/`. The Dashboard's **Flows** page edits those files directly and
+reports invalid frontmatter without loading invalid flows into Mark's prompt.
+New Workspaces receive the sample test-case generation flow automatically;
+existing Workspaces can install it from the same page without replacing a file
+that already exists.
+
+The flow frontmatter provides the bounded brief Mark uses for routing:
+
+```markdown
+---
+id = "test-case-generation"
+name = "Test case generation"
+enabled = true
+brief = "Generate executable manual test cases from a story and its acceptance criteria."
+match = ["generate test cases", "测试用例"]
+---
+```
+
+The Markdown body contains the complete process and output contract. Mark
+reads that file only after selecting at most one matching flow. The sample
+writes JSON and Markdown artifacts under
+`lumon/artifacts/test-cases/<issue-key>`. See
+[`docs/mark-agent.md`](docs/mark-agent.md) for routing and marker details.
 
 Mark keeps conversation state in explicit SQLite tables. A direct Feishu chat
 uses one durable Session regardless of reply-thread metadata; a group Feishu

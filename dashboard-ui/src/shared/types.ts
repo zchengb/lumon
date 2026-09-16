@@ -1,6 +1,6 @@
 export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
-export type View = "overview" | "settings" | "agent";
+export type View = "overview" | "settings" | "agent" | "flows";
 
 export type AgentReasoningEffort =
   | "minimal"
@@ -53,6 +53,20 @@ export interface FeishuWebhookSettings {
 export interface WorkspaceSettings {
   workspace_id: string;
   feishu_webhook: FeishuWebhookSettings;
+}
+
+export interface FlowSummary {
+  flow_id: string;
+  name: string;
+  enabled: boolean;
+  brief: string;
+  path: string;
+  valid: boolean;
+  error: string | null;
+}
+
+export interface FlowDocument extends FlowSummary {
+  content: string;
 }
 
 export interface AgentObservabilitySettings {
