@@ -509,8 +509,8 @@ def create_agent_telemetry(config: MarkAgentConfig) -> AgentTelemetry:
     settings = config.observability
     if not settings.enabled:
         return NoopAgentTelemetry()
-    public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
-    secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
+    public_key = _credential_from_environment_or_config("LANGFUSE_PUBLIC_KEY", settings.public_key)
+    secret_key = _credential_from_environment_or_config("LANGFUSE_SECRET_KEY", settings.secret_key)
     if not public_key or not secret_key:
         logger.warning("Langfuse telemetry is enabled but project credentials are unavailable.")
         return NoopAgentTelemetry()
@@ -538,6 +538,12 @@ def create_agent_telemetry(config: MarkAgentConfig) -> AgentTelemetry:
         capture_content=settings.capture_content,
         sensitive_values=_configured_sensitive_values(config, public_key, secret_key),
     )
+
+
+def _credential_from_environment_or_config(environment_name: str, configured_value: str) -> str:
+    """Prefer a process credential while supporting Dashboard-saved credentials."""
+
+    return os.environ.get(environment_name, "").strip() or configured_value.strip()
 
 
 def _configured_sensitive_values(

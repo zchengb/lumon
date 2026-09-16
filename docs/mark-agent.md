@@ -54,15 +54,17 @@ Mark 不会因为打开 Dashboard 自动启动；必须明确运行 `lumon agent
 lumon agent configure
 ```
 
-命令会交互式收集 App ID、App Secret 和默认 Workspace ID。配置写入：
+命令会交互式收集 App ID、App Secret 和默认 Workspace ID。也可以在本机
+Dashboard 的 **Mark Agent** 页面修改并保存这些 Agent 配置。配置写入：
 
 ```text
 $LUMON_HOME/agent.toml
 ```
 
-没有设置 `LUMON_HOME` 时使用 `~/.lumon/agent.toml`。App Secret 会以明文保存在
-owner-only 的 `600` 文件中；Lumon 不会把它写入 Workspace、日志、CLI 输出或飞书
-消息。运行前请确保本机用户目录本身受到保护。
+没有设置 `LUMON_HOME` 时使用 `~/.lumon/agent.toml`。App Secret 和通过 Dashboard
+保存的 Langfuse 凭据会以明文保存在 owner-only 的 `600` 文件中；Lumon 不会把它们
+写入 Workspace、日志、CLI 输出、Dashboard API 响应或飞书消息。运行前请确保本机
+用户目录本身受到保护。
 
 Codex CLI 默认使用 GPT-5.6 Luna 和 `max` reasoning effort。对应的配置项是：
 
@@ -93,16 +95,18 @@ Shell 安装则使用安装器选项：
 curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --observability
 ```
 
-在 Langfuse Cloud 创建项目并生成 project API keys，然后把凭据放在运行 Agent 的
-进程环境中。不要把它们写入 `agent.toml`、Workspace、日志或 commit：
+在 Langfuse Cloud 创建项目并生成 project API keys。可以在 Dashboard 的 **Mark
+Agent** 页面填写并保存凭据，也可以把凭据放在运行 Agent 的进程环境中。环境变量
+优先于 `agent.toml` 中保存的值；不要把它们写入 Workspace、日志或 commit：
 
 ```text
 export LANGFUSE_PUBLIC_KEY='pk-lf-...'
 export LANGFUSE_SECRET_KEY='sk-lf-...'
 ```
 
-编辑 `$LUMON_HOME/agent.toml` 开启 Cloud trace。`base_url` 可以换成组织所需的
-Langfuse Cloud 区域地址，默认值是 `https://cloud.langfuse.com`：
+如果使用命令行，编辑 `$LUMON_HOME/agent.toml`（默认 `~/.lumon/agent.toml`）开启
+Cloud trace。Dashboard 会写入同一份 owner-only Agent 配置。`base_url` 可以换成
+组织所需的 Langfuse Cloud 区域地址，默认值是 `https://cloud.langfuse.com`：
 
 ```toml
 [observability]
@@ -114,8 +118,9 @@ sample_rate = 1.0
 ```
 
 运行 `lumon agent doctor` 会显示 endpoint、content capture、sample rate、SDK
-安装状态和凭据是否存在；它只输出 presence，不输出 key 的值。启动前台或后台
-Agent 时，确保这两个环境变量仍然对该进程可见。
+安装状态和凭据是否存在；它只输出 presence，不输出 key 的值。Dashboard 保存 Agent
+配置后需要重启 Mark，运行中的进程不会自动重新加载模型、Feishu 凭据或 Langfuse
+客户端设置。使用环境变量时，启动前台或后台 Agent 也要确保变量对该进程可见。
 
 默认的 `capture_content = false` 只导出 trace 和 span 元数据，不导出原始消息、
 Workspace context、rendered Prompt 或最终回复。启用 `capture_content = true` 后，

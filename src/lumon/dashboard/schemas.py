@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +28,55 @@ class BootstrapResponse(StrictModel):
     version: str
     workspace_count: int
     has_workspaces: bool
+
+
+class AgentObservabilityResponse(StrictModel):
+    """Display-safe Langfuse settings for the global Mark Agent."""
+
+    enabled: bool
+    provider: str
+    base_url: str
+    capture_content: bool
+    sample_rate: float
+    public_key_configured: bool
+    secret_key_configured: bool
+
+
+class AgentSettingsResponse(StrictModel):
+    """Display-safe global Mark Agent settings."""
+
+    enabled: bool
+    default_workspace_id: UUID | None
+    agent_provider: str
+    agent_model: str
+    agent_reasoning_effort: str
+    feishu_app_id: str
+    feishu_app_configured: bool
+    observability: AgentObservabilityResponse
+
+
+class AgentObservabilityUpdate(StrictModel):
+    """Langfuse settings with optional credential replacements."""
+
+    enabled: bool
+    base_url: str = Field(min_length=1)
+    capture_content: bool
+    sample_rate: float = Field(ge=0.0, le=1.0)
+    public_key: str | None = None
+    secret_key: str | None = None
+    clear_credentials: bool = False
+
+
+class AgentSettingsUpdate(StrictModel):
+    """Global Mark Agent settings submitted by the Dashboard."""
+
+    enabled: bool
+    default_workspace_id: UUID | None
+    agent_model: str = Field(min_length=1)
+    agent_reasoning_effort: Literal["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+    feishu_app_id: str = Field(min_length=1)
+    feishu_app_secret: str | None = None
+    observability: AgentObservabilityUpdate
 
 
 class RegisterWorkspaceRequest(StrictModel):

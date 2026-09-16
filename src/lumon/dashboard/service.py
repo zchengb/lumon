@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
+from lumon.agents.mark.config import (
+    AgentReasoningEffort,
+    MarkAgentConfig,
+    MarkConfigStore,
+    ObservabilityConfig,
+)
 from lumon.dashboard.folder_picker import FolderPicker
-from lumon.errors import PreflightError, WorkspaceNotFoundError
+from lumon.errors import AgentConfigError, PreflightError, WorkspaceNotFoundError
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -79,6 +86,59 @@ class WorkspaceSettingsView:
     feishu_webhook: WebhookSettingsView
 
 
+@dataclass(frozen=True, slots=True)
+class AgentObservabilitySettingsView:
+    """Display-safe Langfuse settings for the local Mark Agent."""
+
+    enabled: bool
+    provider: str
+    base_url: str
+    capture_content: bool
+    sample_rate: float
+    public_key_configured: bool
+    secret_key_configured: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AgentSettingsView:
+    """Display-safe global Mark Agent settings."""
+
+    enabled: bool
+    default_workspace_id: UUID | None
+    agent_provider: str
+    agent_model: str
+    agent_reasoning_effort: str
+    feishu_app_id: str
+    feishu_app_configured: bool
+    observability: AgentObservabilitySettingsView
+
+
+@dataclass(frozen=True, slots=True)
+class AgentObservabilitySettingsUpdate:
+    """Requested Langfuse settings with optional secret replacements."""
+
+    enabled: bool
+    base_url: str
+    capture_content: bool
+    sample_rate: float
+    public_key: str | None = None
+    secret_key: str | None = None
+    clear_credentials: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AgentSettingsUpdate:
+    """Requested global Mark Agent settings."""
+
+    enabled: bool
+    default_workspace_id: UUID | None
+    agent_model: str
+    agent_reasoning_effort: AgentReasoningEffort
+    feishu_app_id: str
+    feishu_app_secret: str | None
+    observability: AgentObservabilitySettingsUpdate
+
+
 class DashboardService:
     """Coordinate Dashboard use cases behind a small typed interface."""
 
@@ -91,9 +151,12 @@ class DashboardService:
         webhook_sender: FeishuWebhookSender | None = None,
         repository_provisioner: RepositoryProvisioner | None = None,
         folder_picker: Callable[[], Path | None] | None = None,
+        agent_config_store: MarkConfigStore | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
+        agent_state_root = state_root or self.registry.layout.root
+        self.agent_config_store = agent_config_store or MarkConfigStore(agent_state_root)
         self.initializer = initializer or WorkspaceInitializer(
             registry=self.registry,
             settings_store=self.settings_store,
@@ -146,6 +209,7 @@ class DashboardService:
             raise PreflightError(
                 f"Workspace was initialized but not registered: {result.workspace}"
             )
+        self._set_default_for_sole_workspace()
         return result, registration
 
     def overview(self, workspace_id: UUID) -> WorkspaceOverview:
@@ -183,6 +247,59 @@ class DashboardService:
         self._require(workspace_id)
         settings = self.settings_store.load(workspace_id)
         return _settings_view(settings)
+
+    def agent_settings(self) -> AgentSettingsView:
+        """Read display-safe global Mark Agent settings."""
+
+        return _agent_settings_view(self._load_agent_config())
+
+    def update_agent_settings(self, update: AgentSettingsUpdate) -> AgentSettingsView:
+        """Validate and persist global Mark Agent settings."""
+
+        current = self._load_agent_config()
+        default_workspace_id = self._resolve_default_workspace_id(update.default_workspace_id)
+
+        current_observability = current.observability
+        next_observability = AgentObservabilitySettingsUpdate(
+            enabled=update.observability.enabled,
+            base_url=update.observability.base_url.strip(),
+            capture_content=update.observability.capture_content,
+            sample_rate=update.observability.sample_rate,
+            public_key=update.observability.public_key,
+            secret_key=update.observability.secret_key,
+            clear_credentials=update.observability.clear_credentials,
+        )
+        config = MarkAgentConfig(
+            enabled=update.enabled,
+            default_workspace_id=default_workspace_id,
+            agent_provider=current.agent_provider,
+            agent_model=update.agent_model.strip(),
+            agent_reasoning_effort=update.agent_reasoning_effort,
+            feishu_app_id=update.feishu_app_id.strip(),
+            feishu_app_secret=_updated_secret(
+                current.feishu_app_secret,
+                update.feishu_app_secret,
+            ),
+            observability=ObservabilityConfig(
+                enabled=next_observability.enabled,
+                provider=current_observability.provider,
+                base_url=next_observability.base_url,
+                capture_content=next_observability.capture_content,
+                sample_rate=next_observability.sample_rate,
+                public_key=_updated_secret(
+                    current_observability.public_key,
+                    next_observability.public_key,
+                    next_observability.clear_credentials,
+                ),
+                secret_key=_updated_secret(
+                    current_observability.secret_key,
+                    next_observability.secret_key,
+                    next_observability.clear_credentials,
+                ),
+            ),
+        )
+        self.agent_config_store.save(config)
+        return _agent_settings_view(config)
 
     def update_settings(
         self,
@@ -228,6 +345,36 @@ class DashboardService:
             raise WorkspaceNotFoundError(f"Workspace is not registered: {workspace_id}")
         return registration
 
+    def _load_agent_config(self) -> MarkAgentConfig:
+        try:
+            return self.agent_config_store.load()
+        except AgentConfigError:
+            if not self.agent_config_store.path.exists():
+                return MarkAgentConfig()
+            raise
+
+    def _resolve_default_workspace_id(self, requested: UUID | None) -> UUID | None:
+        if requested is not None:
+            self._require(requested)
+            return requested
+        registrations = self.registry.list()
+        if len(registrations) == 1:
+            return registrations[0].workspace_id
+        return None
+
+    def _set_default_for_sole_workspace(self) -> None:
+        registrations = self.registry.list()
+        if len(registrations) != 1:
+            return
+        try:
+            config = self.agent_config_store.load()
+        except AgentConfigError:
+            return
+        workspace_id = registrations[0].workspace_id
+        if config.default_workspace_id == workspace_id:
+            return
+        self.agent_config_store.save(replace(config, default_workspace_id=workspace_id))
+
     def _health(self, registration: WorkspaceRegistration) -> WorkspaceListItem:
         if not registration.path.is_dir():
             return WorkspaceListItem(registration, "missing", "Workspace directory is missing.")
@@ -251,3 +398,39 @@ def _settings_view(settings: WorkspaceSettings) -> WorkspaceSettingsView:
             masked_url=masked_webhook_url(webhook.url),
         ),
     )
+
+
+def _agent_settings_view(config: MarkAgentConfig) -> AgentSettingsView:
+    observability = config.observability
+    public_key_configured = bool(
+        observability.public_key.strip() or os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
+    )
+    secret_key_configured = bool(
+        observability.secret_key.strip() or os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
+    )
+    return AgentSettingsView(
+        enabled=config.enabled,
+        default_workspace_id=config.default_workspace_id,
+        agent_provider=config.agent_provider,
+        agent_model=config.agent_model,
+        agent_reasoning_effort=config.agent_reasoning_effort,
+        feishu_app_id=config.feishu_app_id,
+        feishu_app_configured=bool(config.feishu_app_secret),
+        observability=AgentObservabilitySettingsView(
+            enabled=observability.enabled,
+            provider=observability.provider,
+            base_url=observability.base_url,
+            capture_content=observability.capture_content,
+            sample_rate=observability.sample_rate,
+            public_key_configured=public_key_configured,
+            secret_key_configured=secret_key_configured,
+        ),
+    )
+
+
+def _updated_secret(current: str, replacement: str | None, clear: bool = False) -> str:
+    if clear:
+        return ""
+    if replacement is None or not replacement.strip():
+        return current
+    return replacement.strip()

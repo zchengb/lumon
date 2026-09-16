@@ -98,16 +98,16 @@ def test_check_only_reports_available_without_downloading() -> None:
 
 
 def test_update_is_noop_when_current_version_is_latest() -> None:
-    version = ReleaseVersion(1, 0, 14)
-    release = ReleaseInfo("v1.0.14", version, ())
+    version = ReleaseVersion(1, 0, 15)
+    release = ReleaseInfo("v1.0.15", version, ())
     source = FakeReleaseSource(release, {})
     installer = FakeToolInstaller()
 
     result = UpdateService(source, installer).update(UpdateRequest("zchengb/lumon"))
 
     assert result.status is UpdateStatus.UP_TO_DATE
-    assert result.current_version == "1.0.14"
-    assert result.latest_version == "1.0.14"
+    assert result.current_version == "1.0.15"
+    assert result.latest_version == "1.0.15"
     assert installer.installed_bytes is None
 
 

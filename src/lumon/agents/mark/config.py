@@ -36,6 +36,8 @@ class ObservabilityConfig:
     base_url: str = DEFAULT_LANGFUSE_BASE_URL
     capture_content: bool = False
     sample_rate: float = 1.0
+    public_key: str = ""
+    secret_key: str = ""
 
     def validate(self) -> None:
         """Validate the provider settings before they cross the config seam."""
@@ -253,6 +255,8 @@ def _parse_observability(payload: dict[str, object], source: Path) -> Observabil
     base_url = payload.get("base_url", DEFAULT_LANGFUSE_BASE_URL)
     capture_content = payload.get("capture_content", False)
     sample_rate = payload.get("sample_rate", 1.0)
+    public_key = payload.get("public_key", "")
+    secret_key = payload.get("secret_key", "")
     if not isinstance(enabled, bool):
         raise AgentConfigError(f"Invalid observability enabled value: {source}")
     if not isinstance(provider, str) or provider != "langfuse":
@@ -263,12 +267,18 @@ def _parse_observability(payload: dict[str, object], source: Path) -> Observabil
         raise AgentConfigError(f"Invalid observability content capture value: {source}")
     if isinstance(sample_rate, bool) or not isinstance(sample_rate, (int, float)):
         raise AgentConfigError(f"Invalid observability sample rate: {source}")
+    if not isinstance(public_key, str):
+        raise AgentConfigError(f"Invalid Langfuse public key: {source}")
+    if not isinstance(secret_key, str):
+        raise AgentConfigError(f"Invalid Langfuse secret key: {source}")
     config = ObservabilityConfig(
         enabled=enabled,
         provider="langfuse",
         base_url=base_url,
         capture_content=capture_content,
         sample_rate=float(sample_rate),
+        public_key=public_key,
+        secret_key=secret_key,
     )
     try:
         config.validate()
@@ -308,6 +318,8 @@ def _render(config: MarkAgentConfig) -> str:
         f"base_url = {_toml_string(config.observability.base_url)}",
         f"capture_content = {'true' if config.observability.capture_content else 'false'}",
         f"sample_rate = {config.observability.sample_rate}",
+        f"public_key = {_toml_string(config.observability.public_key)}",
+        f"secret_key = {_toml_string(config.observability.secret_key)}",
     ]
     return "\n".join(lines) + "\n"
 

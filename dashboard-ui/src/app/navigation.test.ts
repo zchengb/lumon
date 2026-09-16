@@ -16,6 +16,16 @@ describe("Dashboard navigation", () => {
     });
   });
 
+  it("keeps the Agent settings view in the URL", () => {
+    expect(readNavigation("?workspace=abc&view=agent")).toEqual({
+      workspaceId: "abc",
+      view: "agent",
+    });
+    expect(writeNavigation({ workspaceId: "abc", view: "agent" })).toBe(
+      "?workspace=abc&view=agent",
+    );
+  });
+
   it("writes stable query state", () => {
     expect(writeNavigation({ workspaceId: "abc", view: "settings" })).toBe(
       "?workspace=abc&view=settings",

@@ -11,6 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
 from lumon.dashboard.routes import create_app
 from lumon.dashboard.server import DashboardServer, create_dashboard_app, select_port
 from lumon.dashboard.service import DashboardService
@@ -72,11 +73,163 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.0.14",
+        "version": "1.0.15",
         "workspace_count": 0,
         "has_workspaces": False,
     }
     assert client.get("/api/workspaces").json() == []
+
+
+def test_agent_settings_are_available_with_safe_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    client = _client(_service(tmp_path))
+
+    response = client.get("/api/agent/settings")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": False,
+        "default_workspace_id": None,
+        "agent_provider": "codex",
+        "agent_model": "gpt-5.6-luna",
+        "agent_reasoning_effort": "max",
+        "feishu_app_id": "",
+        "feishu_app_configured": False,
+        "observability": {
+            "enabled": False,
+            "provider": "langfuse",
+            "base_url": "https://cloud.langfuse.com",
+            "capture_content": False,
+            "sample_rate": 1.0,
+            "public_key_configured": False,
+            "secret_key_configured": False,
+        },
+    }
+
+
+def test_agent_settings_update_persists_secrets_without_returning_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    service = _service(tmp_path)
+    client = _client(service)
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(tmp_path / "workspace"), "repositories": []},
+    ).json()["workspace_id"]
+
+    response = client.put(
+        "/api/agent/settings",
+        json={
+            "enabled": True,
+            "default_workspace_id": None,
+            "agent_model": "gpt-5.6-luna",
+            "agent_reasoning_effort": "max",
+            "feishu_app_id": "cli_test",
+            "feishu_app_secret": "feishu-secret-value",
+            "observability": {
+                "enabled": True,
+                "base_url": "https://us.cloud.langfuse.com",
+                "capture_content": False,
+                "sample_rate": 0.25,
+                "public_key": "pk-lf-dashboard-test",
+                "secret_key": "sk-lf-dashboard-test",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["default_workspace_id"] == workspace_id
+    assert response.json()["observability"] == {
+        "enabled": True,
+        "provider": "langfuse",
+        "base_url": "https://us.cloud.langfuse.com",
+        "capture_content": False,
+        "sample_rate": 0.25,
+        "public_key_configured": True,
+        "secret_key_configured": True,
+    }
+    assert "feishu-secret-value" not in response.text
+    assert "pk-lf-dashboard-test" not in response.text
+    assert "sk-lf-dashboard-test" not in response.text
+
+    config = MarkConfigStore(service.agent_config_store.layout.root).load()
+    assert config.feishu_app_secret == "feishu-secret-value"
+    assert config.observability.public_key == "pk-lf-dashboard-test"
+    assert config.observability.secret_key == "sk-lf-dashboard-test"
+    assert config.observability.sample_rate == 0.25
+
+    preserved = client.put(
+        "/api/agent/settings",
+        json={
+            "enabled": True,
+            "default_workspace_id": workspace_id,
+            "agent_model": "gpt-5.6-sol",
+            "agent_reasoning_effort": "high",
+            "feishu_app_id": "cli_test-updated",
+            "observability": {
+                "enabled": True,
+                "base_url": "https://us.cloud.langfuse.com",
+                "capture_content": True,
+                "sample_rate": 0.5,
+            },
+        },
+    )
+
+    assert preserved.status_code == 200
+    updated_config = MarkConfigStore(service.agent_config_store.layout.root).load()
+    assert updated_config.feishu_app_secret == "feishu-secret-value"
+    assert updated_config.observability.public_key == "pk-lf-dashboard-test"
+    assert updated_config.observability.secret_key == "sk-lf-dashboard-test"
+    assert updated_config.agent_model == "gpt-5.6-sol"
+    assert updated_config.agent_reasoning_effort == "high"
+    assert updated_config.observability.capture_content is True
+
+
+def test_agent_settings_rejects_an_unregistered_default_workspace(tmp_path: Path) -> None:
+    client = _client(_service(tmp_path))
+
+    response = client.put(
+        "/api/agent/settings",
+        json={
+            "enabled": False,
+            "default_workspace_id": "12345678-1234-5678-1234-567812345678",
+            "agent_model": "gpt-5.6-luna",
+            "agent_reasoning_effort": "max",
+            "feishu_app_id": "cli_test",
+            "feishu_app_secret": "secret-value",
+            "observability": {
+                "enabled": False,
+                "base_url": "https://cloud.langfuse.com",
+                "capture_content": False,
+                "sample_rate": 1.0,
+            },
+        },
+    )
+
+    assert response.status_code == 404
+    assert "not registered" in response.json()["error"]["message"]
+
+
+def test_dashboard_initialization_selects_the_sole_workspace_for_mark(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    service.agent_config_store.save(
+        MarkAgentConfig(
+            enabled=True,
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret-value",
+        )
+    )
+
+    _, registration = service.initialize_workspace(tmp_path / "workspace", None, ())
+
+    assert service.agent_config_store.load().default_workspace_id == registration.workspace_id
 
 
 def test_workspace_folder_picker_returns_selected_path(tmp_path: Path) -> None:

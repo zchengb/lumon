@@ -225,6 +225,47 @@ def test_create_agent_telemetry_requires_credentials(
     assert isinstance(telemetry, NoopAgentTelemetry)
 
 
+def test_create_agent_telemetry_uses_credentials_saved_in_agent_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    client = FakeClient()
+    constructor_arguments: dict[str, object] = {}
+
+    class FakeLangfuse:
+        def __new__(cls, **arguments: object) -> FakeClient:
+            constructor_arguments.update(arguments)
+            return client
+
+    def fake_propagate(**arguments: object) -> FakePropagation:
+        return FakePropagation([], **arguments)
+
+    def fake_import(_: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            Langfuse=FakeLangfuse,
+            propagate_attributes=fake_propagate,
+        )
+
+    monkeypatch.setattr(observability.importlib, "import_module", fake_import)
+    config = MarkAgentConfig(
+        enabled=True,
+        feishu_app_id="cli_test",
+        feishu_app_secret="feishu-secret",
+        observability=ObservabilityConfig(
+            enabled=True,
+            public_key="pk-lf-saved",
+            secret_key="sk-lf-saved",
+        ),
+    )
+
+    telemetry = observability.create_agent_telemetry(config)
+
+    assert isinstance(telemetry, LangfuseAgentTelemetry)
+    assert constructor_arguments["public_key"] == "pk-lf-saved"
+    assert constructor_arguments["secret_key"] == "sk-lf-saved"
+
+
 def test_disabled_telemetry_does_not_import_or_initialize_sdk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

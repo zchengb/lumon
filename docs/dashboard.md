@@ -65,6 +65,22 @@ unregisters the Workspace and removes its user-level profile. It keeps the
 Workspace directory unless `--delete` is supplied, and it asks for confirmation
 before changing the registry or default selection.
 
+## Global Agent settings
+
+The **Mark Agent** page manages configuration that applies to the local Agent
+across all Workspaces: enabled state, Codex model, reasoning effort, default
+Workspace, Feishu App credentials, and Langfuse Cloud observability.
+
+The API returns only credential presence flags. New or replacement secrets are
+accepted by the update endpoint but never returned to the browser. Lumon saves
+them in `$LUMON_HOME/agent.toml` (normally `~/.lumon/agent.toml`) with owner-only
+file mode `600`. Environment variables `LANGFUSE_PUBLIC_KEY` and
+`LANGFUSE_SECRET_KEY` continue to override saved Langfuse values.
+
+Saving the page updates the on-disk configuration. Restart Mark with
+`lumon agent stop` and `lumon agent start --background` for the running process
+to load the new settings.
+
 ## Feishu Webhook
 
 The Settings page supports:

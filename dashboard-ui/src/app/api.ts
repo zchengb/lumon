@@ -1,4 +1,6 @@
 import type {
+  AgentSettings,
+  AgentSettingsUpdate,
   BootstrapState,
   InitializeWorkspaceRequest,
   InitializeWorkspaceResponse,
@@ -58,6 +60,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const dashboardApi = {
   getBootstrap(): Promise<BootstrapState> {
     return request<BootstrapState>("/api/bootstrap");
+  },
+
+  getAgentSettings(): Promise<AgentSettings> {
+    return request<AgentSettings>("/api/agent/settings");
+  },
+
+  updateAgentSettings(payload: AgentSettingsUpdate): Promise<AgentSettings> {
+    return request<AgentSettings>("/api/agent/settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
   },
 
   listWorkspaces(): Promise<WorkspaceListItem[]> {

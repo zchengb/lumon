@@ -1,6 +1,15 @@
 export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
-export type View = "overview" | "settings";
+export type View = "overview" | "settings" | "agent";
+
+export type AgentReasoningEffort =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 export interface BootstrapState {
   version: string;
@@ -46,11 +55,52 @@ export interface WorkspaceSettings {
   feishu_webhook: FeishuWebhookSettings;
 }
 
+export interface AgentObservabilitySettings {
+  enabled: boolean;
+  provider: string;
+  base_url: string;
+  capture_content: boolean;
+  sample_rate: number;
+  public_key_configured: boolean;
+  secret_key_configured: boolean;
+}
+
+export interface AgentSettings {
+  enabled: boolean;
+  default_workspace_id: string | null;
+  agent_provider: string;
+  agent_model: string;
+  agent_reasoning_effort: AgentReasoningEffort;
+  feishu_app_id: string;
+  feishu_app_configured: boolean;
+  observability: AgentObservabilitySettings;
+}
+
 export interface SettingsUpdate {
   feishu_webhook: {
     enabled: boolean;
     url?: string;
   };
+}
+
+export interface AgentObservabilityUpdate {
+  enabled: boolean;
+  base_url: string;
+  capture_content: boolean;
+  sample_rate: number;
+  public_key?: string;
+  secret_key?: string;
+  clear_credentials?: boolean;
+}
+
+export interface AgentSettingsUpdate {
+  enabled: boolean;
+  default_workspace_id: string | null;
+  agent_model: string;
+  agent_reasoning_effort: AgentReasoningEffort;
+  feishu_app_id: string;
+  feishu_app_secret?: string;
+  observability: AgentObservabilityUpdate;
 }
 
 export interface InitializeWorkspaceRequest {

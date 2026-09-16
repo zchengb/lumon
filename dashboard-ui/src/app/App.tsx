@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Bot,
   CheckCircle2,
   LayoutDashboard,
   LoaderCircle,
@@ -9,13 +10,22 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "./api";
 import { readNavigation, writeNavigation } from "./navigation";
+import { AgentSettingsPage } from "../features/agent/AgentSettingsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { WorkspaceOnboarding } from "../features/workspaces/WorkspaceOnboarding";
 import { WorkspaceOverview } from "../features/workspaces/WorkspaceOverview";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { resolveWorkspaceSelection } from "../features/workspaces/workspaceSelection";
 import { LanguagePicker, useI18n, type Translator } from "../shared/i18n";
-import type { SettingsUpdate, View, WorkspaceListItem, WorkspaceOverview as WorkspaceOverviewData, WorkspaceSettings } from "../shared/types";
+import type {
+  AgentSettings,
+  AgentSettingsUpdate,
+  SettingsUpdate,
+  View,
+  WorkspaceListItem,
+  WorkspaceOverview as WorkspaceOverviewData,
+  WorkspaceSettings,
+} from "../shared/types";
 
 export function App(): React.JSX.Element {
   const { t } = useI18n();
@@ -26,11 +36,13 @@ export function App(): React.JSX.Element {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [overview, setOverview] = useState<WorkspaceOverviewData | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
+  const [agentSettings, setAgentSettings] = useState<AgentSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [agentSettingsDirty, setAgentSettingsDirty] = useState(false);
 
   const refreshWorkspaces = useCallback(async (): Promise<WorkspaceListItem[]> => {
     const next = await dashboardApi.listWorkspaces();
@@ -40,8 +52,11 @@ export function App(): React.JSX.Element {
   }, [initialNavigation.workspaceId]);
 
   useEffect(() => {
-    void Promise.all([refreshWorkspaces(), dashboardApi.getBootstrap()])
-      .then(([, bootstrap]) => setAppVersion(bootstrap.version))
+    void Promise.all([refreshWorkspaces(), dashboardApi.getBootstrap(), dashboardApi.getAgentSettings()])
+      .then(([, bootstrap, nextAgentSettings]) => {
+        setAppVersion(bootstrap.version);
+        setAgentSettings(nextAgentSettings);
+      })
       .catch((reason: unknown) => setError(messageFor(reason, t)))
       .finally(() => setLoading(false));
   }, [refreshWorkspaces, t]);
@@ -84,8 +99,10 @@ export function App(): React.JSX.Element {
 
   function changeView(nextView: View): void {
     if (nextView === view) return;
-    if (settingsDirty && !window.confirm(t("app.unsavedViewConfirm"))) return;
+    const currentViewDirty = view === "settings" ? settingsDirty : view === "agent" ? agentSettingsDirty : false;
+    if (currentViewDirty && !window.confirm(t("app.unsavedViewConfirm"))) return;
     setSettingsDirty(false);
+    setAgentSettingsDirty(false);
     setView(nextView);
   }
 
@@ -115,6 +132,19 @@ export function App(): React.JSX.Element {
     }
   }
 
+  async function saveAgentSettings(update: AgentSettingsUpdate): Promise<boolean> {
+    try {
+      const saved = await dashboardApi.updateAgentSettings(update);
+      setAgentSettings(saved);
+      setNotice(t("app.agentSettingsSaved"));
+      setError(null);
+      return true;
+    } catch (reason) {
+      setError(messageFor(reason, t));
+      return false;
+    }
+  }
+
   async function testSettings(url?: string): Promise<void> {
     if (!selectedId) return;
     try {
@@ -136,6 +166,7 @@ export function App(): React.JSX.Element {
       ]);
       setOverview(nextOverview);
       setSettings(nextSettings);
+      setAgentSettings(await dashboardApi.getAgentSettings());
       setNotice(t("app.workspaceRefreshed"));
     } catch (reason) {
       setError(messageFor(reason, t));
@@ -162,6 +193,7 @@ export function App(): React.JSX.Element {
         <nav className="side-nav" aria-label={t("app.dashboardSections")}>
           <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />{t("app.overview")}</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />{t("app.settings")}</button>
+          <button className={view === "agent" ? "active" : ""} type="button" onClick={() => changeView("agent")}><Bot size={17} />{t("app.agentSettings")}</button>
         </nav>
         <div className="sidebar-footer">
           <img className="company-logo" src="/inspire-group-logo-white.png" alt={t("app.companyLogoAlt")} />
@@ -181,6 +213,7 @@ export function App(): React.JSX.Element {
         <main className="content-area">
           {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
           {selectedId && view === "settings" && settings && <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />}
+          {view === "agent" && agentSettings && <AgentSettingsPage settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
           {selectedId && refreshing && !overview && !settings && <div className="loading-inline"><LoaderCircle className="spin" size={22} />{t("app.readingWorkspace")}</div>}
         </main>
       </div>

@@ -153,6 +153,8 @@ def test_observability_config_round_trip_is_safe(tmp_path: Path) -> None:
             base_url="https://us.cloud.langfuse.com",
             capture_content=True,
             sample_rate=0.25,
+            public_key="pk-lf-test",
+            secret_key="sk-lf-test",
         ),
     )
 
@@ -168,6 +170,8 @@ def test_observability_config_round_trip_is_safe(tmp_path: Path) -> None:
         "sample_rate": 0.25,
     }
     assert "secret-value" not in str(loaded.to_safe_dict())
+    assert "pk-lf-test" not in str(loaded.to_safe_dict())
+    assert "sk-lf-test" not in str(loaded.to_safe_dict())
 
 
 def test_invalid_observability_sample_rate_is_rejected() -> None:

@@ -298,8 +298,8 @@ def _observability_checks(config: MarkAgentConfig) -> list[AgentDoctorCheck]:
 
     sdk_available = importlib.util.find_spec("langfuse") is not None
     credentials_configured = bool(
-        os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
-        and os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
+        (os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip() or settings.public_key.strip())
+        and (os.environ.get("LANGFUSE_SECRET_KEY", "").strip() or settings.secret_key.strip())
     )
     capture_detail = "enabled" if settings.capture_content else "disabled"
     return [

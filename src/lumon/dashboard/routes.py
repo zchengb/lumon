@@ -11,6 +11,9 @@ from fastapi.responses import JSONResponse
 
 from lumon import __version__
 from lumon.dashboard.schemas import (
+    AgentObservabilityResponse,
+    AgentSettingsResponse,
+    AgentSettingsUpdate,
     BootstrapResponse,
     FeishuWebhookResponse,
     FeishuWebhookTestRequest,
@@ -28,9 +31,14 @@ from lumon.dashboard.schemas import (
     WorkspaceSettingsUpdate,
 )
 from lumon.dashboard.service import (
+    AgentObservabilitySettingsUpdate,
+    AgentSettingsView,
     DashboardService,
     WorkspaceListItem,
     WorkspaceSettingsView,
+)
+from lumon.dashboard.service import (
+    AgentSettingsUpdate as AgentSettingsUpdateRequest,
 )
 from lumon.errors import InvalidInputError, LumonError, PreflightError, WorkspaceNotFoundError
 
@@ -58,6 +66,36 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
             workspace_count=len(workspaces),
             has_workspaces=bool(workspaces),
         )
+
+    @router.get("/agent/settings", response_model=AgentSettingsResponse)
+    def agent_settings(request: Request) -> AgentSettingsResponse:
+        return _agent_settings_response(_service(request).agent_settings())
+
+    @router.put("/agent/settings", response_model=AgentSettingsResponse)
+    def update_agent_settings(
+        request: Request, payload: AgentSettingsUpdate
+    ) -> AgentSettingsResponse:
+        observability = payload.observability
+        settings = _service(request).update_agent_settings(
+            AgentSettingsUpdateRequest(
+                enabled=payload.enabled,
+                default_workspace_id=payload.default_workspace_id,
+                agent_model=payload.agent_model,
+                agent_reasoning_effort=payload.agent_reasoning_effort,
+                feishu_app_id=payload.feishu_app_id,
+                feishu_app_secret=payload.feishu_app_secret,
+                observability=AgentObservabilitySettingsUpdate(
+                    enabled=observability.enabled,
+                    base_url=observability.base_url,
+                    capture_content=observability.capture_content,
+                    sample_rate=observability.sample_rate,
+                    public_key=observability.public_key,
+                    secret_key=observability.secret_key,
+                    clear_credentials=observability.clear_credentials,
+                ),
+            )
+        )
+        return _agent_settings_response(settings)
 
     @router.get("/workspaces", response_model=list[WorkspaceResponse])
     def list_workspaces(request: Request) -> list[WorkspaceResponse]:
@@ -213,6 +251,30 @@ def _settings_response(settings: WorkspaceSettingsView) -> WorkspaceSettingsResp
             enabled=webhook.enabled,
             configured=webhook.configured,
             masked_url=webhook.masked_url,
+        ),
+    )
+
+
+def _agent_settings_response(settings: AgentSettingsView) -> AgentSettingsResponse:
+    # The service returns a typed view; keeping the conversion here ensures the
+    # HTTP response never grows a path to credential values by accident.
+    observability = settings.observability
+    return AgentSettingsResponse(
+        enabled=settings.enabled,
+        default_workspace_id=settings.default_workspace_id,
+        agent_provider=settings.agent_provider,
+        agent_model=settings.agent_model,
+        agent_reasoning_effort=settings.agent_reasoning_effort,
+        feishu_app_id=settings.feishu_app_id,
+        feishu_app_configured=settings.feishu_app_configured,
+        observability=AgentObservabilityResponse(
+            enabled=observability.enabled,
+            provider=observability.provider,
+            base_url=observability.base_url,
+            capture_content=observability.capture_content,
+            sample_rate=observability.sample_rate,
+            public_key_configured=observability.public_key_configured,
+            secret_key_configured=observability.secret_key_configured,
         ),
     )
 

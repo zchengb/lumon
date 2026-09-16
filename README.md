@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.14
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.15
 ```
 
 To install the optional Langfuse Cloud telemetry support, add the installer
@@ -61,7 +61,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.14` runs the release workflow, which attaches
+semantic version tag such as `v1.0.15` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -142,7 +142,8 @@ Lumon binds the Python API to `127.0.0.1`, selects an available port, and opens
 the browser. Use `lumon ui --no-open` when the browser should not be opened.
 The Dashboard can initialize a new Workspace, add an existing initialized
 Workspace, switch between registered Workspaces, inspect Repository health,
-and configure the current Workspace's Feishu Webhook.
+configure the current Workspace's Feishu Webhook, and manage the global Mark
+Agent settings, including its Codex model and Langfuse Cloud telemetry.
 
 The machine-local registry and Workspace profiles live under `~/.lumon/`:
 
@@ -186,8 +187,9 @@ started by `lumon ui`.
 
 Mark configuration is kept separately from Workspace settings in
 `~/.lumon/agent.toml` (or `$LUMON_HOME/agent.toml`) and its SQLite state is in
-`~/.lumon/mark.sqlite3`. The App Secret is stored in the owner-only `600`
-configuration file and never appears in CLI output, logs, or Feishu replies.
+`~/.lumon/mark.sqlite3`. The App Secret and Dashboard-saved Langfuse
+credentials are stored in the owner-only `600` configuration file and never
+appear in Dashboard responses, CLI output, logs, or Feishu replies.
 Mark uses Codex CLI model `gpt-5.6-luna` with `max` reasoning effort by default.
 The `agent_model` and `agent_reasoning_effort` fields in `agent.toml` can be
 edited to choose another supported model and effort; `lumon agent doctor`
