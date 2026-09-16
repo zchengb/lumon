@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from lumon.agents.mark.config import MarkConfigStore
 from lumon.cli.output import emit_error, emit_init
-from lumon.errors import LumonError
+from lumon.errors import AgentConfigError, LumonError
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest, RepositorySpec
+from lumon.workspace.registry import WorkspaceRegistry
 from lumon.workspace.repositories import spec_from_url
 
 
@@ -39,6 +42,8 @@ def command(
         result = WorkspaceInitializer().initialize(
             InitRequest(path, name=name, repositories=specifications, dry_run=dry_run)
         )
+        if result.status != "dry_run":
+            _set_default_for_sole_workspace()
     except LumonError as exc:
         emit_error(exc, json_output)
         raise typer.Exit(code=exc.exit_code) from exc
@@ -82,3 +87,22 @@ def _interactive_terminal() -> bool:
     """Return whether both standard streams can safely support prompts."""
 
     return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _set_default_for_sole_workspace() -> None:
+    """Select the only registered Workspace when Mark has a saved config."""
+
+    registrations = WorkspaceRegistry().list()
+    if len(registrations) != 1:
+        return
+
+    config_store = MarkConfigStore()
+    try:
+        config = config_store.load()
+    except AgentConfigError:
+        return
+
+    workspace_id = registrations[0].workspace_id
+    if config.default_workspace_id == workspace_id:
+        return
+    config_store.save(replace(config, default_workspace_id=workspace_id))

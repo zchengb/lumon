@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.13
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.14
 ```
 
 To install the optional Langfuse Cloud telemetry support, add the installer
@@ -61,7 +61,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.13` runs the release workflow, which attaches
+semantic version tag such as `v1.0.14` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -91,6 +91,11 @@ checkout is reused without fetch, reset, checkout, or deletion. A different
 remote or an existing non-Git directory is rejected. Initialization is
 transactional: newly cloned repositories and newly installed Skills are
 removed if the operation fails.
+
+When Mark is already configured and the initialized Workspace is the only
+registered Workspace, `lumon init` selects it as Mark's default automatically.
+When multiple Workspaces are registered, initialization leaves the existing
+default unchanged.
 
 Initialization creates the Workspace skeleton, including a local `AGENTS.md`,
 and installs the bundled `lumon-story-planning` and
