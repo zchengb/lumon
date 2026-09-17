@@ -1,4 +1,4 @@
-"""Typed values exchanged by the Mark Agent modules."""
+"""Typed values exchanged by the Agent modules."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from uuid import UUID
 from lumon.flows.model import FlowBrief
 
 MessageDirection = Literal["inbound", "outbound"]
-MarkRunStatus = Literal["succeeded", "failed", "timed_out", "cancelled"]
+AgentRunStatus = Literal["succeeded", "failed", "timed_out", "cancelled"]
 AgentProvider = Literal["codex"]
 AgentResultStatus = Literal["succeeded", "failed", "timed_out"]
 RunStatus = Literal[
@@ -65,7 +65,7 @@ class InboundMessage:
     text: str
     sender_id: str
     sender_type: str
-    mentioned_mark: bool = False
+    mentioned_agent: bool = False
     thread_id: str | None = None
     root_id: str | None = None
 
@@ -100,11 +100,11 @@ class InboundMessage:
 
     @property
     def admitted(self) -> bool:
-        """Return whether the message is eligible for Mark processing."""
+        """Return whether the message is eligible for Agent processing."""
 
         if self.sender_type.casefold() in {"bot", "app", "application"}:
             return False
-        return not self.is_group or self.mentioned_mark
+        return not self.is_group or self.mentioned_agent
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +130,7 @@ class Message:
 
 
 @dataclass(frozen=True, slots=True)
-class MarkSession:
+class AgentSession:
     """The durable identity of one direct chat or group Thread conversation."""
 
     session_id: str
@@ -147,13 +147,13 @@ class MarkSession:
 
 
 @dataclass(frozen=True, slots=True)
-class MarkRunResult:
-    """The durable outcome of one accepted Mark request."""
+class AgentRunResult:
+    """The durable outcome of one accepted Agent request."""
 
     run_id: str
     event_id: str
     conversation_key: str
-    status: MarkRunStatus
+    status: AgentRunStatus
     started_at: str
     ended_at: str
     workspace_id: UUID | None = None

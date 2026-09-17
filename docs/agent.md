@@ -1,15 +1,15 @@
-# Mark Agent
+# Agent
 
-Mark 是 Lumon 的本地 Workspace Agent。它通过飞书 WebSocket 长连接接收消息，
+Agent 是 Lumon 的本地 Workspace Agent。它通过飞书 WebSocket 长连接接收消息，
 把当前用户选定的 Workspace 作为本地 Agent CLI 的工作目录，并把进度与最终回答
-回复到原来的聊天线程。当前唯一实现是 Codex；Mark 本身只依赖通用的
+回复到原来的聊天线程。当前唯一实现是 Codex；Agent 本身只依赖通用的
 `AgentRunner`、`AgentResult` 和 provider-neutral 错误码，因此未来替换 CLI 时不需要
 改动消息、Workspace 或 SQLite 流程。
 
 ## 当前能力
 
 - 私聊消息直接处理。
-- 群聊消息只有在明确 `@Mark` 时处理。
+- 群聊消息只有在明确提及该 Agent 时处理。
 - 使用配置的默认 Workspace；只有一个已注册 Workspace 时可以自动选择。
 - 读取 Workspace 根目录的 `AGENTS.md`、`lumon/manifest.json`、
   `lumon/workspace.toml` 和 Repository metadata。
@@ -32,7 +32,7 @@ Mark 是 Lumon 的本地 Workspace Agent。它通过飞书 WebSocket 长连接�
 `id`、`name`、`brief` 和 `enabled`。Dashboard 的 **Flows** 页面直接编辑这些文件；
 新 Workspace 可以从页面提供的设计模板开始，已有 Workspace 也可以直接新增流程。
 
-Mark 的初始 Prompt 只包含启用流程的 ID、brief 和相对路径，不会预先加载流程正文。
+Agent 的初始 Prompt 只包含启用流程的 ID、brief 和相对路径，不会预先加载流程正文。
 Agent 会根据用户意图判断是否适用并读取唯一流程的完整 Markdown；多个流程同样适用时应先向用户澄清，
 没有适用流程时继续普通 Agent 行为。选中的流程可以在回复前发出内部控制标记：
 
@@ -53,7 +53,7 @@ Lumon 会移除这个标记后再回复飞书，并把经过 Workspace 校验的
 
 ## Codex 工具与输出策略
 
-Codex 不是 Mark 的专属模块。共享的执行工具位于：
+Codex 不是 Agent 的专属模块。共享的执行工具位于：
 
 ```text
 lumon/tools/codex.py
@@ -64,12 +64,12 @@ lumon/tools/codex.py
 因此 Auto Scan、Auto Delivery 等 Flow 可以只检查执行状态或消费文件变化，忽略
 文本输出。
 
-Mark 的对话适配器位于 `lumon/agents/mark/runner.py`。它调用共享的
+Agent 的对话适配器位于 `lumon/agents/agent/runner.py`。它调用共享的
 `CodexTool`，把命令/文件事件转换为聊天进度，并额外要求有可回复的最终文本；
-没有最终文本时，才由 Mark 转换为 `EMPTY_RESULT`。这样聊天输出策略不会反向
+没有最终文本时，才由 Agent 转换为 `EMPTY_RESULT`。这样聊天输出策略不会反向
 污染其他 Flow。
 
-Mark 不会因为打开 Dashboard 自动启动；必须明确运行 `lumon agent start`。
+Agent 不会因为打开 Dashboard 自动启动；必须明确运行 `lumon agent start`。
 
 ## 配置
 
@@ -80,14 +80,14 @@ Mark 不会因为打开 Dashboard 自动启动；必须明确运行 `lumon agent
 3. 订阅 `im.message.receive_v1`。
 4. 授予机器人接收和发送消息所需的权限，并重新安装或更新租户内的应用。
 
-配置 Mark：
+配置 Agent：
 
 ```text
 lumon agent configure
 ```
 
 命令会交互式收集 App ID、App Secret 和默认 Workspace ID。也可以在本机
-Dashboard 的 **Mark Agent** 页面修改并保存这些 Agent 配置。配置写入：
+Dashboard 的 **Agent** 页面修改并保存这些 Agent 配置。配置写入：
 
 ```text
 $LUMON_HOME/agent.toml
@@ -111,7 +111,7 @@ reasoning effort；`lumon agent configure` 会保留已有设置。运行
 
 ## Langfuse Cloud 可观测性
 
-Mark 可以把每条已处理的飞书消息记录为一个 Langfuse trace。该能力默认关闭，
+Agent 可以把每条已处理的飞书消息记录为一个 Langfuse trace。该能力默认关闭，
 并且不会阻止 Agent 执行：凭据缺失、SDK 初始化失败或发送失败时，消息仍按
 原有流程处理。
 
@@ -127,8 +127,7 @@ Shell 安装会自动包含 Langfuse SDK：
 curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash
 ```
 
-在 Langfuse Cloud 创建项目并生成 project API keys。可以在 Dashboard 的 **Mark
-Agent** 页面填写并保存凭据，也可以把凭据放在运行 Agent 的进程环境中。环境变量
+在 Langfuse Cloud 创建项目并生成 project API keys。可以在 Dashboard 的 **Agent** 页面填写并保存凭据，也可以把凭据放在运行 Agent 的进程环境中。环境变量
 优先于 `agent.toml` 中保存的值；不要把它们写入 Workspace、日志或 commit：
 
 ```text
@@ -151,7 +150,7 @@ sample_rate = 1.0
 
 运行 `lumon agent doctor` 会显示 endpoint、content capture、sample rate、SDK
 安装状态和凭据是否存在；它只输出 presence，不输出 key 的值。Dashboard 保存 Agent
-配置后需要重启 Mark，运行中的进程不会自动重新加载模型、Feishu 凭据或 Langfuse
+配置后需要重启 Agent，运行中的进程不会自动重新加载模型、Feishu 凭据或 Langfuse
 客户端设置。使用环境变量时，启动前台或后台 Agent 也要确保变量对该进程可见。
 
 `capture_content = true` 是固定设置，Dashboard 不再提供关闭开关。Lumon 会在客户端先
@@ -177,12 +176,12 @@ Pilot 验证流程：
 持久化状态写入：
 
 ```text
-$LUMON_HOME/mark.sqlite3
+$LUMON_HOME/agent.sqlite3
 ```
 
 ## Session 与 Codex 原生 Session
 
-Mark 的 Session 边界是稳定的：
+Agent 的 Session 边界是稳定的：
 
 - 私聊使用 Feishu `chat_id`，同一私聊不会因为消息带有不同的 thread metadata 而拆成多个 Session。
 - 群聊优先使用 Feishu `thread_id`，没有时使用 `root_id`，最后使用根消息 ID；同一 Thread 内的消息会进入同一个 Session。
@@ -199,7 +198,7 @@ Mark 的 Session 边界是稳定的：
 
 一个 Lumon Session 只绑定一个 Codex 原生 Session：私聊按 `chat_id` 绑定，群聊按 Thread 绑定，互不共享。如果 Workspace 发生变化，或原生 Session resume 失败，Lumon 会清除绑定；当前失败请求不会自动重试，下一条消息会重新发送 bootstrap Prompt，避免重复执行用户动作。
 
-这是为分析 Agent 视角保留的本机审计数据，不会出现在日志、CLI 输出、诊断结果或飞书回复中。由于 Prompt 可能包含工作区中的敏感上下文，完整记录只保存在 `$LUMON_HOME/mark.sqlite3`，文件和父目录分别限制为当前用户可读写（`600` / `700`）。不要把该数据库同步到外部系统。
+这是为分析 Agent 视角保留的本机审计数据，不会出现在日志、CLI 输出、诊断结果或飞书回复中。由于 Prompt 可能包含工作区中的敏感上下文，完整记录只保存在 `$LUMON_HOME/agent.sqlite3`，文件和父目录分别限制为当前用户可读写（`600` / `700`）。不要把该数据库同步到外部系统。
 
 Langfuse telemetry 与本机审计是两条边界：telemetry 默认关闭；开启后会发送上述
 metadata 以及客户端脱敏后的输入、rendered Prompt 和最终回复。每个新 Workspace 都
@@ -216,10 +215,10 @@ metadata 以及客户端脱敏后的输入、rendered Prompt 和最终回复。�
 
 `runs` 的一行对应一次 Agent CLI 调用，不对应 Agent 内部执行的每一条命令；命令和文件操作事件不会各自产生新的 Run。
 
-Mark 的默认模板集中位于安装包中：
+Agent 的默认模板集中位于安装包中：
 
 ```text
-lumon/agents/mark/templates/
+lumon/agents/agent/templates/
 ├── SOUL.md
 └── workspace_prompt.md
 ```
@@ -227,11 +226,11 @@ lumon/agents/mark/templates/
 用户可以创建覆盖文件来加入本机规则：
 
 ```text
-$LUMON_HOME/agents/mark/templates/SOUL.md
+$LUMON_HOME/agents/agent/templates/SOUL.md
 ```
 
 Lumon 只读取现有覆盖文件，不会自动覆盖或升级它。为兼容旧版本，旧路径
-`$LUMON_HOME/agents/mark/SOUL.md` 仍会作为回退路径读取，但新配置应使用
+`$LUMON_HOME/agents/agent/SOUL.md` 仍会作为回退路径读取，但新配置应使用
 `templates/SOUL.md`。
 
 ## 运行与检查
@@ -260,9 +259,9 @@ lumon agent status
 lumon agent stop
 ```
 
-Mark 当前使用 `full_access` 的 Agent 执行模式，具体由 Codex runner 实现。它允许
+Agent 当前使用 `full_access` 的 Agent 执行模式，具体由 Codex runner 实现。它允许
 用户通过飞书明确要求的 Workspace 内命令和文件操作直接执行；因此不要把密码、Token、Webhook、私钥等
-敏感信息放进 Workspace，也不要在不清楚影响时要求 Mark 执行删除、重置、发布或
+敏感信息放进 Workspace，也不要在不清楚影响时要求 Agent 执行删除、重置、发布或
 推送等高影响动作。
 
 ## 测试边界
@@ -276,7 +275,7 @@ lumon agent doctor
 lumon agent start
 ```
 
-随后私聊 Mark，或在群里 `@Mark` 提出一个读取当前 Workspace README/Repository
+随后私聊 Agent，或在群里提及 Agent，提出一个读取当前 Workspace README/Repository
 结构的问题，检查进度、Workspace 选择、最终回答和重复消息去重。
 
 官方 Channel SDK 参考：

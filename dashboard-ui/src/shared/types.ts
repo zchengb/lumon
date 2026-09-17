@@ -76,6 +76,8 @@ export interface AgentObservabilitySettings {
   sample_rate: number;
   public_key_configured: boolean;
   secret_key_configured: boolean;
+  public_key_masked: string | null;
+  secret_key_masked: string | null;
 }
 
 export interface AgentSettings {
@@ -86,6 +88,7 @@ export interface AgentSettings {
   agent_reasoning_effort: AgentReasoningEffort;
   feishu_app_id: string;
   feishu_app_configured: boolean;
+  feishu_app_secret_masked: string | null;
   observability: AgentObservabilitySettings;
 }
 

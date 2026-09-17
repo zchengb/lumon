@@ -31,7 +31,7 @@ class BootstrapResponse(StrictModel):
 
 
 class AgentObservabilityResponse(StrictModel):
-    """Display-safe Langfuse settings for the global Mark Agent."""
+    """Display-safe Langfuse settings for the global Agent."""
 
     enabled: bool
     provider: str
@@ -39,10 +39,12 @@ class AgentObservabilityResponse(StrictModel):
     sample_rate: float
     public_key_configured: bool
     secret_key_configured: bool
+    public_key_masked: str | None
+    secret_key_masked: str | None
 
 
 class AgentSettingsResponse(StrictModel):
-    """Display-safe global Mark Agent settings."""
+    """Display-safe global Agent settings."""
 
     enabled: bool
     default_workspace_id: UUID | None
@@ -51,6 +53,7 @@ class AgentSettingsResponse(StrictModel):
     agent_reasoning_effort: str
     feishu_app_id: str
     feishu_app_configured: bool
+    feishu_app_secret_masked: str | None
     observability: AgentObservabilityResponse
 
 
@@ -66,7 +69,7 @@ class AgentObservabilityUpdate(StrictModel):
 
 
 class AgentSettingsUpdate(StrictModel):
-    """Global Mark Agent settings submitted by the Dashboard."""
+    """Global Agent settings submitted by the Dashboard."""
 
     enabled: bool
     default_workspace_id: UUID | None

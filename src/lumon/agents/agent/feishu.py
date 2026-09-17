@@ -1,23 +1,22 @@
-"""Feishu WebSocket channel adapter for Mark's normalized message interface."""
+"""Feishu WebSocket channel adapter for Agent's normalized message interface."""
 
 from __future__ import annotations
 
 import importlib
-import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast
 
-from lumon.agents.mark.config import MarkAgentConfig
-from lumon.agents.mark.model import InboundMessage, RecalledMessage
+from lumon.agents.agent.config import AgentConfig
+from lumon.agents.agent.model import InboundMessage, RecalledMessage
 from lumon.errors import AgentRuntimeError
 
 MessageHandler = Callable[[InboundMessage], Awaitable[None]]
 RecallHandler = Callable[[RecalledMessage], Awaitable[None]]
 _RECALL_EVENT_TYPE = "im.message.recalled_v1"
 
-# Load the SDK before ``asyncio.run`` creates Mark's runtime loop. The SDK's
+# Load the SDK before ``asyncio.run`` creates Agent's runtime loop. The SDK's
 # WebSocket client captures a module-level loop during import and later runs
-# its synchronous starter on that loop; importing it inside Mark's loop causes
+# its synchronous starter on that loop; importing it inside Agent's loop causes
 # the SDK to call ``run_until_complete`` on an already-running loop.
 try:
     _sdk_module: Any | None = importlib.import_module("lark_channel")
@@ -27,10 +26,10 @@ except ImportError as exc:
     _sdk_import_error = exc
 
 
-class MarkFeishuChannel:
+class AgentFeishuChannel:
     """Keep the third-party Channel SDK behind one concrete integration module."""
 
-    def __init__(self, config: MarkAgentConfig) -> None:
+    def __init__(self, config: AgentConfig) -> None:
         self.config = config
         self._channel: Any = None
         self._handler: MessageHandler | None = None
@@ -163,7 +162,7 @@ class MarkFeishuChannel:
 
 
 def normalize_message(raw: object) -> InboundMessage | None:
-    """Convert an SDK message into the small message contract Mark consumes."""
+    """Convert an SDK message into the small message contract Agent consumes."""
 
     message_id = _text(_value(raw, "id", _value(raw, "message_id", "")))
     conversation = _value(raw, "conversation", {})
@@ -184,10 +183,7 @@ def normalize_message(raw: object) -> InboundMessage | None:
     if not message_id or not chat_id or not text:
         return None
 
-    mentioned_bot = bool(
-        _value(raw, "mentioned_bot", False)
-        or re.search(r"(?i)(?:^|\s)@mark(?:\s|$)", text) is not None
-    )
+    mentioned_bot = bool(_value(raw, "mentioned_bot", False))
     sender_is_bot = bool(_value(raw, "sender_is_bot", _value(sender, "is_bot", False)))
     if sender_is_bot and sender_type == "unknown":
         sender_type = "bot"
@@ -211,7 +207,7 @@ def normalize_message(raw: object) -> InboundMessage | None:
         text=text,
         sender_id=sender_id,
         sender_type=sender_type,
-        mentioned_mark=mentioned_bot,
+        mentioned_agent=mentioned_bot,
         thread_id=thread_id,
         root_id=root_id,
     )

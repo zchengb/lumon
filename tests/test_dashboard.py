@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.dashboard.routes import create_app
 from lumon.dashboard.server import DashboardServer, create_dashboard_app, select_port
 from lumon.dashboard.service import DashboardService
@@ -88,7 +88,7 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.1.3",
+        "version": "1.2.0",
         "workspace_count": 0,
         "has_workspaces": False,
     }
@@ -113,6 +113,7 @@ def test_agent_settings_are_available_with_safe_defaults(
         "agent_reasoning_effort": "max",
         "feishu_app_id": "",
         "feishu_app_configured": False,
+        "feishu_app_secret_masked": None,
         "observability": {
             "enabled": False,
             "provider": "langfuse",
@@ -120,11 +121,28 @@ def test_agent_settings_are_available_with_safe_defaults(
             "sample_rate": 1.0,
             "public_key_configured": False,
             "secret_key_configured": False,
+            "public_key_masked": None,
+            "secret_key_masked": None,
         },
     }
 
 
-def test_agent_settings_update_persists_secrets_without_returning_them(
+def test_agent_settings_masks_environment_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-environment-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-environment-test")
+
+    response = _client(_service(tmp_path)).get("/api/agent/settings")
+
+    assert response.status_code == 200
+    assert response.json()["observability"]["public_key_masked"] == "pk-l**************test"
+    assert response.json()["observability"]["secret_key_masked"] == "sk-l**************test"
+    assert "pk-lf-environment-test" not in response.text
+    assert "sk-lf-environment-test" not in response.text
+
+
+def test_agent_settings_update_persists_secrets_and_returns_only_masks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
@@ -164,12 +182,15 @@ def test_agent_settings_update_persists_secrets_without_returning_them(
         "sample_rate": 0.25,
         "public_key_configured": True,
         "secret_key_configured": True,
+        "public_key_masked": "pk-l************test",
+        "secret_key_masked": "sk-l************test",
     }
+    assert response.json()["feishu_app_secret_masked"] == "feis***********alue"
     assert "feishu-secret-value" not in response.text
     assert "pk-lf-dashboard-test" not in response.text
     assert "sk-lf-dashboard-test" not in response.text
 
-    config = MarkConfigStore(service.agent_config_store.layout.root).load()
+    config = AgentConfigStore(service.agent_config_store.layout.root).load()
     assert config.feishu_app_secret == "feishu-secret-value"
     assert config.observability.public_key == "pk-lf-dashboard-test"
     assert config.observability.secret_key == "sk-lf-dashboard-test"
@@ -192,7 +213,7 @@ def test_agent_settings_update_persists_secrets_without_returning_them(
     )
 
     assert preserved.status_code == 200
-    updated_config = MarkConfigStore(service.agent_config_store.layout.root).load()
+    updated_config = AgentConfigStore(service.agent_config_store.layout.root).load()
     assert updated_config.feishu_app_secret == "feishu-secret-value"
     assert updated_config.observability.public_key == "pk-lf-dashboard-test"
     assert updated_config.observability.secret_key == "sk-lf-dashboard-test"
@@ -224,12 +245,12 @@ def test_agent_settings_rejects_an_unregistered_default_workspace(tmp_path: Path
     assert "not registered" in response.json()["error"]["message"]
 
 
-def test_dashboard_initialization_selects_the_sole_workspace_for_mark(
+def test_dashboard_initialization_selects_the_sole_workspace_for_agent(
     tmp_path: Path,
 ) -> None:
     service = _service(tmp_path)
     service.agent_config_store.save(
-        MarkAgentConfig(
+        AgentConfig(
             enabled=True,
             feishu_app_id="cli_test",
             feishu_app_secret="secret-value",

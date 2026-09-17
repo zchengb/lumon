@@ -1,4 +1,4 @@
-"""Tests for Mark SQLite persistence and event recovery."""
+"""Tests for Agent SQLite persistence and event recovery."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import stat
 from pathlib import Path
 from uuid import uuid4
 
-from lumon.agents.mark.model import InboundMessage, MarkRunResult, Message
-from lumon.agents.mark.session_store import MarkSessionStore
+from lumon.agents.agent.model import AgentRunResult, InboundMessage, Message
+from lumon.agents.agent.session_store import AgentSessionStore
 
 
 def _message(event_id: str = "evt-1") -> InboundMessage:
@@ -24,7 +24,7 @@ def _message(event_id: str = "evt-1") -> InboundMessage:
 
 
 def test_event_claim_is_idempotent_and_history_is_chronological(tmp_path: Path) -> None:
-    store = MarkSessionStore(db_path=tmp_path / "state" / "mark.sqlite3")
+    store = AgentSessionStore(db_path=tmp_path / "state" / "agent.sqlite3")
     message = _message()
     workspace_id = uuid4()
 
@@ -70,7 +70,7 @@ def test_event_claim_is_idempotent_and_history_is_chronological(tmp_path: Path) 
 
 
 def test_sessions_are_stable_for_direct_chats_and_group_threads(tmp_path: Path) -> None:
-    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
     direct = _message()
     direct_reply = InboundMessage(
         event_id="evt-2",
@@ -87,10 +87,10 @@ def test_sessions_are_stable_for_direct_chats_and_group_threads(tmp_path: Path) 
         message_id="group-1",
         chat_id="group-1",
         chat_type="group",
-        text="@Mark first",
+        text="@Agent first",
         sender_id="user-1",
         sender_type="user",
-        mentioned_mark=True,
+        mentioned_agent=True,
         thread_id="thread-a",
         root_id="root-message-1",
     )
@@ -99,10 +99,10 @@ def test_sessions_are_stable_for_direct_chats_and_group_threads(tmp_path: Path) 
         message_id="group-2",
         chat_id="group-1",
         chat_type="group",
-        text="@Mark follow-up",
+        text="@Agent follow-up",
         sender_id="user-1",
         sender_type="user",
-        mentioned_mark=True,
+        mentioned_agent=True,
         thread_id="thread-a",
         root_id="root-message-2",
     )
@@ -111,10 +111,10 @@ def test_sessions_are_stable_for_direct_chats_and_group_threads(tmp_path: Path) 
         message_id="group-3",
         chat_id="group-1",
         chat_type="group",
-        text="@Mark another",
+        text="@Agent another",
         sender_id="user-1",
         sender_type="user",
-        mentioned_mark=True,
+        mentioned_agent=True,
         thread_id="thread-b",
     )
 
@@ -133,7 +133,7 @@ def test_sessions_are_stable_for_direct_chats_and_group_threads(tmp_path: Path) 
 
 
 def test_provider_session_binding_is_durable_and_clearable(tmp_path: Path) -> None:
-    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
     session_id = store.get_or_create_session(_message()).session_id
 
     store.bind_agent_session(session_id, "codex-thread-1")
@@ -148,12 +148,12 @@ def test_provider_session_binding_is_durable_and_clearable(tmp_path: Path) -> No
 
 
 def test_full_prompt_is_stored_with_the_run_before_execution(tmp_path: Path) -> None:
-    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
     message = _message()
     assert store.claim_event(message.event_id, message)
     session_id = store.get_or_create_session(message).session_id
     workspace_id = uuid4()
-    prompt = "<mark-soul>private context</mark-soul>\n<user-message>hello</user-message>"
+    prompt = "<agent-soul>private context</agent-soul>\n<user-message>hello</user-message>"
 
     store.record_run_started(
         run_id="run-prompt",
@@ -175,7 +175,7 @@ def test_full_prompt_is_stored_with_the_run_before_execution(tmp_path: Path) -> 
 
 
 def test_recalled_event_is_cancelled_and_removed_from_future_history(tmp_path: Path) -> None:
-    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
     message = _message()
     assert store.claim_event(message.event_id, message)
     session_id = store.get_or_create_session(message).session_id
@@ -198,7 +198,7 @@ def test_recalled_event_is_cancelled_and_removed_from_future_history(tmp_path: P
     assert store.request_message_cancellation(message.message_id) == message.event_id
 
 
-def test_existing_mark_database_is_migrated_before_new_indexes_are_created(
+def test_existing_legacy_database_is_used_before_new_indexes_are_created(
     tmp_path: Path,
 ) -> None:
     database = tmp_path / "mark.sqlite3"
@@ -244,7 +244,7 @@ def test_existing_mark_database_is_migrated_before_new_indexes_are_created(
             """
         )
 
-    store = MarkSessionStore(db_path=database)
+    store = AgentSessionStore(state_root=tmp_path)
 
     with sqlite3.connect(database) as connection:
         session_columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
@@ -261,10 +261,10 @@ def test_existing_mark_database_is_migrated_before_new_indexes_are_created(
 
 
 def test_record_result_closes_event_without_storing_provider_stderr(tmp_path: Path) -> None:
-    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
     message = _message()
     store.claim_event(message.event_id, message)
-    result = MarkRunResult(
+    result = AgentRunResult(
         run_id="run-1",
         event_id=message.event_id,
         conversation_key=message.conversation_key,
@@ -290,10 +290,10 @@ def test_record_result_closes_event_without_storing_provider_stderr(tmp_path: Pa
 
 
 def test_record_result_sanitizes_final_text(tmp_path: Path) -> None:
-    store = MarkSessionStore(db_path=tmp_path / "mark.sqlite3")
+    store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
     message = _message()
     store.claim_event(message.event_id, message)
-    result = MarkRunResult(
+    result = AgentRunResult(
         run_id="run-1",
         event_id=message.event_id,
         conversation_key=message.conversation_key,

@@ -8,7 +8,7 @@ from uuid import UUID
 import pytest
 from typer.testing import CliRunner
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.cli.app import app
 from lumon.skills.installer import SkillInstaller
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -30,8 +30,8 @@ def _initialize(tmp_path: Path, state_root: Path, name: str) -> tuple[Path, Work
 
 
 def _agent_config(state_root: Path, default_workspace_id: UUID | None = None) -> None:
-    MarkConfigStore(state_root).save(
-        MarkAgentConfig(
+    AgentConfigStore(state_root).save(
+        AgentConfig(
             enabled=True,
             default_workspace_id=default_workspace_id,
             feishu_app_id="cli_test",
@@ -59,13 +59,13 @@ def test_workspace_list_and_set_default_support_multiple_workspaces(
     selected = CliRunner().invoke(app, ["workspace", "set-default", str(second.path)])
 
     assert selected.exit_code == 0, selected.stdout
-    assert MarkConfigStore(state_root).load().default_workspace_id == second.workspace_id
+    assert AgentConfigStore(state_root).load().default_workspace_id == second.workspace_id
     assert "Default Workspace set to second" in selected.stdout
 
     cleared = CliRunner().invoke(app, ["workspace", "set-default", "--clear"])
 
     assert cleared.exit_code == 0, cleared.stdout
-    assert MarkConfigStore(state_root).load().default_workspace_id is None
+    assert AgentConfigStore(state_root).load().default_workspace_id is None
 
 
 def test_workspace_remove_unregisters_and_removes_profile_but_keeps_files(
@@ -105,7 +105,7 @@ def test_workspace_remove_delete_requires_confirmation_and_deletes_directory(
     assert "Workspace directory deleted" in result.stdout
 
 
-def test_workspace_remove_clears_mark_default_workspace(
+def test_workspace_remove_clears_agent_default_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state_root = tmp_path / "lumon"
@@ -119,7 +119,7 @@ def test_workspace_remove_clears_mark_default_workspace(
     )
 
     assert result.exit_code == 0, result.stdout
-    assert MarkConfigStore(state_root).load().default_workspace_id is None
+    assert AgentConfigStore(state_root).load().default_workspace_id is None
     assert target.is_dir()
     assert WorkspaceRegistry(state_root).find(registration.workspace_id) is None
     assert "default Workspace cleared" in result.stdout

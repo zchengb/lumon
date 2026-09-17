@@ -50,14 +50,14 @@ class UpdateError(LumonError):
 
 
 class AgentError(LumonError):
-    """Base error for the Mark Agent lifecycle and message path."""
+    """Base error for the Agent lifecycle and message path."""
 
 
 class AgentConfigError(AgentError):
-    """Mark Agent configuration is missing, invalid, or unsafe to use."""
+    """Agent configuration is missing, invalid, or unsafe to use."""
 
     exit_code: ClassVar[int] = 3
 
 
 class AgentRuntimeError(AgentError):
-    """Mark Agent could not start or complete a runtime operation."""
+    """Agent could not start or complete a runtime operation."""

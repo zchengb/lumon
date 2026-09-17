@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lumon.agents.mark.config import MarkAgentConfig
-from lumon.agents.mark.model import Message, WorkspaceContext
-from lumon.agents.mark.prompt import MarkPromptRenderer
-from lumon.agents.mark.soul import MarkSoulLoader
+from lumon.agents.agent.config import AgentConfig
+from lumon.agents.agent.model import Message, WorkspaceContext
+from lumon.agents.agent.prompt import PromptRenderer
+from lumon.agents.agent.soul import SoulLoader
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
 from lumon.flows.catalog import FlowCatalog
 from lumon.workspace.config import load_workspace_config
@@ -21,15 +21,15 @@ class WorkspaceContextBuilder:
 
     def __init__(
         self,
-        config: MarkAgentConfig,
+        config: AgentConfig,
         registry: WorkspaceRegistry | None = None,
-        soul_loader: MarkSoulLoader | None = None,
-        prompt_renderer: MarkPromptRenderer | None = None,
+        soul_loader: SoulLoader | None = None,
+        prompt_renderer: PromptRenderer | None = None,
     ) -> None:
         self.config = config
         self.registry = registry or WorkspaceRegistry()
-        self.soul_loader = soul_loader or MarkSoulLoader()
-        self.prompt_renderer = prompt_renderer or MarkPromptRenderer()
+        self.soul_loader = soul_loader or SoulLoader()
+        self.prompt_renderer = prompt_renderer or PromptRenderer()
 
     def resolve_workspace(self) -> WorkspaceContext:
         """Resolve the configured or unique Workspace and validate its identity."""
@@ -111,11 +111,11 @@ class WorkspaceContextBuilder:
         registrations: tuple[WorkspaceRegistration, ...] = self.registry.list()
         if not registrations:
             raise WorkspaceNotFoundError(
-                "Mark has no Workspace. Initialize or register one before starting the Agent."
+                "Agent has no Workspace. Initialize or register one before starting the Agent."
             )
         if len(registrations) > 1:
             raise AgentRuntimeError(
-                "Mark has multiple Workspaces but no default_workspace_id is configured."
+                "Agent has multiple Workspaces but no default_workspace_id is configured."
             )
         return next(iter(registrations))
 

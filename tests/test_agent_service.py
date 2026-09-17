@@ -1,4 +1,4 @@
-"""Integration tests for Mark orchestration with local fakes."""
+"""Integration tests for Agent orchestration with local fakes."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
-from lumon.agents.mark.feishu import MarkFeishuChannel, MessageHandler
-from lumon.agents.mark.model import (
+from lumon.agents.agent.config import AgentConfig, AgentConfigStore
+from lumon.agents.agent.feishu import AgentFeishuChannel, MessageHandler
+from lumon.agents.agent.model import (
     AgentErrorCode,
     AgentProgress,
     AgentResult,
@@ -17,9 +17,9 @@ from lumon.agents.mark.model import (
     ProgressPhase,
     RecalledMessage,
 )
-from lumon.agents.mark.runner import ProgressCallback
-from lumon.agents.mark.service import MarkAgentService
-from lumon.agents.mark.session_store import MarkSessionStore
+from lumon.agents.agent.runner import ProgressCallback
+from lumon.agents.agent.service import AgentService
+from lumon.agents.agent.session_store import AgentSessionStore
 from lumon.errors import AgentRuntimeError
 from lumon.observability import (
     AgentTrace,
@@ -121,8 +121,8 @@ class TimedOutRunner(FakeRunner):
         return AgentResult(status="timed_out", error_code=AgentErrorCode.TIMEOUT)
 
 
-class FakeChannel(MarkFeishuChannel):
-    def __init__(self, config: MarkAgentConfig) -> None:
+class FakeChannel(AgentFeishuChannel):
+    def __init__(self, config: AgentConfig) -> None:
         super().__init__(config)
         self.replies: list[str] = []
         self.typing_added: list[str] = []
@@ -289,19 +289,19 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         default_workspace_id=workspace_id,
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
     )
-    config_store = MarkConfigStore(state_root)
+    config_store = AgentConfigStore(state_root)
     config_store.save(config)
     channel = FakeChannel(config)
     runner = FakeRunner()
     telemetry = RecordingTelemetry()
-    store = MarkSessionStore(state_root)
-    service = MarkAgentService(
+    store = AgentSessionStore(state_root)
+    service = AgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
@@ -409,18 +409,18 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
         registry=WorkspaceRegistry(state_root),
     ).initialize(InitRequest(workspace, name="failure-diagnostic-test"))
     workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         default_workspace_id=workspace_id,
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
     )
-    config_store = MarkConfigStore(state_root)
+    config_store = AgentConfigStore(state_root)
     config_store.save(config)
-    store = MarkSessionStore(state_root)
+    store = AgentSessionStore(state_root)
     channel = FakeChannel(config)
     telemetry = RecordingTelemetry()
-    service = MarkAgentService(
+    service = AgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
@@ -451,12 +451,12 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
         ).fetchone()
 
     assert run_row is not None
-    assert run_row[0] == "mark_unexpected_error"
+    assert run_row[0] == "agent_unexpected_error"
     assert run_row[1].startswith("run_agent:RuntimeError:")
     assert "private request content" not in run_row[1]
-    assert channel.replies[-1].startswith("Mark 暂时无法完成这次请求")
+    assert channel.replies[-1].startswith("Agent 暂时无法完成这次请求")
     assert len(telemetry.traces) == 1
-    assert telemetry.traces[0].finished == ("failed", "mark_unexpected_error", None)
+    assert telemetry.traces[0].finished == ("failed", "agent_unexpected_error", None)
     assert telemetry.traces[0].span_names[-2:] == ["codex.exec", "feishu.reply"]
     asyncio.run(service.stop())
 
@@ -469,17 +469,17 @@ def test_service_records_timeout_in_trace(tmp_path: Path) -> None:
         registry=WorkspaceRegistry(state_root),
     ).initialize(InitRequest(workspace, name="timeout-test"))
     workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         default_workspace_id=workspace_id,
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
     )
-    config_store = MarkConfigStore(state_root)
+    config_store = AgentConfigStore(state_root)
     config_store.save(config)
-    store = MarkSessionStore(state_root)
+    store = AgentSessionStore(state_root)
     telemetry = RecordingTelemetry()
-    service = MarkAgentService(
+    service = AgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
@@ -517,19 +517,19 @@ def test_service_records_feishu_reply_failure_without_changing_agent_result(
         registry=WorkspaceRegistry(state_root),
     ).initialize(InitRequest(workspace, name="reply-failure-test"))
     workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         default_workspace_id=workspace_id,
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
     )
-    config_store = MarkConfigStore(state_root)
+    config_store = AgentConfigStore(state_root)
     config_store.save(config)
-    store = MarkSessionStore(state_root)
+    store = AgentSessionStore(state_root)
     channel = FakeChannel(config)
     channel.fail_replies = True
     telemetry = RecordingTelemetry()
-    service = MarkAgentService(
+    service = AgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
@@ -570,18 +570,18 @@ def test_service_leaves_interrupted_event_for_restart_recovery(tmp_path: Path) -
         registry=WorkspaceRegistry(state_root),
     ).initialize(InitRequest(workspace, name="recovery-test"))
     workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         default_workspace_id=workspace_id,
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
     )
-    config_store = MarkConfigStore(state_root)
+    config_store = AgentConfigStore(state_root)
     config_store.save(config)
-    store = MarkSessionStore(state_root)
+    store = AgentSessionStore(state_root)
     runner = BlockingRunner()
     telemetry = RecordingTelemetry()
-    service = MarkAgentService(
+    service = AgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,
@@ -619,19 +619,19 @@ def test_recalled_message_cancels_only_its_running_task(tmp_path: Path) -> None:
         registry=WorkspaceRegistry(state_root),
     ).initialize(InitRequest(workspace, name="recall-test"))
     workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         default_workspace_id=workspace_id,
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
     )
-    config_store = MarkConfigStore(state_root)
+    config_store = AgentConfigStore(state_root)
     config_store.save(config)
-    store = MarkSessionStore(state_root)
+    store = AgentSessionStore(state_root)
     channel = FakeChannel(config)
     runner = BlockingRunner()
     telemetry = RecordingTelemetry()
-    service = MarkAgentService(
+    service = AgentService(
         config_store=config_store,
         registry=WorkspaceRegistry(state_root),
         session_store=store,

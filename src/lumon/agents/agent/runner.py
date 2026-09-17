@@ -6,12 +6,12 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Protocol
 
-from lumon.agents.mark.config import (
+from lumon.agents.agent.config import (
     DEFAULT_AGENT_MODEL,
     DEFAULT_AGENT_REASONING_EFFORT,
-    MarkAgentConfig,
+    AgentConfig,
 )
-from lumon.agents.mark.model import AgentErrorCode, AgentProgress, AgentResult, ProgressPhase
+from lumon.agents.agent.model import AgentErrorCode, AgentProgress, AgentResult, ProgressPhase
 from lumon.errors import AgentConfigError
 from lumon.flows.protocol import extract_flow_selection
 from lumon.tools.codex import (
@@ -25,7 +25,7 @@ ProgressCallback = Callable[[AgentProgress], Awaitable[None]]
 
 
 class CodexAgentRunner:
-    """Adapt the shared Codex tool to Mark's conversational Agent contract."""
+    """Adapt the shared Codex tool to Agent's conversational Agent contract."""
 
     provider = "codex"
     display_name = "Codex"
@@ -40,17 +40,17 @@ class CodexAgentRunner:
 
     @property
     def executable(self) -> str:
-        """Return the Codex executable used by Mark."""
+        """Return the Codex executable used by Agent."""
 
         return self.tool.executable
 
     def is_available(self) -> bool:
-        """Return whether Mark can launch the shared Codex tool."""
+        """Return whether Agent can launch the shared Codex tool."""
 
         return self.tool.is_available()
 
     def is_authenticated(self) -> bool:
-        """Return whether the local Codex session is ready for Mark."""
+        """Return whether the local Codex session is ready for Agent."""
 
         return self.tool.is_authenticated()
 
@@ -62,7 +62,7 @@ class CodexAgentRunner:
         agent_session_id: str | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
-        """Run Codex and apply Mark's requirement for a replyable final text."""
+        """Run Codex and apply Agent's requirement for a replyable final text."""
 
         progress: list[AgentProgress] = []
         selected_flow_id: str | None = None
@@ -133,10 +133,10 @@ class CodexAgentRunner:
 
 
 class AgentRunner(Protocol):
-    """Small interface used by Mark to run one request through an Agent CLI.
+    """Small interface used by Agent to run one request through an Agent CLI.
 
     Implementations own provider-specific command construction, event parsing,
-    authentication checks, and error translation. Mark only depends on this
+    authentication checks, and error translation. Agent only depends on this
     interface and the provider-neutral :class:`AgentResult` contract.
     """
 
@@ -181,8 +181,8 @@ class AgentRunner(Protocol):
         ...
 
 
-def create_agent_runner(config: MarkAgentConfig | None = None) -> AgentRunner:
-    """Create the configured runner without leaking provider details to Mark.
+def create_agent_runner(config: AgentConfig | None = None) -> AgentRunner:
+    """Create the configured runner without leaking provider details to Agent.
 
     Codex is the only supported provider today. Keeping selection here makes
     adding another concrete runner a localized change instead of a service-wide
@@ -196,11 +196,11 @@ def create_agent_runner(config: MarkAgentConfig | None = None) -> AgentRunner:
             config.agent_reasoning_effort if config is not None else DEFAULT_AGENT_REASONING_EFFORT
         )
         return CodexAgentRunner(model=model, reasoning_effort=reasoning_effort)
-    raise AgentConfigError(f"Unsupported Mark Agent provider: {provider}")
+    raise AgentConfigError(f"Unsupported Agent provider: {provider}")
 
 
 def _progress_from_event(event: CodexEvent) -> AgentProgress | None:
-    """Convert an explicit Codex progress event into Mark's typed contract."""
+    """Convert an explicit Codex progress event into Agent's typed contract."""
 
     if event.kind != "progress" or event.phase is None or not event.text:
         return None

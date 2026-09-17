@@ -12,23 +12,23 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
-from lumon.agents.mark.feishu import MarkFeishuChannel
-from lumon.agents.mark.model import (
+from lumon.agents.agent.config import AgentConfig, AgentConfigStore
+from lumon.agents.agent.feishu import AgentFeishuChannel
+from lumon.agents.agent.model import (
     AgentErrorCode,
     AgentProgress,
+    AgentRunResult,
+    AgentRunStatus,
     InboundMessage,
-    MarkRunResult,
-    MarkRunStatus,
     Message,
     ProgressPhase,
     RecalledMessage,
     WorkspaceContext,
 )
-from lumon.agents.mark.runner import AgentRunner, create_agent_runner
-from lumon.agents.mark.session_store import MarkSessionStore
-from lumon.agents.mark.soul import MarkSoulLoader
-from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
+from lumon.agents.agent.runner import AgentRunner, create_agent_runner
+from lumon.agents.agent.session_store import AgentSessionStore
+from lumon.agents.agent.soul import SoulLoader
+from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentConfigError, AgentRuntimeError, LumonError
 from lumon.flows.catalog import FlowCatalog
 from lumon.flows.protocol import extract_flow_selection
@@ -45,30 +45,30 @@ from lumon.workspace.registry import WorkspaceRegistry
 logger = logging.getLogger(__name__)
 
 
-class MarkAgentService:
-    """Coordinate the Mark message lifecycle with per-conversation ordering."""
+class AgentService:
+    """Coordinate the Agent message lifecycle with per-conversation ordering."""
 
     def __init__(
         self,
-        config_store: MarkConfigStore | None = None,
+        config_store: AgentConfigStore | None = None,
         registry: WorkspaceRegistry | None = None,
-        session_store: MarkSessionStore | None = None,
-        soul_loader: MarkSoulLoader | None = None,
+        session_store: AgentSessionStore | None = None,
+        soul_loader: SoulLoader | None = None,
         agent_runner: AgentRunner | None = None,
-        channel: MarkFeishuChannel | None = None,
+        channel: AgentFeishuChannel | None = None,
         now: Callable[[], datetime] | None = None,
         telemetry: AgentTelemetry | None = None,
     ) -> None:
-        self.config_store = config_store or MarkConfigStore()
+        self.config_store = config_store or AgentConfigStore()
         self.registry = registry or WorkspaceRegistry()
-        self.session_store = session_store or MarkSessionStore()
-        self.soul_loader = soul_loader or MarkSoulLoader()
+        self.session_store = session_store or AgentSessionStore()
+        self.soul_loader = soul_loader or SoulLoader()
         self.agent_runner = agent_runner
         self._channel = channel
         self._now = now or (lambda: datetime.now(UTC))
         self._telemetry = telemetry
         self._telemetry_shutdown = False
-        self._config: MarkAgentConfig | None = None
+        self._config: AgentConfig | None = None
         self._context_builder: WorkspaceContextBuilder | None = None
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -82,7 +82,7 @@ class MarkAgentService:
             self._ensure_runtime()
             assert self._channel is not None
             if self._context_builder is None:
-                raise AgentRuntimeError("Mark Workspace context is not ready.")
+                raise AgentRuntimeError("Agent Workspace context is not ready.")
             self._context_builder.resolve_workspace()
             self._stop_event = asyncio.Event()
             for message in self.session_store.recover_pending():
@@ -124,7 +124,7 @@ class MarkAgentService:
         self._schedule(message, session_id)
 
     async def handle_recalled(self, message: RecalledMessage) -> None:
-        """Cancel the active Mark request associated with a recalled message."""
+        """Cancel the active Agent request associated with a recalled message."""
 
         event_id = self.session_store.request_message_cancellation(message.message_id)
         if event_id is None:
@@ -147,7 +147,7 @@ class MarkAgentService:
             return
         config = self.config_store.load()
         if not config.enabled:
-            raise AgentConfigError("Mark is disabled. Enable it with `lumon agent configure`.")
+            raise AgentConfigError("Agent is disabled. Enable it with `lumon agent configure`.")
         self._config = config
         self._context_builder = WorkspaceContextBuilder(
             config=config,
@@ -158,12 +158,12 @@ class MarkAgentService:
             try:
                 self._telemetry = create_agent_telemetry(config)
             except Exception as exc:
-                logger.warning("Mark telemetry setup failed (%s).", type(exc).__name__)
+                logger.warning("Agent telemetry setup failed (%s).", type(exc).__name__)
                 self._telemetry = NoopAgentTelemetry()
         if self.agent_runner is None:
             self.agent_runner = create_agent_runner(config)
         if self._channel is None:
-            self._channel = MarkFeishuChannel(config)
+            self._channel = AgentFeishuChannel(config)
 
     def _schedule(self, message: InboundMessage, session_id: str) -> None:
         task = asyncio.create_task(self._process(message, session_id))
@@ -191,15 +191,15 @@ class MarkAgentService:
             self.session_store.bind_event_session(message.event_id, session_id)
             session = self.session_store.get_session(session_id)
             if session is None:
-                raise AgentRuntimeError("Mark conversation session is not available.")
+                raise AgentRuntimeError("Agent conversation session is not available.")
             config = self._config
             if config is None:
-                raise AgentRuntimeError("Mark configuration is not loaded.")
+                raise AgentRuntimeError("Agent configuration is not loaded.")
             started_at = _timestamp(self._now())
             run_id = str(uuid4())
             workspace_id: UUID | None = None
             final_text: str | None = None
-            status: MarkRunStatus = "failed"
+            status: AgentRunStatus = "failed"
             error_code: str | None = None
             agent_provider: str | None = None
             prompt: str | None = None
@@ -243,7 +243,7 @@ class MarkAgentService:
                 )
                 context_builder = self._context_builder
                 if context_builder is None or self._channel is None:
-                    raise AgentRuntimeError("Mark runtime is not ready.")
+                    raise AgentRuntimeError("Agent runtime is not ready.")
                 stage = "resolve_workspace"
                 async with trace.span("workspace.resolve") as workspace_span:
                     context = context_builder.resolve_workspace()
@@ -450,7 +450,7 @@ class MarkAgentService:
                 completed = True
             except Exception as exc:
                 trace_status = "failed"
-                error_code = "mark_unexpected_error"
+                error_code = "agent_unexpected_error"
                 failure_diagnostic = _safe_error_diagnostic(stage, exc)
                 agent_name = self.agent_runner.display_name if self.agent_runner else "Agent CLI"
                 async with trace.span(
@@ -474,7 +474,7 @@ class MarkAgentService:
                     if completed:
                         ended_at = _timestamp(self._now())
                         self.session_store.record_result(
-                            MarkRunResult(
+                            AgentRunResult(
                                 run_id=run_id,
                                 event_id=message.event_id,
                                 conversation_key=message.conversation_key,
@@ -570,7 +570,7 @@ class MarkAgentService:
                 input_text=input_text,
             )
         except Exception as exc:
-            logger.warning("Mark telemetry start failed (%s).", type(exc).__name__)
+            logger.warning("Agent telemetry start failed (%s).", type(exc).__name__)
             return NoopAgentTelemetry().start_trace(
                 run_id=run_id,
                 session_id=session_id,
@@ -593,7 +593,7 @@ class MarkAgentService:
         try:
             self._telemetry.shutdown()
         except Exception as exc:
-            logger.warning("Mark telemetry shutdown failed (%s).", type(exc).__name__)
+            logger.warning("Agent telemetry shutdown failed (%s).", type(exc).__name__)
 
     def _task_finished(self, task: asyncio.Task[None]) -> None:
         self._tasks.discard(task)
@@ -607,7 +607,7 @@ class MarkAgentService:
 class _ProgressReporter:
     """Throttle runner events so a busy Agent turn does not spam Feishu."""
 
-    def __init__(self, channel: MarkFeishuChannel, message: InboundMessage) -> None:
+    def __init__(self, channel: AgentFeishuChannel, message: InboundMessage) -> None:
         self.channel = channel
         self.message = message
         self.last_sent = 0.0
@@ -635,7 +635,7 @@ class _ProgressReporter:
 def _failure_message(
     error_code: str | None,
     *,
-    status: MarkRunStatus | None = None,
+    status: AgentRunStatus | None = None,
     agent_name: str = "Agent CLI",
 ) -> str:
     if error_code == AgentErrorCode.TIMEOUT.value or status == "timed_out":
@@ -646,8 +646,8 @@ def _failure_message(
             "请安装并登录后，再运行 `lumon agent doctor`。"
         )
     if error_code == AgentErrorCode.EMPTY_RESULT.value:
-        return "Mark 没有得到可用回答。请稍后重试。"
-    return "Mark 暂时无法完成这次请求。请运行 `lumon agent doctor` 检查配置和运行环境。"
+        return "Agent 没有得到可用回答。请稍后重试。"
+    return "Agent 暂时无法完成这次请求。请运行 `lumon agent doctor` 检查配置和运行环境。"
 
 
 def _error_code(error: LumonError) -> str:
@@ -655,7 +655,7 @@ def _error_code(error: LumonError) -> str:
         return "agent_configuration_invalid"
     if isinstance(error, AgentRuntimeError):
         return "agent_runtime_error"
-    return "mark_error"
+    return "agent_error"
 
 
 def _timestamp(now: datetime) -> str:

@@ -1138,15 +1138,6 @@ code {
   grid-column: 1 / -1;
 }
 
-.credential-status {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin: 7px 0 0;
-  color: var(--muted);
-  font-size: 10px;
-}
-
 .checkbox-row {
   display: flex;
   align-items: flex-start;

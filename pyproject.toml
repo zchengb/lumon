@@ -36,15 +36,15 @@ packages = ["src/lumon"]
 artifacts = ["src/lumon/dashboard/static"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"src/lumon/agents/mark/templates/SOUL.md" = "lumon/agents/mark/templates/SOUL.md"
-"src/lumon/agents/mark/templates/workspace_prompt.md" = "lumon/agents/mark/templates/workspace_prompt.md"
+"src/lumon/agents/agent/templates/SOUL.md" = "lumon/agents/agent/templates/SOUL.md"
+"src/lumon/agents/agent/templates/workspace_prompt.md" = "lumon/agents/agent/templates/workspace_prompt.md"
 
 [tool.hatch.build.targets.sdist]
 artifacts = ["src/lumon/dashboard/static"]
 
 [tool.hatch.build.targets.sdist.force-include]
-"src/lumon/agents/mark/templates/SOUL.md" = "src/lumon/agents/mark/templates/SOUL.md"
-"src/lumon/agents/mark/templates/workspace_prompt.md" = "src/lumon/agents/mark/templates/workspace_prompt.md"
+"src/lumon/agents/agent/templates/SOUL.md" = "src/lumon/agents/agent/templates/SOUL.md"
+"src/lumon/agents/agent/templates/workspace_prompt.md" = "src/lumon/agents/agent/templates/workspace_prompt.md"
 
 [tool.hatch.version]
 path = "src/lumon/version.py"

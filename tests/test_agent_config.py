@@ -1,4 +1,4 @@
-"""Tests for Mark configuration and user-level SOUL resolution."""
+"""Tests for Agent configuration and user-level SOUL resolution."""
 
 from __future__ import annotations
 
@@ -8,20 +8,20 @@ from uuid import uuid4
 
 import pytest
 
-from lumon.agents.mark.config import (
+from lumon.agents.agent.config import (
     DEFAULT_AGENT_MODEL,
     DEFAULT_AGENT_REASONING_EFFORT,
     DEFAULT_LANGFUSE_BASE_URL,
-    MarkAgentConfig,
-    MarkConfigStore,
+    AgentConfig,
+    AgentConfigStore,
     ObservabilityConfig,
 )
-from lumon.agents.mark.soul import MarkSoulLoader
+from lumon.agents.agent.soul import SoulLoader
 from lumon.errors import AgentConfigError
 
 
-def _config() -> MarkAgentConfig:
-    return MarkAgentConfig(
+def _config() -> AgentConfig:
+    return AgentConfig(
         enabled=True,
         default_workspace_id=uuid4(),
         feishu_app_id="cli_test",
@@ -29,10 +29,10 @@ def _config() -> MarkAgentConfig:
     )
 
 
-def test_mark_config_round_trip_is_owner_only_and_safe_dict_excludes_secret(
+def test_agent_config_round_trip_is_owner_only_and_safe_dict_excludes_secret(
     tmp_path: Path,
 ) -> None:
-    store = MarkConfigStore(tmp_path / "lumon")
+    store = AgentConfigStore(tmp_path / "lumon")
     config = _config()
 
     store.save(config)
@@ -57,8 +57,8 @@ def test_mark_config_round_trip_is_owner_only_and_safe_dict_excludes_secret(
 
 
 def test_agent_model_and_reasoning_effort_can_be_overridden(tmp_path: Path) -> None:
-    store = MarkConfigStore(tmp_path / "lumon")
-    config = MarkAgentConfig(
+    store = AgentConfigStore(tmp_path / "lumon")
+    config = AgentConfig(
         enabled=True,
         agent_model="gpt-5.6-sol",
         agent_reasoning_effort="ultra",
@@ -74,7 +74,7 @@ def test_agent_model_and_reasoning_effort_can_be_overridden(tmp_path: Path) -> N
 
 
 def test_existing_empty_model_config_uses_the_codex_default(tmp_path: Path) -> None:
-    store = MarkConfigStore(tmp_path / "lumon")
+    store = AgentConfigStore(tmp_path / "lumon")
     store.path.parent.mkdir(parents=True)
     store.path.write_text(
         "schema_version = 1\n"
@@ -100,7 +100,7 @@ def test_existing_empty_model_config_uses_the_codex_default(tmp_path: Path) -> N
 
 
 def test_existing_disabled_content_capture_is_normalized_on_load(tmp_path: Path) -> None:
-    store = MarkConfigStore(tmp_path / "lumon")
+    store = AgentConfigStore(tmp_path / "lumon")
     store.path.parent.mkdir(parents=True)
     store.path.write_text(
         "schema_version = 1\n"
@@ -126,7 +126,7 @@ def test_existing_disabled_content_capture_is_normalized_on_load(tmp_path: Path)
 
 
 def test_invalid_config_does_not_expose_secret(tmp_path: Path) -> None:
-    store = MarkConfigStore(tmp_path / "lumon")
+    store = AgentConfigStore(tmp_path / "lumon")
     store.path.parent.mkdir(parents=True)
     store.path.write_text(
         'schema_version = 1\nenabled = true\ndefault_workspace_id = ""\n'
@@ -143,7 +143,7 @@ def test_invalid_config_does_not_expose_secret(tmp_path: Path) -> None:
 
 
 def test_legacy_codex_model_is_read_but_normalized_on_save(tmp_path: Path) -> None:
-    store = MarkConfigStore(tmp_path / "lumon")
+    store = AgentConfigStore(tmp_path / "lumon")
     store.path.parent.mkdir(parents=True)
     store.path.write_text(
         "schema_version = 1\n"
@@ -171,8 +171,8 @@ def test_legacy_codex_model_is_read_but_normalized_on_save(tmp_path: Path) -> No
 
 
 def test_observability_config_round_trip_is_safe(tmp_path: Path) -> None:
-    store = MarkConfigStore(tmp_path / "lumon")
-    config = MarkAgentConfig(
+    store = AgentConfigStore(tmp_path / "lumon")
+    config = AgentConfig(
         enabled=True,
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
@@ -203,7 +203,7 @@ def test_observability_config_round_trip_is_safe(tmp_path: Path) -> None:
 
 
 def test_invalid_observability_sample_rate_is_rejected() -> None:
-    config = MarkAgentConfig(
+    config = AgentConfig(
         feishu_app_id="cli_test",
         feishu_app_secret="secret-value",
         observability=ObservabilityConfig(sample_rate=1.1),
@@ -215,25 +215,25 @@ def test_invalid_observability_sample_rate_is_rejected() -> None:
 
 def test_packaged_soul_is_available_and_user_override_wins(tmp_path: Path) -> None:
     state_root = tmp_path / "lumon"
-    loader = MarkSoulLoader(state_root)
+    loader = SoulLoader(state_root)
 
-    assert loader.override_path == state_root / "agents" / "mark" / "templates" / "SOUL.md"
+    assert loader.override_path == state_root / "agents" / "agent" / "templates" / "SOUL.md"
     packaged = loader.load()
-    assert "Mark" in packaged
+    assert "Agent" in packaged
     assert "Workspace" in packaged
 
     loader.override_path.parent.mkdir(parents=True)
-    loader.override_path.write_text("user-owned Mark instructions\n", encoding="utf-8")
+    loader.override_path.write_text("user-owned Agent instructions\n", encoding="utf-8")
 
-    assert loader.load() == "user-owned Mark instructions\n"
+    assert loader.load() == "user-owned Agent instructions\n"
 
 
 def test_legacy_soul_override_is_read_without_becoming_the_new_write_path(tmp_path: Path) -> None:
     state_root = tmp_path / "lumon"
-    loader = MarkSoulLoader(state_root)
-    legacy_path = state_root / "agents" / "mark" / "SOUL.md"
+    loader = SoulLoader(state_root)
+    legacy_path = state_root / "agents" / "mark" / "templates" / "SOUL.md"
     legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text("legacy Mark instructions\n", encoding="utf-8")
+    legacy_path.write_text("legacy Agent instructions\n", encoding="utf-8")
 
     assert loader.override_path != legacy_path
-    assert loader.load() == "legacy Mark instructions\n"
+    assert loader.load() == "legacy Agent instructions\n"

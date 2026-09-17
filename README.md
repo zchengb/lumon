@@ -14,7 +14,7 @@ Artifact. Lumon is not published to PyPI or another public package index.
 For a one-command Shell installation, use the installer in
 `packaging/install.sh`. It does not use uv; it creates an isolated Python 3.12
 virtual environment and installs Lumon with pip, including the Langfuse Cloud
-SDK used by Mark Agent observability. When no version is provided, the installer
+SDK used by Agent observability. When no version is provided, the installer
 resolves the latest stable GitHub Release and verifies the Wheel with its
 `SHA256SUMS` file. A specific version can still be pinned explicitly.
 On a private repository, provide `LUMON_GITHUB_TOKEN` or use an SSH-accessible
@@ -84,8 +84,8 @@ remote or an existing non-Git directory is rejected. Initialization is
 transactional: newly cloned repositories and newly installed Skills are
 removed if the operation fails.
 
-When Mark is already configured and the initialized Workspace is the only
-registered Workspace, `lumon init` selects it as Mark's default automatically.
+When Agent is already configured and the initialized Workspace is the only
+registered Workspace, `lumon init` selects it as Agent's default automatically.
 When multiple Workspaces are registered, initialization leaves the existing
 default unchanged.
 
@@ -114,10 +114,10 @@ lumon ui --no-open
 
 Workspace registrations are managed outside the Workspace directory. Use
 `lumon workspace list` to find a Workspace ID, then
-`lumon workspace set-default <workspace-id-or-path>` when Mark has more than
+`lumon workspace set-default <workspace-id-or-path>` when Agent has more than
 one registered Workspace. Use `lumon workspace set-default --clear` to remove
 the default selection without removing a Workspace. `lumon workspace remove
-<workspace-id-or-path>` clears Mark's default when the target is selected, then
+<workspace-id-or-path>` clears Agent's default when the target is selected, then
 removes the registry entry and its user-level profile while keeping the
 Workspace files; add `--delete` to permanently delete the Workspace directory
 and its cloned Repositories, and use `--yes` to skip the confirmation prompt.
@@ -135,7 +135,7 @@ the browser. Use `lumon ui --no-open` when the browser should not be opened.
 The Dashboard can initialize a new Workspace, add an existing initialized
 Workspace, switch between registered Workspaces, inspect Repository health,
 configure the current Workspace's Feishu Webhook, edit Workspace flows, and
-manage the global Mark Agent settings, including its Codex model and Langfuse
+manage the global Agent settings, including its Codex model and Langfuse
 Cloud telemetry.
 
 The machine-local registry and Workspace profiles live under `~/.lumon/`:
@@ -155,13 +155,13 @@ The v1 source tree intentionally contains only the new `src/lumon` modules,
 the Dashboard frontend source, and the unified `tests` directory. The old
 main branch Dashboard and runtime are not imported or packaged.
 
-## Mark Agent
+## Agent
 
-Mark is the local Workspace Agent. It listens for Feishu messages over the
+Agent is the local Workspace Agent. It listens for Feishu messages over the
 official WebSocket Channel SDK, handles private messages and group messages
-that explicitly mention `@Mark`, and runs the user's request through the
+that explicitly mention the Agent, and runs the user's request through the
 configured local Agent CLI in the Workspace. Codex is the only supported
-provider today; Mark depends on a provider-neutral runner contract so another
+provider today; Agent depends on a provider-neutral runner contract so another
 CLI can be added without changing message handling, Workspace context, or
 persistence. It sends short progress messages and a final answer back to the
 same chat thread.
@@ -175,29 +175,30 @@ lumon agent start
 ```
 
 Use `lumon agent start --background`, `lumon agent status`, and
-`lumon agent stop` for a detached local process. Mark is deliberately not
+`lumon agent stop` for a detached local process. Agent is deliberately not
 started by `lumon ui`.
 
-Mark configuration is kept separately from Workspace settings in
+Agent configuration is kept separately from Workspace settings in
 `~/.lumon/agent.toml` (or `$LUMON_HOME/agent.toml`) and its SQLite state is in
-`~/.lumon/mark.sqlite3`. The App Secret and Dashboard-saved Langfuse
-credentials are stored in the owner-only `600` configuration file and never
-appear in Dashboard responses, CLI output, logs, or Feishu replies.
-Mark uses Codex CLI model `gpt-5.6-luna` with `max` reasoning effort by default.
+`~/.lumon/agent.sqlite3`. The App Secret and Dashboard-saved Langfuse
+credentials are stored in the owner-only `600` configuration file. Dashboard
+responses expose only short prefix/suffix masks; full credentials never appear
+in CLI output, logs, or Feishu replies.
+Agent uses Codex CLI model `gpt-5.6-luna` with `max` reasoning effort by default.
 The `agent_model` and `agent_reasoning_effort` fields in `agent.toml` can be
 edited to choose another supported model and effort; `lumon agent doctor`
 shows the selected pair. Existing `codex_model` files are read for compatibility
 and normalized when they are next saved.
-Mark's packaged templates are kept together under
-`lumon/agents/mark/templates/`, including `SOUL.md` and the Workspace Prompt
+Agent's packaged templates are kept together under
+`lumon/agents/agent/templates/`, including `SOUL.md` and the Workspace Prompt
 template. A user-owned SOUL override can be placed at
-`~/.lumon/agents/mark/templates/SOUL.md` and is never overwritten
-automatically. See [docs/mark-agent.md](docs/mark-agent.md) for the Feishu
+`~/.lumon/agents/agent/templates/SOUL.md` and is never overwritten
+automatically. See [docs/agent.md](docs/agent.md) for the Feishu
 application setup, Langfuse Cloud pilot configuration, and the full local
 verification flow.
 
-Codex execution is a reusable tool under `lumon/tools/codex.py`, not a Mark-only
-implementation. Mark adds its conversational progress and final-text policy in
+Codex execution is a reusable tool under `lumon/tools/codex.py`, not exclusive to
+the Agent. Agent adds its conversational progress and final-text policy in
 its own runner; future flows such as Auto Scan can call the same tool and use
 only the execution status or file events.
 
@@ -205,12 +206,12 @@ only the execution status or file events.
 
 Each Workspace stores user-editable flows as Markdown files under
 `lumon/flows/`. The Dashboard's **Flows** page edits those files directly and
-reports invalid frontmatter without loading invalid flows into Mark's prompt.
+reports invalid frontmatter without loading invalid flows into Agent's prompt.
 New Workspaces start without user-authored flows. Use **New flow** in the
 Dashboard to start from the built-in flow design template, then create or edit
 flows directly in the selected Workspace.
 
-The flow frontmatter provides the bounded ID and brief Mark uses for semantic
+The flow frontmatter provides the bounded ID and brief Agent uses for semantic
 selection:
 
 ```markdown
@@ -222,21 +223,21 @@ brief = "Describe the user request this flow handles."
 ---
 ```
 
-The Markdown body contains the complete process and output contract. Mark
+The Markdown body contains the complete process and output contract. Agent
 decides whether a flow applies from its ID and brief, then reads at most one
 selected flow's full Markdown detail. Workspace-specific flows, such as a test
 case generation flow, belong in the target Workspace rather than in the Lumon
 package. See
-[`docs/mark-agent.md`](docs/mark-agent.md) for routing and marker details.
+[`docs/agent.md`](docs/agent.md) for routing and marker details.
 
-Mark keeps conversation state in explicit SQLite tables. A direct Feishu chat
+Agent keeps conversation state in explicit SQLite tables. A direct Feishu chat
 uses one durable Session regardless of reply-thread metadata; a group Feishu
 Thread uses its own Session. The Session stores the native Codex thread ID, so
 a restart does not break the conversation. The first turn sends and stores the
 complete bootstrap Prompt in `runs.prompt_text`; later turns call
 `codex exec resume <session-id>` and send only the new user message. The later
 `prompt_text` value is therefore the actual incremental input, while the first
-Run retains the full Mark, Workspace, history, and user context used to
+Run retains the full Agent, Workspace, history, and user context used to
 establish the native Codex Session. If the native Session is lost or the
 Workspace changes, Lumon clears the binding and starts a new bootstrap on the
 next message instead of automatically retrying the failed request. Prompts are

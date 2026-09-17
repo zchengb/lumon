@@ -1,4 +1,4 @@
-"""Tests for Mark's conversational policy around the shared Codex tool."""
+"""Tests for Agent's conversational policy around the shared Codex tool."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import asyncio
 import sys
 from pathlib import Path
 
-from lumon.agents.mark.config import MarkAgentConfig
-from lumon.agents.mark.model import AgentErrorCode
-from lumon.agents.mark.runner import CodexAgentRunner, create_agent_runner
+from lumon.agents.agent.config import AgentConfig
+from lumon.agents.agent.model import AgentErrorCode
+from lumon.agents.agent.runner import CodexAgentRunner, create_agent_runner
 from lumon.tools.codex import CodexTool
 
 
-def test_mark_requires_final_text_even_when_the_shared_tool_succeeds(tmp_path: Path) -> None:
+def test_agent_requires_final_text_even_when_the_shared_tool_succeeds(tmp_path: Path) -> None:
     fake = tmp_path / "fake-codex"
     fake.write_text(
         "#!/bin/sh\n"
@@ -30,7 +30,7 @@ def test_mark_requires_final_text_even_when_the_shared_tool_succeeds(tmp_path: P
     assert result.progress == ()
 
 
-def test_mark_extracts_a_flow_marker_emitted_before_the_final_reply(tmp_path: Path) -> None:
+def test_agent_extracts_a_flow_marker_emitted_before_the_final_reply(tmp_path: Path) -> None:
     fake = tmp_path / "fake-codex"
     fake.write_text(
         f"#!{sys.executable}\n"
@@ -55,7 +55,7 @@ def test_mark_extracts_a_flow_marker_emitted_before_the_final_reply(tmp_path: Pa
     assert result.final_text == "Generated test cases."
 
 
-def test_mark_defaults_to_codex_luna_max(tmp_path: Path) -> None:
+def test_agent_defaults_to_codex_luna_max(tmp_path: Path) -> None:
     runner = create_agent_runner()
 
     assert isinstance(runner, CodexAgentRunner)
@@ -73,8 +73,8 @@ def test_mark_defaults_to_codex_luna_max(tmp_path: Path) -> None:
     )
 
 
-def test_mark_uses_model_and_effort_from_agent_config(tmp_path: Path) -> None:
-    config = MarkAgentConfig(
+def test_agent_uses_model_and_effort_from_agent_config(tmp_path: Path) -> None:
+    config = AgentConfig(
         agent_model="gpt-5.6-sol",
         agent_reasoning_effort="ultra",
         feishu_app_id="cli_test",

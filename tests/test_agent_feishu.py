@@ -8,17 +8,22 @@ from typing import Any
 
 import pytest
 
-import lumon.agents.mark.feishu as feishu_module
-from lumon.agents.mark.config import MarkAgentConfig
-from lumon.agents.mark.feishu import (
-    MarkFeishuChannel,
+import lumon.agents.agent.feishu as feishu_module
+from lumon.agents.agent.config import AgentConfig
+from lumon.agents.agent.feishu import (
+    AgentFeishuChannel,
     normalize_message,
     normalize_recalled_message,
 )
-from lumon.agents.mark.model import InboundMessage, RecalledMessage
+from lumon.agents.agent.model import InboundMessage, RecalledMessage
 
 
-def _raw(chat_type: str, text: str, sender_type: str = "user") -> dict[str, object]:
+def _raw(
+    chat_type: str,
+    text: str,
+    sender_type: str = "user",
+    mentioned_bot: bool = False,
+) -> dict[str, object]:
     return {
         "id": "om_1",
         "chat_id": "oc_1",
@@ -26,6 +31,7 @@ def _raw(chat_type: str, text: str, sender_type: str = "user") -> dict[str, obje
         "body_text": text,
         "sender_id": "ou_1",
         "sender_type": sender_type,
+        "mentioned_bot": mentioned_bot,
         "conversation": {"chat_id": "oc_1", "chat_type": chat_type, "thread_id": "thread-1"},
     }
 
@@ -39,10 +45,10 @@ def test_private_message_is_admitted() -> None:
 
 
 def test_group_thread_is_the_session_boundary() -> None:
-    first = normalize_message(_raw("group", "@Mark first"))
+    first = normalize_message(_raw("group", "@Agent first", mentioned_bot=True))
     second = normalize_message(
         {
-            **_raw("group", "@Mark second"),
+            **_raw("group", "@Agent second", mentioned_bot=True),
             "id": "om_2",
             "conversation": {
                 "chat_id": "oc_1",
@@ -53,7 +59,7 @@ def test_group_thread_is_the_session_boundary() -> None:
     )
     other_thread = normalize_message(
         {
-            **_raw("group", "@Mark other"),
+            **_raw("group", "@Agent other", mentioned_bot=True),
             "id": "om_3",
             "conversation": {
                 "chat_id": "oc_1",
@@ -68,12 +74,12 @@ def test_group_thread_is_the_session_boundary() -> None:
     assert first.conversation_key != other_thread.conversation_key
 
 
-def test_group_message_requires_mark_mention() -> None:
+def test_group_message_requires_bot_mention() -> None:
     ignored = normalize_message(_raw("group", "hello everyone"))
-    admitted = normalize_message(_raw("group", "@Mark inspect the README"))
+    admitted = normalize_message(_raw("group", "inspect the README", mentioned_bot=True))
 
     assert ignored is not None and not ignored.admitted
-    assert admitted is not None and admitted.admitted and admitted.mentioned_mark
+    assert admitted is not None and admitted.admitted and admitted.mentioned_agent
 
 
 def test_bot_messages_are_ignored() -> None:
@@ -141,8 +147,8 @@ def test_channel_explicitly_configures_message_policy(
             InboundConfig=_FakeInbound,
         ),
     )
-    channel = MarkFeishuChannel(
-        MarkAgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    channel = AgentFeishuChannel(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
     )
 
     async def run() -> None:
@@ -178,8 +184,8 @@ def test_channel_registers_recalled_event(monkeypatch: pytest.MonkeyPatch) -> No
             InboundConfig=_FakeInbound,
         ),
     )
-    channel = MarkFeishuChannel(
-        MarkAgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    channel = AgentFeishuChannel(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
     )
     recalled: list[RecalledMessage] = []
 

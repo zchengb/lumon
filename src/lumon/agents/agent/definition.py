@@ -1,4 +1,4 @@
-"""The small, stable public identity of Mark."""
+"""The small, stable public identity of Agent."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
-class MarkDefinition:
+class AgentDefinition:
     """Descriptive metadata used by diagnostics and future integrations."""
 
-    name: str = "Mark"
+    name: str = "Agent"
     role: str = "Workspace Agent"
     channel: str = "Feishu"
 
 
-MARK_DEFINITION = MarkDefinition()
+AGENT_DEFINITION = AgentDefinition()

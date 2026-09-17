@@ -1,4 +1,4 @@
-"""Small control markers exchanged between Mark and the Codex runner."""
+"""Small control markers exchanged between Agent and the Codex runner."""
 
 from __future__ import annotations
 

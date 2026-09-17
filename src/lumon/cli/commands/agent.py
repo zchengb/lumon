@@ -1,4 +1,4 @@
-"""The ``lumon agent`` lifecycle commands for Mark."""
+"""The ``lumon agent`` lifecycle commands for Agent."""
 
 from __future__ import annotations
 
@@ -16,22 +16,23 @@ from uuid import UUID
 
 import typer
 
-from lumon.agents.mark.config import (
+from lumon.agents.agent.config import (
     DEFAULT_AGENT_MODEL,
     DEFAULT_AGENT_REASONING_EFFORT,
-    MarkAgentConfig,
-    MarkConfigStore,
+    AgentConfig,
+    AgentConfigStore,
     ObservabilityConfig,
 )
-from lumon.agents.mark.runner import create_agent_runner
-from lumon.agents.mark.service import MarkAgentService
-from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
+from lumon.agents.agent.runner import create_agent_runner
+from lumon.agents.agent.service import AgentService
+from lumon.agents.agent.session_store import resolve_database_path
+from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentConfigError, AgentRuntimeError, LumonError
 from lumon.workspace.registry import UserStateLayout, WorkspaceRegistry
 
 agent_app = typer.Typer(
     name="agent",
-    help="Configure and run the local Mark Agent.",
+    help="Configure and run the local Agent.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -39,7 +40,7 @@ agent_app = typer.Typer(
 
 @dataclass(frozen=True, slots=True)
 class AgentDoctorCheck:
-    """One safe Mark diagnostic."""
+    """One safe Agent diagnostic."""
 
     name: str
     ok: bool
@@ -48,7 +49,7 @@ class AgentDoctorCheck:
 
 @dataclass(frozen=True, slots=True)
 class AgentDoctorReport:
-    """The complete Mark diagnostic report."""
+    """The complete Agent diagnostic report."""
 
     checks: tuple[AgentDoctorCheck, ...]
 
@@ -62,9 +63,9 @@ class AgentDoctorReport:
 
 @agent_app.command("configure")
 def configure() -> None:
-    """Interactively save Feishu and default Workspace settings for Mark."""
+    """Interactively save Feishu and default Workspace settings for Agent."""
 
-    store = MarkConfigStore()
+    store = AgentConfigStore()
     existing = _load_existing(store)
     app_id = typer.prompt("Feishu App ID", default=existing.feishu_app_id if existing else "")
     app_secret = typer.prompt("Feishu App Secret", hide_input=True, default="")
@@ -73,7 +74,7 @@ def configure() -> None:
 
     registry = WorkspaceRegistry()
     default_id = _prompt_workspace_id(registry, existing.default_workspace_id if existing else None)
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         default_workspace_id=default_id,
         agent_provider=existing.agent_provider if existing else "codex",
@@ -90,7 +91,7 @@ def configure() -> None:
     except LumonError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc
-    typer.echo(f"Mark configuration saved: {store.path}")
+    typer.echo(f"Agent configuration saved: {store.path}")
     typer.echo("App Secret stored with owner-only file permissions.")
 
 
@@ -98,7 +99,7 @@ def configure() -> None:
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Render a JSON report.")] = False,
 ) -> None:
-    """Check Mark configuration, dependencies, Agent CLI login, and Workspace."""
+    """Check Agent configuration, dependencies, Agent CLI login, and Workspace."""
 
     report = _inspect_agent()
     if json_output:
@@ -114,20 +115,20 @@ def doctor(
 @agent_app.command("start")
 def start(
     background: Annotated[
-        bool, typer.Option("--background", help="Run Mark as a detached local process.")
+        bool, typer.Option("--background", help="Run Agent as a detached local process.")
     ] = False,
     child: Annotated[
         bool, typer.Option("--child", hidden=True, help="Internal detached-process marker.")
     ] = False,
 ) -> None:
-    """Start Mark's Feishu WebSocket listener."""
+    """Start Agent's Feishu WebSocket listener."""
 
     try:
         if background and not child:
             _start_background()
             return
         typer.echo(
-            "Warning: Mark runs requested Workspace actions in full-access mode.",
+            "Warning: Agent runs requested Workspace actions in full-access mode.",
             err=True,
         )
         asyncio.run(_run_foreground())
@@ -142,7 +143,7 @@ def start(
 def status(
     json_output: Annotated[bool, typer.Option("--json", help="Render JSON status.")] = False,
 ) -> None:
-    """Show whether the local Mark process is running."""
+    """Show whether the local Agent process is running."""
 
     payload = _runtime_status()
     if json_output:
@@ -156,30 +157,30 @@ def status(
 
 @agent_app.command("stop")
 def stop() -> None:
-    """Stop the locally managed Mark process."""
+    """Stop the locally managed Agent process."""
 
     layout = UserStateLayout.from_root()
-    pid_path = layout.root / "mark-agent.pid"
-    pid = _read_pid(pid_path)
+    pid_path, pid = _read_runtime_pid(layout.root)
     if pid is None:
-        typer.echo("Mark is not running.")
+        typer.echo("Agent is not running.")
         return
     if not _pid_is_running(pid):
         pid_path.unlink(missing_ok=True)
-        (layout.root / "mark-agent.status.json").unlink(missing_ok=True)
-        typer.echo("Removed stale Mark runtime state.")
+        _runtime_status_paths(layout.root)[0].unlink(missing_ok=True)
+        _runtime_status_paths(layout.root)[1].unlink(missing_ok=True)
+        typer.echo("Removed stale Agent runtime state.")
         return
     try:
         os.kill(pid, signal.SIGTERM)
     except OSError as exc:
-        raise typer.BadParameter(f"Unable to stop Mark process {pid}: {exc}") from exc
-    typer.echo(f"Stop requested for Mark (PID {pid}).")
+        raise typer.BadParameter(f"Unable to stop Agent process {pid}: {exc}") from exc
+    typer.echo(f"Stop requested for Agent (PID {pid}).")
 
 
 def _inspect_agent() -> AgentDoctorReport:
-    store = MarkConfigStore()
+    store = AgentConfigStore()
     checks: list[AgentDoctorCheck] = []
-    config: MarkAgentConfig | None = None
+    config: AgentConfig | None = None
     try:
         config = store.load()
     except AgentConfigError as exc:
@@ -265,33 +266,31 @@ def _inspect_agent() -> AgentDoctorReport:
             checks.append(AgentDoctorCheck("default_workspace", True, str(resolved.path)))
     else:
         checks.append(
-            AgentDoctorCheck("default_workspace", False, "skipped until Mark is configured")
+            AgentDoctorCheck("default_workspace", False, "skipped until Agent is configured")
         )
 
     state_layout = UserStateLayout.from_root()
     state_parent_ok = _parent_is_writable(state_layout.root)
+    database_path = resolve_database_path(state_layout.root)
     checks.append(
         AgentDoctorCheck(
             "runtime_state",
             state_parent_ok,
-            str(state_layout.root / "mark.sqlite3")
-            if state_parent_ok
-            else f"not writable: {state_layout.root}",
+            str(database_path) if state_parent_ok else f"not writable: {state_layout.root}",
         )
     )
-    database_path = state_layout.root / "mark.sqlite3"
     database_mode_ok = not database_path.exists() or _owner_only(database_path)
     checks.append(
         AgentDoctorCheck(
             "database_permissions",
             database_mode_ok,
-            "owner-only permissions" if database_mode_ok else "mark.sqlite3 file mode must be 600",
+            "owner-only permissions" if database_mode_ok else "agent.sqlite3 file mode must be 600",
         )
     )
     return AgentDoctorReport(tuple(checks))
 
 
-def _observability_checks(config: MarkAgentConfig) -> list[AgentDoctorCheck]:
+def _observability_checks(config: AgentConfig) -> list[AgentDoctorCheck]:
     settings = config.observability
     if not settings.enabled:
         return [AgentDoctorCheck("observability", True, "disabled")]
@@ -325,7 +324,7 @@ def _observability_checks(config: MarkAgentConfig) -> list[AgentDoctorCheck]:
     ]
 
 
-def _load_existing(store: MarkConfigStore) -> MarkAgentConfig | None:
+def _load_existing(store: AgentConfigStore) -> AgentConfig | None:
     try:
         return store.load()
     except AgentConfigError:
@@ -355,13 +354,14 @@ def _prompt_workspace_id(registry: WorkspaceRegistry, existing: UUID | None) -> 
 
 
 async def _run_foreground() -> None:
-    service = MarkAgentService()
+    service = AgentService()
     pid = os.getpid()
     layout = UserStateLayout.from_root()
-    pid_path = layout.root / "mark-agent.pid"
-    existing_pid = _read_pid(pid_path)
+    _, existing_pid = _read_runtime_pid(layout.root)
     if existing_pid is not None and existing_pid != pid and _pid_is_running(existing_pid):
-        raise AgentRuntimeError(f"Mark is already running (PID {existing_pid}).")
+        raise AgentRuntimeError(f"Agent is already running (PID {existing_pid}).")
+    pid_path = layout.root / "agent.pid"
+    _remove_legacy_runtime_files(layout.root)
     _write_runtime_state("running", pid)
     pid_path.write_text(str(pid) + "\n", encoding="utf-8")
     pid_path.chmod(0o600)
@@ -395,10 +395,11 @@ async def _run_foreground() -> None:
 
 def _start_background() -> None:
     layout = UserStateLayout.from_root()
-    pid_path = layout.root / "mark-agent.pid"
-    current = _read_pid(pid_path)
+    _, current = _read_runtime_pid(layout.root)
     if current is not None and _pid_is_running(current):
-        raise typer.BadParameter(f"Mark is already running (PID {current}).")
+        raise typer.BadParameter(f"Agent is already running (PID {current}).")
+    pid_path = layout.root / "agent.pid"
+    _remove_legacy_runtime_files(layout.root)
     try:
         layout.root.mkdir(parents=True, exist_ok=True)
         layout.root.chmod(0o700)
@@ -413,15 +414,16 @@ def _start_background() -> None:
         pid_path.chmod(0o600)
         _write_runtime_state("running", process.pid)
     except OSError as exc:
-        raise AgentRuntimeError("Unable to start Mark in the background.") from exc
-    typer.echo(f"Mark started in background (PID {process.pid}).")
+        raise AgentRuntimeError("Unable to start Agent in the background.") from exc
+    typer.echo(f"Agent started in background (PID {process.pid}).")
 
 
 def _write_runtime_state(status: str, pid: int | None) -> None:
     layout = UserStateLayout.from_root()
     layout.root.mkdir(parents=True, exist_ok=True)
     layout.root.chmod(0o700)
-    path = layout.root / "mark-agent.status.json"
+    path = layout.root / "agent.status.json"
+    (layout.root / "mark-agent.status.json").unlink(missing_ok=True)
     path.write_text(
         json.dumps({"status": status, "pid": pid}, ensure_ascii=False, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -431,17 +433,38 @@ def _write_runtime_state(status: str, pid: int | None) -> None:
 
 def _runtime_status() -> dict[str, object]:
     layout = UserStateLayout.from_root()
-    pid_path = layout.root / "mark-agent.pid"
-    pid = _read_pid(pid_path)
+    pid_path, pid = _read_runtime_pid(layout.root)
     running = pid is not None and _pid_is_running(pid)
     if not running and pid is not None:
         pid_path.unlink(missing_ok=True)
-        (layout.root / "mark-agent.status.json").unlink(missing_ok=True)
+        _remove_runtime_files(layout.root)
     return {
         "status": "running" if running else "stopped",
         "pid": pid if running else None,
-        "state_file": str(layout.root / "mark-agent.status.json"),
+        "state_file": str(layout.root / "agent.status.json"),
     }
+
+
+def _read_runtime_pid(root: Path) -> tuple[Path, int | None]:
+    for path in (root / "agent.pid", root / "mark-agent.pid"):
+        pid = _read_pid(path)
+        if pid is not None:
+            return path, pid
+    return root / "agent.pid", None
+
+
+def _runtime_status_paths(root: Path) -> tuple[Path, Path]:
+    return root / "agent.status.json", root / "mark-agent.status.json"
+
+
+def _remove_runtime_files(root: Path) -> None:
+    for path in (root / "agent.pid", root / "mark-agent.pid", *_runtime_status_paths(root)):
+        path.unlink(missing_ok=True)
+
+
+def _remove_legacy_runtime_files(root: Path) -> None:
+    for path in (root / "mark-agent.pid", root / "mark-agent.status.json"):
+        path.unlink(missing_ok=True)
 
 
 def _read_pid(path: Path) -> int | None:

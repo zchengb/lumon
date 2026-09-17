@@ -8,7 +8,7 @@ from pathlib import Path
 
 @dataclass(frozen=True, slots=True)
 class FlowBrief:
-    """The bounded ID, brief, and detail locator Mark receives."""
+    """The bounded ID, brief, and detail locator Agent receives."""
 
     flow_id: str
     brief: str

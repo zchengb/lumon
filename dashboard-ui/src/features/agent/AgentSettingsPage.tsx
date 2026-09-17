@@ -1,4 +1,4 @@
-import { Activity, Bot, KeyRound, LoaderCircle, Save } from "lucide-react";
+import { Activity, Bot, LoaderCircle, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../shared/i18n";
 import type {
@@ -198,10 +198,9 @@ export function AgentSettingsPage({
                 type="password"
                 value={feishuAppSecret}
                 onChange={(event) => { setFeishuAppSecret(event.target.value); markDirty(); }}
-                placeholder={settings.feishu_app_configured ? t("agent.secretReplacePlaceholder") : t("agent.secretNewPlaceholder")}
+                placeholder={settings.feishu_app_secret_masked ?? t("agent.secretNewPlaceholder")}
                 autoComplete="new-password"
               />
-              <p className="credential-status"><KeyRound size={13} />{settings.feishu_app_configured ? t("agent.secretSaved") : t("agent.secretMissing")}</p>
             </div>
           </div>
           <p className="field-help"><Activity size={14} />{t("agent.restartHelp")}</p>
@@ -251,10 +250,9 @@ export function AgentSettingsPage({
                 type="password"
                 value={langfusePublicKey}
                 onChange={(event) => { setLangfusePublicKey(event.target.value); markDirty(); }}
-                placeholder={settings.observability.public_key_configured ? t("agent.keyReplacePlaceholder") : t("agent.keyNewPlaceholder")}
+                placeholder={settings.observability.public_key_masked ?? t("agent.keyNewPlaceholder")}
                 autoComplete="new-password"
               />
-              <p className="credential-status"><KeyRound size={13} />{settings.observability.public_key_configured ? t("agent.keySaved") : t("agent.keyMissing")}</p>
             </div>
             <div>
               <label className="field-label" htmlFor="langfuse-secret-key">{t("agent.langfuseSecretKey")}</label>
@@ -264,10 +262,9 @@ export function AgentSettingsPage({
                 type="password"
                 value={langfuseSecretKey}
                 onChange={(event) => { setLangfuseSecretKey(event.target.value); markDirty(); }}
-                placeholder={settings.observability.secret_key_configured ? t("agent.keyReplacePlaceholder") : t("agent.keyNewPlaceholder")}
+                placeholder={settings.observability.secret_key_masked ?? t("agent.keyNewPlaceholder")}
                 autoComplete="new-password"
               />
-              <p className="credential-status"><KeyRound size={13} />{settings.observability.secret_key_configured ? t("agent.keySaved") : t("agent.keyMissing")}</p>
             </div>
           </div>
         </div>

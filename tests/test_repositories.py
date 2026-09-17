@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.cli.app import app
 from lumon.cli.commands import init as init_command
 from lumon.errors import InitializationError, InvalidInputError, PreflightError, RepositoryError
@@ -322,8 +322,8 @@ def test_cli_init_sets_default_when_it_creates_the_only_workspace(
             settings_store=WorkspaceSettingsStore(state_root),
         ),
     )
-    MarkConfigStore(state_root).save(
-        MarkAgentConfig(
+    AgentConfigStore(state_root).save(
+        AgentConfig(
             enabled=True,
             feishu_app_id="cli_test",
             feishu_app_secret="secret-value",
@@ -335,7 +335,7 @@ def test_cli_init_sets_default_when_it_creates_the_only_workspace(
     assert result.exit_code == 0, result.stdout
     registrations = WorkspaceRegistry(state_root).list()
     assert len(registrations) == 1
-    assert MarkConfigStore(state_root).load().default_workspace_id == registrations[0].workspace_id
+    assert AgentConfigStore(state_root).load().default_workspace_id == registrations[0].workspace_id
 
 
 def test_cli_init_keeps_existing_default_when_multiple_workspaces_exist(
@@ -352,8 +352,8 @@ def test_cli_init_keeps_existing_default_when_multiple_workspaces_exist(
     first = initializer.initialize(InitRequest(tmp_path / "first"))
     first_registration = WorkspaceRegistry(state_root).find_by_path(first.workspace)
     assert first_registration is not None
-    MarkConfigStore(state_root).save(
-        MarkAgentConfig(
+    AgentConfigStore(state_root).save(
+        AgentConfig(
             enabled=True,
             default_workspace_id=first_registration.workspace_id,
             feishu_app_id="cli_test",
@@ -375,7 +375,7 @@ def test_cli_init_keeps_existing_default_when_multiple_workspaces_exist(
     assert result.exit_code == 0, result.stdout
     assert len(WorkspaceRegistry(state_root).list()) == 2
     assert (
-        MarkConfigStore(state_root).load().default_workspace_id == first_registration.workspace_id
+        AgentConfigStore(state_root).load().default_workspace_id == first_registration.workspace_id
     )
 
 

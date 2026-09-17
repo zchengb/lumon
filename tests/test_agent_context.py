@@ -1,4 +1,4 @@
-"""Tests for Mark Workspace selection and prompt assembly."""
+"""Tests for Agent Workspace selection and prompt assembly."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from lumon.agents.mark.config import MarkAgentConfig
-from lumon.agents.mark.model import Message
-from lumon.agents.mark.prompt import MarkPromptRenderer
-from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
+from lumon.agents.agent.config import AgentConfig
+from lumon.agents.agent.model import Message
+from lumon.agents.agent.prompt import PromptRenderer
+from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
 from lumon.skills.installer import SkillInstaller
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -27,8 +27,8 @@ def _workspace(tmp_path: Path, state_root: Path, name: str) -> Path:
     return target
 
 
-def _config(workspace_id: UUID | None = None) -> MarkAgentConfig:
-    return MarkAgentConfig(
+def _config(workspace_id: UUID | None = None) -> AgentConfig:
+    return AgentConfig(
         enabled=True,
         default_workspace_id=workspace_id,
         feishu_app_id="cli_test",
@@ -78,7 +78,7 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "Inspect the README" in prompt
     assert "AGENTS.md" in prompt
     assert "不要读取、复制或在回复中暴露凭据" in prompt
-    assert "<mark-soul>" in prompt
+    assert "<agent-soul>" in prompt
     assert "<conversation-history>" in prompt
     assert context.flow_briefs[0].flow_id == "test-case-generation"
     assert "<available-flows>" in prompt
@@ -133,9 +133,7 @@ def test_prompt_renderer_can_use_a_local_template_without_changing_context_resol
     builder = WorkspaceContextBuilder(
         _config(),
         WorkspaceRegistry(state_root),
-        prompt_renderer=MarkPromptRenderer(
-            "workspace=${workspace_name}\nmessage=${user_message}\n"
-        ),
+        prompt_renderer=PromptRenderer("workspace=${workspace_name}\nmessage=${user_message}\n"),
     )
 
     prompt = builder.build_prompt(builder.resolve_workspace(), (), "Inspect the template")

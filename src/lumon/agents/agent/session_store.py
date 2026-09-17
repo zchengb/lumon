@@ -1,4 +1,4 @@
-"""SQLite persistence for Mark sessions, messages, de-duplication, and runs."""
+"""SQLite persistence for Agent sessions, messages, de-duplication, and runs."""
 
 from __future__ import annotations
 
@@ -9,19 +9,31 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from lumon.agents.mark.model import (
+from lumon.agents.agent.model import (
+    AgentRunResult,
+    AgentSession,
     InboundMessage,
-    MarkRunResult,
-    MarkSession,
     Message,
 )
 from lumon.errors import AgentRuntimeError
 from lumon.tools.safety import sanitize_output
 from lumon.workspace.registry import UserStateLayout
 
+DATABASE_FILENAME = "agent.sqlite3"
+_LEGACY_DATABASE_FILENAME = "mark.sqlite3"
 
-class MarkSessionStore:
-    """Expose a small durable interface over Mark's private SQLite database.
+
+def resolve_database_path(state_root: Path | None = None) -> Path:
+    """Use the new database name while retaining an existing legacy database."""
+
+    root = UserStateLayout.from_root(state_root).root
+    current = root / DATABASE_FILENAME
+    legacy = root / _LEGACY_DATABASE_FILENAME
+    return legacy if not current.exists() and legacy.exists() else current
+
+
+class AgentSessionStore:
+    """Expose a small durable interface over Agent's private SQLite database.
 
     A session is the durable conversation boundary: one direct chat maps to
     one session, while one group Thread maps to one session. The prompt
@@ -36,13 +48,12 @@ class MarkSessionStore:
         db_path: Path | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
-        layout = UserStateLayout.from_root(state_root)
-        self.path = (db_path or layout.root / "mark.sqlite3").expanduser().resolve()
+        self.path = (db_path or resolve_database_path(state_root)).expanduser().resolve()
         self._now = now or (lambda: datetime.now(UTC))
         self._lock = threading.RLock()
         self._prepare_database()
 
-    def get_or_create_session(self, message: InboundMessage) -> MarkSession:
+    def get_or_create_session(self, message: InboundMessage) -> AgentSession:
         """Return the stable Session for a direct chat or group Thread."""
 
         session_key = message.conversation_key
@@ -75,7 +86,7 @@ class MarkSessionStore:
                         ),
                     )
                 except sqlite3.IntegrityError:
-                    # Another Mark process may have created this key between
+                    # Another Agent process may have created this key between
                     # the SELECT and INSERT. Reuse that durable identity.
                     row = connection.execute(
                         "SELECT * FROM sessions WHERE session_key = ?",
@@ -83,7 +94,7 @@ class MarkSessionStore:
                     ).fetchone()
                     if row is None:
                         raise AgentRuntimeError(
-                            "Unable to create the Mark conversation session."
+                            "Unable to create the Agent conversation session."
                         ) from None
                 else:
                     row = connection.execute(
@@ -106,10 +117,10 @@ class MarkSessionStore:
                     (row["session_id"],),
                 ).fetchone()
             if row is None:
-                raise AgentRuntimeError("Mark SQLite session disappeared during creation.")
+                raise AgentRuntimeError("Agent SQLite session disappeared during creation.")
             return _session_from_row(row)
 
-    def get_session(self, session_id: str) -> MarkSession | None:
+    def get_session(self, session_id: str) -> AgentSession | None:
         """Return one durable conversation session by its Lumon ID."""
 
         with self._lock, self._connect() as connection:
@@ -262,7 +273,7 @@ class MarkSessionStore:
             "failed",
             "timed_out",
         }:
-            raise AgentRuntimeError(f"Invalid Mark event status: {status}")
+            raise AgentRuntimeError(f"Invalid Agent event status: {status}")
         with self._lock, self._connect() as connection:
             connection.execute(
                 "UPDATE events SET status = ? WHERE event_id = ?", (status, event_id)
@@ -429,7 +440,7 @@ class MarkSessionStore:
                 ),
             )
 
-    def record_result(self, result: MarkRunResult) -> None:
+    def record_result(self, result: AgentRunResult) -> None:
         """Persist a terminal run result and close the associated event."""
 
         final_text = sanitize_output(result.final_text) if result.final_text else None
@@ -674,17 +685,19 @@ class MarkSessionStore:
                 )
             self.path.chmod(0o600)
         except OSError as exc:
-            raise AgentRuntimeError(f"Unable to prepare Mark SQLite database: {self.path}") from exc
+            raise AgentRuntimeError(
+                f"Unable to prepare Agent SQLite database: {self.path}"
+            ) from exc
         except sqlite3.Error as exc:
             raise AgentRuntimeError(
-                f"Unable to initialize Mark SQLite database: {self.path}"
+                f"Unable to initialize Agent SQLite database: {self.path}"
             ) from exc
 
     def _connect(self) -> sqlite3.Connection:
         try:
             connection = sqlite3.connect(self.path, timeout=30)
         except sqlite3.Error as exc:
-            raise AgentRuntimeError(f"Unable to open Mark SQLite database: {self.path}") from exc
+            raise AgentRuntimeError(f"Unable to open Agent SQLite database: {self.path}") from exc
         connection.row_factory = sqlite3.Row
         return connection
 
@@ -714,10 +727,10 @@ def _placeholder_message(event_id: str) -> InboundMessage:
     )
 
 
-def _session_from_row(row: sqlite3.Row) -> MarkSession:
+def _session_from_row(row: sqlite3.Row) -> AgentSession:
     raw_workspace_id = row["workspace_id"]
     workspace_id = UUID(str(raw_workspace_id)) if raw_workspace_id else None
-    return MarkSession(
+    return AgentSession(
         session_id=str(row["session_id"]),
         session_key=str(row["session_key"]),
         chat_id=str(row["chat_id"]),
@@ -737,7 +750,7 @@ def _message_from_row(row: sqlite3.Row) -> Message:
     workspace_id = UUID(str(raw_workspace_id)) if raw_workspace_id else None
     direction = str(row["direction"])
     if direction not in {"inbound", "outbound"}:
-        raise AgentRuntimeError("Mark SQLite database contains an invalid message direction.")
+        raise AgentRuntimeError("Agent SQLite database contains an invalid message direction.")
     return Message(
         conversation_key=str(row["conversation_key"]),
         direction=direction,  # type: ignore[arg-type]

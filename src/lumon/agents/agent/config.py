@@ -1,4 +1,4 @@
-"""Typed, user-level configuration for the Mark Agent."""
+"""Typed, user-level configuration for the Agent."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ from typing import Literal, cast
 from urllib.parse import urlparse
 from uuid import UUID
 
-from lumon.agents.mark.model import AgentProvider
+from lumon.agents.agent.model import AgentProvider
 from lumon.errors import AgentConfigError
 from lumon.workspace.registry import UserStateLayout
 
-MARK_CONFIG_SCHEMA_VERSION = 1
+AGENT_CONFIG_SCHEMA_VERSION = 1
 DEFAULT_AGENT_MODEL = "gpt-5.6-luna"
 DEFAULT_AGENT_REASONING_EFFORT = "max"
 DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
@@ -29,7 +29,7 @@ _AGENT_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "xhigh
 
 @dataclass(frozen=True, slots=True)
 class ObservabilityConfig:
-    """Langfuse Cloud settings for Mark telemetry."""
+    """Langfuse Cloud settings for Agent telemetry."""
 
     enabled: bool = False
     provider: ObservabilityProvider = "langfuse"
@@ -81,10 +81,10 @@ class ObservabilityConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class MarkAgentConfig:
-    """The complete configuration required to run Mark."""
+class AgentConfig:
+    """The complete configuration required to run Agent."""
 
-    schema_version: int = MARK_CONFIG_SCHEMA_VERSION
+    schema_version: int = AGENT_CONFIG_SCHEMA_VERSION
     enabled: bool = False
     default_workspace_id: UUID | None = None
     execution_mode: ExecutionMode = "full_access"
@@ -99,18 +99,18 @@ class MarkAgentConfig:
     def validate(self) -> None:
         """Validate values before they cross the on-disk configuration seam."""
 
-        if self.schema_version != MARK_CONFIG_SCHEMA_VERSION:
-            raise AgentConfigError("Unsupported Mark Agent configuration schema.")
+        if self.schema_version != AGENT_CONFIG_SCHEMA_VERSION:
+            raise AgentConfigError("Unsupported Agent configuration schema.")
         if self.execution_mode != "full_access":
-            raise AgentConfigError("Mark requires execution_mode = full_access.")
+            raise AgentConfigError("Agent requires execution_mode = full_access.")
         if self.response_mode != "progress_and_final":
-            raise AgentConfigError("Mark requires response_mode = progress_and_final.")
+            raise AgentConfigError("Agent requires response_mode = progress_and_final.")
         if not self.feishu_app_id.strip():
-            raise AgentConfigError("Feishu App ID is missing from Mark configuration.")
+            raise AgentConfigError("Feishu App ID is missing from Agent configuration.")
         if not self.feishu_app_secret.strip():
-            raise AgentConfigError("Feishu App Secret is missing from Mark configuration.")
+            raise AgentConfigError("Feishu App Secret is missing from Agent configuration.")
         if self.agent_provider != "codex":
-            raise AgentConfigError(f"Unsupported Mark Agent provider: {self.agent_provider}")
+            raise AgentConfigError(f"Unsupported Agent provider: {self.agent_provider}")
         if not self.agent_model.strip():
             raise AgentConfigError("Agent model must be a non-empty name.")
         if self.agent_reasoning_effort not in _AGENT_REASONING_EFFORTS:
@@ -137,8 +137,8 @@ class MarkAgentConfig:
         }
 
 
-class MarkConfigStore:
-    """Read and atomically write the user's Mark configuration."""
+class AgentConfigStore:
+    """Read and atomically write the user's Agent configuration."""
 
     def __init__(self, state_root: Path | None = None) -> None:
         self.layout = UserStateLayout.from_root(state_root)
@@ -149,26 +149,26 @@ class MarkConfigStore:
 
         return self.layout.root / "agent.toml"
 
-    def load(self) -> MarkAgentConfig:
-        """Load and validate Mark configuration without exposing secret values."""
+    def load(self) -> AgentConfig:
+        """Load and validate Agent configuration without exposing secret values."""
 
         if not self.path.is_file():
             raise AgentConfigError(
-                f"Mark is not configured yet: {self.path}. Run `lumon agent configure`."
+                f"Agent is not configured yet: {self.path}. Run `lumon agent configure`."
             )
         if not self.is_owner_only():
-            raise AgentConfigError(f"Mark configuration must have file mode 600: {self.path}")
+            raise AgentConfigError(f"Agent configuration must have file mode 600: {self.path}")
         try:
             payload = tomllib.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-            raise AgentConfigError(f"Unable to read Mark configuration: {self.path}") from exc
+            raise AgentConfigError(f"Unable to read Agent configuration: {self.path}") from exc
 
         config = _parse_config(payload, self.path)
         config.validate()
         return config
 
-    def save(self, config: MarkAgentConfig) -> None:
-        """Validate and atomically write Mark configuration with mode ``600``."""
+    def save(self, config: AgentConfig) -> None:
+        """Validate and atomically write Agent configuration with mode ``600``."""
 
         config.validate()
         try:
@@ -191,7 +191,7 @@ class MarkConfigStore:
             return False
 
 
-def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
+def _parse_config(payload: dict[str, object], source: Path) -> AgentConfig:
     schema_version = payload.get("schema_version")
     enabled = payload.get("enabled")
     raw_workspace_id = payload.get("default_workspace_id", "")
@@ -207,20 +207,20 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
     if (
         not isinstance(schema_version, int)
         or isinstance(schema_version, bool)
-        or schema_version != MARK_CONFIG_SCHEMA_VERSION
+        or schema_version != AGENT_CONFIG_SCHEMA_VERSION
     ):
-        raise AgentConfigError(f"Unsupported Mark Agent configuration schema: {source}")
+        raise AgentConfigError(f"Unsupported Agent configuration schema: {source}")
     if not isinstance(enabled, bool):
-        raise AgentConfigError(f"Invalid Mark enabled value: {source}")
+        raise AgentConfigError(f"Invalid Agent enabled value: {source}")
     if not isinstance(raw_workspace_id, str):
         raise AgentConfigError(f"Invalid default Workspace ID: {source}")
     workspace_id = _parse_optional_uuid(raw_workspace_id, source)
     if not isinstance(raw_provider, str) or raw_provider != "codex":
-        raise AgentConfigError(f"Unsupported Mark Agent provider: {source}")
+        raise AgentConfigError(f"Unsupported Agent provider: {source}")
     if execution_mode != "full_access":
-        raise AgentConfigError(f"Mark configuration must use full_access mode: {source}")
+        raise AgentConfigError(f"Agent configuration must use full_access mode: {source}")
     if response_mode != "progress_and_final":
-        raise AgentConfigError(f"Mark configuration must use progress_and_final: {source}")
+        raise AgentConfigError(f"Agent configuration must use progress_and_final: {source}")
     if raw_model is not None and not isinstance(raw_model, str):
         raise AgentConfigError(f"Invalid Agent model value: {source}")
     if (
@@ -241,7 +241,7 @@ def _parse_config(payload: dict[str, object], source: Path) -> MarkAgentConfig:
         raise AgentConfigError(f"Invalid observability configuration: {source}")
     observability = _parse_observability(cast(dict[str, object], raw_observability), source)
 
-    return MarkAgentConfig(
+    return AgentConfig(
         schema_version=schema_version,
         enabled=enabled,
         default_workspace_id=workspace_id,
@@ -303,7 +303,7 @@ def _parse_optional_uuid(value: str, source: Path) -> UUID | None:
         raise AgentConfigError(f"Invalid default Workspace ID: {source}") from exc
 
 
-def _render(config: MarkAgentConfig) -> str:
+def _render(config: AgentConfig) -> str:
     workspace_id = str(config.default_workspace_id) if config.default_workspace_id else ""
     lines = [
         f"schema_version = {config.schema_version}",
@@ -349,7 +349,7 @@ def _atomic_write(path: Path, content: bytes, mode: int) -> None:
         temporary = None
         path.chmod(mode)
     except OSError as exc:
-        raise AgentConfigError(f"Unable to write Mark configuration: {path}") from exc
+        raise AgentConfigError(f"Unable to write Agent configuration: {path}") from exc
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

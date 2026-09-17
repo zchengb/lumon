@@ -67,7 +67,7 @@ class CodexExecutionResult:
     """The process outcome returned by the Codex tool.
 
     A successful process may have no ``final_text``. Callers that need a user
-    facing answer, such as Mark, apply that policy themselves; file-oriented
+    facing answer, such as Agent, apply that policy themselves; file-oriented
     flows can use the successful status without requiring a textual response.
     """
 

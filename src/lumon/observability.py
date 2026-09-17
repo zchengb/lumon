@@ -13,7 +13,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from lumon.agents.mark.config import MarkAgentConfig
+from lumon.agents.agent.config import AgentConfig
 from lumon.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ TelemetryMetadata = Mapping[str, MetadataValue]
 
 
 class TraceSpan(Protocol):
-    """The safe update surface exposed to the Mark service."""
+    """The safe update surface exposed to the Agent service."""
 
     def update(
         self,
@@ -49,7 +49,7 @@ class TraceSpan(Protocol):
 
 
 class AgentTrace(Protocol):
-    """A trace handle for one accepted Mark message."""
+    """A trace handle for one accepted Agent message."""
 
     def update(
         self,
@@ -88,7 +88,7 @@ class AgentTrace(Protocol):
 
 
 class AgentTelemetry(Protocol):
-    """The telemetry dependency used by the Mark orchestration layer."""
+    """The telemetry dependency used by the Agent orchestration layer."""
 
     def start_trace(
         self,
@@ -115,7 +115,7 @@ class AgentTelemetry(Protocol):
 
 
 class NoopAgentTelemetry:
-    """Disabled telemetry that keeps the Mark path side-effect free."""
+    """Disabled telemetry that keeps the Agent path side-effect free."""
 
     def start_trace(
         self,
@@ -243,7 +243,7 @@ class LangfuseAgentTelemetry:
                 reasoning_effort=reasoning_effort,
             )
             root_manager = self._client.start_as_current_observation(
-                name="mark.agent_turn",
+                name="agent.turn",
                 as_type="agent",
                 input=self._redactor.content(input_text),
                 metadata=metadata,
@@ -260,8 +260,8 @@ class LangfuseAgentTelemetry:
                     "lumon_event_id": _bounded(event_id),
                 },
                 version=__version__,
-                tags=["lumon", "mark", "feishu"],
-                trace_name="mark.agent_turn",
+                tags=["lumon", "agent", "feishu"],
+                trace_name="agent.turn",
                 environment="production",
             )
             if propagation_manager is None:
@@ -501,7 +501,7 @@ def redact_text(value: str, sensitive_values: Iterable[str] = ()) -> str:
     return _GENERIC_SECRET_PATTERN.sub("[REDACTED]", redacted)
 
 
-def create_agent_telemetry(config: MarkAgentConfig) -> AgentTelemetry:
+def create_agent_telemetry(config: AgentConfig) -> AgentTelemetry:
     """Create Langfuse telemetry when it is configured and available."""
 
     settings = config.observability
@@ -545,7 +545,7 @@ def _credential_from_environment_or_config(environment_name: str, configured_val
 
 
 def _configured_sensitive_values(
-    config: MarkAgentConfig,
+    config: AgentConfig,
     public_key: str,
     secret_key: str,
 ) -> tuple[str, ...]:

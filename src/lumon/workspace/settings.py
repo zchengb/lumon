@@ -137,6 +137,12 @@ def masked_webhook_url(url: str | None) -> str | None:
     return f"{parsed.scheme}://{host}{path}"
 
 
+def masked_secret(value: str | None) -> str | None:
+    """Return a credential with only a short prefix and suffix visible."""
+
+    return _mask_middle(value) if value else None
+
+
 def _mask_middle(value: str) -> str:
     """Keep a short prefix and suffix while masking the value's middle."""
 

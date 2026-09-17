@@ -9,7 +9,7 @@ from typing import Annotated
 
 import typer
 
-from lumon.agents.mark.config import MarkConfigStore
+from lumon.agents.agent.config import AgentConfigStore
 from lumon.cli.output import emit_error, emit_init
 from lumon.errors import AgentConfigError, LumonError
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -90,13 +90,13 @@ def _interactive_terminal() -> bool:
 
 
 def _set_default_for_sole_workspace() -> None:
-    """Select the only registered Workspace when Mark has a saved config."""
+    """Select the only registered Workspace when Agent has a saved config."""
 
     registrations = WorkspaceRegistry().list()
     if len(registrations) != 1:
         return
 
-    config_store = MarkConfigStore()
+    config_store = AgentConfigStore()
     try:
         config = config_store.load()
     except AgentConfigError:

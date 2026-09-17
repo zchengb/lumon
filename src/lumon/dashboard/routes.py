@@ -338,6 +338,7 @@ def _agent_settings_response(settings: AgentSettingsView) -> AgentSettingsRespon
         agent_reasoning_effort=settings.agent_reasoning_effort,
         feishu_app_id=settings.feishu_app_id,
         feishu_app_configured=settings.feishu_app_configured,
+        feishu_app_secret_masked=settings.feishu_app_secret_masked,
         observability=AgentObservabilityResponse(
             enabled=observability.enabled,
             provider=observability.provider,
@@ -345,6 +346,8 @@ def _agent_settings_response(settings: AgentSettingsView) -> AgentSettingsRespon
             sample_rate=observability.sample_rate,
             public_key_configured=observability.public_key_configured,
             secret_key_configured=observability.secret_key_configured,
+            public_key_masked=observability.public_key_masked,
+            secret_key_masked=observability.secret_key_masked,
         ),
     )
 

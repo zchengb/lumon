@@ -60,28 +60,29 @@ lumon workspace remove <workspace-id-or-path>
 lumon workspace remove <workspace-id-or-path> --delete
 ```
 
-`workspace remove` clears Mark's default when the target is selected, then
+`workspace remove` clears Agent's default when the target is selected, then
 unregisters the Workspace and removes its user-level profile. It keeps the
 Workspace directory unless `--delete` is supplied, and it asks for confirmation
 before changing the registry or default selection.
 
 ## Global Agent settings
 
-The **Mark Agent** page manages configuration that applies to the local Agent
+The **Agent** page manages configuration that applies to the local Agent
 across all Workspaces: enabled state, Codex model, reasoning effort, default
 Workspace, Feishu App credentials, and Langfuse Cloud observability.
 
-The API returns only credential presence flags. New or replacement secrets are
-accepted by the update endpoint but never returned to the browser. Lumon saves
-them in `$LUMON_HOME/agent.toml` (normally `~/.lumon/agent.toml`) with owner-only
-file mode `600`. Environment variables `LANGFUSE_PUBLIC_KEY` and
-`LANGFUSE_SECRET_KEY` continue to override saved Langfuse values.
+The API returns credential presence flags and short prefix/suffix masks. New or
+replacement secrets are accepted by the update endpoint but never returned in
+full. Lumon saves them in `$LUMON_HOME/agent.toml` (normally
+`~/.lumon/agent.toml`) with owner-only file mode `600`. Environment variables
+`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` continue to override saved
+Langfuse values.
 
 Langfuse content capture is always enabled when observability is enabled. Lumon
 redacts credentials client-side before sending prompt and response content, and
 the Dashboard does not expose a content capture switch.
 
-Saving the page updates the on-disk configuration. Restart Mark with
+Saving the page updates the on-disk configuration. Restart Agent with
 `lumon agent stop` and `lumon agent start --background` for the running process
 to load the new settings.
 
@@ -89,12 +90,12 @@ to load the new settings.
 
 The **Flows** page edits Markdown files under the selected Workspace's
 `lumon/flows/` directory. The list shows enabled and disabled valid flows as
-well as validation errors for files that Mark will ignore. The editor supports
+well as validation errors for files that Agent will ignore. The editor supports
 creating, updating, and deleting flow files. **New flow** starts with a design
 template; Workspaces do not receive a product-specific flow during initialization.
 
-The Dashboard and Mark use the same files, so saving a flow does not require a
-second synchronization step. Mark receives only each enabled flow's ID, brief,
+The Dashboard and Agent use the same files, so saving a flow does not require a
+second synchronization step. Agent receives only each enabled flow's ID, brief,
 and relative file path in its initial prompt. It reads the full Markdown body
 after selecting a flow. A resumed Codex session receives a
 fresh brief list on every turn, so Dashboard edits are picked up without

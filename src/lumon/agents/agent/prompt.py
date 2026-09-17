@@ -1,22 +1,22 @@
-"""Render Mark's packaged Workspace prompt template."""
+"""Render Agent's packaged Workspace prompt template."""
 
 from __future__ import annotations
 
 from importlib.resources import files
 from string import Template
 
-from lumon.agents.mark.model import Message, WorkspaceContext
+from lumon.agents.agent.model import Message, WorkspaceContext
 from lumon.errors import AgentConfigError
 from lumon.flows.model import FlowBrief
 
-_TEMPLATE_PACKAGE = "lumon.agents.mark.templates"
+_TEMPLATE_PACKAGE = "lumon.agents.agent.templates"
 _PROMPT_TEMPLATE_NAME = "workspace_prompt.md"
 
 
-class MarkPromptRenderer:
+class PromptRenderer:
     """Render one complete Agent prompt from a packaged Markdown template.
 
-    The renderer owns the textual representation of Mark's prompt. Callers
+    The renderer owns the textual representation of Agent's prompt. Callers
     provide typed Workspace data, conversation history, and the selected SOUL;
     they do not need to know the template syntax or resource location.
     """
@@ -26,7 +26,7 @@ class MarkPromptRenderer:
 
         source = template_text if template_text is not None else _load_template()
         if not source.strip():
-            raise AgentConfigError("Packaged Mark Workspace prompt is empty.")
+            raise AgentConfigError("Packaged Agent Workspace prompt is empty.")
         self._template = Template(source)
 
     def render(
@@ -77,7 +77,7 @@ def _load_template() -> str:
     try:
         return files(_TEMPLATE_PACKAGE).joinpath(_PROMPT_TEMPLATE_NAME).read_text(encoding="utf-8")
     except (ModuleNotFoundError, OSError, UnicodeDecodeError) as exc:
-        raise AgentConfigError("Packaged Mark Workspace prompt is unavailable.") from exc
+        raise AgentConfigError("Packaged Agent Workspace prompt is unavailable.") from exc
 
 
 def _render_history(history: tuple[Message, ...]) -> str:
@@ -85,7 +85,7 @@ def _render_history(history: tuple[Message, ...]) -> str:
         return "(no previous messages)"
     lines: list[str] = []
     for item in history:
-        speaker = "user" if item.direction == "inbound" else "mark"
+        speaker = "user" if item.direction == "inbound" else "agent"
         lines.append(f"[{speaker}] {item.text}")
     return "\n".join(lines)
 

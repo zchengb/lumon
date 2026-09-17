@@ -1,4 +1,4 @@
-"""CLI contract tests for the Mark lifecycle commands."""
+"""CLI contract tests for the Agent lifecycle commands."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore, ObservabilityConfig
-from lumon.agents.mark.runner import AgentRunner, CodexAgentRunner
+from lumon.agents.agent.config import AgentConfig, AgentConfigStore, ObservabilityConfig
+from lumon.agents.agent.runner import AgentRunner, CodexAgentRunner
 from lumon.cli.app import app
 from lumon.cli.commands import agent as agent_commands
 from lumon.tools.codex import CodexTool
@@ -23,7 +23,7 @@ def test_agent_configure_collects_secret_without_printing_it(
 
     assert result.exit_code == 0, result.stdout
     assert "secret-value" not in result.stdout
-    config = MarkConfigStore(tmp_path / "lumon").load()
+    config = AgentConfigStore(tmp_path / "lumon").load()
     assert config.feishu_app_id == "cli_test"
     assert config.feishu_app_secret == "secret-value"
 
@@ -46,8 +46,8 @@ def test_agent_doctor_reports_the_configured_model_and_effort(
 ) -> None:
     state_root = tmp_path / "lumon"
     monkeypatch.setenv("LUMON_HOME", str(state_root))
-    MarkConfigStore(state_root).save(
-        MarkAgentConfig(
+    AgentConfigStore(state_root).save(
+        AgentConfig(
             enabled=True,
             agent_model="gpt-5.6-terra",
             agent_reasoning_effort="high",
@@ -56,7 +56,7 @@ def test_agent_doctor_reports_the_configured_model_and_effort(
         )
     )
 
-    def unavailable_runner(_config: MarkAgentConfig | None) -> AgentRunner:
+    def unavailable_runner(_config: AgentConfig | None) -> AgentRunner:
         return CodexAgentRunner(tool=CodexTool(binary=str(tmp_path / "missing-codex")))
 
     monkeypatch.setattr(agent_commands, "create_agent_runner", unavailable_runner)
@@ -75,8 +75,8 @@ def test_agent_doctor_reports_langfuse_cloud_without_exposing_credentials(
     monkeypatch.setenv("LUMON_HOME", str(state_root))
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
-    MarkConfigStore(state_root).save(
-        MarkAgentConfig(
+    AgentConfigStore(state_root).save(
+        AgentConfig(
             enabled=True,
             feishu_app_id="cli_test",
             feishu_app_secret="secret-value",
@@ -84,7 +84,7 @@ def test_agent_doctor_reports_langfuse_cloud_without_exposing_credentials(
         )
     )
 
-    def unavailable_runner(_config: MarkAgentConfig | None) -> AgentRunner:
+    def unavailable_runner(_config: AgentConfig | None) -> AgentRunner:
         return CodexAgentRunner(tool=CodexTool(binary=str(tmp_path / "missing-codex")))
 
     monkeypatch.setattr(agent_commands, "create_agent_runner", unavailable_runner)
@@ -112,3 +112,26 @@ def test_agent_status_json_reports_stopped_without_creating_a_process(
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["status"] == "stopped"
+
+
+def test_agent_status_reads_legacy_runtime_pid_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_root = tmp_path / "lumon"
+    state_root.mkdir()
+    monkeypatch.setenv("LUMON_HOME", str(state_root))
+    (state_root / "mark-agent.pid").write_text("1234\n", encoding="utf-8")
+
+    def pid_is_running(_pid: int) -> bool:
+        return True
+
+    monkeypatch.setattr(agent_commands, "_pid_is_running", pid_is_running)
+
+    result = CliRunner().invoke(app, ["agent", "status", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "pid": 1234,
+        "state_file": str(state_root / "agent.status.json"),
+        "status": "running",
+    }

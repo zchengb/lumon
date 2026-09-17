@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 import lumon.observability as observability
-from lumon.agents.mark.config import MarkAgentConfig, ObservabilityConfig
+from lumon.agents.agent.config import AgentConfig, ObservabilityConfig
 from lumon.observability import LangfuseAgentTelemetry, NoopAgentTelemetry, redact_text
 from lumon.version import __version__
 
@@ -95,8 +95,8 @@ class FakePropagation:
         self.context.exited = True
 
 
-def _config(*, capture_content: bool = False) -> MarkAgentConfig:
-    return MarkAgentConfig(
+def _config(*, capture_content: bool = False) -> AgentConfig:
+    return AgentConfig(
         enabled=True,
         feishu_app_id="cli_test",
         feishu_app_secret="feishu-secret",
@@ -231,7 +231,7 @@ def test_create_agent_telemetry_uses_credentials_saved_in_agent_config(
         )
 
     monkeypatch.setattr(observability.importlib, "import_module", fake_import)
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         feishu_app_id="cli_test",
         feishu_app_secret="feishu-secret",
@@ -257,7 +257,7 @@ def test_disabled_telemetry_does_not_import_or_initialize_sdk(
 
     monkeypatch.setattr(observability.importlib, "import_module", unexpected_import)
 
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         feishu_app_id="cli_test",
         feishu_app_secret="feishu-secret",
@@ -295,7 +295,7 @@ def test_create_agent_telemetry_passes_cloud_settings_to_sdk(
         return fake_module
 
     monkeypatch.setattr(observability.importlib, "import_module", fake_import)
-    config = MarkAgentConfig(
+    config = AgentConfig(
         enabled=True,
         feishu_app_id="cli_test",
         feishu_app_secret="feishu-secret",

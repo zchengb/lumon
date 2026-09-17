@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
-from lumon.agents.mark.config import (
+from lumon.agents.agent.config import (
+    AgentConfig,
+    AgentConfigStore,
     AgentReasoningEffort,
-    MarkAgentConfig,
-    MarkConfigStore,
     ObservabilityConfig,
 )
 from lumon.dashboard.folder_picker import FolderPicker
@@ -31,6 +31,7 @@ from lumon.workspace.settings import (
     FeishuWebhookSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
+    masked_secret,
     masked_webhook_url,
 )
 
@@ -117,7 +118,7 @@ class FlowDocumentView:
 
 @dataclass(frozen=True, slots=True)
 class AgentObservabilitySettingsView:
-    """Display-safe Langfuse settings for the local Mark Agent."""
+    """Display-safe Langfuse settings for the local Agent."""
 
     enabled: bool
     provider: str
@@ -125,11 +126,13 @@ class AgentObservabilitySettingsView:
     sample_rate: float
     public_key_configured: bool
     secret_key_configured: bool
+    public_key_masked: str | None
+    secret_key_masked: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class AgentSettingsView:
-    """Display-safe global Mark Agent settings."""
+    """Display-safe global Agent settings."""
 
     enabled: bool
     default_workspace_id: UUID | None
@@ -138,6 +141,7 @@ class AgentSettingsView:
     agent_reasoning_effort: str
     feishu_app_id: str
     feishu_app_configured: bool
+    feishu_app_secret_masked: str | None
     observability: AgentObservabilitySettingsView
 
 
@@ -155,7 +159,7 @@ class AgentObservabilitySettingsUpdate:
 
 @dataclass(frozen=True, slots=True)
 class AgentSettingsUpdate:
-    """Requested global Mark Agent settings."""
+    """Requested global Agent settings."""
 
     enabled: bool
     default_workspace_id: UUID | None
@@ -178,12 +182,12 @@ class DashboardService:
         webhook_sender: FeishuWebhookSender | None = None,
         repository_provisioner: RepositoryProvisioner | None = None,
         folder_picker: Callable[[], Path | None] | None = None,
-        agent_config_store: MarkConfigStore | None = None,
+        agent_config_store: AgentConfigStore | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
         agent_state_root = state_root or self.registry.layout.root
-        self.agent_config_store = agent_config_store or MarkConfigStore(agent_state_root)
+        self.agent_config_store = agent_config_store or AgentConfigStore(agent_state_root)
         self.initializer = initializer or WorkspaceInitializer(
             registry=self.registry,
             settings_store=self.settings_store,
@@ -340,12 +344,12 @@ class DashboardService:
         FlowCatalog(registration.path).delete(flow_id)
 
     def agent_settings(self) -> AgentSettingsView:
-        """Read display-safe global Mark Agent settings."""
+        """Read display-safe global Agent settings."""
 
         return _agent_settings_view(self._load_agent_config())
 
     def update_agent_settings(self, update: AgentSettingsUpdate) -> AgentSettingsView:
-        """Validate and persist global Mark Agent settings."""
+        """Validate and persist global Agent settings."""
 
         current = self._load_agent_config()
         default_workspace_id = self._resolve_default_workspace_id(update.default_workspace_id)
@@ -359,7 +363,7 @@ class DashboardService:
             secret_key=update.observability.secret_key,
             clear_credentials=update.observability.clear_credentials,
         )
-        config = MarkAgentConfig(
+        config = AgentConfig(
             enabled=update.enabled,
             default_workspace_id=default_workspace_id,
             agent_provider=current.agent_provider,
@@ -434,12 +438,12 @@ class DashboardService:
             raise WorkspaceNotFoundError(f"Workspace is not registered: {workspace_id}")
         return registration
 
-    def _load_agent_config(self) -> MarkAgentConfig:
+    def _load_agent_config(self) -> AgentConfig:
         try:
             return self.agent_config_store.load()
         except AgentConfigError:
             if not self.agent_config_store.path.exists():
-                return MarkAgentConfig()
+                return AgentConfig()
             raise
 
     def _resolve_default_workspace_id(self, requested: UUID | None) -> UUID | None:
@@ -520,14 +524,11 @@ def _relative_flow_path(workspace: Path, path: Path) -> str:
         return path.name
 
 
-def _agent_settings_view(config: MarkAgentConfig) -> AgentSettingsView:
+def _agent_settings_view(config: AgentConfig) -> AgentSettingsView:
     observability = config.observability
-    public_key_configured = bool(
-        observability.public_key.strip() or os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
-    )
-    secret_key_configured = bool(
-        observability.secret_key.strip() or os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
-    )
+    feishu_app_secret = _configured_credential(config.feishu_app_secret)
+    public_key = _configured_credential(observability.public_key, "LANGFUSE_PUBLIC_KEY")
+    secret_key = _configured_credential(observability.secret_key, "LANGFUSE_SECRET_KEY")
     return AgentSettingsView(
         enabled=config.enabled,
         default_workspace_id=config.default_workspace_id,
@@ -535,16 +536,28 @@ def _agent_settings_view(config: MarkAgentConfig) -> AgentSettingsView:
         agent_model=config.agent_model,
         agent_reasoning_effort=config.agent_reasoning_effort,
         feishu_app_id=config.feishu_app_id,
-        feishu_app_configured=bool(config.feishu_app_secret),
+        feishu_app_configured=feishu_app_secret is not None,
+        feishu_app_secret_masked=masked_secret(feishu_app_secret),
         observability=AgentObservabilitySettingsView(
             enabled=observability.enabled,
             provider=observability.provider,
             base_url=observability.base_url,
             sample_rate=observability.sample_rate,
-            public_key_configured=public_key_configured,
-            secret_key_configured=secret_key_configured,
+            public_key_configured=public_key is not None,
+            secret_key_configured=secret_key is not None,
+            public_key_masked=masked_secret(public_key),
+            secret_key_masked=masked_secret(secret_key),
         ),
     )
+
+
+def _configured_credential(value: str, environment_name: str | None = None) -> str | None:
+    if value.strip():
+        return value
+    if environment_name is None:
+        return None
+    environment_value = os.environ.get(environment_name, "")
+    return environment_value if environment_value.strip() else None
 
 
 def _updated_secret(current: str, replacement: str | None, clear: bool = False) -> str:

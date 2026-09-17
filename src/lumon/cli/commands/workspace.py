@@ -1,4 +1,4 @@
-"""Workspace registry and Mark default Workspace commands."""
+"""Workspace registry and Agent default Workspace commands."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from uuid import UUID
 
 import typer
 
-from lumon.agents.mark.config import MarkAgentConfig, MarkConfigStore
+from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.cli.output import emit_error
 from lumon.errors import (
     AgentConfigError,
@@ -40,7 +40,7 @@ def list_workspaces(
         bool, typer.Option("--json", help="Render the Workspace list as JSON.")
     ] = False,
 ) -> None:
-    """List registered Workspaces and identify Mark's default."""
+    """List registered Workspaces and identify Agent's default."""
 
     registry = WorkspaceRegistry()
     try:
@@ -79,12 +79,14 @@ def list_workspaces(
 def set_default(
     target: Annotated[
         str | None,
-        typer.Argument(help="Workspace UUID or path to make Mark's default."),
+        typer.Argument(help="Workspace UUID or path to make Agent's default."),
     ] = None,
-    clear: Annotated[bool, typer.Option("--clear", help="Clear Mark's default Workspace.")] = False,
+    clear: Annotated[
+        bool, typer.Option("--clear", help="Clear Agent's default Workspace.")
+    ] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Render the result as JSON.")] = False,
 ) -> None:
-    """Set or clear Mark's default Workspace."""
+    """Set or clear Agent's default Workspace."""
 
     if clear == (target is not None):
         _fail(
@@ -92,7 +94,7 @@ def set_default(
             json_output,
         )
 
-    config_store = MarkConfigStore()
+    config_store = AgentConfigStore()
     try:
         config = config_store.load()
         selected = None
@@ -155,7 +157,7 @@ def remove(
 
     registry = WorkspaceRegistry()
     settings = WorkspaceSettingsStore()
-    config_store = MarkConfigStore()
+    config_store = AgentConfigStore()
     try:
         registration = _resolve_target(registry.list(), target)
         config = _load_config(config_store)
@@ -164,9 +166,9 @@ def remove(
         )
 
         if default_cleared and delete:
-            action = "clear Mark's default, unregister, and permanently delete"
+            action = "clear Agent's default, unregister, and permanently delete"
         elif default_cleared:
-            action = "clear Mark's default and unregister"
+            action = "clear Agent's default and unregister"
         elif delete:
             action = "unregister and permanently delete"
         else:
@@ -175,13 +177,13 @@ def remove(
         if delete:
             question += " This also deletes its cloned repositories."
         if default_cleared:
-            question += " This also clears Mark's default Workspace."
+            question += " This also clears Agent's default Workspace."
         if not yes:
             typer.confirm(question, abort=True)
 
         if default_cleared:
             if config is None:  # pragma: no cover - guarded by default_cleared
-                raise AgentConfigError("Mark configuration is unavailable.")
+                raise AgentConfigError("Agent configuration is unavailable.")
             config_store.save(replace(config, default_workspace_id=None))
         registry.unregister(registration.workspace_id)
         settings.remove(registration.workspace_id)
@@ -210,7 +212,7 @@ def remove(
 
     typer.echo(f"Workspace unregistered: {registration.name} ({registration.workspace_id}).")
     if default_cleared:
-        typer.echo("Mark's default Workspace cleared.")
+        typer.echo("Agent's default Workspace cleared.")
     if deleted:
         typer.echo(f"Workspace directory deleted: {registration.path}")
     else:
@@ -242,12 +244,12 @@ def _resolve_target(
 def _load_default_workspace_id() -> UUID | None:
     """Return the configured default without making listing depend on Agent setup."""
 
-    config = _load_config(MarkConfigStore())
+    config = _load_config(AgentConfigStore())
     return config.default_workspace_id if config else None
 
 
-def _load_config(config_store: MarkConfigStore) -> MarkAgentConfig | None:
-    """Load Mark configuration when available without blocking registry inspection."""
+def _load_config(config_store: AgentConfigStore) -> AgentConfig | None:
+    """Load Agent configuration when available without blocking registry inspection."""
 
     try:
         return config_store.load()
