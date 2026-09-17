@@ -278,6 +278,16 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         skill_installer=SkillInstaller(tmp_path / "skills"),
         registry=WorkspaceRegistry(state_root),
     ).initialize(InitRequest(workspace, name="service-test"))
+    (workspace / "lumon" / "flows" / "test-case-generation.md").write_text(
+        "---\n"
+        'id = "test-case-generation"\n'
+        'name = "Test case generation"\n'
+        "enabled = true\n"
+        'brief = "Generate test cases."\n'
+        "---\n\n"
+        "# Test case generation\n",
+        encoding="utf-8",
+    )
     workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
     config = MarkAgentConfig(
         enabled=True,

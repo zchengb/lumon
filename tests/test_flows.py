@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lumon.flows.catalog import FlowCatalog, FlowValidationError, sample_flow_content
+from lumon.flows.catalog import FlowCatalog, FlowValidationError
 from lumon.flows.protocol import extract_flow_selection
 from lumon.workspace.layout import WorkspaceLayout
 
@@ -24,16 +24,15 @@ def _flow_content(
         'name = "Custom flow"\n'
         f"enabled = {enabled_value}\n"
         f'brief = "{brief}"\n'
-        'match = ["custom request"]\n'
         "---\n\n"
         "# Custom flow\n\n"
         "Follow the custom request steps.\n"
     )
 
 
-def test_sample_flow_is_valid_and_briefs_do_not_include_the_body(tmp_path: Path) -> None:
+def test_flow_is_valid_and_briefs_do_not_include_the_body(tmp_path: Path) -> None:
     catalog = FlowCatalog(tmp_path)
-    definition = catalog.create(sample_flow_content())
+    definition = catalog.create(_flow_content("test-case-generation", brief="Generate test cases."))
 
     snapshot = catalog.discover()
 
@@ -42,12 +41,10 @@ def test_sample_flow_is_valid_and_briefs_do_not_include_the_body(tmp_path: Path)
     assert snapshot.diagnostics == ()
     assert snapshot.briefs[0].flow_id == "test-case-generation"
     assert snapshot.briefs[0].path == "lumon/flows/test-case-generation.md"
-    assert "acceptance criteria" in snapshot.briefs[0].brief
-    assert "Treat acceptance criteria as the primary authority" not in str(snapshot.briefs[0])
-    assert "Treat acceptance criteria as the primary authority" in definition.body
-    assert "Output destination gate" in definition.body
-    assert "Test Summary" in definition.body
-    assert "Technical-only coverage belongs to another Agent" in definition.body
+    assert snapshot.briefs[0].brief == "Generate test cases."
+    assert not hasattr(snapshot.briefs[0], "name")
+    assert not hasattr(snapshot.briefs[0], "match_hints")
+    assert "Follow the custom request steps." in definition.body
 
 
 def test_catalog_exposes_disabled_flows_but_excludes_them_from_briefs(tmp_path: Path) -> None:
@@ -120,23 +117,6 @@ def test_catalog_validates_ids_and_keeps_edits_inside_workspace(tmp_path: Path) 
         .read_text(encoding="utf-8")
         .startswith("---\n")
     )
-
-
-def test_sample_install_is_idempotent_and_does_not_overwrite_user_content(
-    tmp_path: Path,
-) -> None:
-    catalog = FlowCatalog(tmp_path)
-    catalog.create(_flow_content("test-case-generation", brief="User version."))
-
-    installed = catalog.install_sample()
-
-    assert installed.brief == "User version."
-    assert installed.content == _flow_content("test-case-generation", brief="User version.")
-
-    catalog.delete(installed.flow_id)
-    assert catalog.discover().definitions == ()
-    with pytest.raises(FlowValidationError, match="does not exist"):
-        catalog.read(installed.flow_id)
 
 
 def test_flow_selection_marker_is_removed_and_invalid_markers_are_ignored() -> None:

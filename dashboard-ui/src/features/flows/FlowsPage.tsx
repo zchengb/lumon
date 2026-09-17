@@ -27,24 +27,32 @@ const starterContent = `---
 id = "my-flow"
 name = "My flow"
 enabled = true
-brief = "Describe when this flow should be used."
-match = ["example request"]
+brief = "Describe the user request this flow handles."
 ---
 
 # My flow
 
 ## When to use
 
-Describe the user request this flow handles.
+Describe the request or business situation this flow handles.
+
+## Inputs and evidence
+
+List the files, links, user-provided context, and Workspace evidence to inspect.
 
 ## Process
 
-1. Describe the first step.
-2. Describe the next step and the tools or commands to use.
+1. Describe the first step and the decision it makes.
+2. Describe the next step, including tools or commands when needed.
+3. Describe validation, safety checks, and what to do when evidence is missing.
 
 ## Output
 
-Describe the files, reply, or other result to produce.
+Describe the files, reply, or other result to produce and how to verify it.
+
+## Boundaries
+
+State what this flow does not cover and when another Agent or flow should be used.
 `;
 
 type FlowViewMode = "preview" | "edit";

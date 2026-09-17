@@ -42,7 +42,6 @@ artifacts = ["src/lumon/dashboard/static"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/lumon/agents/mark/templates/SOUL.md" = "lumon/agents/mark/templates/SOUL.md"
 "src/lumon/agents/mark/templates/workspace_prompt.md" = "lumon/agents/mark/templates/workspace_prompt.md"
-"src/lumon/workspace/templates/flows/test-case-generation.md" = "lumon/workspace/templates/flows/test-case-generation.md"
 
 [tool.hatch.build.targets.sdist]
 artifacts = ["src/lumon/dashboard/static"]
@@ -50,7 +49,6 @@ artifacts = ["src/lumon/dashboard/static"]
 [tool.hatch.build.targets.sdist.force-include]
 "src/lumon/agents/mark/templates/SOUL.md" = "src/lumon/agents/mark/templates/SOUL.md"
 "src/lumon/agents/mark/templates/workspace_prompt.md" = "src/lumon/agents/mark/templates/workspace_prompt.md"
-"src/lumon/workspace/templates/flows/test-case-generation.md" = "src/lumon/workspace/templates/flows/test-case-generation.md"
 
 [tool.hatch.version]
 path = "src/lumon/version.py"

@@ -90,13 +90,13 @@ to load the new settings.
 The **Flows** page edits Markdown files under the selected Workspace's
 `lumon/flows/` directory. The list shows enabled and disabled valid flows as
 well as validation errors for files that Mark will ignore. The editor supports
-creating, updating, and deleting flow files. New Workspaces receive the bundled
-test-case generation flow during initialization.
+creating, updating, and deleting flow files. **New flow** starts with a design
+template; Workspaces do not receive a product-specific flow during initialization.
 
 The Dashboard and Mark use the same files, so saving a flow does not require a
-second synchronization step. Mark receives only each enabled flow's ID, name,
-brief, match hints, and relative file path in its initial prompt. It reads the
-full Markdown body after selecting a flow. A resumed Codex session receives a
+second synchronization step. Mark receives only each enabled flow's ID, brief,
+and relative file path in its initial prompt. It reads the full Markdown body
+after selecting a flow. A resumed Codex session receives a
 fresh brief list on every turn, so Dashboard edits are picked up without
 restarting the Agent.
 

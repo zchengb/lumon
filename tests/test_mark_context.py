@@ -12,7 +12,6 @@ from lumon.agents.mark.model import Message
 from lumon.agents.mark.prompt import MarkPromptRenderer
 from lumon.agents.mark.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
-from lumon.flows.catalog import sample_flow_content
 from lumon.skills.installer import SkillInstaller
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
@@ -37,11 +36,26 @@ def _config(workspace_id: UUID | None = None) -> MarkAgentConfig:
     )
 
 
+def _flow_content(brief: str = "Generate test cases.") -> str:
+    return (
+        "---\n"
+        'id = "test-case-generation"\n'
+        'name = "Test case generation"\n'
+        "enabled = true\n"
+        f'brief = "{brief}"\n'
+        "---\n\n"
+        "# Test case generation\n\n"
+        "Follow the Workspace flow.\n"
+    )
+
+
 def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     tmp_path: Path,
 ) -> None:
     state_root = tmp_path / "state"
     target = _workspace(tmp_path, state_root, "review-lab")
+    flow_path = target / "lumon" / "flows" / "test-case-generation.md"
+    flow_path.write_text(_flow_content(), encoding="utf-8")
     registration = WorkspaceRegistry(state_root).list()[0]
     builder = WorkspaceContextBuilder(_config(), WorkspaceRegistry(state_root))
 
@@ -68,6 +82,9 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "<conversation-history>" in prompt
     assert context.flow_briefs[0].flow_id == "test-case-generation"
     assert "<available-flows>" in prompt
+    assert "id: test-case-generation; brief:" in prompt
+    assert "full detail: lumon/flows/test-case-generation.md" in prompt
+    assert "match hints:" not in prompt
     assert "Treat acceptance criteria as the primary authority" not in prompt
 
 
@@ -78,17 +95,14 @@ def test_resumed_prompt_reloads_workspace_flow_briefs(tmp_path: Path) -> None:
     context = builder.resolve_workspace()
     sample_path = target / "lumon" / "flows" / "test-case-generation.md"
     sample_path.write_text(
-        sample_flow_content().replace(
-            "Generate executable manual test cases from a story and its acceptance criteria.",
-            "Generate test cases with the refreshed brief.",
-        ),
+        _flow_content("Generate test cases with the refreshed brief."),
         encoding="utf-8",
     )
 
     prompt = builder.build_resume_prompt(context, "generate test cases")
 
     assert "Generate test cases with the refreshed brief." in prompt
-    assert "Generate executable manual test cases from a story" not in prompt
+    assert "Follow the Workspace flow." not in prompt
     assert "<lumon-flow-context>" in prompt
 
 

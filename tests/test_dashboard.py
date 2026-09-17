@@ -32,7 +32,6 @@ def _flow_content(
         'name = "Dashboard flow"\n'
         "enabled = true\n"
         f'brief = "{brief}"\n'
-        'match = ["dashboard request"]\n'
         "---\n\n"
         "# Dashboard flow\n\n"
         "Follow the dashboard flow.\n"
@@ -89,7 +88,7 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.1.1",
+        "version": "1.1.2",
         "workspace_count": 0,
         "has_workspaces": False,
     }
@@ -292,13 +291,7 @@ def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(
 
     listed = client.get(f"/api/workspaces/{workspace_id}/flows")
     assert listed.status_code == 200
-    assert listed.json()[0]["flow_id"] == "test-case-generation"
-    assert listed.json()[0]["path"] == "lumon/flows/test-case-generation.md"
-    assert listed.json()[0]["valid"] is True
-
-    sample = client.get(f"/api/workspaces/{workspace_id}/flows/test-case-generation")
-    assert sample.status_code == 200
-    assert "Treat acceptance criteria as the primary authority" in sample.json()["content"]
+    assert listed.json() == []
 
     created = client.post(
         f"/api/workspaces/{workspace_id}/flows",
@@ -331,13 +324,6 @@ def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(
     assert broken_document.json()["valid"] is False
     assert broken_document.json()["content"] == "broken"
 
-    sample_path = target / "lumon" / "flows" / "test-case-generation.md"
-    sample_path.unlink()
-    restored = client.post(f"/api/workspaces/{workspace_id}/flows/sample")
-    assert restored.status_code == 200
-    assert restored.json()["flow_id"] == "test-case-generation"
-    assert sample_path.is_file()
-
     deleted = client.delete(f"/api/workspaces/{workspace_id}/flows/dashboard-flow")
     assert deleted.status_code == 204
     assert not (target / "lumon" / "flows" / "dashboard-flow.md").exists()
@@ -345,7 +331,7 @@ def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(
     assert not (target / "lumon" / "flows" / "broken.md").exists()
 
     changed_id = client.put(
-        f"/api/workspaces/{workspace_id}/flows/test-case-generation",
+        f"/api/workspaces/{workspace_id}/flows/dashboard-flow",
         json={"content": _flow_content("other-id")},
     )
     assert changed_id.status_code == 409

@@ -339,13 +339,6 @@ class DashboardService:
         registration = self._require(workspace_id)
         FlowCatalog(registration.path).delete(flow_id)
 
-    def install_sample_flow(self, workspace_id: UUID) -> FlowDocumentView:
-        """Install the bundled test-case flow without overwriting user content."""
-
-        registration = self._require(workspace_id)
-        definition = FlowCatalog(registration.path).install_sample()
-        return _flow_document(definition)
-
     def agent_settings(self) -> AgentSettingsView:
         """Read display-safe global Mark Agent settings."""
 

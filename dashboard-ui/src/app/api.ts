@@ -140,12 +140,6 @@ export const dashboardApi = {
     });
   },
 
-  installSampleFlow(workspaceId: string): Promise<FlowDocument> {
-    return request<FlowDocument>(`/api/workspaces/${workspaceId}/flows/sample`, {
-      method: "POST",
-    });
-  },
-
   updateSettings(workspaceId: string, payload: SettingsUpdate): Promise<WorkspaceSettings> {
     return request<WorkspaceSettings>(`/api/workspaces/${workspaceId}/settings`, {
       method: "PUT",

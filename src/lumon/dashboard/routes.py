@@ -195,13 +195,6 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
         return [_flow_summary_response(item) for item in _service(request).flows(workspace_id)]
 
     @router.post(
-        "/workspaces/{workspace_id}/flows/sample",
-        response_model=FlowDocumentResponse,
-    )
-    def install_sample_flow(request: Request, workspace_id: UUID) -> FlowDocumentResponse:
-        return _flow_document_response(_service(request).install_sample_flow(workspace_id))
-
-    @router.post(
         "/workspaces/{workspace_id}/flows",
         response_model=FlowDocumentResponse,
         status_code=201,

@@ -71,7 +71,6 @@ class WorkspaceLayout:
         return (
             self.control_dir,
             self.flows_dir,
-            self.flows_dir / "test-case-generation.md",
             *self.runtime_directories,
             *self.generated_files,
         )

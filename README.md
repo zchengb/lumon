@@ -214,25 +214,27 @@ only the execution status or file events.
 Each Workspace stores user-editable flows as Markdown files under
 `lumon/flows/`. The Dashboard's **Flows** page edits those files directly and
 reports invalid frontmatter without loading invalid flows into Mark's prompt.
-New Workspaces receive the sample test-case generation flow automatically.
-Existing Workspaces can create or edit flows from the same page.
+New Workspaces start without user-authored flows. Use **New flow** in the
+Dashboard to start from the built-in flow design template, then create or edit
+flows directly in the selected Workspace.
 
-The flow frontmatter provides the bounded brief Mark uses for routing:
+The flow frontmatter provides the bounded ID and brief Mark uses for semantic
+selection:
 
 ```markdown
 ---
-id = "test-case-generation"
-name = "Test case generation"
+id = "my-flow"
+name = "My flow"
 enabled = true
-brief = "Generate executable manual test cases from a story and its acceptance criteria."
-match = ["generate test cases", "测试用例"]
+brief = "Describe the user request this flow handles."
 ---
 ```
 
 The Markdown body contains the complete process and output contract. Mark
-reads that file only after selecting at most one matching flow. The test-case
-flow asks whether to return rows directly or write them to a supplied Feishu
-Sheet link. See
+decides whether a flow applies from its ID and brief, then reads at most one
+selected flow's full Markdown detail. Workspace-specific flows, such as a test
+case generation flow, belong in the target Workspace rather than in the Lumon
+package. See
 [`docs/mark-agent.md`](docs/mark-agent.md) for routing and marker details.
 
 Mark keeps conversation state in explicit SQLite tables. A direct Feishu chat

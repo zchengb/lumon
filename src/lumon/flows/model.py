@@ -8,13 +8,11 @@ from pathlib import Path
 
 @dataclass(frozen=True, slots=True)
 class FlowBrief:
-    """The bounded metadata Mark receives before it selects a flow."""
+    """The bounded ID, brief, and detail locator Mark receives."""
 
     flow_id: str
-    name: str
     brief: str
     path: str
-    match_hints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +23,6 @@ class FlowDefinition:
     name: str
     enabled: bool
     brief: str
-    match_hints: tuple[str, ...]
     path: Path
     content: str
     body: str
@@ -36,10 +33,8 @@ class FlowDefinition:
 
         return FlowBrief(
             flow_id=self.flow_id,
-            name=self.name,
             brief=self.brief,
             path=self.path.as_posix(),
-            match_hints=self.match_hints,
         )
 
 

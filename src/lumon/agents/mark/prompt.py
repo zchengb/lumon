@@ -64,9 +64,9 @@ class MarkPromptRenderer:
 
         return (
             "<lumon-flow-context>\n"
-            "The following enabled Workspace flow briefs are current for this turn.\n"
+            "The following enabled Workspace flow IDs and briefs are current for this turn.\n"
             f"{_render_flow_briefs(flow_briefs)}\n"
-            "Read a matching flow's full Markdown file before following it.\n"
+            "Decide which flow applies, then read its full Markdown file before following it.\n"
             "If the request is ambiguous, ask the user to choose a flow.\n"
             "</lumon-flow-context>\n\n"
             f"<user-message>\n{user_message}\n</user-message>"
@@ -95,9 +95,5 @@ def _render_flow_briefs(flow_briefs: tuple[FlowBrief, ...]) -> str:
         return "(no enabled Workspace flows)"
     lines: list[str] = []
     for flow in flow_briefs:
-        hints = ", ".join(flow.match_hints) if flow.match_hints else "(semantic match)"
-        lines.append(
-            f"- id: {flow.flow_id}; name: {flow.name}; brief: {flow.brief}; "
-            f"match hints: {hints}; full detail: {flow.path}"
-        )
+        lines.append(f"- id: {flow.flow_id}; brief: {flow.brief}; full detail: {flow.path}")
     return "\n".join(lines)

@@ -1,6 +1,6 @@
 """Workspace flow discovery and execution metadata."""
 
-from lumon.flows.catalog import FlowCatalog, FlowValidationError, sample_flow_content
+from lumon.flows.catalog import FlowCatalog, FlowValidationError
 from lumon.flows.model import FlowBrief, FlowCatalogSnapshot, FlowDefinition, FlowDiagnostic
 
 __all__ = [
@@ -10,5 +10,4 @@ __all__ = [
     "FlowDefinition",
     "FlowDiagnostic",
     "FlowValidationError",
-    "sample_flow_content",
 ]

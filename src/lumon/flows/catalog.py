@@ -6,9 +6,7 @@ import os
 import re
 import tempfile
 import tomllib
-from importlib.resources import files
 from pathlib import Path
-from typing import cast
 
 from lumon.errors import PreflightError
 from lumon.flows.model import FlowCatalogSnapshot, FlowDefinition, FlowDiagnostic
@@ -16,8 +14,6 @@ from lumon.flows.model import FlowCatalogSnapshot, FlowDefinition, FlowDiagnosti
 _FLOW_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _FLOW_SUFFIX = ".md"
 _FLOW_DELIMITER = "---"
-_SAMPLE_FLOW_FILENAME = "test-case-generation.md"
-_SAMPLE_FLOW_PACKAGE = "lumon.workspace.templates"
 
 
 class FlowValidationError(PreflightError):
@@ -155,18 +151,6 @@ class FlowCatalog:
         except OSError as exc:
             raise FlowValidationError(f"Unable to delete flow: {flow_id}") from exc
 
-    def install_sample(self) -> FlowDefinition:
-        """Install the bundled sample without overwriting a user flow."""
-
-        sample_id = _SAMPLE_FLOW_FILENAME.removesuffix(_FLOW_SUFFIX)
-        current = self._find_definition(sample_id)
-        if current is not None:
-            return current
-        path = self._path_for_id(sample_id)
-        if path.exists() or path.is_symlink():
-            return self.read(sample_id)
-        return self.save(sample_flow_content())
-
     def _read(self, path: Path) -> FlowDefinition:
         try:
             content = path.read_text(encoding="utf-8")
@@ -236,20 +220,6 @@ class FlowCatalog:
             raise FlowValidationError("Unable to create the Workspace flow directory.") from exc
 
 
-def sample_flow_content() -> str:
-    """Load the packaged test-case generation flow template."""
-
-    try:
-        return (
-            files(_SAMPLE_FLOW_PACKAGE)
-            .joinpath("flows")
-            .joinpath(_SAMPLE_FLOW_FILENAME)
-            .read_text(encoding="utf-8")
-        )
-    except (ModuleNotFoundError, OSError, UnicodeDecodeError) as exc:
-        raise FlowValidationError("The bundled test-case flow template is unavailable.") from exc
-
-
 def _parse_flow(content: str, path: Path | None) -> FlowDefinition:
     if not content.strip():
         raise FlowValidationError("Flow content must not be empty.")
@@ -276,7 +246,6 @@ def _parse_flow(content: str, path: Path | None) -> FlowDefinition:
     enabled = payload.get("enabled", True)
     if not isinstance(enabled, bool):
         raise FlowValidationError("Flow enabled must be boolean.")
-    match_hints = _text_list(payload.get("match", []), "match")
     if not body:
         raise FlowValidationError("Flow detail must not be empty.")
     if path is None:
@@ -286,7 +255,6 @@ def _parse_flow(content: str, path: Path | None) -> FlowDefinition:
         name=name,
         enabled=enabled,
         brief=brief,
-        match_hints=tuple(match_hints),
         path=path,
         content=content,
         body=body,
@@ -300,17 +268,6 @@ def _required_text(value: object, field_name: str) -> str:
     if any(character in normalized for character in "\r\n\0"):
         raise FlowValidationError(f"Flow {field_name} must not contain control characters.")
     return normalized
-
-
-def _text_list(value: object, field_name: str) -> list[str]:
-    if not isinstance(value, list):
-        raise FlowValidationError(f"Flow {field_name} must be an array of strings.")
-    result: list[str] = []
-    for item in cast(list[object], value):
-        if not isinstance(item, str) or not item.strip():
-            raise FlowValidationError(f"Flow {field_name} must contain non-empty strings.")
-        result.append(item.strip())
-    return result
 
 
 def _duplicate_ids(definitions: list[FlowDefinition]) -> set[str]:
