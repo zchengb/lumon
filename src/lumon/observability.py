@@ -1,4 +1,4 @@
-"""Optional, provider-neutral telemetry for Lumon Agent runs."""
+"""Provider-neutral telemetry for Lumon Agent runs."""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ class AgentTelemetry(Protocol):
         reasoning_effort: str,
         input_text: str,
     ) -> AgentTrace:
-        """Start one trace without making telemetry a runtime dependency."""
+        """Start one trace without coupling the service to the provider."""
 
         ...
 
@@ -196,7 +196,7 @@ class _NoopSpan:
 
 
 class LangfuseAgentTelemetry:
-    """Adapt the optional Langfuse SDK to the provider-neutral telemetry seam."""
+    """Adapt the Langfuse SDK to the provider-neutral telemetry seam."""
 
     def __init__(
         self,
@@ -206,7 +206,7 @@ class LangfuseAgentTelemetry:
         capture_content: bool,
         sensitive_values: Iterable[str] = (),
     ) -> None:
-        # The SDK is optional and loaded dynamically in ``create_agent_telemetry``.
+        # Load the SDK dynamically so a damaged installation remains fail-soft.
         # ``Any`` is confined to this third-party adapter boundary.
         # Keep the argument for compatibility with callers from the opt-in pilot;
         # content capture is now always enabled by the configuration policy.
@@ -525,7 +525,7 @@ def create_agent_telemetry(config: MarkAgentConfig) -> AgentTelemetry:
             environment="production",
         )
     except ImportError:
-        logger.warning("Langfuse telemetry is enabled but the optional SDK is unavailable.")
+        logger.warning("Langfuse telemetry is enabled but the SDK is unavailable.")
         return NoopAgentTelemetry()
     except Exception as exc:
         _log_sdk_failure("initialize client", exc)

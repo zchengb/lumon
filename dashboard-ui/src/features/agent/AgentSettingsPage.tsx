@@ -1,4 +1,4 @@
-import { Activity, Bot, Check, KeyRound, LoaderCircle, Save } from "lucide-react";
+import { Activity, Bot, KeyRound, LoaderCircle, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../shared/i18n";
 import type {
@@ -43,12 +43,8 @@ export function AgentSettingsPage({
   const [feishuAppSecret, setFeishuAppSecret] = useState("");
   const [langfuseEnabled, setLangfuseEnabled] = useState(settings.observability.enabled);
   const [langfuseBaseUrl, setLangfuseBaseUrl] = useState(settings.observability.base_url);
-  const [langfuseSampleRate, setLangfuseSampleRate] = useState(
-    String(settings.observability.sample_rate),
-  );
   const [langfusePublicKey, setLangfusePublicKey] = useState("");
   const [langfuseSecretKey, setLangfuseSecretKey] = useState("");
-  const [clearLangfuseCredentials, setClearLangfuseCredentials] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -60,10 +56,8 @@ export function AgentSettingsPage({
     setFeishuAppSecret("");
     setLangfuseEnabled(settings.observability.enabled);
     setLangfuseBaseUrl(settings.observability.base_url);
-    setLangfuseSampleRate(String(settings.observability.sample_rate));
     setLangfusePublicKey("");
     setLangfuseSecretKey("");
-    setClearLangfuseCredentials(false);
     onDirtyChange(false);
   }, [onDirtyChange, settings]);
 
@@ -83,10 +77,10 @@ export function AgentSettingsPage({
         feishuAppSecret,
         langfuseEnabled,
         langfuseBaseUrl,
-        langfuseSampleRate,
+        langfuseSampleRate: String(settings.observability.sample_rate),
         langfusePublicKey,
         langfuseSecretKey,
-        clearLangfuseCredentials,
+        clearLangfuseCredentials: false,
       };
       await onSave(buildAgentSettingsUpdate(draft));
     } finally {
@@ -104,13 +98,9 @@ export function AgentSettingsPage({
   const hasLangfuseChanges =
     langfuseEnabled !== settings.observability.enabled ||
     langfuseBaseUrl.trim() !== settings.observability.base_url ||
-    Number.parseFloat(langfuseSampleRate) !== settings.observability.sample_rate ||
     Boolean(langfusePublicKey.trim()) ||
-    Boolean(langfuseSecretKey.trim()) ||
-    clearLangfuseCredentials;
+    Boolean(langfuseSecretKey.trim());
   const hasChanges = hasAgentChanges || hasLangfuseChanges;
-  const langfuseCredentialsConfigured =
-    settings.observability.public_key_configured && settings.observability.secret_key_configured;
 
   return (
     <div className="page-stack">
@@ -241,13 +231,6 @@ export function AgentSettingsPage({
         </div>
         <p className="settings-description">{t("agent.langfuseDescription")}</p>
         <div className="agent-settings-body">
-          <div className="credential-summary">
-            <span className={langfuseCredentialsConfigured ? "status-pill status-ready" : "status-pill status-neutral"}>
-              {langfuseCredentialsConfigured && <Check size={13} />}
-              {langfuseCredentialsConfigured ? t("agent.credentialsConfigured") : t("agent.credentialsMissing")}
-            </span>
-            <span className="muted">{t("agent.credentialsHelp")}</span>
-          </div>
           <div className="form-grid">
             <div className="field-full">
               <label className="field-label" htmlFor="langfuse-base-url">{t("agent.langfuseEndpoint")}</label>
@@ -267,10 +250,9 @@ export function AgentSettingsPage({
                 className="text-input"
                 type="password"
                 value={langfusePublicKey}
-                onChange={(event) => { setLangfusePublicKey(event.target.value); setClearLangfuseCredentials(false); markDirty(); }}
+                onChange={(event) => { setLangfusePublicKey(event.target.value); markDirty(); }}
                 placeholder={settings.observability.public_key_configured ? t("agent.keyReplacePlaceholder") : t("agent.keyNewPlaceholder")}
                 autoComplete="new-password"
-                disabled={clearLangfuseCredentials}
               />
               <p className="credential-status"><KeyRound size={13} />{settings.observability.public_key_configured ? t("agent.keySaved") : t("agent.keyMissing")}</p>
             </div>
@@ -281,33 +263,13 @@ export function AgentSettingsPage({
                 className="text-input"
                 type="password"
                 value={langfuseSecretKey}
-                onChange={(event) => { setLangfuseSecretKey(event.target.value); setClearLangfuseCredentials(false); markDirty(); }}
+                onChange={(event) => { setLangfuseSecretKey(event.target.value); markDirty(); }}
                 placeholder={settings.observability.secret_key_configured ? t("agent.keyReplacePlaceholder") : t("agent.keyNewPlaceholder")}
                 autoComplete="new-password"
-                disabled={clearLangfuseCredentials}
               />
               <p className="credential-status"><KeyRound size={13} />{settings.observability.secret_key_configured ? t("agent.keySaved") : t("agent.keyMissing")}</p>
             </div>
-            <div>
-              <label className="field-label" htmlFor="langfuse-sample-rate">{t("agent.sampleRate")}</label>
-              <input
-                id="langfuse-sample-rate"
-                className="text-input"
-                type="number"
-                min="0"
-                max="1"
-                step="0.05"
-                value={langfuseSampleRate}
-                onChange={(event) => { setLangfuseSampleRate(event.target.value); markDirty(); }}
-              />
-            </div>
           </div>
-          {langfuseCredentialsConfigured && (
-            <label className="checkbox-row">
-              <input type="checkbox" checked={clearLangfuseCredentials} onChange={(event) => { setClearLangfuseCredentials(event.target.checked); setLangfusePublicKey(""); setLangfuseSecretKey(""); markDirty(); }} />
-              <span>{t("agent.clearLangfuseCredentials")}</span>
-            </label>
-          )}
         </div>
       </section>
 

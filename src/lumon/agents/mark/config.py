@@ -29,7 +29,7 @@ _AGENT_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "xhigh
 
 @dataclass(frozen=True, slots=True)
 class ObservabilityConfig:
-    """Optional Langfuse Cloud settings for Mark telemetry."""
+    """Langfuse Cloud settings for Mark telemetry."""
 
     enabled: bool = False
     provider: ObservabilityProvider = "langfuse"

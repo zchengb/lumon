@@ -311,7 +311,9 @@ def _observability_checks(config: MarkAgentConfig) -> list[AgentDoctorCheck]:
         AgentDoctorCheck(
             "observability_sdk",
             sdk_available,
-            "langfuse SDK available" if sdk_available else "install the observability extra",
+            "langfuse SDK available"
+            if sdk_available
+            else "langfuse SDK is not installed; reinstall Lumon",
         ),
         AgentDoctorCheck(
             "observability_credentials",

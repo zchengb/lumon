@@ -13,11 +13,10 @@ Artifact. Lumon is not published to PyPI or another public package index.
 
 For a one-command Shell installation, use the installer in
 `packaging/install.sh`. It does not use uv; it creates an isolated Python 3.12
-virtual environment and installs Lumon with pip. When no version is provided,
-the installer resolves the latest stable GitHub Release and verifies the Wheel
-with its `SHA256SUMS` file. A specific version can still be pinned explicitly.
-Pass `--observability` when the Mark Agent should include the optional Langfuse
-Cloud SDK in the installation.
+virtual environment and installs Lumon with pip, including the Langfuse Cloud
+SDK used by Mark Agent observability. When no version is provided, the installer
+resolves the latest stable GitHub Release and verifies the Wheel with its
+`SHA256SUMS` file. A specific version can still be pinned explicitly.
 On a private repository, provide `LUMON_GITHUB_TOKEN` or use an SSH-accessible
 repository. The matching uninstaller is `packaging/uninstall.sh`.
 
@@ -31,13 +30,6 @@ To pin a version, append the installer argument after `bash -s --`:
 
 ```text
 curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.1.0
-```
-
-To install the optional Langfuse Cloud telemetry support, add the installer
-flag:
-
-```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --observability
 ```
 
 The installer does not modify a Workspace or remove global Skills. To remove

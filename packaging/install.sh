@@ -11,7 +11,6 @@ version="${LUMON_VERSION:-$DEFAULT_VERSION}"
 install_root="${LUMON_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/lumon}"
 bin_dir="${LUMON_BIN_DIR:-$HOME/.local/bin}"
 force=false
-observability=false
 
 die() {
   printf 'lumon installer: %s\n' "$*" >&2
@@ -31,7 +30,6 @@ Options:
   --version latest|vX.Y.Z        Release tag (default: latest stable Release)
   --install-root PATH            Installation directory
   --bin-dir PATH                 Directory for the lumon executable
-  --observability                 Install Langfuse Cloud telemetry support
   --force                        Replace an existing Shell installation
   -h, --help                     Show this help
 EOF
@@ -58,10 +56,6 @@ while (($# > 0)); do
       (($# >= 2)) || die "--bin-dir requires a value."
       bin_dir="$2"
       shift 2
-      ;;
-    --observability)
-      observability=true
-      shift
       ;;
     --force)
       force=true
@@ -345,18 +339,6 @@ install_from_source() {
     "git+ssh://git@github.com/${repository}.git@${version}"
 }
 
-install_observability_support() {
-  if [[ "$observability" != true ]]; then
-    return
-  fi
-  printf 'Installing optional Langfuse Cloud telemetry support.\n'
-  "$venv_python" -m pip install \
-    --disable-pip-version-check \
-    --no-cache-dir \
-    --upgrade \
-    'langfuse>=4,<5'
-}
-
 python_command="$(resolve_python)"
 python_version="$("$python_command" -c 'import platform; print(platform.python_version())')"
 printf 'Using Python %s\n' "$python_version"
@@ -419,8 +401,6 @@ else
     --force-reinstall \
     "$wheel_path"
 fi
-
-install_observability_support
 
 touch "$install_root/.lumon-shell-install"
 "$install_root/venv/bin/lumon" --version

@@ -1,4 +1,4 @@
-"""Tests for optional Langfuse telemetry and content redaction."""
+"""Tests for Langfuse telemetry and content redaction."""
 
 from __future__ import annotations
 

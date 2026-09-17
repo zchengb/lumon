@@ -11,6 +11,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "click>=8.1,<9",
     "fastapi>=0.115,<1",
+    "langfuse>=4,<5",
     "lark-channel-sdk>=1,<2",
     "typer>=0.15,<1",
     "uvicorn>=0.34,<1",
@@ -21,11 +22,6 @@ Repository = "https://github.com/zchengb/lumon"
 
 [project.scripts]
 lumon = "lumon.cli.app:main"
-
-[project.optional-dependencies]
-observability = [
-    "langfuse>=4,<5",
-]
 
 [dependency-groups]
 dev = [

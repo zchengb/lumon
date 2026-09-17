@@ -1147,18 +1147,6 @@ code {
   font-size: 10px;
 }
 
-.credential-summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 17px 0 2px;
-  font-size: 10px;
-}
-
-.credential-summary .muted {
-  line-height: 1.5;
-}
-
 .checkbox-row {
   display: flex;
   align-items: flex-start;
@@ -1738,11 +1726,6 @@ code {
   .agent-settings-body {
     padding-right: 20px;
     padding-left: 20px;
-  }
-
-  .credential-summary {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .settings-actions .button {

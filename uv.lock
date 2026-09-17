@@ -235,14 +235,10 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "fastapi" },
+    { name = "langfuse" },
     { name = "lark-channel-sdk" },
     { name = "typer" },
     { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-observability = [
-    { name = "langfuse" },
 ]
 
 [package.dev-dependencies]
@@ -257,12 +253,11 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1,<9" },
     { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "langfuse", marker = "extra == 'observability'", specifier = ">=4,<5" },
+    { name = "langfuse", specifier = ">=4,<5" },
     { name = "lark-channel-sdk", specifier = ">=1,<2" },
     { name = "typer", specifier = ">=0.15,<1" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
-provides-extras = ["observability"]
 
 [package.metadata.requires-dev]
 dev = [

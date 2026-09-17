@@ -109,22 +109,22 @@ agent_reasoning_effort = "max"
 reasoning effort；`lumon agent configure` 会保留已有设置。运行
 `lumon agent doctor` 可以确认当前生效的模型与 effort。
 
-## Langfuse Cloud 可观测性（可选）
+## Langfuse Cloud 可观测性
 
 Mark 可以把每条已处理的飞书消息记录为一个 Langfuse trace。该能力默认关闭，
-并且不会阻止 Agent 执行：Langfuse SDK 不可用、凭据缺失或发送失败时，消息仍按
+并且不会阻止 Agent 执行：凭据缺失、SDK 初始化失败或发送失败时，消息仍按
 原有流程处理。
 
-开发环境通过 uv 安装可选依赖：
+开发环境通过 uv 安装 Lumon 基础依赖：
 
 ```text
-.venv/bin/uv sync --dev --extra observability
+.venv/bin/uv sync --dev
 ```
 
-Shell 安装则使用安装器选项：
+Shell 安装会自动包含 Langfuse SDK：
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --observability
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash
 ```
 
 在 Langfuse Cloud 创建项目并生成 project API keys。可以在 Dashboard 的 **Mark
