@@ -24,7 +24,6 @@ const zhCN = {
   "app.flows": "Flows",
   "app.slogan": "让工程清晰可见。",
   "app.workspaceConsole": "工作区控制台",
-  "app.localOnly": "仅限本机",
   "app.unsavedWorkspaceConfirm": "当前配置尚未保存，确定要切换工作区吗？",
   "app.unsavedViewConfirm": "当前配置尚未保存，确定要离开配置页吗？",
   "app.workspaceReady": "工作区「{name}」已准备完成。",
@@ -152,6 +151,10 @@ const zhCN = {
   "flows.valid": "有效",
   "flows.invalid": "无效",
   "flows.content": "流程 Markdown",
+  "flows.viewMode": "流程内容视图",
+  "flows.preview": "预览",
+  "flows.edit": "编辑",
+  "flows.metadata": "流程元数据",
   "flows.idHelp": "选择一个流程后，可以直接编辑它的完整 Markdown 内容。",
   "flows.save": "保存流程",
   "flows.delete": "删除流程",
@@ -178,7 +181,6 @@ const messages: Record<Locale, MessageSet> = {
     "app.flows": "Flows",
     "app.slogan": "讓工程清晰可見。",
     "app.workspaceConsole": "工作區控制台",
-    "app.localOnly": "僅限本機",
     "app.unsavedWorkspaceConfirm": "目前設定尚未儲存，確定要切換工作區嗎？",
     "app.unsavedViewConfirm": "目前設定尚未儲存，確定要離開設定頁嗎？",
     "app.workspaceReady": "工作區「{name}」已準備完成。",
@@ -306,6 +308,10 @@ const messages: Record<Locale, MessageSet> = {
     "flows.valid": "有效",
     "flows.invalid": "無效",
     "flows.content": "流程 Markdown",
+    "flows.viewMode": "流程內容檢視",
+    "flows.preview": "預覽",
+    "flows.edit": "編輯",
+    "flows.metadata": "流程中繼資料",
     "flows.idHelp": "選擇流程後，可以直接編輯完整的 Markdown 內容。",
     "flows.save": "儲存流程",
     "flows.delete": "刪除流程",
@@ -326,7 +332,6 @@ const messages: Record<Locale, MessageSet> = {
     "app.flows": "Flows",
     "app.slogan": "Engineering, made legible.",
     "app.workspaceConsole": "Workspace console",
-    "app.localOnly": "Local only",
     "app.unsavedWorkspaceConfirm": "Current settings are unsaved. Switch workspaces anyway?",
     "app.unsavedViewConfirm": "Current settings are unsaved. Leave the settings page anyway?",
     "app.workspaceReady": "Workspace “{name}” is ready.",
@@ -454,6 +459,10 @@ const messages: Record<Locale, MessageSet> = {
     "flows.valid": "Valid",
     "flows.invalid": "Invalid",
     "flows.content": "Flow Markdown",
+    "flows.viewMode": "Flow content view",
+    "flows.preview": "Preview",
+    "flows.edit": "Edit",
+    "flows.metadata": "Flow metadata",
     "flows.idHelp": "Select a flow to edit its complete Markdown document.",
     "flows.save": "Save flow",
     "flows.delete": "Delete flow",
@@ -506,14 +515,14 @@ export function I18nProvider({ children }: { children: ReactNode }): React.JSX.E
 
   const setLocale = useCallback((nextLocale: Locale): void => {
     setLocaleState(nextLocale);
-  }, []);
-
-  useEffect(() => {
     try {
-      window.localStorage.setItem(localeStorageKey, locale);
+      window.localStorage.setItem(localeStorageKey, nextLocale);
     } catch {
       // A locked-down browser may not expose localStorage; the session still works.
     }
+  }, []);
+
+  useEffect(() => {
     document.documentElement.lang = locale;
     document.title = translate(locale, "app.documentTitle");
   }, [locale]);

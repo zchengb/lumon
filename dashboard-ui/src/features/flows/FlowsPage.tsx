@@ -1,9 +1,11 @@
 import {
   AlertTriangle,
   Check,
+  Eye,
   FilePlus2,
   GitBranch,
   LoaderCircle,
+  PencilLine,
   RefreshCw,
   Save,
   Trash2,
@@ -12,6 +14,7 @@ import { useEffect, useState } from "react";
 import { dashboardApi } from "../../app/api";
 import { useI18n } from "../../shared/i18n";
 import type { FlowDocument, FlowSummary } from "../../shared/types";
+import { MarkdownPreview } from "./MarkdownPreview";
 
 interface FlowsPageProps {
   workspaceId: string;
@@ -44,6 +47,8 @@ Describe the user request this flow handles.
 Describe the files, reply, or other result to produce.
 `;
 
+type FlowViewMode = "preview" | "edit";
+
 export function FlowsPage({
   workspaceId,
   onDirtyChange,
@@ -59,6 +64,7 @@ export function FlowsPage({
   const [loadingDocument, setLoadingDocument] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<FlowViewMode>("preview");
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +72,7 @@ export function FlowsPage({
     setDocument(null);
     setContent("");
     setSelectedId(null);
+    setViewMode("preview");
     onDirtyChange(false);
     void dashboardApi
       .listFlows(workspaceId)
@@ -90,12 +97,14 @@ export function FlowsPage({
     setSelectedId(flow.flow_id);
     setDocument(null);
     setContent("");
+    setViewMode("preview");
     onDirtyChange(false);
     setLoadingDocument(true);
     try {
       const nextDocument = await dashboardApi.getFlow(workspaceId, flow.flow_id);
       setDocument(nextDocument);
       setContent(nextDocument.content);
+      setViewMode("preview");
     } catch (reason) {
       onError(messageFor(reason, t("flows.loadFailed")));
     } finally {
@@ -111,6 +120,7 @@ export function FlowsPage({
       setDocument(nextDocument);
       setContent(nextDocument.content);
       setSelectedId(nextDocument.flow_id);
+      setViewMode("edit");
       onDirtyChange(false);
       await reloadFlows(nextDocument.flow_id);
       onNotice(t("flows.created"));
@@ -147,6 +157,7 @@ export function FlowsPage({
       setSelectedId(null);
       setDocument(null);
       setContent("");
+      setViewMode("preview");
       onDirtyChange(false);
       await reloadFlows(null, deletedId);
       onNotice(t("flows.deleted"));
@@ -226,21 +237,47 @@ export function FlowsPage({
         </section>
 
         <section className="panel flow-editor-panel">
-          <div className="panel-heading">
+          <div className="panel-heading flow-editor-heading">
             <div><p className="eyebrow">{t("flows.content")}</p><h2>{document?.name ?? t("flows.select")}</h2></div>
-            {document && <span className="mono flow-editor-path">{document.path}</span>}
+            {document && (
+              <div className="flow-editor-heading-actions">
+                <span className="mono flow-editor-path">{document.path}</span>
+                <div className="segmented-control flow-view-toggle" role="group" aria-label={t("flows.viewMode")}>
+                  <button
+                    className={viewMode === "preview" ? "active" : ""}
+                    type="button"
+                    aria-pressed={viewMode === "preview"}
+                    onClick={() => setViewMode("preview")}
+                  >
+                    <Eye size={14} />{t("flows.preview")}
+                  </button>
+                  <button
+                    className={viewMode === "edit" ? "active" : ""}
+                    type="button"
+                    aria-pressed={viewMode === "edit"}
+                    onClick={() => setViewMode("edit")}
+                  >
+                    <PencilLine size={14} />{t("flows.edit")}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           {loadingDocument ? (
             <div className="loading-inline"><LoaderCircle size={20} className="spin" />{t("app.loading")}</div>
           ) : document ? (
             <>
-              <textarea
-                className="flow-editor"
-                value={content}
-                aria-label={t("flows.content")}
-                onChange={(event) => { setContent(event.target.value); onDirtyChange(event.target.value !== document.content); }}
-                spellCheck={false}
-              />
+              {viewMode === "preview" ? (
+                <MarkdownPreview content={content} metadataLabel={t("flows.metadata")} />
+              ) : (
+                <textarea
+                  className="flow-editor"
+                  value={content}
+                  aria-label={t("flows.content")}
+                  onChange={(event) => { setContent(event.target.value); onDirtyChange(event.target.value !== document.content); }}
+                  spellCheck={false}
+                />
+              )}
               {document.error && <p className="flow-editor-error"><AlertTriangle size={14} />{document.error}</p>}
               <div className="flow-editor-actions">
                 <button className="button button-secondary" type="button" onClick={() => void deleteFlow()} disabled={deleting || saving}>

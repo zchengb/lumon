@@ -233,16 +233,6 @@ code {
   white-space: nowrap;
 }
 
-.online-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  border-radius: 50%;
-  background: var(--sun);
-  box-shadow: 0 0 0 3px rgba(248, 201, 93, 0.14);
-}
-
 .main-shell {
   min-width: 0;
   flex: 1;
@@ -314,17 +304,6 @@ code {
   right: 11px;
   pointer-events: none;
   color: var(--copper);
-}
-
-.topbar-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .topbar-actions {
@@ -1402,6 +1381,27 @@ code {
   white-space: nowrap;
 }
 
+.flow-editor-heading {
+  align-items: flex-start;
+}
+
+.flow-editor-heading-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.flow-view-toggle {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.flow-view-toggle button {
+  padding: 7px 10px;
+  font-size: 10px;
+}
+
 .flow-editor {
   display: block;
   width: calc(100% - 36px);
@@ -1418,6 +1418,148 @@ code {
   line-height: 1.62;
   resize: vertical;
   transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.flow-markdown-preview {
+  width: calc(100% - 36px);
+  min-height: 560px;
+  max-height: 680px;
+  padding: 24px 28px 30px;
+  margin: 18px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.flow-markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.flow-markdown-preview h1,
+.flow-markdown-preview h2,
+.flow-markdown-preview h3,
+.flow-markdown-preview h4 {
+  margin: 1.7em 0 0.55em;
+  color: var(--ink);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.flow-markdown-preview h1 {
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.flow-markdown-preview h2 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 17px;
+}
+
+.flow-markdown-preview h3,
+.flow-markdown-preview h4 {
+  font-size: 14px;
+}
+
+.flow-markdown-preview p,
+.flow-markdown-preview ul,
+.flow-markdown-preview ol,
+.flow-markdown-preview blockquote,
+.flow-markdown-preview pre,
+.flow-markdown-preview table {
+  margin: 0 0 1em;
+}
+
+.flow-markdown-preview ul,
+.flow-markdown-preview ol {
+  padding-left: 1.6em;
+}
+
+.flow-markdown-preview li + li {
+  margin-top: 0.35em;
+}
+
+.flow-markdown-preview a {
+  color: var(--copper);
+}
+
+.flow-markdown-preview blockquote {
+  padding: 2px 0 2px 16px;
+  border-left: 3px solid rgba(169, 109, 43, 0.35);
+  color: var(--muted);
+}
+
+.flow-markdown-preview code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--copper);
+  background: rgba(27, 28, 27, 0.06);
+  font-size: 0.9em;
+}
+
+.flow-markdown-preview pre {
+  padding: 14px 16px;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: rgba(27, 28, 27, 0.05);
+}
+
+.flow-markdown-preview pre code {
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
+.flow-markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.flow-markdown-preview th,
+.flow-markdown-preview td {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.flow-markdown-preview th {
+  background: rgba(248, 201, 93, 0.16);
+  font-weight: 500;
+}
+
+.flow-markdown-frontmatter {
+  margin-bottom: 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: rgba(27, 28, 27, 0.035);
+}
+
+.flow-markdown-frontmatter summary {
+  padding: 9px 12px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.flow-markdown-frontmatter pre {
+  padding: 0 12px 12px;
+  margin: 0;
+  overflow: auto;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .flow-editor-error {
@@ -1467,6 +1609,10 @@ code {
   }
 
   .flow-editor {
+    min-height: 420px;
+  }
+
+  .flow-markdown-preview {
     min-height: 420px;
   }
 }
@@ -1523,8 +1669,7 @@ code {
 }
 
 @media (max-width: 600px) {
-  .topbar-label,
-  .topbar-status {
+  .topbar-label {
     display: none;
   }
 
@@ -1615,6 +1760,19 @@ code {
 
   .flow-editor-actions {
     flex-direction: column-reverse;
+  }
+
+  .flow-editor-heading {
+    flex-wrap: wrap;
+  }
+
+  .flow-editor-heading-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .flow-editor-path {
+    max-width: 55%;
   }
 
   .notice {

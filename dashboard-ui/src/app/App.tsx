@@ -197,9 +197,12 @@ export function App(): React.JSX.Element {
         <div className="brand-lockup">
           <div className="brand-lockup-main">
             <img className="brand-logo" src="/lumon-mark.png" alt={t("app.brandAlt")} />
-            <span className="brand-copy"><strong>Lumon</strong><small>{t("app.workspaceConsole")}</small></span>
+            <div className="brand-copy">
+              <strong>Lumon</strong>
+              <small>{t("app.workspaceConsole")}</small>
+              <p className="sidebar-slogan">{t("app.slogan")}</p>
+            </div>
           </div>
-          <p className="sidebar-slogan">{t("app.slogan")}</p>
         </div>
         <nav className="side-nav" aria-label={t("app.dashboardSections")}>
           <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />{t("app.overview")}</button>
@@ -218,7 +221,6 @@ export function App(): React.JSX.Element {
           <div className="topbar-context"><span className="topbar-label">{t("app.currentWorkspace")}</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div>
           <div className="topbar-actions">
             <LanguagePicker />
-            <span className="topbar-status"><span className="online-dot" />{t("app.localOnly")}</span>
           </div>
         </header>
         {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}
