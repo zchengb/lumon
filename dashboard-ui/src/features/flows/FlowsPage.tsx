@@ -59,7 +59,6 @@ export function FlowsPage({
   const [loadingDocument, setLoadingDocument] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,24 +100,6 @@ export function FlowsPage({
       onError(messageFor(reason, t("flows.loadFailed")));
     } finally {
       setLoadingDocument(false);
-    }
-  }
-
-  async function installSample(): Promise<void> {
-    if (!confirmDiscard()) return;
-    setInstalling(true);
-    try {
-      const nextDocument = await dashboardApi.installSampleFlow(workspaceId);
-      setDocument(nextDocument);
-      setContent(nextDocument.content);
-      setSelectedId(nextDocument.flow_id);
-      onDirtyChange(false);
-      await reloadFlows(nextDocument.flow_id);
-      onNotice(t("flows.sampleInstalled"));
-    } catch (reason) {
-      onError(messageFor(reason, t("flows.loadFailed")));
-    } finally {
-      setInstalling(false);
     }
   }
 
@@ -217,11 +198,7 @@ export function FlowsPage({
             </button>
           </div>
           <div className="flows-list-actions">
-            <button className="button button-secondary" type="button" onClick={() => void installSample()} disabled={installing || saving}>
-              {installing ? <LoaderCircle size={15} className="spin" /> : <GitBranch size={15} />}
-              {t("flows.installSample")}
-            </button>
-            <button className="button button-primary" type="button" onClick={() => void createFlow()} disabled={saving || installing}>
+            <button className="button button-primary" type="button" onClick={() => void createFlow()} disabled={saving}>
               {saving ? <LoaderCircle size={15} className="spin" /> : <FilePlus2 size={15} />}
               {t("flows.new")}
             </button>
@@ -229,7 +206,7 @@ export function FlowsPage({
           {loading ? (
             <div className="loading-inline flows-loading"><LoaderCircle size={20} className="spin" />{t("app.loading")}</div>
           ) : flows.length === 0 ? (
-            <div className="empty-inline"><GitBranch size={22} /><div><strong>{t("flows.empty")}</strong><p>{t("flows.installSample")}</p></div></div>
+            <div className="empty-inline"><GitBranch size={22} /><div><strong>{t("flows.empty")}</strong><p>{t("flows.emptyHelp")}</p></div></div>
           ) : (
             <div className="flows-list">
               {flows.map((flow) => (

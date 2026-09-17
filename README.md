@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/ins
 To pin a version, append the installer argument after `bash -s --`:
 
 ```text
-curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.18
+curl -fsSL https://raw.githubusercontent.com/zchengb/lumon/release/packaging/install.sh | bash -s -- --version v1.0.19
 ```
 
 To install the optional Langfuse Cloud telemetry support, add the installer
@@ -61,7 +61,7 @@ the Workspace or command output. Existing installations made with uv retain
 their uv-based update path.
 
 Each push to `release` runs tests and uploads a temporary build artifact. A
-semantic version tag such as `v1.0.18` runs the release workflow, which attaches
+semantic version tag such as `v1.0.19` runs the release workflow, which attaches
 the Wheel, source distribution, and `SHA256SUMS` to a GitHub Release.
 
 ## Initialize a Workspace
@@ -214,9 +214,8 @@ only the execution status or file events.
 Each Workspace stores user-editable flows as Markdown files under
 `lumon/flows/`. The Dashboard's **Flows** page edits those files directly and
 reports invalid frontmatter without loading invalid flows into Mark's prompt.
-New Workspaces receive the sample test-case generation flow automatically;
-existing Workspaces can install it from the same page without replacing a file
-that already exists.
+New Workspaces receive the sample test-case generation flow automatically.
+Existing Workspaces can create or edit flows from the same page.
 
 The flow frontmatter provides the bounded brief Mark uses for routing:
 
@@ -231,9 +230,9 @@ match = ["generate test cases", "测试用例"]
 ```
 
 The Markdown body contains the complete process and output contract. Mark
-reads that file only after selecting at most one matching flow. The sample
-writes JSON and Markdown artifacts under
-`lumon/artifacts/test-cases/<issue-key>`. See
+reads that file only after selecting at most one matching flow. The test-case
+flow asks whether to return rows directly or write them to a supplied Feishu
+Sheet link. See
 [`docs/mark-agent.md`](docs/mark-agent.md) for routing and marker details.
 
 Mark keeps conversation state in explicit SQLite tables. A direct Feishu chat

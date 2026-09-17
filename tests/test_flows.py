@@ -45,6 +45,9 @@ def test_sample_flow_is_valid_and_briefs_do_not_include_the_body(tmp_path: Path)
     assert "acceptance criteria" in snapshot.briefs[0].brief
     assert "Treat acceptance criteria as the primary authority" not in str(snapshot.briefs[0])
     assert "Treat acceptance criteria as the primary authority" in definition.body
+    assert "Output destination gate" in definition.body
+    assert "Test Summary" in definition.body
+    assert "Technical-only coverage belongs to another Agent" in definition.body
 
 
 def test_catalog_exposes_disabled_flows_but_excludes_them_from_briefs(tmp_path: Path) -> None:

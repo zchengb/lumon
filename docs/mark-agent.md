@@ -31,7 +31,7 @@ Mark 是 Lumon 的本地 Workspace Agent。它通过飞书 WebSocket 长连接�
 文件由 TOML frontmatter 和 Markdown 正文组成。frontmatter 至少需要
 `id`、`name`、`brief` 和 `enabled`，也可以通过 `match` 提供自然语言匹配提示。
 Dashboard 的 **Flows** 页面直接编辑这些文件；新 Workspace 会自动带有
-`test-case-generation.md` 示例，已有 Workspace 可以在页面中安装示例而不会覆盖同名文件。
+`test-case-generation.md` 示例；已有 Workspace 可以在页面中编辑或新增流程。
 
 Mark 的初始 Prompt 只包含启用流程的 brief、匹配提示和相对路径，不会预先加载流程正文。
 它会在请求匹配时读取唯一流程的完整 Markdown；请求同时匹配多个流程时应先向用户澄清，
@@ -45,9 +45,11 @@ Lumon 会移除这个标记后再回复飞书，并把经过 Workspace 校验的
 `runs.flow_id` 和 Langfuse trace metadata。标记是兼容性辅助信息；缺失或无效时不会使
 普通 Agent 回复失败。
 
-示例测试用例流程只使用 Workspace 本地的 `stories/<issue-key>/story.md`、`repos/` 和现有
-测试证据，并把结果写到 `lumon/artifacts/test-cases/<issue-key>.json` 与 `.md`。它沿用
-现有测试用例字段和 case type 约束，不会自动连接 Jira、Feishu Sheets 或 Bitable。
+示例测试用例流程优先使用 Workspace 本地的 `stories/<issue-key>/story.md`、`repos/` 和
+现有测试证据，默认只生成业务层面的手工测试用例；技术层面的覆盖由其他 Agent 负责。
+生成前若用户没有明确指定输出方式，流程会先询问直接回复，或提供既有的 Feishu Sheet
+链接。Sheet 输出沿用既有模板的 A:O 欄位、Path/測試結果下拉選項與去重/追加規則；没有
+可用的授权连接时不得伪造写入成功。
 
 ## Codex 工具与输出策略
 
