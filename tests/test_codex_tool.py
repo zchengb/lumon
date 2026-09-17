@@ -28,6 +28,45 @@ def test_codex_jsonl_parser_is_provider_specific_but_not_agent_specific() -> Non
     )
 
 
+def test_codex_parser_ignores_advisory_item_errors_but_keeps_terminal_failures() -> None:
+    advisory = parse_codex_line(
+        '{"type":"item.completed","item":{"type":"error","message":"advisory"}}'
+    )
+    terminal = parse_codex_line('{"type":"turn.failed"}')
+
+    assert advisory is None
+    assert terminal is not None
+    assert terminal.kind == "error"
+
+
+def test_codex_tool_succeeds_after_advisory_item_error(tmp_path: Path) -> None:
+    fake = tmp_path / "fake-codex"
+    advisory_line = json.dumps(
+        {"type": "item.completed", "item": {"type": "error", "message": "advisory"}}
+    )
+    message_line = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "done"},
+        }
+    )
+    fake.write_text(
+        "#!/bin/sh\n"
+        "cat >/dev/null\n"
+        f"printf '%s\\n' '{advisory_line}'\n"
+        f"printf '%s\\n' '{message_line}'\n"
+        "printf '%s\\n' '{\"type\":\"turn.completed\"}'\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    tool = CodexTool(binary=str(fake), timeout_seconds=5)
+
+    result = asyncio.run(tool.execute(CodexRequest(tmp_path, "inspect this")))
+
+    assert result.status == "succeeded"
+    assert result.final_text == "done"
+
+
 def test_codex_parser_accepts_explicit_agent_progress() -> None:
     event = parse_codex_line(
         '{"type":"item","item":{"type":"agent_message",'

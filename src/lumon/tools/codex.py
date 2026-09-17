@@ -299,6 +299,10 @@ def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
         return CodexEvent("command_execution", agent_session_id=agent_session_id)
     if effective_type in {"file_change", "file_changes"}:
         return CodexEvent("file_change", agent_session_id=agent_session_id)
+    if item_type == "error":
+        # Codex can emit advisory item errors while the turn still succeeds.
+        # The process exit code and terminal turn event determine execution status.
+        return None
     if effective_type in {"error", "turn.failed", "response.failed"}:
         return CodexEvent("error", agent_session_id=agent_session_id)
     return None
