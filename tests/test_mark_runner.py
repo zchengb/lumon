@@ -85,7 +85,6 @@ def test_mark_uses_model_and_effort_from_agent_config(tmp_path: Path) -> None:
     assert isinstance(runner, CodexAgentRunner)
     assert runner.tool.build_command(tmp_path, resume_session_id="thread-1")[1:] == (
         "exec",
-        "resume",
         "--json",
         "--cd",
         str(tmp_path),
@@ -95,6 +94,7 @@ def test_mark_uses_model_and_effort_from_agent_config(tmp_path: Path) -> None:
         "gpt-5.6-sol",
         "--config",
         'model_reasoning_effort="ultra"',
+        "resume",
         "thread-1",
         "-",
     )

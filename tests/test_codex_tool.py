@@ -125,12 +125,12 @@ def test_codex_tool_resumes_a_native_session(tmp_path: Path) -> None:
     assert result.agent_session_id == "thread-1"
     assert args_file.read_text(encoding="utf-8").splitlines() == [
         "exec",
-        "resume",
         "--json",
         "--cd",
         str(tmp_path),
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
+        "resume",
         "thread-1",
         "-",
     ]

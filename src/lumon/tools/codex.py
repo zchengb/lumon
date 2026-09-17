@@ -134,25 +134,22 @@ class CodexTool:
         command = [
             self.binary,
             "exec",
+            "--json",
+            "--cd",
+            str(workspace),
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
         ]
-        if resume_session_id:
-            command.append("resume")
-        command.extend(
-            (
-                "--json",
-                "--cd",
-                str(workspace),
-                "--skip-git-repo-check",
-                "--dangerously-bypass-approvals-and-sandbox",
-            )
-        )
         if self.model:
             command.extend(("--model", self.model))
         if self.reasoning_effort:
             serialized_effort = json.dumps(self.reasoning_effort)
             command.extend(("--config", f"model_reasoning_effort={serialized_effort}"))
         if resume_session_id:
-            command.extend((resume_session_id, "-"))
+            # ``--cd`` and the other execution options belong to the parent
+            # ``exec`` command. They must precede the ``resume`` subcommand;
+            # Codex rejects them when they appear after ``resume``.
+            command.extend(("resume", resume_session_id, "-"))
         return tuple(command)
 
     async def execute(
