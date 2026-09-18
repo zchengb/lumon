@@ -392,6 +392,64 @@ def test_channel_enriches_a_reply_with_quoted_text_and_images(
     ]
 
 
+def test_channel_enriches_first_group_thread_reply_from_raw_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        feishu_module,
+        "_sdk_module",
+        SimpleNamespace(
+            FeishuChannel=_FakeSdkChannel,
+            PolicyConfig=_FakePolicy,
+            InboundConfig=_FakeInbound,
+        ),
+    )
+    channel = AgentFeishuChannel(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    received: list[InboundMessage] = []
+    raw = {
+        **_raw("group", "@Agent 評估一下這個問題", mentioned_bot=True, thread_id=None),
+        "raw": {"parent_id": "om-parent", "root_id": "om-parent"},
+    }
+
+    async def run() -> None:
+        async def handler(message: InboundMessage) -> None:
+            received.append(message)
+
+        await channel.connect(handler)
+        sdk_channel = _FakeSdkChannel.instance
+        assert sdk_channel is not None
+        sdk_channel.quoted_messages["om-parent"] = SimpleNamespace(
+            body_text="原始問題",
+            resources=(),
+        )
+        await sdk_channel.handlers["message"](raw)
+        await channel.disconnect()
+
+    asyncio.run(run())
+
+    assert received == [
+        InboundMessage(
+            event_id="om_1",
+            message_id="om_1",
+            chat_id="oc_1",
+            chat_type="group",
+            text=(
+                "<feishu-quoted-message>\n"
+                "原始問題\n"
+                "</feishu-quoted-message>\n\n"
+                "@Agent 評估一下這個問題"
+            ),
+            sender_id="ou_1",
+            sender_type="user",
+            mentioned_agent=True,
+            thread_id=None,
+            root_id="om-parent",
+        )
+    ]
+
+
 def test_quoted_image_download_uses_parent_message_id(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

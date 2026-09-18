@@ -261,7 +261,14 @@ def normalize_message(raw: object) -> InboundMessage | None:
     sender_is_bot = bool(_value(raw, "sender_is_bot", _value(sender, "is_bot", False)))
     if sender_is_bot and sender_type == "unknown":
         sender_type = "bot"
-    thread_id = _optional_text(_value(conversation, "thread_id", _value(raw, "thread_id", None)))
+    raw_message = _value(raw, "raw", {})
+    thread_id = _optional_text(
+        _value(
+            conversation,
+            "thread_id",
+            _value(raw, "thread_id", _raw_message_value(raw_message, "thread_id")),
+        )
+    )
     root_id = _optional_text(
         _value(
             raw,
@@ -269,7 +276,11 @@ def normalize_message(raw: object) -> InboundMessage | None:
             _value(
                 conversation,
                 "root_id",
-                _value(conversation, "root_message_id", None),
+                _value(
+                    conversation,
+                    "root_message_id",
+                    _raw_message_value(raw_message, "root_id"),
+                ),
             ),
         )
     )
@@ -340,7 +351,23 @@ def _reply_message_id(raw: object) -> str | None:
     if direct_id:
         return direct_id
     reply = _value(raw, "reply", None)
-    return _optional_text(_value(reply, "message_id", _value(reply, "id", None)))
+    reply_id = _optional_text(_value(reply, "message_id", _value(reply, "id", None)))
+    if reply_id:
+        return reply_id
+    raw_parent_id = _optional_text(_raw_message_value(_value(raw, "raw", {}), "parent_id"))
+    if raw_parent_id:
+        return raw_parent_id
+    return _optional_text(_raw_message_value(_value(raw, "raw", {}), "root_id"))
+
+
+def _raw_message_value(raw_message: object, name: str) -> object | None:
+    """Read a field from the SDK's original Feishu message payload."""
+
+    value = _value(raw_message, name, None)
+    if value is not None:
+        return value
+    nested_message = _value(raw_message, "message", None)
+    return _value(nested_message, name, None)
 
 
 def _replace_image_markers(text: str, images: tuple[InboundImage, ...]) -> str:
