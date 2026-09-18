@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Awaitable, Callable, Mapping
+from pathlib import Path
 from typing import Any, cast
 
 from lumon.agents.agent.config import AgentConfig
-from lumon.agents.agent.model import InboundMessage, RecalledMessage
+from lumon.agents.agent.model import InboundImage, InboundMessage, RecalledMessage
 from lumon.errors import AgentRuntimeError
 
 MessageHandler = Callable[[InboundMessage], Awaitable[None]]
@@ -122,6 +123,42 @@ class AgentFeishuChannel:
         except Exception as exc:
             raise AgentRuntimeError("Feishu typing reaction could not be removed.") from exc
 
+    async def download_image(
+        self,
+        message: InboundMessage,
+        image: InboundImage,
+        destination: Path,
+    ) -> Path:
+        """Download one inbound image into a temporary Agent input directory."""
+
+        if self._channel is None:
+            raise AgentRuntimeError("Feishu channel is not connected.")
+        download = getattr(self._channel, "download_resource_to_file", None)
+        if not callable(download):
+            raise AgentRuntimeError("Feishu image downloads are unavailable.")
+        try:
+            download_call = cast(Callable[..., Awaitable[object]], download)
+            downloaded = await download_call(
+                image.file_key,
+                resource_type="image",
+                message_id=message.message_id,
+                dest_dir=destination,
+                file_name=image.file_name,
+            )
+        except Exception as exc:
+            raise AgentRuntimeError("Feishu image download failed.") from exc
+        if not isinstance(downloaded, (str, Path)):
+            raise AgentRuntimeError("Feishu image download returned no file.")
+        path = Path(downloaded)
+        try:
+            path = path.resolve()
+            path.relative_to(destination.resolve())
+        except (OSError, ValueError) as exc:
+            raise AgentRuntimeError("Feishu image download returned an unsafe path.") from exc
+        if not path.is_file():
+            raise AgentRuntimeError("Feishu image download returned no file.")
+        return path
+
     async def reply(self, message: InboundMessage, text: str) -> None:
         """Reply in the source chat and thread without exposing SDK details."""
 
@@ -169,13 +206,17 @@ def normalize_message(raw: object) -> InboundMessage | None:
     sender = _value(raw, "sender", {})
     chat_id = _text(_value(raw, "chat_id", _value(conversation, "chat_id", "")))
     chat_type = _text(_value(raw, "chat_type", _value(conversation, "chat_type", "unknown")))
+    images = _image_references(_value(raw, "resources", ()))
     text = _text(
         _value(
             raw,
             "body_text",
             _value(raw, "content_text", _value(raw, "safe_content_text", "")),
         )
-    ).strip()
+    )
+    for image in images:
+        text = text.replace(f"![image]({image.file_key})", "[image attachment]")
+    text = text.strip()
     sender_id = _text(_value(raw, "sender_id", _value(sender, "open_id", "")))
     sender_type = _text(_value(raw, "sender_type", _value(sender, "sender_type", "unknown")))
     if not sender_type:
@@ -210,6 +251,7 @@ def normalize_message(raw: object) -> InboundMessage | None:
         mentioned_agent=mentioned_bot,
         thread_id=thread_id,
         root_id=root_id,
+        images=images,
     )
 
 
@@ -242,3 +284,25 @@ def _text(value: object) -> str:
 def _optional_text(value: object) -> str | None:
     text = _text(value).strip()
     return text or None
+
+
+def _image_references(resources: object) -> tuple[InboundImage, ...]:
+    if not isinstance(resources, (list, tuple)):
+        return ()
+    images: list[InboundImage] = []
+    seen_keys: set[str] = set()
+    resource_values = cast(list[object] | tuple[object, ...], resources)
+    for resource in resource_values:
+        if _text(_value(resource, "type", "")).casefold() != "image":
+            continue
+        file_key = _text(_value(resource, "file_key", "")).strip()
+        if not file_key or file_key in seen_keys:
+            continue
+        seen_keys.add(file_key)
+        images.append(
+            InboundImage(
+                file_key=file_key,
+                file_name=_optional_text(_value(resource, "file_name", None)),
+            )
+        )
+    return tuple(images)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 import time
 import traceback
 from collections.abc import Callable
@@ -298,52 +299,61 @@ class AgentService:
                 )
                 run_started = True
                 reporter = _ProgressReporter(self._channel, message)
-                stage = "run_agent"
-                async with trace.span(
-                    "codex.exec",
-                    as_type="tool",
-                    metadata={
-                        "provider": runner.provider,
-                        "model": config.agent_model,
-                        "reasoning_effort": config.agent_reasoning_effort,
-                        "resumed_agent_session": resume_session_id is not None,
-                    },
-                ) as codex_span:
-                    result = await runner.run(
-                        context.path,
-                        prompt,
-                        agent_session_id=resume_session_id,
-                        on_progress=reporter.notify,
-                    )
-                    marker_flow_id, _marker_status, cleaned_result_text = extract_flow_selection(
-                        result.final_text
-                    )
-                    if result.final_text is not None:
-                        result = replace(
-                            result,
-                            final_text=cleaned_result_text,
-                            flow_id=result.flow_id or marker_flow_id,
+                stage = "download_images"
+                with tempfile.TemporaryDirectory(prefix="lumon-feishu-images-") as image_directory:
+                    image_paths = await self._download_images(message, Path(image_directory))
+                    stage = "run_agent"
+                    async with trace.span(
+                        "codex.exec",
+                        as_type="tool",
+                        metadata={
+                            "provider": runner.provider,
+                            "model": config.agent_model,
+                            "reasoning_effort": config.agent_reasoning_effort,
+                            "resumed_agent_session": resume_session_id is not None,
+                            "image_count": len(image_paths),
+                        },
+                    ) as codex_span:
+                        result = await runner.run(
+                            context.path,
+                            prompt,
+                            agent_session_id=resume_session_id,
+                            images=image_paths,
+                            on_progress=reporter.notify,
                         )
-                    flow_id = _validated_flow_id(result.flow_id, context)
-                    if flow_id is not None:
-                        trace.update(metadata={"flow_id": flow_id})
-                    result_metadata: dict[str, str | int | bool] = {
-                        "status": result.status,
-                        "progress_count": len(result.progress),
-                        "return_code": (
-                            result.return_code if result.return_code is not None else "none"
-                        ),
-                        "agent_session_available": result.agent_session_id is not None,
-                    }
-                    if result.error_code is not None:
-                        result_metadata["error_code"] = result.error_code.value
-                    codex_span.update(
-                        metadata=result_metadata,
-                        level=("ERROR" if result.status in {"failed", "timed_out"} else "DEFAULT"),
-                        status_message=(
-                            result.error_code.value if result.error_code is not None else None
-                        ),
-                    )
+                        (
+                            marker_flow_id,
+                            _marker_status,
+                            cleaned_result_text,
+                        ) = extract_flow_selection(result.final_text)
+                        if result.final_text is not None:
+                            result = replace(
+                                result,
+                                final_text=cleaned_result_text,
+                                flow_id=result.flow_id or marker_flow_id,
+                            )
+                        flow_id = _validated_flow_id(result.flow_id, context)
+                        if flow_id is not None:
+                            trace.update(metadata={"flow_id": flow_id})
+                        result_metadata: dict[str, str | int | bool] = {
+                            "status": result.status,
+                            "progress_count": len(result.progress),
+                            "return_code": (
+                                result.return_code if result.return_code is not None else "none"
+                            ),
+                            "agent_session_available": result.agent_session_id is not None,
+                        }
+                        if result.error_code is not None:
+                            result_metadata["error_code"] = result.error_code.value
+                        codex_span.update(
+                            metadata=result_metadata,
+                            level=(
+                                "ERROR" if result.status in {"failed", "timed_out"} else "DEFAULT"
+                            ),
+                            status_message=(
+                                result.error_code.value if result.error_code is not None else None
+                            ),
+                        )
                 self._raise_if_cancellation_requested(message.event_id)
                 if resume_session_id is not None and result.status == "failed":
                     stage = "clear_failed_agent_session"
@@ -506,6 +516,22 @@ class AgentService:
         except AgentRuntimeError:
             return False
         return True
+
+    async def _download_images(
+        self,
+        message: InboundMessage,
+        destination: Path,
+    ) -> tuple[Path, ...]:
+        if not message.images:
+            return ()
+        if self._channel is None:
+            raise AgentRuntimeError("Agent runtime is not ready.")
+        return tuple(
+            [
+                await self._channel.download_image(message, image, destination)
+                for image in message.images
+            ]
+        )
 
     async def _add_typing_reaction(self, message: InboundMessage) -> str | None:
         if self._channel is None:

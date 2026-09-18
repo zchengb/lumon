@@ -60,6 +60,7 @@ class CodexAgentRunner:
         prompt: str,
         *,
         agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
         """Run Codex and apply Agent's requirement for a replyable final text."""
@@ -88,6 +89,7 @@ class CodexAgentRunner:
                 workspace=workspace,
                 prompt=prompt,
                 resume_session_id=agent_session_id,
+                images=images,
             ),
             on_event=observe,
         )
@@ -174,6 +176,7 @@ class AgentRunner(Protocol):
         prompt: str,
         *,
         agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
         """Run one bounded request and return safe progress and final output."""

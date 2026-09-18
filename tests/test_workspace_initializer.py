@@ -42,6 +42,7 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     assert "lumon/manifest.json" in agents
     assert (target / ".gitignore").is_file()
     assert tuple((target / "lumon" / "flows").glob("*.md")) == ()
+    assert tuple((target / "lumon" / "capabilities").glob("*.md")) == ()
     assert (target / "lumon" / "workspace.toml").read_text(encoding="utf-8") == (
         'schema_version = 1\nname = "lumon-lab"\n'
     )

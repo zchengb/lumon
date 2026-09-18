@@ -49,6 +49,19 @@ def _flow_content(brief: str = "Generate test cases.") -> str:
     )
 
 
+def _capability_content(brief: str = "Inspect AWS resources.") -> str:
+    return (
+        "---\n"
+        'id = "aws-cli"\n'
+        'name = "AWS CLI"\n'
+        "enabled = true\n"
+        f'brief = "{brief}"\n'
+        "---\n\n"
+        "# AWS CLI\n\n"
+        "Use the local AWS CLI guidance.\n"
+    )
+
+
 def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     tmp_path: Path,
 ) -> None:
@@ -56,6 +69,8 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     target = _workspace(tmp_path, state_root, "review-lab")
     flow_path = target / "lumon" / "flows" / "test-case-generation.md"
     flow_path.write_text(_flow_content(), encoding="utf-8")
+    capability_path = target / "lumon" / "capabilities" / "aws-cli.md"
+    capability_path.write_text(_capability_content(), encoding="utf-8")
     registration = WorkspaceRegistry(state_root).list()[0]
     builder = WorkspaceContextBuilder(_config(), WorkspaceRegistry(state_root))
 
@@ -84,6 +99,11 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "<available-flows>" in prompt
     assert "id: test-case-generation; brief:" in prompt
     assert "full detail: lumon/flows/test-case-generation.md" in prompt
+    assert context.capability_briefs[0].capability_id == "aws-cli"
+    assert "<available-capabilities>" in prompt
+    assert "id: aws-cli; brief: Inspect AWS resources." in prompt
+    assert "full detail: lumon/capabilities/aws-cli.md" in prompt
+    assert "Use the local AWS CLI guidance." not in prompt
     assert "match hints:" not in prompt
     assert "Treat acceptance criteria as the primary authority" not in prompt
 
@@ -104,6 +124,7 @@ def test_resumed_prompt_reloads_workspace_flow_briefs(tmp_path: Path) -> None:
     assert "Generate test cases with the refreshed brief." in prompt
     assert "Follow the Workspace flow." not in prompt
     assert "<lumon-flow-context>" in prompt
+    assert "<lumon-capability-context>" in prompt
 
 
 def test_explicit_missing_workspace_does_not_fallback(tmp_path: Path) -> None:

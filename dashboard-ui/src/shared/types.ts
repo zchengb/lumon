@@ -1,6 +1,6 @@
 export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
-export type View = "overview" | "settings" | "agent" | "flows";
+export type View = "overview" | "settings" | "agent" | "flows" | "capabilities";
 
 export type AgentReasoningEffort =
   | "minimal"
@@ -66,6 +66,20 @@ export interface FlowSummary {
 }
 
 export interface FlowDocument extends FlowSummary {
+  content: string;
+}
+
+export interface CapabilitySummary {
+  capability_id: string;
+  name: string;
+  enabled: boolean;
+  brief: string;
+  path: string;
+  valid: boolean;
+  error: string | null;
+}
+
+export interface CapabilityDocument extends CapabilitySummary {
   content: string;
 }
 

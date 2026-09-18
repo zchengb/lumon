@@ -430,6 +430,7 @@ class WorkspaceInitializer:
         layout = WorkspaceLayout.from_root(root)
         layout.control_dir.mkdir(parents=True, exist_ok=True)
         layout.flows_dir.mkdir(parents=True, exist_ok=True)
+        layout.capabilities_dir.mkdir(parents=True, exist_ok=True)
         for directory in layout.runtime_directories:
             directory.mkdir(parents=True, exist_ok=True)
 

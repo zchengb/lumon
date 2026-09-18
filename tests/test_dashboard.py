@@ -38,6 +38,25 @@ def _flow_content(
     )
 
 
+def _capability_content(
+    capability_id: str = "dashboard-capability",
+    *,
+    enabled: bool = True,
+    brief: str = "Handle a dashboard capability.",
+) -> str:
+    enabled_value = "true" if enabled else "false"
+    return (
+        "---\n"
+        f'id = "{capability_id}"\n'
+        'name = "Dashboard capability"\n'
+        f"enabled = {enabled_value}\n"
+        f'brief = "{brief}"\n'
+        "---\n\n"
+        "# Dashboard capability\n\n"
+        "Follow the dashboard capability.\n"
+    )
+
+
 class _Response:
     status = 200
 
@@ -88,7 +107,7 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.2.1",
+        "version": "1.2.2",
         "workspace_count": 0,
         "has_workspaces": False,
     }
@@ -357,6 +376,52 @@ def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(
     )
     assert changed_id.status_code == 409
     assert "cannot change" in changed_id.json()["error"]["message"]
+
+
+def test_dashboard_capability_crud_edits_the_workspace_files_and_supports_disable(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    target = tmp_path / "capability-workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(target), "repositories": []},
+    ).json()["workspace_id"]
+
+    listed = client.get(f"/api/workspaces/{workspace_id}/capabilities")
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+    created = client.post(
+        f"/api/workspaces/{workspace_id}/capabilities",
+        json={"content": _capability_content()},
+    )
+    assert created.status_code == 201
+    assert created.json()["capability_id"] == "dashboard-capability"
+    assert (target / "lumon" / "capabilities" / "dashboard-capability.md").read_text(
+        encoding="utf-8"
+    ) == _capability_content()
+
+    disabled_content = _capability_content(enabled=False, brief="Disabled capability.")
+    updated = client.put(
+        f"/api/workspaces/{workspace_id}/capabilities/dashboard-capability",
+        json={"content": disabled_content},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["enabled"] is False
+    assert updated.json()["brief"] == "Disabled capability."
+
+    changed_id = client.put(
+        f"/api/workspaces/{workspace_id}/capabilities/dashboard-capability",
+        json={"content": _capability_content("other-capability")},
+    )
+    assert changed_id.status_code == 409
+    assert "cannot change" in changed_id.json()["error"]["message"]
+
+    deleted = client.delete(f"/api/workspaces/{workspace_id}/capabilities/dashboard-capability")
+    assert deleted.status_code == 204
+    assert not (target / "lumon" / "capabilities" / "dashboard-capability.md").exists()
 
 
 def test_settings_update_masks_webhook_and_test_does_not_persist_draft(

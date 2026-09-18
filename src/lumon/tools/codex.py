@@ -49,6 +49,7 @@ class CodexRequest:
     workspace: Path
     prompt: str
     resume_session_id: str | None = None
+    images: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +129,8 @@ class CodexTool:
         self,
         workspace: Path,
         resume_session_id: str | None = None,
+        *,
+        images: tuple[Path, ...] = (),
     ) -> tuple[str, ...]:
         """Return the exact argument vector used for one execution."""
 
@@ -145,6 +148,8 @@ class CodexTool:
         if self.reasoning_effort:
             serialized_effort = json.dumps(self.reasoning_effort)
             command.extend(("--config", f"model_reasoning_effort={serialized_effort}"))
+        for image in images:
+            command.extend(("--image", str(image)))
         if resume_session_id:
             # ``--cd`` and the other execution options belong to the parent
             # ``exec`` command. They must precede the ``resume`` subcommand;
@@ -189,7 +194,11 @@ class CodexTool:
         agent_session_id: str | None = None
         try:
             process = await asyncio.create_subprocess_exec(
-                *self.build_command(request.workspace, request.resume_session_id),
+                *self.build_command(
+                    request.workspace,
+                    request.resume_session_id,
+                    images=request.images,
+                ),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

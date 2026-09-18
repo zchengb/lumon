@@ -33,6 +33,10 @@ class WorkspaceLayout:
         return self.control_dir / "flows"
 
     @property
+    def capabilities_dir(self) -> Path:
+        return self.control_dir / "capabilities"
+
+    @property
     def manifest(self) -> Path:
         return self.control_dir / "manifest.json"
 
@@ -71,6 +75,7 @@ class WorkspaceLayout:
         return (
             self.control_dir,
             self.flows_dir,
+            self.capabilities_dir,
             *self.runtime_directories,
             *self.generated_files,
         )

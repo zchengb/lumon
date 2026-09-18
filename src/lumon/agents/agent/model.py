@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
+from lumon.capabilities.model import CapabilityBrief
 from lumon.flows.model import FlowBrief
 
 MessageDirection = Literal["inbound", "outbound"]
@@ -55,6 +56,14 @@ class AgentProgress:
 
 
 @dataclass(frozen=True, slots=True)
+class InboundImage:
+    """A downloadable image attached to one inbound Feishu message."""
+
+    file_key: str
+    file_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class InboundMessage:
     """A normalized Feishu message that passed through the channel seam."""
 
@@ -68,6 +77,7 @@ class InboundMessage:
     mentioned_agent: bool = False
     thread_id: str | None = None
     root_id: str | None = None
+    images: tuple[InboundImage, ...] = ()
 
     @property
     def is_group(self) -> bool:
@@ -192,3 +202,4 @@ class WorkspaceContext:
     agents_text: str
     repositories: tuple[str, ...]
     flow_briefs: tuple[FlowBrief, ...] = ()
+    capability_briefs: tuple[CapabilityBrief, ...] = ()

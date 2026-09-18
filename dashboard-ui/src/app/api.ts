@@ -2,6 +2,8 @@ import type {
   AgentSettings,
   AgentSettingsUpdate,
   BootstrapState,
+  CapabilityDocument,
+  CapabilitySummary,
   FlowDocument,
   FlowSummary,
   InitializeWorkspaceRequest,
@@ -138,6 +140,56 @@ export const dashboardApi = {
     return request<void>(`/api/workspaces/${workspaceId}/flows/${encodeURIComponent(flowId)}`, {
       method: "DELETE",
     });
+  },
+
+  listCapabilities(workspaceId: string): Promise<CapabilitySummary[]> {
+    return request<CapabilitySummary[]>("/api/workspaces/" + workspaceId + "/capabilities");
+  },
+
+  getCapability(workspaceId: string, capabilityId: string): Promise<CapabilityDocument> {
+    return request<CapabilityDocument>(
+      "/api/workspaces/"
+      + workspaceId
+      + "/capabilities/"
+      + encodeURIComponent(capabilityId),
+    );
+  },
+
+  createCapability(workspaceId: string, content: string): Promise<CapabilityDocument> {
+    return request<CapabilityDocument>(
+      "/api/workspaces/" + workspaceId + "/capabilities",
+      {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      },
+    );
+  },
+
+  updateCapability(
+    workspaceId: string,
+    capabilityId: string,
+    content: string,
+  ): Promise<CapabilityDocument> {
+    return request<CapabilityDocument>(
+      "/api/workspaces/"
+      + workspaceId
+      + "/capabilities/"
+      + encodeURIComponent(capabilityId),
+      {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      },
+    );
+  },
+
+  deleteCapability(workspaceId: string, capabilityId: string): Promise<void> {
+    return request<void>(
+      "/api/workspaces/"
+      + workspaceId
+      + "/capabilities/"
+      + encodeURIComponent(capabilityId),
+      { method: "DELETE" },
+    );
   },
 
   updateSettings(workspaceId: string, payload: SettingsUpdate): Promise<WorkspaceSettings> {

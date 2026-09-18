@@ -15,6 +15,9 @@ from lumon.dashboard.schemas import (
     AgentSettingsResponse,
     AgentSettingsUpdate,
     BootstrapResponse,
+    CapabilityContentRequest,
+    CapabilityDocumentResponse,
+    CapabilitySummaryResponse,
     FeishuWebhookResponse,
     FeishuWebhookTestRequest,
     FlowContentRequest,
@@ -36,6 +39,8 @@ from lumon.dashboard.schemas import (
 from lumon.dashboard.service import (
     AgentObservabilitySettingsUpdate,
     AgentSettingsView,
+    CapabilityDocumentView,
+    CapabilitySummaryView,
     DashboardService,
     FlowDocumentView,
     FlowSummaryView,
@@ -229,6 +234,75 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     def delete_flow(request: Request, workspace_id: UUID, flow_id: str) -> None:
         _service(request).delete_flow(workspace_id, flow_id)
 
+    @router.get(
+        "/workspaces/{workspace_id}/capabilities",
+        response_model=list[CapabilitySummaryResponse],
+    )
+    def list_capabilities(
+        request: Request,
+        workspace_id: UUID,
+    ) -> list[CapabilitySummaryResponse]:
+        return [
+            _capability_summary_response(item)
+            for item in _service(request).capabilities(workspace_id)
+        ]
+
+    @router.post(
+        "/workspaces/{workspace_id}/capabilities",
+        response_model=CapabilityDocumentResponse,
+        status_code=201,
+    )
+    def create_capability(
+        request: Request,
+        workspace_id: UUID,
+        payload: CapabilityContentRequest,
+    ) -> CapabilityDocumentResponse:
+        return _capability_document_response(
+            _service(request).create_capability(workspace_id, payload.content)
+        )
+
+    @router.get(
+        "/workspaces/{workspace_id}/capabilities/{capability_id}",
+        response_model=CapabilityDocumentResponse,
+    )
+    def get_capability(
+        request: Request,
+        workspace_id: UUID,
+        capability_id: str,
+    ) -> CapabilityDocumentResponse:
+        return _capability_document_response(
+            _service(request).capability(workspace_id, capability_id)
+        )
+
+    @router.put(
+        "/workspaces/{workspace_id}/capabilities/{capability_id}",
+        response_model=CapabilityDocumentResponse,
+    )
+    def update_capability(
+        request: Request,
+        workspace_id: UUID,
+        capability_id: str,
+        payload: CapabilityContentRequest,
+    ) -> CapabilityDocumentResponse:
+        return _capability_document_response(
+            _service(request).update_capability(
+                workspace_id,
+                capability_id,
+                payload.content,
+            )
+        )
+
+    @router.delete(
+        "/workspaces/{workspace_id}/capabilities/{capability_id}",
+        status_code=204,
+    )
+    def delete_capability(
+        request: Request,
+        workspace_id: UUID,
+        capability_id: str,
+    ) -> None:
+        _service(request).delete_capability(workspace_id, capability_id)
+
     @router.put(
         "/workspaces/{workspace_id}/settings",
         response_model=WorkspaceSettingsResponse,
@@ -316,6 +390,35 @@ def _flow_summary_response(summary: FlowSummaryView) -> FlowSummaryResponse:
 def _flow_document_response(document: FlowDocumentView) -> FlowDocumentResponse:
     return FlowDocumentResponse(
         flow_id=document.flow_id,
+        name=document.name,
+        enabled=document.enabled,
+        brief=document.brief,
+        path=document.path,
+        valid=document.valid,
+        error=document.error,
+        content=document.content,
+    )
+
+
+def _capability_summary_response(
+    summary: CapabilitySummaryView,
+) -> CapabilitySummaryResponse:
+    return CapabilitySummaryResponse(
+        capability_id=summary.capability_id,
+        name=summary.name,
+        enabled=summary.enabled,
+        brief=summary.brief,
+        path=summary.path,
+        valid=summary.valid,
+        error=summary.error,
+    )
+
+
+def _capability_document_response(
+    document: CapabilityDocumentView,
+) -> CapabilityDocumentResponse:
+    return CapabilityDocumentResponse(
+        capability_id=document.capability_id,
         name=document.name,
         enabled=document.enabled,
         brief=document.brief,

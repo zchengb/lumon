@@ -13,6 +13,7 @@ from lumon.agents.agent.model import (
     AgentErrorCode,
     AgentProgress,
     AgentResult,
+    InboundImage,
     InboundMessage,
     ProgressPhase,
     RecalledMessage,
@@ -38,6 +39,7 @@ class FakeRunner:
     def __init__(self) -> None:
         self.prompts: list[str] = []
         self.agent_session_ids: list[str | None] = []
+        self.images: list[tuple[Path, ...]] = []
         self.next_flow_id: str | None = None
         self.next_final_text = "Workspace 已检查"
         self.provider = "test-agent"
@@ -56,11 +58,13 @@ class FakeRunner:
         prompt: str,
         *,
         agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
         del workspace
         self.prompts.append(prompt)
         self.agent_session_ids.append(agent_session_id)
+        self.images.append(images)
         if on_progress is not None:
             await on_progress(
                 AgentProgress(
@@ -87,9 +91,10 @@ class BlockingRunner(FakeRunner):
         prompt: str,
         *,
         agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, on_progress
+        del workspace, prompt, agent_session_id, images, on_progress
         self.started.set()
         await asyncio.Event().wait()
         raise AssertionError("blocking runner should only finish by cancellation")
@@ -102,9 +107,10 @@ class FailingRunner(FakeRunner):
         prompt: str,
         *,
         agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, on_progress
+        del workspace, prompt, agent_session_id, images, on_progress
         raise RuntimeError("private request content must not be stored")
 
 
@@ -115,9 +121,10 @@ class TimedOutRunner(FakeRunner):
         prompt: str,
         *,
         agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, on_progress
+        del workspace, prompt, agent_session_id, images, on_progress
         return AgentResult(status="timed_out", error_code=AgentErrorCode.TIMEOUT)
 
 
@@ -151,6 +158,17 @@ class FakeChannel(AgentFeishuChannel):
 
     async def remove_typing(self, message_id: str, reaction_id: str) -> None:
         self.typing_removed.append((message_id, reaction_id))
+
+    async def download_image(
+        self,
+        message: InboundMessage,
+        image: InboundImage,
+        destination: Path,
+    ) -> Path:
+        assert message.message_id
+        path = destination / f"{image.file_key}.png"
+        path.write_bytes(b"image")
+        return path
 
 
 class RecordingSpan:
@@ -317,6 +335,7 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         text="请检查 README",
         sender_id="ou-1",
         sender_type="user",
+        images=(InboundImage(file_key="img-1"),),
     )
 
     async def run() -> None:
@@ -357,6 +376,8 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     ]
     assert len(runner.prompts) == 2
     assert runner.agent_session_ids == [None, "provider-session-1"]
+    assert runner.images[0][0].name == "img-1.png"
+    assert not runner.images[0][0].exists()
     assert "<lumon-flow-context>" in runner.prompts[1]
     assert "test-case-generation" in runner.prompts[1]
     assert "请继续说明目录" in runner.prompts[1]

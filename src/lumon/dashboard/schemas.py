@@ -186,6 +186,30 @@ class FlowContentRequest(StrictModel):
     content: str = Field(min_length=1)
 
 
+class CapabilitySummaryResponse(StrictModel):
+    """Display-safe metadata for one Workspace capability."""
+
+    capability_id: str
+    name: str
+    enabled: bool
+    brief: str
+    path: str
+    valid: bool
+    error: str | None = None
+
+
+class CapabilityDocumentResponse(CapabilitySummaryResponse):
+    """One capability document returned to the Dashboard editor."""
+
+    content: str
+
+
+class CapabilityContentRequest(StrictModel):
+    """Markdown content submitted for capability creation or replacement."""
+
+    content: str = Field(min_length=1)
+
+
 class FeishuWebhookTestRequest(StrictModel):
     """Optional draft URL for a non-persisting Webhook test."""
 

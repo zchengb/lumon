@@ -6,6 +6,7 @@ from importlib.resources import files
 from string import Template
 
 from lumon.agents.agent.model import Message, WorkspaceContext
+from lumon.capabilities.model import CapabilityBrief
 from lumon.errors import AgentConfigError
 from lumon.flows.model import FlowBrief
 
@@ -44,6 +45,7 @@ class PromptRenderer:
             or "(none registered)"
         )
         flow_text = _render_flow_briefs(context.flow_briefs)
+        capability_text = _render_capability_briefs(context.capability_briefs)
         return self._template.substitute(
             soul=soul,
             workspace_name=context.name,
@@ -54,13 +56,20 @@ class PromptRenderer:
             workspace_config_path=context.workspace_config_path,
             repository_text=repository_text,
             flow_briefs=flow_text,
+            capability_briefs=capability_text,
             agents_text=context.agents_text,
             history_text=_render_history(history),
             user_message=user_message,
         )
 
-    def render_resume(self, *, flow_briefs: tuple[FlowBrief, ...], user_message: str) -> str:
-        """Render fresh flow routing context for a resumed Codex session."""
+    def render_resume(
+        self,
+        *,
+        flow_briefs: tuple[FlowBrief, ...],
+        capability_briefs: tuple[CapabilityBrief, ...],
+        user_message: str,
+    ) -> str:
+        """Render fresh Workspace extension context for a resumed Codex session."""
 
         return (
             "<lumon-flow-context>\n"
@@ -69,6 +78,12 @@ class PromptRenderer:
             "Decide which flow applies, then read its full Markdown file before following it.\n"
             "If the request is ambiguous, ask the user to choose a flow.\n"
             "</lumon-flow-context>\n\n"
+            "<lumon-capability-context>\n"
+            "The following enabled Workspace capability IDs and briefs are current for this turn.\n"
+            f"{_render_capability_briefs(capability_briefs)}\n"
+            "Decide autonomously whether a capability is useful, then read its full Markdown "
+            "file before using it.\n"
+            "</lumon-capability-context>\n\n"
             f"<user-message>\n{user_message}\n</user-message>"
         )
 
@@ -96,4 +111,16 @@ def _render_flow_briefs(flow_briefs: tuple[FlowBrief, ...]) -> str:
     lines: list[str] = []
     for flow in flow_briefs:
         lines.append(f"- id: {flow.flow_id}; brief: {flow.brief}; full detail: {flow.path}")
+    return "\n".join(lines)
+
+
+def _render_capability_briefs(capability_briefs: tuple[CapabilityBrief, ...]) -> str:
+    if not capability_briefs:
+        return "(no enabled Workspace capabilities)"
+    lines: list[str] = []
+    for capability in capability_briefs:
+        lines.append(
+            f"- id: {capability.capability_id}; brief: {capability.brief}; "
+            f"full detail: {capability.path}"
+        )
     return "\n".join(lines)

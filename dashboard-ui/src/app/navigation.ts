@@ -1,6 +1,6 @@
 import type { View } from "../shared/types";
 
-const views: View[] = ["overview", "settings", "agent", "flows"];
+const views: View[] = ["overview", "settings", "agent", "flows", "capabilities"];
 
 export interface NavigationState {
   workspaceId: string | null;

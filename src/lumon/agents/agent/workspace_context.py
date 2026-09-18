@@ -8,6 +8,7 @@ from lumon.agents.agent.config import AgentConfig
 from lumon.agents.agent.model import Message, WorkspaceContext
 from lumon.agents.agent.prompt import PromptRenderer
 from lumon.agents.agent.soul import SoulLoader
+from lumon.capabilities.catalog import CapabilityCatalog
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
 from lumon.flows.catalog import FlowCatalog
 from lumon.workspace.config import load_workspace_config
@@ -59,6 +60,7 @@ class WorkspaceContextBuilder:
 
         agents_text = _read_agents(layout.agents_instructions)
         flow_snapshot = FlowCatalog(layout.root).discover()
+        capability_snapshot = CapabilityCatalog(layout.root).discover()
         repositories = tuple(
             f"{record.name} ({record.path}, branch {record.branch})"
             for record in workspace_config.repositories
@@ -73,6 +75,7 @@ class WorkspaceContextBuilder:
             agents_text=agents_text,
             repositories=repositories,
             flow_briefs=flow_snapshot.briefs,
+            capability_briefs=capability_snapshot.briefs,
         )
 
     def build_prompt(
@@ -95,6 +98,7 @@ class WorkspaceContextBuilder:
 
         return self.prompt_renderer.render_resume(
             flow_briefs=FlowCatalog(context.path).discover().briefs,
+            capability_briefs=CapabilityCatalog(context.path).discover().briefs,
             user_message=user_message,
         )
 

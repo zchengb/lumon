@@ -36,6 +36,16 @@ describe("Dashboard navigation", () => {
     );
   });
 
+  it("keeps the Capabilities view in the URL", () => {
+    expect(readNavigation("?workspace=abc&view=capabilities")).toEqual({
+      workspaceId: "abc",
+      view: "capabilities",
+    });
+    expect(writeNavigation({ workspaceId: "abc", view: "capabilities" })).toBe(
+      "?workspace=abc&view=capabilities",
+    );
+  });
+
   it("writes stable query state", () => {
     expect(writeNavigation({ workspaceId: "abc", view: "settings" })).toBe(
       "?workspace=abc&view=settings",

@@ -15,6 +15,8 @@ from lumon.agents.agent.config import (
     AgentReasoningEffort,
     ObservabilityConfig,
 )
+from lumon.capabilities.catalog import CapabilityCatalog, CapabilityValidationError
+from lumon.capabilities.model import CapabilityDefinition
 from lumon.dashboard.folder_picker import FolderPicker
 from lumon.errors import AgentConfigError, PreflightError, WorkspaceNotFoundError
 from lumon.flows.catalog import FlowCatalog, FlowValidationError
@@ -107,6 +109,33 @@ class FlowDocumentView:
     """One validated flow document returned to the local Dashboard editor."""
 
     flow_id: str
+    name: str
+    enabled: bool
+    brief: str
+    path: str
+    valid: bool
+    content: str
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilitySummaryView:
+    """Display-safe metadata for one Workspace capability."""
+
+    capability_id: str
+    name: str
+    enabled: bool
+    brief: str
+    path: str
+    valid: bool
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityDocumentView:
+    """One validated capability document returned to the local Dashboard editor."""
+
+    capability_id: str
     name: str
     enabled: bool
     brief: str
@@ -343,6 +372,86 @@ class DashboardService:
         registration = self._require(workspace_id)
         FlowCatalog(registration.path).delete(flow_id)
 
+    def capabilities(self, workspace_id: UUID) -> tuple[CapabilitySummaryView, ...]:
+        """List valid and invalid capability files for one Workspace."""
+
+        registration = self._require(workspace_id)
+        catalog = CapabilityCatalog(registration.path)
+        snapshot = catalog.discover()
+        summaries = [_capability_summary(item) for item in snapshot.definitions]
+        summaries.extend(
+            CapabilitySummaryView(
+                capability_id=item.path.stem,
+                name=item.path.name,
+                enabled=False,
+                brief="",
+                path=_relative_capability_path(registration.path, item.path),
+                valid=False,
+                error=item.message,
+            )
+            for item in snapshot.diagnostics
+        )
+        return tuple(summaries)
+
+    def capability(
+        self,
+        workspace_id: UUID,
+        capability_id: str,
+    ) -> CapabilityDocumentView:
+        """Read one capability for the Dashboard editor, including invalid source."""
+
+        registration = self._require(workspace_id)
+        catalog = CapabilityCatalog(registration.path)
+        try:
+            return _capability_document(catalog.read(capability_id))
+        except CapabilityValidationError as validation_error:
+            try:
+                path, content = catalog.read_raw(capability_id)
+            except CapabilityValidationError:
+                raise validation_error from None
+            return CapabilityDocumentView(
+                capability_id=capability_id,
+                name=path.stem,
+                enabled=False,
+                brief="",
+                path=path.as_posix(),
+                valid=False,
+                content=content,
+                error=str(validation_error),
+            )
+
+    def create_capability(
+        self,
+        workspace_id: UUID,
+        content: str,
+    ) -> CapabilityDocumentView:
+        """Create a capability file from Dashboard-provided Markdown."""
+
+        registration = self._require(workspace_id)
+        definition = CapabilityCatalog(registration.path).create(content)
+        return _capability_document(definition)
+
+    def update_capability(
+        self,
+        workspace_id: UUID,
+        capability_id: str,
+        content: str,
+    ) -> CapabilityDocumentView:
+        """Replace one capability while keeping its stable ID and file path."""
+
+        registration = self._require(workspace_id)
+        definition = CapabilityCatalog(registration.path).save(
+            content,
+            expected_id=capability_id,
+        )
+        return _capability_document(definition)
+
+    def delete_capability(self, workspace_id: UUID, capability_id: str) -> None:
+        """Delete one user-authored capability file."""
+
+        registration = self._require(workspace_id)
+        CapabilityCatalog(registration.path).delete(capability_id)
+
     def agent_settings(self) -> AgentSettingsView:
         """Read display-safe global Agent settings."""
 
@@ -517,7 +626,38 @@ def _flow_document(definition: FlowDefinition) -> FlowDocumentView:
     )
 
 
+def _capability_summary(definition: CapabilityDefinition) -> CapabilitySummaryView:
+    return CapabilitySummaryView(
+        capability_id=definition.capability_id,
+        name=definition.name,
+        enabled=definition.enabled,
+        brief=definition.brief,
+        path=definition.path.as_posix(),
+        valid=True,
+    )
+
+
+def _capability_document(definition: CapabilityDefinition) -> CapabilityDocumentView:
+    summary = _capability_summary(definition)
+    return CapabilityDocumentView(
+        capability_id=summary.capability_id,
+        name=summary.name,
+        enabled=summary.enabled,
+        brief=summary.brief,
+        path=summary.path,
+        valid=True,
+        content=definition.content,
+    )
+
+
 def _relative_flow_path(workspace: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(workspace.expanduser().resolve()).as_posix()
+    except ValueError:
+        return path.name
+
+
+def _relative_capability_path(workspace: Path, path: Path) -> str:
     try:
         return path.resolve().relative_to(workspace.expanduser().resolve()).as_posix()
     except ValueError:
