@@ -24,6 +24,7 @@ CodexEventKind = Literal[
     "file_change",
     "error",
 ]
+CodexEventLifecycle = Literal["started", "completed", "observed"]
 CodexExecutionStatus = Literal["succeeded", "failed", "timed_out"]
 CodexEventCallback = Callable[["CodexEvent"], Awaitable[None]]
 
@@ -40,6 +41,7 @@ class CodexErrorCode(StrEnum):
 # Codex JSONL events can include large tool outputs; keep the line buffer
 # bounded while allowing records larger than asyncio's 64 KiB default.
 _CODEX_STREAM_LIMIT_BYTES = 16 * 1024 * 1024
+_CODEX_EVENT_TEXT_LIMIT = 16 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +63,12 @@ class CodexEvent:
     phase: str | None = None
     notify_requested: bool = True
     agent_session_id: str | None = None
+    lifecycle: CodexEventLifecycle | None = None
+    operation_id: str | None = None
+    command: str | None = None
+    output: str | None = None
+    status: str | None = None
+    exit_code: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,9 +313,25 @@ def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
             agent_session_id=agent_session_id,
         )
     if effective_type in {"command_execution", "command", "tool_call"}:
-        return CodexEvent("command_execution", agent_session_id=agent_session_id)
+        operation = item_payload if item_payload is not None else payload
+        return CodexEvent(
+            "command_execution",
+            agent_session_id=agent_session_id,
+            lifecycle=_event_lifecycle(event_type, operation),
+            operation_id=_extract_operation_id(operation),
+            command=_event_text(operation, "command"),
+            output=_event_text(operation, "aggregated_output", "output", "stdout", "stderr"),
+            status=_event_status(operation),
+            exit_code=_event_int(operation, "exit_code", "exitCode"),
+        )
     if effective_type in {"file_change", "file_changes"}:
-        return CodexEvent("file_change", agent_session_id=agent_session_id)
+        operation = item_payload if item_payload is not None else payload
+        return CodexEvent(
+            "file_change",
+            agent_session_id=agent_session_id,
+            lifecycle=_event_lifecycle(event_type, operation),
+            operation_id=_extract_operation_id(operation),
+        )
     if item_type == "error":
         # Codex can emit advisory item errors while the turn still succeeds.
         # The process exit code and terminal turn event determine execution status.
@@ -387,6 +411,60 @@ def _extract_agent_session_id(payload: Mapping[str, object]) -> str | None:
             if isinstance(value, str) and value.strip():
                 return value.strip()
     return None
+
+
+def _event_lifecycle(
+    event_type: str,
+    payload: Mapping[str, object],
+) -> CodexEventLifecycle:
+    if event_type.endswith(".started") or event_type.endswith(".start"):
+        return "started"
+    if event_type.endswith(".completed") or event_type.endswith(".complete"):
+        return "completed"
+    status = _event_status(payload)
+    if status in {"in_progress", "running", "started"}:
+        return "started"
+    if status in {"completed", "failed", "cancelled", "canceled", "succeeded"}:
+        return "completed"
+    return "observed"
+
+
+def _extract_operation_id(payload: Mapping[str, object]) -> str | None:
+    for key in ("id", "item_id", "call_id", "command_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _event_text(payload: Mapping[str, object], *keys: str) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        text = _extract_text(value)
+        if text:
+            return _bounded_event_text(sanitize_output(text))
+    return None
+
+
+def _event_status(payload: Mapping[str, object]) -> str | None:
+    value = payload.get("status")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return _bounded_event_text(sanitize_output(value.strip()), limit=80)
+
+
+def _event_int(payload: Mapping[str, object], *keys: str) -> int | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def _bounded_event_text(value: str, *, limit: int = _CODEX_EVENT_TEXT_LIMIT) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1] + "…"
 
 
 def _extract_text(value: object) -> str | None:

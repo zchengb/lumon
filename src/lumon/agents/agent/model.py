@@ -55,6 +55,25 @@ class AgentProgress:
     notify_requested: bool = True
 
 
+AgentEventKind = Literal["progress", "command_execution", "file_change"]
+AgentEventLifecycle = Literal["started", "completed", "observed"]
+
+
+@dataclass(frozen=True, slots=True)
+class AgentEvent:
+    """A provider-neutral activity emitted while an Agent is running."""
+
+    kind: AgentEventKind
+    lifecycle: AgentEventLifecycle = "observed"
+    operation_id: str | None = None
+    phase: str | None = None
+    text: str | None = None
+    command: str | None = None
+    output: str | None = None
+    status: str | None = None
+    exit_code: int | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class InboundImage:
     """A downloadable image attached to one inbound Feishu message."""

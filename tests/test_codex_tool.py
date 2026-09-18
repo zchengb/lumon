@@ -14,13 +14,28 @@ from lumon.tools.safety import sanitize_output
 def test_codex_jsonl_parser_is_provider_specific_but_not_agent_specific() -> None:
     session = parse_codex_line('{"type":"thread.started","thread_id":"thread-1"}')
     final = parse_codex_line('{"type":"item","item":{"type":"agent_message","text":"done"}}')
-    command = parse_codex_line('{"type":"item","item":{"type":"command_execution"}}')
+    command = parse_codex_line(
+        '{"type":"item.started","item":{"type":"command_execution",'
+        '"id":"cmd-1","command":"printf hello"}}'
+    )
+    completed_command = parse_codex_line(
+        '{"type":"item.completed","item":{"type":"command_execution",'
+        '"id":"cmd-1","aggregated_output":"hello\\n","exit_code":0,'
+        '"status":"completed"}}'
+    )
     file_change = parse_codex_line('{"type":"item","item":{"type":"file_change"}}')
 
     assert session is not None and session.kind == "session"
     assert session.agent_session_id == "thread-1"
     assert final is not None and final.kind == "message" and final.text == "done"
     assert command is not None and command.kind == "command_execution"
+    assert command.lifecycle == "started"
+    assert command.operation_id == "cmd-1"
+    assert command.command == "printf hello"
+    assert completed_command is not None
+    assert completed_command.lifecycle == "completed"
+    assert completed_command.output == "hello"
+    assert completed_command.exit_code == 0
     assert file_change is not None and file_change.kind == "file_change"
     assert "执行 Workspace" not in str(command.text)
     assert "[REDACTED]" in sanitize_output(

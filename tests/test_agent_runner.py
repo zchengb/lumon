@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from lumon.agents.agent.config import AgentConfig
-from lumon.agents.agent.model import AgentErrorCode
+from lumon.agents.agent.model import AgentErrorCode, AgentEvent
 from lumon.agents.agent.runner import CodexAgentRunner, create_agent_runner
 from lumon.tools.codex import CodexTool
 
@@ -53,6 +53,43 @@ def test_agent_extracts_a_flow_marker_emitted_before_the_final_reply(tmp_path: P
     assert result.status == "succeeded"
     assert result.flow_id == "test-case-generation"
     assert result.final_text == "Generated test cases."
+
+
+def test_agent_forwards_codex_activity_events(tmp_path: Path) -> None:
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json\n"
+        "import sys\n"
+        "sys.stdin.buffer.read()\n"
+        "for event in [\n"
+        "    {'type': 'item.started', 'item': {'type': 'command_execution',"
+        " 'id': 'cmd-1', 'command': 'printf hello'}},\n"
+        "    {'type': 'item.completed', 'item': {'type': 'command_execution',"
+        " 'id': 'cmd-1', 'aggregated_output': 'hello', 'exit_code': 0,"
+        " 'status': 'completed'}},\n"
+        "    {'type': 'item.completed', 'item': {'type': 'agent_message',"
+        " 'text': 'done'}},\n"
+        "]:\n"
+        "    print(json.dumps(event))\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    runner = CodexAgentRunner(tool=CodexTool(binary=str(fake), timeout_seconds=5))
+    events: list[AgentEvent] = []
+
+    async def record(event: AgentEvent) -> None:
+        events.append(event)
+
+    result = asyncio.run(runner.run(tmp_path, "inspect this", on_event=record))
+
+    assert result.status == "succeeded"
+    assert [(event.kind, event.lifecycle) for event in events] == [
+        ("command_execution", "started"),
+        ("command_execution", "completed"),
+    ]
+    assert events[0].command == "printf hello"
+    assert events[1].output == "hello"
 
 
 def test_agent_defaults_to_codex_luna_max(tmp_path: Path) -> None:

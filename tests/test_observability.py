@@ -172,6 +172,8 @@ def test_langfuse_trace_captures_redacted_content_when_legacy_toggle_is_false() 
         )
         async with trace.span("codex.exec", as_type="tool", metadata={"status": "running"}) as span:
             span.update(output_text="api_key=sk-123456789", metadata={"status": "succeeded"})
+            async with span.span("codex.command", as_type="tool") as command_span:
+                command_span.update(input_text="printf hello", output_text="hello")
         trace.finish(status="succeeded", final_text="secret answer")
 
     asyncio.run(run())
@@ -181,6 +183,7 @@ def test_langfuse_trace_captures_redacted_content_when_legacy_toggle_is_false() 
     assert client.root.arguments["input"] == "private request"
     root_update = client.root.updates[0]
     child_update = client.root.children[0].updates[0]
+    nested_update = client.root.children[0].children[0].updates[0]
     final_update = client.root.updates[-1]
     root_metadata = root_update["metadata"]
     assert isinstance(root_metadata, dict)
@@ -189,6 +192,8 @@ def test_langfuse_trace_captures_redacted_content_when_legacy_toggle_is_false() 
     assert "feishu-secret" not in str(root_update["input"])
     assert "abc123" not in str(root_update["input"])
     assert "sk-123456789" not in str(child_update["output"])
+    assert nested_update["input"] == "printf hello"
+    assert nested_update["output"] == "hello"
     assert final_update["output"] == "secret answer"
     assert propagation_calls[0]["session_id"] == "session-1"
     assert propagation_calls[0]["user_id"] != "sender-1"

@@ -11,7 +11,13 @@ from lumon.agents.agent.config import (
     DEFAULT_AGENT_REASONING_EFFORT,
     AgentConfig,
 )
-from lumon.agents.agent.model import AgentErrorCode, AgentProgress, AgentResult, ProgressPhase
+from lumon.agents.agent.model import (
+    AgentErrorCode,
+    AgentEvent,
+    AgentProgress,
+    AgentResult,
+    ProgressPhase,
+)
 from lumon.errors import AgentConfigError
 from lumon.flows.protocol import extract_flow_selection
 from lumon.tools.codex import (
@@ -22,6 +28,7 @@ from lumon.tools.codex import (
 )
 
 ProgressCallback = Callable[[AgentProgress], Awaitable[None]]
+AgentEventCallback = Callable[[AgentEvent], Awaitable[None]]
 
 
 class CodexAgentRunner:
@@ -62,6 +69,7 @@ class CodexAgentRunner:
         agent_session_id: str | None = None,
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
     ) -> AgentResult:
         """Run Codex and apply Agent's requirement for a replyable final text."""
 
@@ -77,6 +85,9 @@ class CodexAgentRunner:
                     selected_flow_id = marker_flow_id
                 if cleaned_text.strip():
                     last_reply_text = cleaned_text
+            activity = _agent_event_from_codex_event(event)
+            if activity is not None and on_event is not None:
+                await on_event(activity)
             candidate = _progress_from_event(event)
             if candidate is None:
                 return
@@ -178,6 +189,7 @@ class AgentRunner(Protocol):
         agent_session_id: str | None = None,
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
     ) -> AgentResult:
         """Run one bounded request and return safe progress and final output."""
 
@@ -218,6 +230,29 @@ def _progress_from_event(event: CodexEvent) -> AgentProgress | None:
         phase=phase,
         message=message,
         notify_requested=event.notify_requested,
+    )
+
+
+def _agent_event_from_codex_event(event: CodexEvent) -> AgentEvent | None:
+    if event.kind == "progress":
+        kind = "progress"
+    elif event.kind == "command_execution":
+        kind = "command_execution"
+    elif event.kind == "file_change":
+        kind = "file_change"
+    else:
+        return None
+    lifecycle = event.lifecycle or "observed"
+    return AgentEvent(
+        kind=kind,
+        lifecycle=lifecycle,
+        operation_id=event.operation_id,
+        phase=event.phase,
+        text=event.text,
+        command=event.command,
+        output=event.output,
+        status=event.status,
+        exit_code=event.exit_code,
     )
 
 

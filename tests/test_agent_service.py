@@ -11,6 +11,7 @@ from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.agents.agent.feishu import AgentFeishuChannel, MessageHandler
 from lumon.agents.agent.model import (
     AgentErrorCode,
+    AgentEvent,
     AgentProgress,
     AgentResult,
     InboundImage,
@@ -18,7 +19,7 @@ from lumon.agents.agent.model import (
     ProgressPhase,
     RecalledMessage,
 )
-from lumon.agents.agent.runner import ProgressCallback
+from lumon.agents.agent.runner import AgentEventCallback, ProgressCallback
 from lumon.agents.agent.service import AgentService
 from lumon.agents.agent.session_store import AgentSessionStore
 from lumon.errors import AgentRuntimeError
@@ -42,6 +43,7 @@ class FakeRunner:
         self.images: list[tuple[Path, ...]] = []
         self.next_flow_id: str | None = None
         self.next_final_text = "Workspace 已检查"
+        self.next_events: tuple[AgentEvent, ...] = ()
         self.provider = "test-agent"
         self.display_name = "Test Agent"
         self.executable = "test-agent"
@@ -60,11 +62,15 @@ class FakeRunner:
         agent_session_id: str | None = None,
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
     ) -> AgentResult:
         del workspace
         self.prompts.append(prompt)
         self.agent_session_ids.append(agent_session_id)
         self.images.append(images)
+        if on_event is not None:
+            for event in getattr(self, "next_events", ()):
+                await on_event(event)
         if on_progress is not None:
             await on_progress(
                 AgentProgress(
@@ -93,8 +99,9 @@ class BlockingRunner(FakeRunner):
         agent_session_id: str | None = None,
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, images, on_progress
+        del workspace, prompt, agent_session_id, images, on_progress, on_event
         self.started.set()
         await asyncio.Event().wait()
         raise AssertionError("blocking runner should only finish by cancellation")
@@ -109,8 +116,9 @@ class FailingRunner(FakeRunner):
         agent_session_id: str | None = None,
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, images, on_progress
+        del workspace, prompt, agent_session_id, images, on_progress, on_event
         raise RuntimeError("private request content must not be stored")
 
 
@@ -123,8 +131,9 @@ class TimedOutRunner(FakeRunner):
         agent_session_id: str | None = None,
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, images, on_progress
+        del workspace, prompt, agent_session_id, images, on_progress, on_event
         return AgentResult(status="timed_out", error_code=AgentErrorCode.TIMEOUT)
 
 
@@ -175,6 +184,7 @@ class RecordingSpan:
     def __init__(self, name: str) -> None:
         self.name = name
         self.updates: list[dict[str, object]] = []
+        self.children: list[RecordingSpan] = []
 
     def update(
         self,
@@ -194,6 +204,22 @@ class RecordingSpan:
                 "status_message": status_message,
             }
         )
+
+    @asynccontextmanager
+    async def span(
+        self,
+        name: str,
+        *,
+        as_type: ObservationType = "span",
+        metadata: TelemetryMetadata | None = None,
+    ):
+        del as_type, metadata
+        child = RecordingSpan(name)
+        self.children.append(child)
+        try:
+            yield child
+        finally:
+            pass
 
 
 class RecordingTrace:
@@ -317,6 +343,27 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     config_store.save(config)
     channel = FakeChannel(config)
     runner = FakeRunner()
+    runner.next_events = (
+        AgentEvent(
+            kind="progress",
+            phase="inspecting",
+            text="正在检查 Workspace。",
+        ),
+        AgentEvent(
+            kind="command_execution",
+            lifecycle="started",
+            operation_id="command-1",
+            command="printf hello",
+        ),
+        AgentEvent(
+            kind="command_execution",
+            lifecycle="completed",
+            operation_id="command-1",
+            output="hello",
+            status="completed",
+            exit_code=0,
+        ),
+    )
     telemetry = RecordingTelemetry()
     store = AgentSessionStore(state_root)
     service = AgentService(
@@ -410,6 +457,18 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         "codex.exec",
         "feishu.reply",
     ]
+    codex_span = telemetry.traces[0].spans[3]
+    assert [child.name for child in codex_span.children] == [
+        "codex.phase",
+        "codex.command",
+    ]
+    command_updates = codex_span.children[1].updates
+    assert any(update["input_text"] == "printf hello" for update in command_updates)
+    assert any(update["output_text"] == "hello" for update in command_updates)
+    assert any(
+        isinstance(update["metadata"], dict) and "duration_ms" in update["metadata"]
+        for update in command_updates
+    )
     assert (
         telemetry.traces[0].arguments["session_id"] == telemetry.traces[1].arguments["session_id"]
     )

@@ -8,6 +8,7 @@ import tempfile
 import time
 import traceback
 from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,7 +18,9 @@ from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.agents.agent.feishu import AgentFeishuChannel
 from lumon.agents.agent.model import (
     AgentErrorCode,
+    AgentEvent,
     AgentProgress,
+    AgentResult,
     AgentRunResult,
     AgentRunStatus,
     InboundMessage,
@@ -37,13 +40,17 @@ from lumon.observability import (
     AgentTelemetry,
     AgentTrace,
     NoopAgentTelemetry,
+    ObservationType,
+    TelemetryMetadata,
     TelemetryStatus,
+    TraceSpan,
     create_agent_telemetry,
 )
 from lumon.tools.safety import sanitize_output
 from lumon.workspace.registry import WorkspaceRegistry
 
 logger = logging.getLogger(__name__)
+_CODEX_TRACE_CONTENT_LIMIT = 4096
 
 
 class AgentService:
@@ -314,13 +321,22 @@ class AgentService:
                             "image_count": len(image_paths),
                         },
                     ) as codex_span:
-                        result = await runner.run(
-                            context.path,
-                            prompt,
-                            agent_session_id=resume_session_id,
-                            images=image_paths,
-                            on_progress=reporter.notify,
-                        )
+                        event_observer = _CodexTraceObserver(codex_span)
+                        result: AgentResult | None = None
+                        try:
+                            result = await runner.run(
+                                context.path,
+                                prompt,
+                                agent_session_id=resume_session_id,
+                                images=image_paths,
+                                on_progress=reporter.notify,
+                                on_event=event_observer.observe,
+                            )
+                        finally:
+                            await event_observer.close(
+                                status=result.status if result is not None else "aborted"
+                            )
+                        assert result is not None
                         (
                             marker_flow_id,
                             _marker_status,
@@ -656,6 +672,186 @@ class _ProgressReporter:
             await self.channel.reply(self.message, sanitize_output(text))
         except AgentRuntimeError:
             return
+
+
+class _OpenTraceSpan:
+    def __init__(
+        self,
+        manager: AbstractAsyncContextManager[TraceSpan],
+        span: TraceSpan,
+        started_at: float,
+    ) -> None:
+        self.manager = manager
+        self.span = span
+        self.started_at = started_at
+
+
+class _CodexTraceObserver:
+    """Turn Codex activities into bounded, nested Langfuse observations."""
+
+    def __init__(self, parent: TraceSpan) -> None:
+        self._parent = parent
+        self._open_operations: dict[str, _OpenTraceSpan] = {}
+        self._open_phase: tuple[str, _OpenTraceSpan] | None = None
+        self._sequence = 0
+
+    async def observe(self, event: AgentEvent) -> None:
+        try:
+            if event.kind == "progress":
+                await self._observe_progress(event)
+            elif event.kind in {"command_execution", "file_change"}:
+                await self._observe_operation(event)
+        except Exception as exc:
+            logger.warning("Agent activity telemetry failed (%s).", type(exc).__name__)
+
+    async def close(self, *, status: str) -> None:
+        try:
+            if self._open_phase is not None:
+                _phase, observation = self._open_phase
+                await self._finish(
+                    observation,
+                    status=status,
+                    duration_source="wall_clock",
+                )
+                self._open_phase = None
+            for key, observation in tuple(self._open_operations.items()):
+                await self._finish(
+                    observation,
+                    status=status,
+                    duration_source="wall_clock",
+                )
+                self._open_operations.pop(key, None)
+        except Exception as exc:
+            logger.warning("Agent activity telemetry close failed (%s).", type(exc).__name__)
+
+    async def _observe_progress(self, event: AgentEvent) -> None:
+        phase = _bounded_label(event.phase or "unknown")
+        if self._open_phase is None or self._open_phase[0] != phase:
+            if self._open_phase is not None:
+                _previous_phase, previous = self._open_phase
+                await self._finish(
+                    previous,
+                    status="completed",
+                    duration_source="wall_clock",
+                )
+            observation = await self._start(
+                "codex.phase",
+                as_type="span",
+                metadata={"phase": phase, "status": "running"},
+            )
+            self._open_phase = (phase, observation)
+        if event.text:
+            self._open_phase[1].span.update(
+                output_text=_bounded_content(event.text),
+                metadata={"phase_message": _bounded_label(event.text)},
+            )
+
+    async def _observe_operation(self, event: AgentEvent) -> None:
+        key = event.operation_id or event.command or self._next_key(event.kind)
+        name = "codex.command" if event.kind == "command_execution" else "codex.file_change"
+        if event.lifecycle == "started":
+            previous = self._open_operations.pop(key, None)
+            if previous is not None:
+                await self._finish(
+                    previous,
+                    status="replaced",
+                    duration_source="wall_clock",
+                )
+            self._open_operations[key] = await self._start(
+                name,
+                as_type="tool" if event.kind == "command_execution" else "span",
+                metadata=self._operation_metadata(event, status="running"),
+            )
+            self._update_content(self._open_operations[key].span, event)
+            return
+        if event.lifecycle == "completed":
+            observation = self._open_operations.pop(key, None)
+            if observation is not None:
+                await self._finish(
+                    observation,
+                    event=event,
+                    status=event.status or "completed",
+                    duration_source="wall_clock",
+                )
+                return
+        observation = await self._start(
+            name,
+            as_type="tool" if event.kind == "command_execution" else "span",
+            metadata=self._operation_metadata(event, status=event.status or "observed"),
+        )
+        self._update_content(observation.span, event)
+        await self._finish(
+            observation,
+            status=event.status or "observed",
+            duration_source="event_only",
+        )
+
+    async def _start(
+        self,
+        name: str,
+        *,
+        as_type: ObservationType,
+        metadata: TelemetryMetadata,
+    ) -> _OpenTraceSpan:
+        manager = self._parent.span(name, as_type=as_type, metadata=metadata)
+        span = await manager.__aenter__()
+        return _OpenTraceSpan(manager, span, time.monotonic())
+
+    async def _finish(
+        self,
+        observation: _OpenTraceSpan,
+        *,
+        event: AgentEvent | None = None,
+        status: str,
+        duration_source: str,
+    ) -> None:
+        metadata: dict[str, str | int | bool] = {
+            "status": _bounded_label(status),
+            "duration_ms": max(0, int((time.monotonic() - observation.started_at) * 1000)),
+            "duration_source": duration_source,
+        }
+        if event is not None:
+            metadata.update(self._operation_metadata(event, status=status))
+            self._update_content(observation.span, event)
+        observation.span.update(metadata=metadata)
+        await observation.manager.__aexit__(None, None, None)
+
+    def _update_content(self, span: TraceSpan, event: AgentEvent) -> None:
+        span.update(
+            input_text=_bounded_content(event.command),
+            output_text=_bounded_content(event.output or event.text),
+        )
+
+    def _operation_metadata(self, event: AgentEvent, *, status: str) -> dict[str, str | int | bool]:
+        metadata: dict[str, str | int | bool] = {
+            "lifecycle": event.lifecycle,
+            "status": _bounded_label(status),
+        }
+        if event.operation_id:
+            metadata["operation_id"] = _bounded_label(event.operation_id)
+        if event.exit_code is not None:
+            metadata["exit_code"] = event.exit_code
+        return metadata
+
+    def _next_key(self, kind: str) -> str:
+        self._sequence += 1
+        return f"{kind}-{self._sequence}"
+
+
+def _bounded_label(value: str, limit: int = 120) -> str:
+    safe = sanitize_output(value).strip()
+    if len(safe) <= limit:
+        return safe
+    return safe[: limit - 1] + "…"
+
+
+def _bounded_content(value: str | None, limit: int = _CODEX_TRACE_CONTENT_LIMIT) -> str | None:
+    if not value:
+        return None
+    safe = sanitize_output(value)
+    if len(safe) <= limit:
+        return safe
+    return safe[: limit - 1] + "…"
 
 
 def _failure_message(

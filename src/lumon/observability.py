@@ -47,6 +47,17 @@ class TraceSpan(Protocol):
 
         ...
 
+    def span(
+        self,
+        name: str,
+        *,
+        as_type: ObservationType = "span",
+        metadata: TelemetryMetadata | None = None,
+    ) -> AbstractAsyncContextManager[TraceSpan]:
+        """Create a nested observation."""
+
+        ...
+
 
 class AgentTrace(Protocol):
     """A trace handle for one accepted Agent message."""
@@ -193,6 +204,17 @@ class _NoopSpan:
         status_message: str | None = None,
     ) -> None:
         del input_text, output_text, metadata, level, status_message
+
+    @asynccontextmanager
+    async def span(
+        self,
+        name: str,
+        *,
+        as_type: ObservationType = "span",
+        metadata: TelemetryMetadata | None = None,
+    ) -> AsyncGenerator[TraceSpan, None]:
+        del name, as_type, metadata
+        yield _NoopSpan()
 
 
 class LangfuseAgentTelemetry:
@@ -447,6 +469,47 @@ class _LangfuseObservation:
 
     def start_as_current_observation(self, **arguments: object) -> Any:
         return self.observation.start_as_current_observation(**arguments)
+
+    @asynccontextmanager
+    async def span(
+        self,
+        name: str,
+        *,
+        as_type: ObservationType = "span",
+        metadata: TelemetryMetadata | None = None,
+    ) -> AsyncGenerator[TraceSpan, None]:
+        manager: Any | None = None
+        try:
+            child_metadata = _metadata_dict(metadata)
+            manager = self.observation.start_as_current_observation(
+                name=name,
+                as_type=as_type,
+                metadata=child_metadata,
+            )
+            if manager is None:
+                raise RuntimeError("Langfuse nested observation was not created.")
+            observation = manager.__enter__()
+        except Exception as exc:
+            _safe_exit(manager)
+            _log_sdk_failure(f"start nested span {name}", exc)
+            yield _NoopSpan()
+            return
+
+        span = _LangfuseObservation(
+            observation,
+            self.redactor,
+            metadata=child_metadata,
+        )
+        try:
+            yield span
+        except asyncio.CancelledError:
+            span.update(level="WARNING", status_message="cancelled")
+            raise
+        except Exception as exc:
+            span.update(level="ERROR", status_message=type(exc).__name__)
+            raise
+        finally:
+            _safe_exit(manager)
 
 
 class _TextRedactor:
