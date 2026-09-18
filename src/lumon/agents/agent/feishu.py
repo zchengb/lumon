@@ -165,7 +165,9 @@ class AgentFeishuChannel:
         if self._channel is None:
             raise AgentRuntimeError("Feishu channel is not connected.")
         options: dict[str, object] = {"reply_to": message.message_id}
-        if message.thread_id or message.root_id:
+        # A top-level group message has no thread metadata yet, but the Agent's
+        # response should create a Feishu reply thread instead of a flat quote.
+        if message.is_group or message.thread_id or message.root_id:
             options["reply_in_thread"] = True
         try:
             result = await self._channel.send(

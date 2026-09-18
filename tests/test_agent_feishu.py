@@ -24,6 +24,7 @@ def _raw(
     text: str,
     sender_type: str = "user",
     mentioned_bot: bool = False,
+    thread_id: str | None = "thread-1",
 ) -> dict[str, object]:
     return {
         "id": "om_1",
@@ -33,7 +34,7 @@ def _raw(
         "sender_id": "ou_1",
         "sender_type": sender_type,
         "mentioned_bot": mentioned_bot,
-        "conversation": {"chat_id": "oc_1", "chat_type": chat_type, "thread_id": "thread-1"},
+        "conversation": {"chat_id": "oc_1", "chat_type": chat_type, "thread_id": thread_id},
     }
 
 
@@ -138,6 +139,7 @@ class _FakeSdkChannel:
         self.values = kwargs
         self.handlers: dict[str, Any] = {}
         self.raw_handlers: dict[str, Any] = {}
+        self.sent: list[tuple[str, object, object]] = []
         _FakeSdkChannel.instance = self
 
     def on(self, event: str, handler: Any) -> None:
@@ -151,6 +153,10 @@ class _FakeSdkChannel:
 
     async def disconnect(self) -> None:
         return None
+
+    async def send(self, chat_id: str, body: object, options: object) -> SimpleNamespace:
+        self.sent.append((chat_id, body, options))
+        return SimpleNamespace(success=True)
 
     async def download_resource_to_file(
         self,
@@ -207,6 +213,46 @@ def test_channel_explicitly_configures_message_policy(
         "require_mention": True,
     }
     assert inbound.values == {"drop_self_sent": True}
+
+
+def test_group_reply_creates_a_thread_for_a_top_level_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        feishu_module,
+        "_sdk_module",
+        SimpleNamespace(
+            FeishuChannel=_FakeSdkChannel,
+            PolicyConfig=_FakePolicy,
+            InboundConfig=_FakeInbound,
+        ),
+    )
+    channel = AgentFeishuChannel(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    message = normalize_message(_raw("group", "@Agent hello", mentioned_bot=True, thread_id=None))
+    assert message is not None
+    assert message.thread_id is None
+
+    async def run() -> None:
+        async def handler(_message: InboundMessage) -> None:
+            return None
+
+        await channel.connect(handler)
+        await channel.reply(message, "answer")
+        await channel.disconnect()
+
+    asyncio.run(run())
+
+    sdk_channel = _FakeSdkChannel.instance
+    assert sdk_channel is not None
+    assert sdk_channel.sent == [
+        (
+            "oc_1",
+            {"markdown": "answer"},
+            {"reply_to": "om_1", "reply_in_thread": True},
+        )
+    ]
 
 
 def test_channel_downloads_an_inbound_image_to_the_requested_directory(
