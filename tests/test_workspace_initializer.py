@@ -40,6 +40,7 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     assert agents == template
     assert "Global Agent Skills live under `~/.agents/skills/`" in agents
     assert "lumon/manifest.json" in agents
+    assert "Never use zsh special or read-only parameter names" in agents
     assert (target / ".gitignore").is_file()
     assert tuple((target / "lumon" / "flows").glob("*.md")) == ()
     assert tuple((target / "lumon" / "capabilities").glob("*.md")) == ()

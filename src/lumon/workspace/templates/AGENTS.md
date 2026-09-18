@@ -24,6 +24,13 @@ At the start of every task, read the current `AGENTS.md`, `lumon/manifest.json`,
 - If a Repository is diverged, has no usable upstream, has a branch mismatch, or cannot reach its remote, stop work that depends on it and explain the blocker.
 - Report only sanitized Repository names, branches, statuses, and failure reasons. Never expose remote URLs containing credentials, secrets, or raw sensitive command output.
 
+## Shell command compatibility
+
+Agent commands run through the user's configured shell, which may be zsh on macOS.
+
+- Never use zsh special or read-only parameter names as shell variables, especially `status`; use names such as `repo_state`, `worktree_state`, or `branch_state` instead.
+- Keep repository inspection commands POSIX-compatible where practical. If a script requires Bash, invoke `bash -lc` explicitly.
+
 ## Code change isolation
 
 Registered code Repositories are read-only in their canonical `repos/` checkouts. Make code changes, run checks, and create commits only in an independent worktree:
