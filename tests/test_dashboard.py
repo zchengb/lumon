@@ -17,6 +17,7 @@ from lumon.dashboard.server import DashboardServer, create_dashboard_app, select
 from lumon.dashboard.service import DashboardService
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.feishu_webhook import FeishuWebhookSender
+from lumon.version import __version__
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
@@ -107,7 +108,7 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
 
     assert client.get("/api/health").json()["ok"] is True
     assert client.get("/api/bootstrap").json() == {
-        "version": "1.2.4",
+        "version": __version__,
         "workspace_count": 0,
         "has_workspaces": False,
     }
