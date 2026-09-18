@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -141,7 +142,7 @@ class AgentFeishuChannel:
             downloaded = await download_call(
                 image.file_key,
                 resource_type="image",
-                message_id=message.message_id,
+                message_id=image.source_message_id or message.message_id,
                 dest_dir=destination,
                 file_name=image.file_name,
             )
@@ -185,7 +186,45 @@ class AgentFeishuChannel:
             return
         message = normalize_message(raw_message)
         if message is not None:
+            message = await self._attach_quoted_message(message, raw_message)
             await self._handler(message)
+
+    async def _attach_quoted_message(
+        self,
+        message: InboundMessage,
+        raw_message: object,
+    ) -> InboundMessage:
+        """Fetch the explicitly replied-to message and merge its context."""
+
+        quoted_message_id = _reply_message_id(raw_message)
+        if not quoted_message_id or self._channel is None:
+            return message
+        fetch = getattr(self._channel, "fetch_inbound_message", None)
+        if not callable(fetch):
+            return message
+        try:
+            fetch_call = cast(Callable[[str], Awaitable[object]], fetch)
+            quoted = await fetch_call(quoted_message_id)
+        except Exception:
+            # Quoted content is best-effort. A missing permission or recalled
+            # parent must not discard the user's current question.
+            return message
+        if quoted is None:
+            return message
+
+        quoted_images = _image_references(
+            _value(quoted, "resources", ()),
+            source_message_id=quoted_message_id,
+        )
+        quoted_text = _message_text(quoted)
+        quoted_text = _replace_image_markers(quoted_text, quoted_images)
+        if not quoted_text and not quoted_images:
+            return message
+        return replace(
+            message,
+            text=_prepend_quoted_text(message.text, quoted_text),
+            images=_merge_images(message.images, quoted_images),
+        )
 
     async def _on_sdk_recalled(self, raw_message: Any) -> None:
         if self._recall_handler is None:
@@ -209,21 +248,13 @@ def normalize_message(raw: object) -> InboundMessage | None:
     chat_id = _text(_value(raw, "chat_id", _value(conversation, "chat_id", "")))
     chat_type = _text(_value(raw, "chat_type", _value(conversation, "chat_type", "unknown")))
     images = _image_references(_value(raw, "resources", ()))
-    text = _text(
-        _value(
-            raw,
-            "body_text",
-            _value(raw, "content_text", _value(raw, "safe_content_text", "")),
-        )
-    )
-    for image in images:
-        text = text.replace(f"![image]({image.file_key})", "[image attachment]")
-    text = text.strip()
+    text = _replace_image_markers(_message_text(raw), images)
+    reply_message_id = _reply_message_id(raw)
     sender_id = _text(_value(raw, "sender_id", _value(sender, "open_id", "")))
     sender_type = _text(_value(raw, "sender_type", _value(sender, "sender_type", "unknown")))
     if not sender_type:
         sender_type = "unknown"
-    if not message_id or not chat_id or not text:
+    if not message_id or not chat_id or (not text and not reply_message_id):
         return None
 
     mentioned_bot = bool(_value(raw, "mentioned_bot", False))
@@ -288,7 +319,59 @@ def _optional_text(value: object) -> str | None:
     return text or None
 
 
-def _image_references(resources: object) -> tuple[InboundImage, ...]:
+def _message_text(raw: object) -> str:
+    return _text(
+        _value(
+            raw,
+            "body_text",
+            _value(raw, "content_text", _value(raw, "safe_content_text", "")),
+        )
+    ).strip()
+
+
+def _reply_message_id(raw: object) -> str | None:
+    direct_id = _optional_text(
+        _value(
+            raw,
+            "reply_to_message_id",
+            _value(raw, "parent_id", _value(raw, "reply_to", None)),
+        )
+    )
+    if direct_id:
+        return direct_id
+    reply = _value(raw, "reply", None)
+    return _optional_text(_value(reply, "message_id", _value(reply, "id", None)))
+
+
+def _replace_image_markers(text: str, images: tuple[InboundImage, ...]) -> str:
+    for image in images:
+        text = text.replace(f"![image]({image.file_key})", "[image attachment]")
+    return text.strip()
+
+
+def _prepend_quoted_text(message_text: str, quoted_text: str) -> str:
+    quoted_block = f"<feishu-quoted-message>\n{quoted_text}\n</feishu-quoted-message>"
+    return f"{quoted_block}\n\n{message_text}" if message_text else quoted_block
+
+
+def _merge_images(
+    current: tuple[InboundImage, ...], quoted: tuple[InboundImage, ...]
+) -> tuple[InboundImage, ...]:
+    images: list[InboundImage] = []
+    seen_keys: set[str] = set()
+    for image in (*current, *quoted):
+        if image.file_key in seen_keys:
+            continue
+        seen_keys.add(image.file_key)
+        images.append(image)
+    return tuple(images)
+
+
+def _image_references(
+    resources: object,
+    *,
+    source_message_id: str | None = None,
+) -> tuple[InboundImage, ...]:
     if not isinstance(resources, (list, tuple)):
         return ()
     images: list[InboundImage] = []
@@ -305,6 +388,7 @@ def _image_references(resources: object) -> tuple[InboundImage, ...]:
             InboundImage(
                 file_key=file_key,
                 file_name=_optional_text(_value(resource, "file_name", None)),
+                source_message_id=source_message_id,
             )
         )
     return tuple(images)

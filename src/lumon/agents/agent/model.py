@@ -80,6 +80,7 @@ class InboundImage:
 
     file_key: str
     file_name: str | None = None
+    source_message_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

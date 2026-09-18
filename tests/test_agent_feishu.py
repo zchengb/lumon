@@ -63,6 +63,18 @@ def test_image_resources_are_normalized_without_persisting_opaque_keys() -> None
     assert message.images == (InboundImage(file_key="img-1", file_name="screen.png"),)
 
 
+def test_reply_without_new_text_is_admitted_for_quoted_context() -> None:
+    message = normalize_message(
+        {
+            **_raw("p2p", ""),
+            "reply": {"message_id": "om-parent"},
+        }
+    )
+
+    assert message is not None
+    assert message.text == ""
+
+
 def test_group_thread_is_the_session_boundary() -> None:
     first = normalize_message(_raw("group", "@Agent first", mentioned_bot=True))
     second = normalize_message(
@@ -140,6 +152,9 @@ class _FakeSdkChannel:
         self.handlers: dict[str, Any] = {}
         self.raw_handlers: dict[str, Any] = {}
         self.sent: list[tuple[str, object, object]] = []
+        self.quoted_messages: dict[str, object] = {}
+        self.downloaded_message_ids: list[str] = []
+        self.downloaded_file_names: list[str | None] = []
         _FakeSdkChannel.instance = self
 
     def on(self, event: str, handler: Any) -> None:
@@ -158,6 +173,9 @@ class _FakeSdkChannel:
         self.sent.append((chat_id, body, options))
         return SimpleNamespace(success=True)
 
+    async def fetch_inbound_message(self, message_id: str) -> object | None:
+        return self.quoted_messages.get(message_id)
+
     async def download_resource_to_file(
         self,
         file_key: str,
@@ -168,8 +186,8 @@ class _FakeSdkChannel:
         file_name: str | None,
     ) -> Path:
         assert resource_type == "image"
-        assert message_id == "om-1"
-        assert file_name == "screen.png"
+        self.downloaded_message_ids.append(message_id)
+        self.downloaded_file_names.append(file_name)
         path = dest_dir / f"{file_key}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"image")
@@ -298,6 +316,131 @@ def test_channel_downloads_an_inbound_image_to_the_requested_directory(
 
     assert path == (tmp_path / "img-1.png").resolve()
     assert path.read_bytes() == b"image"
+    sdk_channel = _FakeSdkChannel.instance
+    assert sdk_channel is not None
+    assert sdk_channel.downloaded_message_ids == ["om-1"]
+    assert sdk_channel.downloaded_file_names == ["screen.png"]
+
+
+def test_channel_enriches_a_reply_with_quoted_text_and_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        feishu_module,
+        "_sdk_module",
+        SimpleNamespace(
+            FeishuChannel=_FakeSdkChannel,
+            PolicyConfig=_FakePolicy,
+            InboundConfig=_FakeInbound,
+        ),
+    )
+    channel = AgentFeishuChannel(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    received: list[InboundMessage] = []
+    raw = {
+        **_raw("p2p", "请评估这个问题"),
+        "reply": {"message_id": "om-parent"},
+    }
+
+    async def run() -> None:
+        async def handler(message: InboundMessage) -> None:
+            received.append(message)
+
+        await channel.connect(handler)
+        sdk_channel = _FakeSdkChannel.instance
+        assert sdk_channel is not None
+        sdk_channel.quoted_messages["om-parent"] = SimpleNamespace(
+            body_text="原始问题 ![image](img-parent)",
+            resources=[
+                SimpleNamespace(
+                    type="image",
+                    file_key="img-parent",
+                    file_name="original.png",
+                )
+            ],
+        )
+        message_handler = sdk_channel.handlers["message"]
+        await message_handler(raw)
+        await channel.disconnect()
+
+    asyncio.run(run())
+
+    assert received == [
+        InboundMessage(
+            event_id="om_1",
+            message_id="om_1",
+            chat_id="oc_1",
+            chat_type="p2p",
+            text=(
+                "<feishu-quoted-message>\n"
+                "原始问题 [image attachment]\n"
+                "</feishu-quoted-message>\n\n"
+                "请评估这个问题"
+            ),
+            sender_id="ou_1",
+            sender_type="user",
+            thread_id="thread-1",
+            images=(
+                InboundImage(
+                    file_key="img-parent",
+                    file_name="original.png",
+                    source_message_id="om-parent",
+                ),
+            ),
+        )
+    ]
+
+
+def test_quoted_image_download_uses_parent_message_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        feishu_module,
+        "_sdk_module",
+        SimpleNamespace(
+            FeishuChannel=_FakeSdkChannel,
+            PolicyConfig=_FakePolicy,
+            InboundConfig=_FakeInbound,
+        ),
+    )
+    channel = AgentFeishuChannel(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    message = InboundMessage(
+        event_id="om-1",
+        message_id="om-1",
+        chat_id="oc-1",
+        chat_type="p2p",
+        text="quoted",
+        sender_id="ou-1",
+        sender_type="user",
+        images=(
+            InboundImage(
+                file_key="img-parent",
+                file_name="original.png",
+                source_message_id="om-parent",
+            ),
+        ),
+    )
+
+    async def run() -> Path:
+        async def handler(_message: InboundMessage) -> None:
+            return None
+
+        await channel.connect(handler)
+        path = await channel.download_image(message, message.images[0], tmp_path)
+        await channel.disconnect()
+        return path
+
+    path = asyncio.run(run())
+
+    assert path.read_bytes() == b"image"
+    sdk_channel = _FakeSdkChannel.instance
+    assert sdk_channel is not None
+    assert sdk_channel.downloaded_message_ids == ["om-parent"]
+    assert sdk_channel.downloaded_file_names == ["original.png"]
 
 
 def test_channel_registers_recalled_event(monkeypatch: pytest.MonkeyPatch) -> None:
