@@ -95,25 +95,35 @@ def test_catalog_resolves_a_valid_id_from_a_workspace_relative_filename(tmp_path
     assert not (flows_dir / "descriptive-flow.md").exists()
 
 
-def test_catalog_validates_ids_and_keeps_edits_inside_workspace(tmp_path: Path) -> None:
+def test_catalog_validates_ids_and_renames_inside_workspace(tmp_path: Path) -> None:
     catalog = FlowCatalog(tmp_path)
 
     with pytest.raises(FlowValidationError, match="Flow id"):
         catalog.create(_flow_content("../outside"))
-    with pytest.raises(FlowValidationError, match="cannot change"):
-        catalog.save(_flow_content("different-flow"), expected_id="custom-flow")
 
     created = catalog.create(_flow_content())
-    updated = catalog.save(
-        _flow_content(brief="Updated custom request."),
+    catalog.create(_flow_content("existing-flow"))
+    with pytest.raises(FlowValidationError, match="already exists"):
+        catalog.save(_flow_content("existing-flow"), expected_id=created.flow_id)
+
+    renamed = catalog.save(
+        _flow_content("renamed-flow", brief="Renamed request."),
         expected_id=created.flow_id,
     )
 
+    assert renamed.flow_id == "renamed-flow"
+    assert renamed.path == Path("lumon/flows/renamed-flow.md")
+    assert not (tmp_path / "lumon" / "flows" / "custom-flow.md").exists()
+    updated = catalog.save(
+        _flow_content("renamed-flow", brief="Updated custom request."),
+        expected_id=renamed.flow_id,
+    )
+
     assert updated.brief == "Updated custom request."
-    assert updated.path == Path("lumon/flows/custom-flow.md")
-    assert tuple(tmp_path.glob("**/.custom-flow.md.*")) == ()
+    assert updated.path == Path("lumon/flows/renamed-flow.md")
+    assert tuple(tmp_path.glob("**/.renamed-flow.md.*")) == ()
     assert (
-        (tmp_path / "lumon" / "flows" / "custom-flow.md")
+        (tmp_path / "lumon" / "flows" / "renamed-flow.md")
         .read_text(encoding="utf-8")
         .startswith("---\n")
     )

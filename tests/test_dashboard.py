@@ -374,8 +374,10 @@ def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(
         f"/api/workspaces/{workspace_id}/flows/dashboard-flow",
         json={"content": _flow_content("other-id")},
     )
-    assert changed_id.status_code == 409
-    assert "cannot change" in changed_id.json()["error"]["message"]
+    assert changed_id.status_code == 200
+    assert changed_id.json()["flow_id"] == "other-id"
+    assert not (target / "lumon" / "flows" / "dashboard-flow.md").exists()
+    assert (target / "lumon" / "flows" / "other-id.md").exists()
 
 
 def test_dashboard_capability_crud_edits_the_workspace_files_and_supports_disable(
@@ -412,16 +414,23 @@ def test_dashboard_capability_crud_edits_the_workspace_files_and_supports_disabl
     assert updated.json()["enabled"] is False
     assert updated.json()["brief"] == "Disabled capability."
 
+    renamed_content = _capability_content("other-capability").replace(
+        'name = "Dashboard capability"',
+        'name = "Jenkins CLI"',
+    )
     changed_id = client.put(
         f"/api/workspaces/{workspace_id}/capabilities/dashboard-capability",
-        json={"content": _capability_content("other-capability")},
+        json={"content": renamed_content},
     )
-    assert changed_id.status_code == 409
-    assert "cannot change" in changed_id.json()["error"]["message"]
-
-    deleted = client.delete(f"/api/workspaces/{workspace_id}/capabilities/dashboard-capability")
-    assert deleted.status_code == 204
+    assert changed_id.status_code == 200
+    assert changed_id.json()["capability_id"] == "other-capability"
+    assert changed_id.json()["name"] == "Jenkins CLI"
     assert not (target / "lumon" / "capabilities" / "dashboard-capability.md").exists()
+    assert (target / "lumon" / "capabilities" / "other-capability.md").exists()
+
+    deleted = client.delete(f"/api/workspaces/{workspace_id}/capabilities/other-capability")
+    assert deleted.status_code == 204
+    assert not (target / "lumon" / "capabilities" / "other-capability.md").exists()
 
 
 def test_settings_update_masks_webhook_and_test_does_not_persist_draft(

@@ -116,18 +116,34 @@ class FlowCatalog:
         return self._read(path)
 
     def save(self, content: str, *, expected_id: str | None = None) -> FlowDefinition:
-        """Validate and atomically save one flow file."""
+        """Validate, save, and optionally rename one flow file."""
 
-        definition = _parse_flow(content, self._path_for_id(expected_id) if expected_id else None)
-        if expected_id is not None and definition.flow_id != expected_id:
-            raise FlowValidationError(
-                f"Flow ID cannot change while editing {expected_id}: {definition.flow_id}"
-            )
+        definition = _parse_flow(content, None)
         self._ensure_directory()
-        current = self._find_definition(expected_id) if expected_id is not None else None
         path = self._path_for_id(definition.flow_id)
+        source = self._path_for_id(expected_id) if expected_id is not None else path
+        current = self._find_definition(expected_id) if expected_id is not None else None
         if current is not None:
-            path = self._absolute_path(current.path)
+            source = self._absolute_path(current.path)
+        if expected_id is not None and definition.flow_id == expected_id:
+            path = source
+        if source.is_symlink():
+            raise FlowValidationError(f"Flow path is a symbolic link: {source.name}")
+        if path != source:
+            if path.exists() or path.is_symlink():
+                raise FlowValidationError(f"Flow already exists: {definition.flow_id}")
+            _atomic_write(path, definition.content.encode("utf-8"))
+            try:
+                source.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+                raise FlowValidationError(f"Unable to rename flow: {source.name}") from exc
+            return self._read(path)
         if path.is_symlink():
             raise FlowValidationError(f"Flow path is a symbolic link: {path.name}")
         _atomic_write(path, definition.content.encode("utf-8"))

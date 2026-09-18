@@ -80,24 +80,34 @@ def test_catalog_reports_invalid_and_duplicate_capabilities(tmp_path: Path) -> N
     }
 
 
-def test_capability_edits_keep_the_existing_filename_and_workspace_boundary(
+def test_capability_edits_can_rename_the_file_inside_the_workspace(
     tmp_path: Path,
 ) -> None:
     catalog = CapabilityCatalog(tmp_path)
 
     with pytest.raises(CapabilityValidationError, match="Capability id"):
         catalog.create(_capability_content("../outside"))
-    with pytest.raises(CapabilityValidationError, match="cannot change"):
-        catalog.save(
-            _capability_content("different-capability"),
-            expected_id="custom-capability",
-        )
 
     created = catalog.create(_capability_content())
-    updated = catalog.save(
-        _capability_content(brief="Updated capability."),
+    catalog.create(_capability_content("existing-capability"))
+    with pytest.raises(CapabilityValidationError, match="already exists"):
+        catalog.save(
+            _capability_content("existing-capability"),
+            expected_id=created.capability_id,
+        )
+
+    renamed = catalog.save(
+        _capability_content("renamed-capability", brief="Renamed capability."),
         expected_id=created.capability_id,
     )
 
+    assert renamed.capability_id == "renamed-capability"
+    assert renamed.path == Path("lumon/capabilities/renamed-capability.md")
+    assert not (tmp_path / "lumon" / "capabilities" / "custom-capability.md").exists()
+    updated = catalog.save(
+        _capability_content("renamed-capability", brief="Updated capability."),
+        expected_id=renamed.capability_id,
+    )
+
     assert updated.brief == "Updated capability."
-    assert updated.path == Path("lumon/capabilities/custom-capability.md")
+    assert updated.path == Path("lumon/capabilities/renamed-capability.md")
