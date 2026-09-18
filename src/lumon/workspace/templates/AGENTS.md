@@ -33,7 +33,9 @@ Registered code Repositories are read-only in their canonical `repos/` checkouts
 - Create a branch named `lumon/<task-key>/<repository>` from that Repository's configured base branch; do not assume the base branch is `main`.
 - Reuse an existing worktree only when its path, branch, base, and status are consistent. Never reset or overwrite it.
 - Workspace-owned files such as `AGENTS.md`, Flows, and Capabilities may be edited directly in the Workspace.
-- Do not automatically remove worktrees; leave them available for review or follow-up work.
+- After the task is complete and the worktree is clean, remove the worktree automatically. Keep its branch, commits, and any PR.
+- Never remove a worktree with uncommitted or untracked changes, incomplete validation, or pending publication; report it and ask how to proceed.
+- Keep a worktree only when the user explicitly asks for it to remain available.
 
 ## Validation
 
