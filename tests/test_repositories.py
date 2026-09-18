@@ -96,7 +96,8 @@ def test_init_clones_main_and_persists_repository_metadata(
     assert record.url == remote
     assert record.path == "repos/product"
     assert record.branch == "main"
-    assert len(record.revision) == 40
+    config_text = (target / "lumon" / "workspace.toml").read_text(encoding="utf-8")
+    assert "revision =" not in config_text
 
 
 def test_init_falls_back_to_remote_default_branch(

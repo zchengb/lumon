@@ -75,7 +75,6 @@ export function WorkspaceOverview({
                   <span className={repository.health === "ready" ? "health-ok" : "health-bad"}>
                     {repository.health === "ready" ? t("overview.healthNormal") : t("overview.healthAbnormal")}
                   </span>
-                  <code title={repository.revision}>{repository.revision.slice(0, 12)}</code>
                 </div>
               </div>
             ))}

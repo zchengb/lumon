@@ -72,17 +72,13 @@ def _parse_repository(value: dict[str, object], source: Path, index: int) -> Rep
     url = value.get("url")
     path = value.get("path")
     branch = value.get("branch")
-    revision = value.get("revision")
-    if not all(
-        isinstance(item, str) and item.strip() for item in (name, url, path, branch, revision)
-    ):
+    if not all(isinstance(item, str) and item.strip() for item in (name, url, path, branch)):
         raise PreflightError(f"Invalid Repository fields at index {index}: {source}")
 
     assert isinstance(name, str)
     assert isinstance(url, str)
     assert isinstance(path, str)
     assert isinstance(branch, str)
-    assert isinstance(revision, str)
     if (
         name in {".", ".."}
         or any(character in name for character in "/\\\0")
@@ -99,7 +95,6 @@ def _parse_repository(value: dict[str, object], source: Path, index: int) -> Rep
         url=url,
         path=path,
         branch=branch,
-        revision=revision,
     )
 
 
@@ -117,7 +112,6 @@ def _render(config: WorkspaceConfig) -> str:
                 f"url = {_toml_string(repository.url)}",
                 f"path = {_toml_string(repository.path)}",
                 f"branch = {_toml_string(repository.branch)}",
-                f"revision = {_toml_string(repository.revision)}",
             ]
         )
     return "\n".join(lines) + "\n"

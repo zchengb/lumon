@@ -96,7 +96,6 @@ class RepositoryProvisioner:
                         destination,
                         "cloned",
                         record.branch,
-                        record.revision,
                     ),
                     staged_path=staged_path,
                 )
@@ -131,13 +130,12 @@ class RepositoryProvisioner:
             return False, f"missing Repository directory: {path}"
         try:
             actual_url = self._remote_url(path)
-            revision = self._git_text(["-C", str(path), "rev-parse", "HEAD"])
             branch = self._current_branch(path)
         except RepositoryError as exc:
             return False, str(exc)
         if _normalize_url(actual_url) != _normalize_url(record.url):
             return False, f"origin does not match configured URL: {path}"
-        return True, f"{path} (branch {branch}, revision {revision[:12]})"
+        return True, f"{path} (branch {branch})"
 
     def _reuse_existing(
         self,
@@ -168,7 +166,6 @@ class RepositoryProvisioner:
                 destination,
                 "reused",
                 record.branch,
-                record.revision,
             ),
         )
 
@@ -196,13 +193,11 @@ class RepositoryProvisioner:
     ) -> RepositoryRecord:
         actual_url = self._remote_url(checkout)
         branch = self._current_branch(checkout) or branch_hint or "detached"
-        revision = self._git_text(["-C", str(checkout), "rev-parse", "HEAD"])
         return RepositoryRecord(
             name=specification.name,
             url=actual_url,
             path=str(Path("repos") / specification.name),
             branch=branch,
-            revision=revision,
         )
 
     def _remote_url(self, checkout: Path) -> str:

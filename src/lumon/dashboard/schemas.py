@@ -118,7 +118,6 @@ class RepositoryOverviewResponse(StrictModel):
     name: str
     path: Path
     branch: str
-    revision: str
     health: str
     detail: str
 
@@ -223,7 +222,6 @@ class RepositoryResultResponse(StrictModel):
     path: Path
     status: str
     branch: str | None
-    revision: str | None
 
 
 class InitializeWorkspaceResponse(StrictModel):

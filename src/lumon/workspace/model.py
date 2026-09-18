@@ -26,7 +26,6 @@ class RepositoryRecord:
     url: str
     path: str
     branch: str
-    revision: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +36,6 @@ class RepositoryResult:
     path: Path
     status: RepositoryResultStatus
     branch: str | None = None
-    revision: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Convert the result at the CLI output seam."""
@@ -47,7 +45,6 @@ class RepositoryResult:
             "path": str(self.path),
             "status": self.status,
             "branch": self.branch,
-            "revision": self.revision,
         }
 
 

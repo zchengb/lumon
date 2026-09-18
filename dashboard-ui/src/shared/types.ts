@@ -30,7 +30,6 @@ export interface RepositoryOverview {
   name: string;
   path: string;
   branch: string;
-  revision: string;
   health: "ready" | "unhealthy";
   detail: string;
 }

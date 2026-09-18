@@ -77,8 +77,8 @@ Repository names are derived from the URLs, and credentials must come from the
 system Git SSH agent or credential helper rather than the URL itself.
 
 For each new Repository, Lumon probes `main` first and otherwise uses the
-remote's advertised default branch. It records the actual branch, revision,
-URL, and `repos/<name>` path in `lumon/workspace.toml`. A matching existing Git
+remote's advertised default branch. It records the actual branch, URL, and
+`repos/<name>` path in `lumon/workspace.toml`. A matching existing Git
 checkout is reused without fetch, reset, checkout, or deletion. A different
 remote or an existing non-Git directory is rejected. Initialization is
 transactional: newly cloned repositories and newly installed Skills are

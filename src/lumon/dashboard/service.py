@@ -57,7 +57,6 @@ class RepositoryOverview:
     name: str
     path: Path
     branch: str
-    revision: str
     health: RepositoryHealth
     detail: str
 
@@ -287,7 +286,6 @@ class DashboardService:
                     name=record.name,
                     path=layout.root / record.path,
                     branch=record.branch,
-                    revision=record.revision,
                     health="ready" if ok else "unhealthy",
                     detail=detail,
                 )

@@ -154,7 +154,6 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                     path=item.path,
                     status=item.status,
                     branch=item.branch,
-                    revision=item.revision,
                 )
                 for item in result.repositories
             ],
@@ -177,7 +176,6 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                     name=item.name,
                     path=item.path,
                     branch=item.branch,
-                    revision=item.revision,
                     health=item.health,
                     detail=item.detail,
                 )
