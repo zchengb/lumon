@@ -103,6 +103,7 @@ export function MarkdownDocumentsPage<
   const [documents, setDocuments] = useState<TSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [document, setDocument] = useState<TDocument | null>(null);
+  const [draft, setDraft] = useState(false);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingDocument, setLoadingDocument] = useState(false);
@@ -114,6 +115,7 @@ export function MarkdownDocumentsPage<
     let cancelled = false;
     setLoading(true);
     setDocument(null);
+    setDraft(false);
     setContent("");
     setSelectedId(null);
     setViewMode("preview");
@@ -139,6 +141,7 @@ export function MarkdownDocumentsPage<
     if (!confirmDiscard()) return;
     setSelectedId(nextId);
     setDocument(null);
+    setDraft(false);
     setContent("");
     setViewMode("preview");
     onDirtyChange(false);
@@ -156,34 +159,32 @@ export function MarkdownDocumentsPage<
 
   async function createDocument(): Promise<void> {
     if (!confirmDiscard()) return;
-    setSaving(true);
-    try {
-      const nextDocument = await api.create(workspaceId, starterContent);
-      const nextId = getId(nextDocument);
-      setDocument(nextDocument);
-      setContent(nextDocument.content);
-      setSelectedId(nextId);
-      setViewMode("edit");
-      onDirtyChange(false);
-      await reloadDocuments(nextId);
-      onNotice(labels.created);
-    } catch (reason) {
-      onError(messageFor(reason, labels.loadFailed));
-    } finally {
-      setSaving(false);
-    }
+    setSelectedId(null);
+    setDocument(null);
+    setDraft(true);
+    setContent(starterContent);
+    setViewMode("edit");
+    onDirtyChange(true);
   }
 
   async function saveDocument(): Promise<void> {
-    if (!document || !selectedId) return;
+    if (!draft && (!document || !selectedId)) return;
     setSaving(true);
     try {
-      const saved = await api.update(workspaceId, selectedId, content);
+      let saved: TDocument;
+      if (draft) {
+        saved = await api.create(workspaceId, content);
+      } else {
+        if (!document || !selectedId) return;
+        saved = await api.update(workspaceId, selectedId, content);
+      }
       setDocument(saved);
+      setDraft(false);
       setContent(saved.content);
+      setSelectedId(getId(saved));
       onDirtyChange(false);
       await reloadDocuments(getId(saved));
-      onNotice(labels.saved);
+      onNotice(draft ? labels.created : labels.saved);
     } catch (reason) {
       onError(messageFor(reason, labels.loadFailed));
     } finally {
@@ -222,6 +223,7 @@ export function MarkdownDocumentsPage<
       const deletedId = selectedId;
       setSelectedId(null);
       setDocument(null);
+      setDraft(false);
       setContent("");
       setViewMode("preview");
       onDirtyChange(false);
@@ -255,13 +257,13 @@ export function MarkdownDocumentsPage<
   }
 
   function confirmDiscard(): boolean {
-    if (document && content !== document.content) {
+    if (draft || (document && content !== document.content)) {
       return window.confirm(labels.unsavedConfirm);
     }
     return true;
   }
 
-  const dirty = document !== null && content !== document.content;
+  const dirty = draft || (document !== null && content !== document.content);
 
   return (
     <div className="page-stack">
@@ -323,7 +325,7 @@ export function MarkdownDocumentsPage<
 
         <section className="panel flow-editor-panel">
           <div className="panel-heading flow-editor-heading">
-            <div><p className="eyebrow">{labels.content}</p><h2>{document?.name ?? labels.select}</h2></div>
+            <div><p className="eyebrow">{labels.content}</p><h2>{document?.name ?? (draft ? labels.new : labels.select)}</h2></div>
             {document && (
               <div className="flow-editor-heading-actions">
                 <span className="mono flow-editor-path">{document.path}</span>
@@ -340,7 +342,7 @@ export function MarkdownDocumentsPage<
           </div>
           {loadingDocument ? (
             <div className="loading-inline"><LoaderCircle size={20} className="spin" />Loading…</div>
-          ) : document ? (
+          ) : document || draft ? (
             <>
               {viewMode === "preview" ? (
                 <MarkdownPreview content={content} metadataLabel={labels.metadata} />
@@ -351,22 +353,24 @@ export function MarkdownDocumentsPage<
                   aria-label={labels.content}
                   onChange={(event) => {
                     setContent(event.target.value);
-                    onDirtyChange(event.target.value !== document.content);
+                    onDirtyChange(draft || (document !== null && event.target.value !== document.content));
                   }}
                   spellCheck={false}
                 />
               )}
-              {document.error && <p className="flow-editor-error"><AlertTriangle size={14} />{document.error}</p>}
+              {document?.error && <p className="flow-editor-error"><AlertTriangle size={14} />{document.error}</p>}
               <div className="flow-editor-actions">
-                {document.valid && (
+                {document?.valid && (
                   <button className="button button-secondary" type="button" onClick={() => void toggleDocument()} disabled={deleting || saving}>
                     {saving ? <LoaderCircle size={15} className="spin" /> : <Power size={15} />}
                     {document.enabled ? labels.disable : labels.enable}
                   </button>
                 )}
-                <button className="button button-secondary" type="button" onClick={() => void deleteDocument()} disabled={deleting || saving}>
-                  {deleting ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}{labels.delete}
-                </button>
+                {document && (
+                  <button className="button button-secondary" type="button" onClick={() => void deleteDocument()} disabled={deleting || saving}>
+                    {deleting ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}{labels.delete}
+                  </button>
+                )}
                 <button className="button button-primary" type="button" onClick={() => void saveDocument()} disabled={saving || deleting || !dirty}>
                   {saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{labels.save}
                 </button>
