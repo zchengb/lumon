@@ -72,6 +72,18 @@ When a task cannot safely continue because of a missing dependency, failed or in
 - PR mode pushes the isolated feature branch and opens a PR.
 - Direct-base mode updates the configured base branch only through a verified fast-forward; never force-push.
 
+### Commit authorship and message checklist
+
+When the user explicitly asks Lumon to create a commit in a registered Repository:
+
+- Resolve the current issue or Jira key only from the current request, branch, or unambiguous task context. If none exists, use `N/A` only when that Repository's history accepts it; never invent or reuse an old key.
+- Inspect the recent non-merge, non-release commit history and match its dominant format, including language, type, scope, prefix, issue-key placement, punctuation, and length. Do not mention AI in the subject.
+- Set the Git author name to `Lumon` and use the Workspace or Repository-approved Lumon service email. Never use the operator's personal author identity; if no approved Lumon email is configured, stop and ask for it.
+- Stage only files belonging to the current task. Preserve unrelated staged or unstaged changes; do not use `git add .` or `git add -A` by default.
+- Review the staged diff and run `git diff --cached --check`. Do not commit secrets, credentials, prompts, temporary files, IDE files, or unrelated generated artifacts.
+- Create one coherent commit only after the applicable validation is recorded. A commit request alone does not authorize a push or PR; follow the publication choice separately.
+- Never amend, reset, rebase, force-push, or rewrite history. Verify the resulting author with `git log -1 --format='%an <%ae>'`.
+
 ## Task continuation and retry
 
 - A repeated user message is a new request event. Within the same direct chat or the same group Thread, treat it as a continuation of the existing conversation and inspect the previous task state before starting over.
