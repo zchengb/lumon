@@ -6,6 +6,7 @@ import asyncio
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import cast
 
 from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.agents.agent.feishu import AgentFeishuChannel, MessageHandler
@@ -120,6 +121,26 @@ class FailingRunner(FakeRunner):
     ) -> AgentResult:
         del workspace, prompt, agent_session_id, images, on_progress, on_event
         raise RuntimeError("private request content must not be stored")
+
+
+class ProviderFailingRunner(FakeRunner):
+    async def run(
+        self,
+        workspace: Path,
+        prompt: str,
+        *,
+        agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
+        on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
+    ) -> AgentResult:
+        del workspace, prompt, agent_session_id, images, on_progress, on_event
+        return AgentResult(
+            status="failed",
+            error_code=AgentErrorCode.EXECUTION_FAILED,
+            return_code=1,
+            failure_diagnostic="app_secret=secret-value\nprovider failed",
+        )
 
 
 class TimedOutRunner(FakeRunner):
@@ -532,12 +553,86 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
 
     assert run_row is not None
     assert run_row[0] == "agent_unexpected_error"
-    assert run_row[1].startswith("run_agent:RuntimeError:")
-    assert "private request content" not in run_row[1]
+    assert run_row[1].startswith("workspace_error_log:lumon/logs/agent-errors/")
+    error_log = workspace / run_row[1].split(":", 1)[1]
+    assert error_log.is_file()
+    assert "RuntimeError" in error_log.read_text(encoding="utf-8")
+    assert "private request content" not in error_log.read_text(encoding="utf-8")
     assert channel.replies[-1].startswith("Agent 暂时无法完成这次请求")
     assert len(telemetry.traces) == 1
     assert telemetry.traces[0].finished == ("failed", "agent_unexpected_error", None)
     assert telemetry.traces[0].span_names[-2:] == ["codex.exec", "feishu.reply"]
+    asyncio.run(service.stop())
+
+
+def test_service_writes_provider_failure_log_under_workspace(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        registry=WorkspaceRegistry(state_root),
+    ).initialize(InitRequest(workspace, name="provider-failure-log-test"))
+    workspace_id = WorkspaceRegistry(state_root).list()[0].workspace_id
+    config = AgentConfig(
+        enabled=True,
+        default_workspace_id=workspace_id,
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+    )
+    config_store = AgentConfigStore(state_root)
+    config_store.save(config)
+    store = AgentSessionStore(state_root)
+    telemetry = RecordingTelemetry()
+    service = AgentService(
+        config_store=config_store,
+        registry=WorkspaceRegistry(state_root),
+        session_store=store,
+        agent_runner=ProviderFailingRunner(),
+        channel=FakeChannel(config),
+        telemetry=telemetry,
+    )
+    message = InboundMessage(
+        event_id="evt-provider-failure-log",
+        message_id="om-provider-failure-log",
+        chat_id="oc-provider-failure-log",
+        chat_type="p2p",
+        text="test request",
+        sender_id="ou-1",
+        sender_type="user",
+    )
+
+    async def run() -> None:
+        await service.handle_message(message)
+        await service.wait_for_idle()
+
+    asyncio.run(run())
+
+    log_files = tuple((workspace / "lumon" / "logs" / "agent-errors").glob("*.log"))
+    assert len(log_files) == 1
+    log_text = log_files[0].read_text(encoding="utf-8")
+    assert "provider failed" in log_text
+    assert "secret-value" not in log_text
+    assert "test request" not in log_text
+    assert log_files[0].stat().st_mode & 0o777 == 0o600
+    with sqlite3.connect(store.path) as connection:
+        failure_diagnostic = connection.execute(
+            "SELECT failure_diagnostic FROM runs WHERE event_id = ?",
+            (message.event_id,),
+        ).fetchone()[0]
+    assert failure_diagnostic.startswith("workspace_error_log:lumon/logs/agent-errors/")
+    error_log_metadata: dict[str, object] | None = None
+    for update in telemetry.traces[0].updates:
+        metadata_value = update.get("metadata")
+        if not isinstance(metadata_value, dict):
+            continue
+        metadata = cast(dict[str, object], metadata_value)
+        if isinstance(metadata.get("error_log"), str):
+            error_log_metadata = metadata
+            break
+    assert error_log_metadata is not None
+    error_log = error_log_metadata["error_log"]
+    assert isinstance(error_log, str)
+    assert error_log.startswith("lumon/logs/agent-errors/")
     asyncio.run(service.stop())
 
 

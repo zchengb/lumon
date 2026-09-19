@@ -118,6 +118,7 @@ class CodexAgentRunner:
                 progress=tuple(progress),
                 error_code=_map_error_code(result.error_code),
                 return_code=result.return_code,
+                failure_diagnostic=result.failure_diagnostic,
                 agent_session_id=result.agent_session_id,
                 flow_id=selected_flow_id,
             )

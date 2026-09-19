@@ -30,6 +30,21 @@ def test_agent_requires_final_text_even_when_the_shared_tool_succeeds(tmp_path: 
     assert result.progress == ()
 
 
+def test_agent_preserves_provider_failure_diagnostic(tmp_path: Path) -> None:
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/bin/sh\ncat >/dev/null\nprintf 'provider failed\\n' >&2\nexit 1\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    runner = CodexAgentRunner(tool=CodexTool(binary=str(fake), timeout_seconds=5))
+
+    result = asyncio.run(runner.run(tmp_path, "inspect this"))
+
+    assert result.status == "failed"
+    assert result.failure_diagnostic == "provider failed"
+
+
 def test_agent_extracts_a_flow_marker_emitted_before_the_final_reply(tmp_path: Path) -> None:
     fake = tmp_path / "fake-codex"
     fake.write_text(

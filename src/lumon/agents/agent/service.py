@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import tempfile
 import time
 import traceback
@@ -47,10 +48,12 @@ from lumon.observability import (
     create_agent_telemetry,
 )
 from lumon.tools.safety import sanitize_output
+from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.registry import WorkspaceRegistry
 
 logger = logging.getLogger(__name__)
 _CODEX_TRACE_CONTENT_LIMIT = 4096
+_AGENT_ERROR_LOG_LIMIT = 16 * 1024
 
 
 class AgentService:
@@ -219,6 +222,8 @@ class AgentService:
             trace_error_code: str | None = None
             reply_failed = False
             flow_id: str | None = None
+            workspace_path: Path | None = None
+            result_return_code: int | None = None
             stage = "add_typing_reaction"
             trace = self._start_trace(
                 run_id=run_id,
@@ -257,6 +262,7 @@ class AgentService:
                     context = context_builder.resolve_workspace()
                     workspace_span.update(metadata={"workspace_id": str(context.workspace_id)})
                 workspace_id = context.workspace_id
+                workspace_path = context.path
                 stage = "attach_workspace"
                 self.session_store.attach_workspace(message.event_id, workspace_id)
                 trace.update(metadata={"workspace_id": str(workspace_id)})
@@ -337,6 +343,8 @@ class AgentService:
                                 status=result.status if result is not None else "aborted"
                             )
                         assert result is not None
+                        failure_diagnostic = result.failure_diagnostic
+                        result_return_code = result.return_code
                         (
                             marker_flow_id,
                             _marker_status,
@@ -499,6 +507,22 @@ class AgentService:
                     await self._remove_typing_reaction(message, typing_reaction_id)
                     if completed:
                         ended_at = _timestamp(self._now())
+                        if status in {"failed", "timed_out"} and workspace_path is not None:
+                            error_log = _write_agent_error_log(
+                                workspace=workspace_path,
+                                run_id=run_id,
+                                event_id=message.event_id,
+                                status=status,
+                                error_code=error_code,
+                                return_code=result_return_code,
+                                diagnostic=failure_diagnostic,
+                                logged_at=ended_at,
+                            )
+                            if error_log is not None:
+                                failure_diagnostic = f"workspace_error_log:{error_log}"
+                                trace.update(metadata={"error_log": error_log})
+                            elif failure_diagnostic is not None:
+                                failure_diagnostic = "workspace_error_log_unavailable"
                         self.session_store.record_result(
                             AgentRunResult(
                                 run_id=run_id,
@@ -893,6 +917,65 @@ def _safe_error_diagnostic(stage: str, error: Exception) -> str:
         frame = frames[-1]
         location = f":{Path(frame.filename).name}:{frame.name}:{frame.lineno}"
     return f"{stage}:{type(error).__name__}{location}"
+
+
+def _write_agent_error_log(
+    *,
+    workspace: Path,
+    run_id: str,
+    event_id: str,
+    status: AgentRunStatus,
+    error_code: str | None,
+    return_code: int | None,
+    diagnostic: str | None,
+    logged_at: str,
+) -> str | None:
+    """Persist one redacted Agent failure log and return its Workspace path."""
+
+    layout = WorkspaceLayout.from_root(workspace)
+    directory = layout.control_dir / "logs" / "agent-errors"
+    path = directory / f"{run_id}.log"
+    safe_diagnostic = sanitize_output(diagnostic or "").strip()
+    if len(safe_diagnostic) > _AGENT_ERROR_LOG_LIMIT:
+        safe_diagnostic = safe_diagnostic[: _AGENT_ERROR_LOG_LIMIT - 1] + "…"
+    if not safe_diagnostic:
+        safe_diagnostic = "No provider diagnostic was captured."
+    content = "\n".join(
+        (
+            "Lumon Agent error",
+            f"logged_at: {logged_at}",
+            f"run_id: {run_id}",
+            f"event_id: {event_id}",
+            f"status: {status}",
+            f"error_code: {error_code or 'unknown'}",
+            f"return_code: {return_code if return_code is not None else 'none'}",
+            "",
+            "diagnostic:",
+            safe_diagnostic,
+            "",
+        )
+    )
+    temporary: Path | None = None
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        directory.chmod(0o700)
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{run_id}.", dir=directory)
+        temporary = Path(temporary_name)
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+        path.chmod(0o600)
+        return str(path.relative_to(layout.root))
+    except OSError as exc:
+        logger.warning("Unable to write Agent error log (%s).", type(exc).__name__)
+        return None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _reply_metadata(delivered: bool) -> dict[str, str | bool]:

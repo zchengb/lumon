@@ -205,6 +205,7 @@ class AgentResult:
     progress: tuple[AgentProgress, ...] = ()
     error_code: AgentErrorCode | None = None
     return_code: int | None = None
+    failure_diagnostic: str | None = None
     agent_session_id: str | None = None
     flow_id: str | None = None
 

@@ -54,6 +54,13 @@ def test_codex_parser_ignores_advisory_item_errors_but_keeps_terminal_failures()
     assert terminal.kind == "error"
 
 
+def test_codex_parser_keeps_terminal_failure_message() -> None:
+    terminal = parse_codex_line('{"type":"turn.failed","message":"provider failed"}')
+
+    assert terminal is not None
+    assert terminal.text == "provider failed"
+
+
 def test_codex_tool_succeeds_after_advisory_item_error(tmp_path: Path) -> None:
     fake = tmp_path / "fake-codex"
     advisory_line = json.dumps(
@@ -80,6 +87,28 @@ def test_codex_tool_succeeds_after_advisory_item_error(tmp_path: Path) -> None:
 
     assert result.status == "succeeded"
     assert result.final_text == "done"
+
+
+def test_codex_tool_keeps_redacted_stderr_for_failed_execution(tmp_path: Path) -> None:
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/bin/sh\n"
+        "cat >/dev/null\n"
+        "printf 'app_secret=secret-value\\nprovider failed\\n' >&2\n"
+        "exit 7\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    tool = CodexTool(binary=str(fake), timeout_seconds=5)
+
+    result = asyncio.run(tool.execute(CodexRequest(tmp_path, "inspect this")))
+
+    assert result.status == "failed"
+    assert result.return_code == 7
+    assert result.failure_diagnostic is not None
+    assert "provider failed" in result.failure_diagnostic
+    assert "secret-value" not in result.failure_diagnostic
+    assert "[REDACTED]" in result.failure_diagnostic
 
 
 def test_codex_parser_accepts_explicit_agent_progress() -> None:

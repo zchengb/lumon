@@ -42,6 +42,7 @@ class CodexErrorCode(StrEnum):
 # bounded while allowing records larger than asyncio's 64 KiB default.
 _CODEX_STREAM_LIMIT_BYTES = 16 * 1024 * 1024
 _CODEX_EVENT_TEXT_LIMIT = 16 * 1024
+_CODEX_DIAGNOSTIC_LIMIT = 16 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +87,7 @@ class CodexExecutionResult:
     error_code: CodexErrorCode | None = None
     return_code: int | None = None
     agent_session_id: str | None = None
+    failure_diagnostic: str | None = None
 
 
 class CodexTool:
@@ -181,16 +183,19 @@ class CodexTool:
             return CodexExecutionResult(
                 status="timed_out",
                 error_code=CodexErrorCode.TIMEOUT,
+                failure_diagnostic="Codex execution timed out.",
             )
         except FileNotFoundError:
             return CodexExecutionResult(
                 status="failed",
                 error_code=CodexErrorCode.CLI_NOT_FOUND,
+                failure_diagnostic="Codex executable was not found.",
             )
         except OSError:
             return CodexExecutionResult(
                 status="failed",
                 error_code=CodexErrorCode.START_FAILED,
+                failure_diagnostic="Codex process could not be started.",
             )
 
     async def _execute_process(
@@ -226,6 +231,7 @@ class CodexTool:
             events: list[CodexEvent] = []
             final_text: str | None = None
             error_seen = False
+            terminal_diagnostic: str | None = None
             async for raw_line in process.stdout:
                 event = parse_codex_line(raw_line)
                 if event is None:
@@ -237,18 +243,23 @@ class CodexTool:
                     final_text = event.text
                 elif event.kind == "error":
                     error_seen = True
+                    terminal_diagnostic = terminal_diagnostic or event.text
                 if on_event is not None:
                     await on_event(event)
             await process.wait()
-            await stderr_task
+            stderr = await stderr_task
+            failure_diagnostic = _diagnostic_from_stderr(stderr) or terminal_diagnostic
 
             if process.returncode != 0 or error_seen:
+                if failure_diagnostic is None and error_seen:
+                    failure_diagnostic = "Codex emitted a terminal error event."
                 return CodexExecutionResult(
                     status="failed",
                     events=tuple(events),
                     error_code=CodexErrorCode.EXECUTION_FAILED,
                     return_code=process.returncode,
                     agent_session_id=agent_session_id,
+                    failure_diagnostic=failure_diagnostic,
                 )
             return CodexExecutionResult(
                 status="succeeded",
@@ -272,6 +283,26 @@ def resolve_codex_binary() -> str:
         return located
     local = Path.home() / ".local" / "bin" / "codex"
     return str(local)
+
+
+def _diagnostic_from_stderr(raw: bytes) -> str | None:
+    """Return bounded, credential-redacted process diagnostics."""
+
+    return _diagnostic_text(raw.decode("utf-8", errors="replace"))
+
+
+def _diagnostic_text(text: str | None) -> str | None:
+    """Return bounded, credential-redacted text suitable for an error log."""
+
+    if text is None:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    safe = sanitize_output(text)
+    if len(safe) <= _CODEX_DIAGNOSTIC_LIMIT:
+        return safe
+    return safe[: _CODEX_DIAGNOSTIC_LIMIT - 1] + "…"
 
 
 def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
@@ -337,7 +368,13 @@ def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
         # The process exit code and terminal turn event determine execution status.
         return None
     if effective_type in {"error", "turn.failed", "response.failed"}:
-        return CodexEvent("error", agent_session_id=agent_session_id)
+        return CodexEvent(
+            "error",
+            text=_diagnostic_text(
+                _extract_text(item_payload if item_payload is not None else payload)
+            ),
+            agent_session_id=agent_session_id,
+        )
     return None
 
 
