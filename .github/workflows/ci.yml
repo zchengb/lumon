@@ -50,6 +50,9 @@ jobs:
       - name: Verify Dashboard assets
         run: uv run python tools/check_dashboard_assets.py
 
+      - name: Verify product branding
+        run: uv run python tools/check_brand.py
+
       - name: Ruff check
         run: uv run ruff check
 

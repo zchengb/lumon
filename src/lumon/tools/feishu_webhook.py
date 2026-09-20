@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol, cast
 from urllib.parse import urlsplit
@@ -38,6 +38,14 @@ class WebhookTestResult:
     detail: str
 
 
+@dataclass(frozen=True, slots=True)
+class WebhookSendResult:
+    """The safe, non-sensitive outcome of a Card send."""
+
+    success: bool
+    detail: str
+
+
 class FeishuWebhookSender:
     """Send Feishu test messages behind one small network seam."""
 
@@ -48,16 +56,28 @@ class FeishuWebhookSender:
     def send_test(self, url: str) -> WebhookTestResult:
         """Send a harmless text message without exposing the URL in errors."""
 
-        validate_webhook_url(url)
-        payload = json.dumps(
+        self._send_json(
+            url,
             {
                 "msg_type": "text",
                 "content": {"text": "Lumon Webhook test"},
-            }
-        ).encode("utf-8")
+            },
+            action="test",
+        )
+        return WebhookTestResult(True, "Feishu Webhook test message sent.")
+
+    def send_card(self, url: str, card: Mapping[str, object]) -> WebhookSendResult:
+        """Send one already-rendered Feishu Interactive Card."""
+
+        self._send_json(url, card, action="delivery card")
+        return WebhookSendResult(True, "Feishu Delivery card sent.")
+
+    def _send_json(self, url: str, payload: Mapping[str, object], *, action: str) -> None:
+        validate_webhook_url(url)
+        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
             url,
-            data=payload,
+            data=encoded,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -69,18 +89,17 @@ class FeishuWebhookSender:
             body = opened.read(16_384)
         except urllib.error.HTTPError as exc:
             raise FeishuWebhookError(
-                f"Feishu Webhook test failed with HTTP status {exc.code}."
+                f"Feishu Webhook {action} failed with HTTP status {exc.code}."
             ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise FeishuWebhookError("Unable to reach the Feishu Webhook.") from exc
+            raise FeishuWebhookError(f"Unable to reach the Feishu Webhook for {action}.") from exc
         finally:
             if response is not None:
                 response.close()
 
         if status < 200 or status >= 300:
-            raise FeishuWebhookError(f"Feishu Webhook test failed with HTTP status {status}.")
+            raise FeishuWebhookError(f"Feishu Webhook {action} failed with HTTP status {status}.")
         _validate_feishu_response(body)
-        return WebhookTestResult(True, "Feishu Webhook test message sent.")
 
 
 def validate_webhook_url(url: str) -> None:

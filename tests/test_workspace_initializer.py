@@ -43,11 +43,12 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     assert "Never use zsh special or read-only parameter names" in agents
     assert "Offer two or three concrete next steps" in agents
     assert "recent non-merge, non-release commit history" in agents
-    assert "If the Repository's established commit subject includes an author prefix" in agents
+    assert "If the format has an author prefix, use `lumon`" in agents
     assert "Do not change Git author or committer configuration" in agents
+    assert "attempt the safest non-destructive resolution" in agents
+    assert "preferring rebase when the local commits can be replayed cleanly" in agents
     assert "git diff --cached --check" in agents
-    assert "Never amend, reset, rebase, force-push, or rewrite history" in agents
-    assert "Task continuation and retry" in agents
+    assert "Blockers and task continuation" in agents
     assert (target / ".gitignore").is_file()
     assert tuple((target / "lumon" / "flows").glob("*.md")) == ()
     assert tuple((target / "lumon" / "capabilities").glob("*.md")) == ()
