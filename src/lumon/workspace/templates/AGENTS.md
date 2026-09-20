@@ -78,11 +78,11 @@ When the user explicitly asks Lumon to create a commit in a registered Repositor
 
 - Resolve the current issue or Jira key only from the current request, branch, or unambiguous task context. If none exists, use `N/A` only when that Repository's history accepts it; never invent or reuse an old key.
 - Inspect the recent non-merge, non-release commit history and match its dominant format, including language, type, scope, prefix, issue-key placement, punctuation, and length. Do not mention AI in the subject.
-- Set the Git author name to `Lumon` and use the Workspace or Repository-approved Lumon service email. Never use the operator's personal author identity; if no approved Lumon email is configured, stop and ask for it.
+- If the Repository's established commit subject includes an author prefix, use `Lumon` in that prefix (for example, `[Lumon]`). If the format has no author prefix, do not add one. Do not change Git author or committer configuration.
 - Stage only files belonging to the current task. Preserve unrelated staged or unstaged changes; do not use `git add .` or `git add -A` by default.
 - Review the staged diff and run `git diff --cached --check`. Do not commit secrets, credentials, prompts, temporary files, IDE files, or unrelated generated artifacts.
 - Create one coherent commit only after the applicable validation is recorded. A commit request alone does not authorize a push or PR; follow the publication choice separately.
-- Never amend, reset, rebase, force-push, or rewrite history. Verify the resulting author with `git log -1 --format='%an <%ae>'`.
+- Never amend, reset, rebase, force-push, or rewrite history. Verify that the final subject matches the Repository's established format.
 
 ## Task continuation and retry
 
