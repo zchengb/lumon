@@ -318,6 +318,39 @@ def test_group_reply_creates_a_thread_for_a_top_level_message(
     ]
 
 
+def test_private_reply_is_sent_without_a_reply_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        feishu_module,
+        "_sdk_module",
+        SimpleNamespace(
+            FeishuChannel=_FakeSdkChannel,
+            PolicyConfig=_FakePolicy,
+            InboundConfig=_FakeInbound,
+        ),
+    )
+    channel = AgentFeishuChannel(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    message = normalize_message(_raw("p2p", "hello"))
+    assert message is not None
+
+    async def run() -> None:
+        async def handler(_message: InboundMessage) -> None:
+            return None
+
+        await channel.connect(handler)
+        await channel.reply(message, "answer")
+        await channel.disconnect()
+
+    asyncio.run(run())
+
+    sdk_channel = _FakeSdkChannel.instance
+    assert sdk_channel is not None
+    assert sdk_channel.sent == [("oc_1", {"markdown": "answer"}, {})]
+
+
 def test_channel_downloads_an_inbound_image_to_the_requested_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
