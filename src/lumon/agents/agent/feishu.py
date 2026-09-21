@@ -64,7 +64,12 @@ class AgentFeishuChannel:
                     group_policy="open",
                     require_mention=True,
                 ),
-                inbound=inbound_type(drop_self_sent=True),
+                inbound=inbound_type(
+                    drop_self_sent=True,
+                    expand_merge_forward=True,
+                    fetch_interactive_card=True,
+                    include_raw=True,
+                ),
             )
             self._channel.on("message", self._on_sdk_message)
             self._channel.on("error", self._on_sdk_error)
@@ -331,6 +336,9 @@ def _optional_text(value: object) -> str | None:
 
 
 def _message_text(raw: object) -> str:
+    card_text = _interactive_card_text(_value(raw, "content", None))
+    if card_text:
+        return card_text
     return _text(
         _value(
             raw,
@@ -338,6 +346,72 @@ def _message_text(raw: object) -> str:
             _value(raw, "content_text", _value(raw, "safe_content_text", "")),
         )
     ).strip()
+
+
+def _interactive_card_text(content: object) -> str:
+    """Render the complete text from an SDK-fetched interactive card.
+
+    The channel SDK exposes the re-fetched CardKit payload as
+    ``InboundMessage.content.card``. Its built-in renderer only understands
+    CardKit v2 text tags, while email notifications commonly use CardKit v1
+    ``lark_md`` elements. Read both shapes here so the original email body and
+    its quoted history reach the Agent instead of only ``[interactive]``.
+    """
+
+    card = _mapping(_value(content, "card", None)) or _mapping(content)
+    if card is None:
+        return ""
+
+    lines: list[str] = []
+
+    def visit(node: object) -> None:
+        node_mapping = _mapping(node)
+        if node_mapping is not None:
+            tag = _text(node_mapping.get("tag", "")).casefold()
+            if tag in {"markdown", "lark_md", "plain_text", "text", "md"}:
+                value = node_mapping.get("content", node_mapping.get("text", ""))
+                if isinstance(value, str) and value.strip():
+                    lines.append(value.strip())
+                return
+            if tag == "a":
+                label = node_mapping.get("text", node_mapping.get("content", ""))
+                href = node_mapping.get("href", "")
+                if isinstance(label, str) and label.strip():
+                    lines.append(label.strip())
+                if isinstance(href, str) and href.strip() and href.strip() != label:
+                    lines.append(href.strip())
+                return
+            for key, value in node_mapping.items():
+                if key in {"tag", "schema", "config", "value", "options", "i18n_elements"}:
+                    continue
+                visit(value)
+            return
+        if isinstance(node, (list, tuple)):
+            for item in cast(list[object] | tuple[object, ...], node):
+                visit(item)
+
+    visit(card.get("header", {}))
+    if "body" in card:
+        visit(card.get("body"))
+    elif "elements" in card:
+        visit(card.get("elements"))
+    elif "i18n_elements" in card:
+        locales = _mapping(card.get("i18n_elements"))
+        if locales is not None:
+            first_locale = next(iter(locales.values()), ())
+            visit(first_locale)
+
+    deduplicated: list[str] = []
+    for line in lines:
+        if not deduplicated or deduplicated[-1] != line:
+            deduplicated.append(line)
+    return "\n".join(deduplicated).strip()
+
+
+def _mapping(value: object) -> Mapping[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    return cast(Mapping[str, object], value)
 
 
 def _reply_message_id(raw: object) -> str | None:

@@ -230,7 +230,52 @@ def test_channel_explicitly_configures_message_policy(
         "group_policy": "open",
         "require_mention": True,
     }
-    assert inbound.values == {"drop_self_sent": True}
+    assert inbound.values == {
+        "drop_self_sent": True,
+        "expand_merge_forward": True,
+        "fetch_interactive_card": True,
+        "include_raw": True,
+    }
+
+
+def test_interactive_email_card_keeps_v1_body_and_quoted_history() -> None:
+    message = normalize_message(
+        {
+            **_raw("p2p", "[interactive]"),
+            "content": SimpleNamespace(
+                card={
+                    "config": {"wide_screen_mode": True},
+                    "elements": [
+                        {
+                            "tag": "div",
+                            "text": {
+                                "tag": "lark_md",
+                                "content": "ALARM: database CPU exceeded threshold",
+                            },
+                        },
+                        {
+                            "tag": "div",
+                            "text": {
+                                "tag": "lark_md",
+                                "content": (
+                                    "Sender: AWS Notifications <no-reply@example.com>\n"
+                                    "Time: 2026-09-20 20:36\n\n"
+                                    "> Previous alert context\n"
+                                    "> Threshold was crossed again"
+                                ),
+                            },
+                        },
+                    ],
+                },
+            ),
+        }
+    )
+
+    assert message is not None
+    assert "ALARM: database CPU exceeded threshold" in message.text
+    assert "Sender: AWS Notifications" in message.text
+    assert "> Previous alert context" in message.text
+    assert "[interactive]" not in message.text
 
 
 def test_group_reply_creates_a_thread_for_a_top_level_message(
