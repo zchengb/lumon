@@ -14,6 +14,7 @@ from lumon.dashboard.schemas import (
     AgentObservabilityResponse,
     AgentSettingsResponse,
     AgentSettingsUpdate,
+    AutoDeliveryResponse,
     BootstrapResponse,
     CapabilityContentRequest,
     CapabilityDocumentResponse,
@@ -311,11 +312,21 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
         payload: WorkspaceSettingsUpdate,
     ) -> WorkspaceSettingsResponse:
         update = payload.feishu_webhook
+        auto_delivery = payload.auto_delivery
         settings = _service(request).update_settings(
             workspace_id,
             enabled=update.enabled,
             url_provided="url" in update.model_fields_set,
             url=update.url,
+            auto_delivery_enabled=(auto_delivery.enabled if auto_delivery is not None else None),
+            auto_delivery_trigger_hooks=(
+                tuple(auto_delivery.trigger_hooks)
+                if auto_delivery is not None and auto_delivery.trigger_hooks is not None
+                else None
+            ),
+            auto_delivery_schedule_expression=(
+                auto_delivery.schedule_expression if auto_delivery is not None else None
+            ),
         )
         return _settings_response(settings)
 
@@ -369,6 +380,11 @@ def _settings_response(settings: WorkspaceSettingsView) -> WorkspaceSettingsResp
             enabled=webhook.enabled,
             configured=webhook.configured,
             masked_url=webhook.masked_url,
+        ),
+        auto_delivery=AutoDeliveryResponse(
+            enabled=settings.auto_delivery.enabled,
+            trigger_hooks=list(settings.auto_delivery.trigger_hooks),
+            schedule_expression=settings.auto_delivery.schedule_expression,
         ),
     )
 

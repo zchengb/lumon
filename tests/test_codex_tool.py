@@ -11,6 +11,10 @@ from lumon.tools.codex import CodexRequest, CodexTool, parse_codex_line
 from lumon.tools.safety import sanitize_output
 
 
+def test_codex_tool_defaults_to_twelve_hour_timeout() -> None:
+    assert CodexTool(binary="codex").timeout_seconds == 12 * 60 * 60
+
+
 def test_codex_jsonl_parser_is_provider_specific_but_not_agent_specific() -> None:
     session = parse_codex_line('{"type":"thread.started","thread_id":"thread-1"}')
     final = parse_codex_line('{"type":"item","item":{"type":"agent_message","text":"done"}}')

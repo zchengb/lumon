@@ -11,7 +11,7 @@ from uuid import UUID
 from lumon.delivery.model import DeliveryEvent, DeliveryResult, DeliveryRun, DeliveryState
 from lumon.delivery.notifications import build_delivery_card
 from lumon.delivery.store import DeliveryRunStore
-from lumon.errors import LumonError
+from lumon.errors import LumonError, PreflightError
 from lumon.tools.feishu_webhook import FeishuWebhookError, FeishuWebhookSender
 from lumon.workspace.settings import WorkspaceSettingsStore
 
@@ -44,6 +44,9 @@ class DeliveryService:
     def start(self, workspace: Path, workspace_id: UUID, run: DeliveryRun) -> DeliveryNotification:
         """Persist a claimed run and emit ``delivery.started``."""
 
+        settings = self.settings_store.load(workspace_id)
+        if not settings.auto_delivery.enabled:
+            raise PreflightError("Auto Delivery is disabled for this Workspace.")
         self.run_store.save(workspace, run)
         return self.notify(workspace, workspace_id, run, DeliveryEvent.STARTED)
 

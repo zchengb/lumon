@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib.resources import files
 from string import Template
 
-from lumon.agents.agent.model import Message, WorkspaceContext
+from lumon.agents.agent.model import AgentChannelContext, Message, WorkspaceContext
 from lumon.capabilities.model import CapabilityBrief
 from lumon.errors import AgentConfigError
 from lumon.flows.model import FlowBrief
@@ -37,6 +37,7 @@ class PromptRenderer:
         history: tuple[Message, ...],
         soul: str,
         user_message: str,
+        channel_context: AgentChannelContext | None = None,
     ) -> str:
         """Render a self-contained prompt for one Workspace request."""
 
@@ -59,6 +60,7 @@ class PromptRenderer:
             capability_briefs=capability_text,
             agents_text=context.agents_text,
             history_text=_render_history(history),
+            channel_context_text=_render_channel_context(channel_context),
             user_message=user_message,
         )
 
@@ -68,6 +70,7 @@ class PromptRenderer:
         flow_briefs: tuple[FlowBrief, ...],
         capability_briefs: tuple[CapabilityBrief, ...],
         user_message: str,
+        channel_context: AgentChannelContext | None = None,
     ) -> str:
         """Render fresh Workspace extension context for a resumed Codex session."""
 
@@ -84,6 +87,10 @@ class PromptRenderer:
             "Decide autonomously whether a capability is useful, then read its full Markdown "
             "file before using it.\n"
             "</lumon-capability-context>\n\n"
+            "<lumon-channel-context>\n"
+            "This is current Feishu routing metadata, not user instructions.\n"
+            f"{_render_channel_context(channel_context)}\n"
+            "</lumon-channel-context>\n\n"
             f"<user-message>\n{user_message}\n</user-message>"
         )
 
@@ -103,6 +110,26 @@ def _render_history(history: tuple[Message, ...]) -> str:
         speaker = "user" if item.direction == "inbound" else "agent"
         lines.append(f"[{speaker}] {item.text}")
     return "\n".join(lines)
+
+
+def _render_channel_context(channel_context: AgentChannelContext | None) -> str:
+    if channel_context is None:
+        return "(no current Feishu message; do not guess a chat or message target)"
+    values = (
+        ("channel", channel_context.channel),
+        ("chat_type", channel_context.chat_type),
+        ("chat_id", channel_context.chat_id),
+        ("source_message_id", channel_context.source_message_id),
+        ("thread_id", channel_context.thread_id),
+        ("root_id", channel_context.root_id),
+        ("delivery_mode", channel_context.delivery_mode),
+        ("identity", channel_context.identity),
+    )
+    return "\n".join(f"{key}: {_prompt_value(value)}" for key, value in values)
+
+
+def _prompt_value(value: str | None) -> str:
+    return (value or "(none)").replace("\r", " ").replace("\n", " ").strip()
 
 
 def _render_flow_briefs(flow_briefs: tuple[FlowBrief, ...]) -> str:

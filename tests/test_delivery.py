@@ -14,8 +14,10 @@ import pytest
 from lumon.delivery.model import DeliveryEvent, DeliveryResult, DeliveryRun, DeliveryState
 from lumon.delivery.notifications import build_delivery_card
 from lumon.delivery.service import DeliveryService
+from lumon.errors import PreflightError
 from lumon.tools.feishu_webhook import FeishuWebhookError, FeishuWebhookSender
 from lumon.workspace.settings import (
+    AutoDeliverySettings,
     FeishuWebhookSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
@@ -97,6 +99,7 @@ def test_delivery_service_sends_once_and_records_receipt(tmp_path: Path) -> None
                 enabled=True,
                 url="https://open.feishu.cn/open-apis/bot/v2/hook/test-token",
             ),
+            AutoDeliverySettings(enabled=True),
         )
     )
     requests: list[Request] = []
@@ -124,6 +127,16 @@ def test_delivery_service_sends_once_and_records_receipt(tmp_path: Path) -> None
     assert (tmp_path / "workspace" / "lumon" / "runs" / "run-1" / "notifications.json").is_file()
 
 
+def test_delivery_start_requires_workspace_permission(tmp_path: Path) -> None:
+    workspace_id = uuid4()
+    settings = WorkspaceSettingsStore(tmp_path / "state")
+    settings.save(WorkspaceSettings(workspace_id))
+    service = DeliveryService(settings_store=settings)
+
+    with pytest.raises(PreflightError, match="Auto Delivery is disabled"):
+        service.start(tmp_path / "workspace", workspace_id, _run())
+
+
 def test_webhook_failure_does_not_change_delivery_state(tmp_path: Path) -> None:
     workspace_id = uuid4()
     settings = WorkspaceSettingsStore(tmp_path / "state")
@@ -134,6 +147,7 @@ def test_webhook_failure_does_not_change_delivery_state(tmp_path: Path) -> None:
                 enabled=True,
                 url="https://open.feishu.cn/open-apis/bot/v2/hook/test-token",
             ),
+            AutoDeliverySettings(enabled=True),
         )
     )
 

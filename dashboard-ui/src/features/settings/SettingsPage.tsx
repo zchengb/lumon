@@ -29,7 +29,12 @@ export function SettingsPage({
     setUrl("");
     setUrlDraftActive(false);
     onDirtyChange(false);
-  }, [settings.workspace_id, settings.feishu_webhook.enabled, settings.feishu_webhook.configured, onDirtyChange]);
+  }, [
+    settings.workspace_id,
+    settings.feishu_webhook.enabled,
+    settings.feishu_webhook.configured,
+    onDirtyChange,
+  ]);
 
   function markDirty(): void {
     onDirtyChange(true);
@@ -64,7 +69,8 @@ export function SettingsPage({
   }
 
   const displayedUrl = urlDraftActive ? url : (settings.feishu_webhook.masked_url ?? "");
-  const hasChanges = enabled !== settings.feishu_webhook.enabled || (urlDraftActive && Boolean(url.trim()));
+  const hasChanges = enabled !== settings.feishu_webhook.enabled
+    || (urlDraftActive && Boolean(url.trim()));
 
   return (
     <div className="page-stack">
@@ -120,8 +126,6 @@ export function SettingsPage({
           </button>
         </div>
       </section>
-
-      <section className="future-panel"><p className="eyebrow">{t("settings.futureEyebrow")}</p><h2>{t("settings.futureTitle")}</h2><p>{t("settings.futureCopy")}</p></section>
     </div>
   );
 }

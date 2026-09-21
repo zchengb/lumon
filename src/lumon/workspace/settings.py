@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import tomllib
 from dataclasses import dataclass
@@ -16,6 +17,12 @@ from lumon.tools.feishu_webhook import validate_webhook_url
 from lumon.workspace.registry import UserStateLayout
 
 SETTINGS_SCHEMA_VERSION = 1
+DEFAULT_AUTO_DELIVERY_HOOKS = ("jira.delivery_ready",)
+DEFAULT_AUTO_DELIVERY_SCHEDULE = "*/5 * * * *"
+_HOOK_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9._:-]{0,63}\Z")
+_CRON_FIELD_PATTERN = re.compile(
+    r"(?:\*|\*/[1-9][0-9]*|[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*)\Z"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,11 +34,21 @@ class FeishuWebhookSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AutoDeliverySettings:
+    """Workspace permission for automated Story delivery."""
+
+    enabled: bool = False
+    trigger_hooks: tuple[str, ...] = DEFAULT_AUTO_DELIVERY_HOOKS
+    schedule_expression: str = DEFAULT_AUTO_DELIVERY_SCHEDULE
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceSettings:
     """All typed, mutable settings owned by one Workspace profile."""
 
     workspace_id: UUID
     feishu_webhook: FeishuWebhookSettings = FeishuWebhookSettings()
+    auto_delivery: AutoDeliverySettings = AutoDeliverySettings()
 
 
 class WorkspaceSettingsStore:
@@ -73,6 +90,7 @@ class WorkspaceSettingsStore:
 
         if settings.feishu_webhook.url is not None:
             validate_webhook_url(settings.feishu_webhook.url)
+        _validate_auto_delivery(settings.auto_delivery)
         path = self.path_for(settings.workspace_id)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -185,9 +203,30 @@ def _parse_settings(
             validate_webhook_url(url)
         except InvalidInputError as exc:
             raise PreflightError(f"Invalid Feishu Webhook URL value: {source}") from exc
+    raw_auto_delivery = payload.get("auto_delivery", {})
+    if not isinstance(raw_auto_delivery, dict):
+        raise PreflightError(f"Invalid Auto Delivery settings: {source}")
+    auto_delivery = cast(dict[str, object], raw_auto_delivery)
+    auto_delivery_enabled = auto_delivery.get("enabled", False)
+    if not isinstance(auto_delivery_enabled, bool):
+        raise PreflightError(f"Invalid Auto Delivery enabled value: {source}")
+    try:
+        trigger_hooks = normalize_trigger_hooks(
+            auto_delivery.get("trigger_hooks", DEFAULT_AUTO_DELIVERY_HOOKS)
+        )
+        schedule_expression = validate_schedule_expression(
+            auto_delivery.get("schedule_expression", DEFAULT_AUTO_DELIVERY_SCHEDULE)
+        )
+    except InvalidInputError as exc:
+        raise PreflightError(f"Invalid Auto Delivery settings: {source}") from exc
     return WorkspaceSettings(
         workspace_id=workspace_id,
         feishu_webhook=FeishuWebhookSettings(enabled=enabled, url=url),
+        auto_delivery=AutoDeliverySettings(
+            enabled=auto_delivery_enabled,
+            trigger_hooks=trigger_hooks,
+            schedule_expression=schedule_expression,
+        ),
     )
 
 
@@ -201,11 +240,74 @@ def _render(settings: WorkspaceSettings) -> str:
     ]
     if settings.feishu_webhook.url:
         lines.append(f"url = {_toml_string(settings.feishu_webhook.url)}")
+    lines.extend(
+        [
+            "",
+            "[auto_delivery]",
+            f"enabled = {'true' if settings.auto_delivery.enabled else 'false'}",
+            f"trigger_hooks = {_toml_array(settings.auto_delivery.trigger_hooks)}",
+            f"schedule_expression = {_toml_string(settings.auto_delivery.schedule_expression)}",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
 def _toml_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _toml_array(values: tuple[str, ...]) -> str:
+    return "[" + ", ".join(_toml_string(value) for value in values) + "]"
+
+
+def normalize_trigger_hooks(values: object) -> tuple[str, ...]:
+    """Normalize declarative trigger IDs without accepting executable input."""
+
+    candidates: tuple[object, ...]
+    if isinstance(values, str):
+        candidates = tuple(values.splitlines())
+    elif isinstance(values, list):
+        candidates = tuple(cast(list[object], values))
+    elif isinstance(values, tuple):
+        candidates = tuple(cast(tuple[object, ...], values))
+    else:
+        raise InvalidInputError("Auto Delivery trigger_hooks must be a list of IDs.")
+
+    normalized: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            raise InvalidInputError("Auto Delivery trigger hooks must be strings.")
+        hook = candidate.strip()
+        if not hook:
+            continue
+        if not _HOOK_ID_PATTERN.fullmatch(hook):
+            raise InvalidInputError(f"Invalid Auto Delivery trigger hook ID: {hook!r}.")
+        if hook not in normalized:
+            normalized.append(hook)
+    if not normalized:
+        raise InvalidInputError("Auto Delivery requires at least one trigger hook.")
+    return tuple(normalized)
+
+
+def validate_schedule_expression(value: object) -> str:
+    """Validate the supported five-field numeric cron expression."""
+
+    if not isinstance(value, str):
+        raise InvalidInputError("Auto Delivery schedule_expression must be a string.")
+    expression = value.strip()
+    fields = expression.split()
+    if len(fields) != 5 or any(not _CRON_FIELD_PATTERN.fullmatch(field) for field in fields):
+        raise InvalidInputError(
+            "Auto Delivery schedule_expression must contain five numeric cron fields."
+        )
+    return expression
+
+
+def _validate_auto_delivery(settings: AutoDeliverySettings) -> None:
+    """Validate all values that control a scheduled Auto Delivery poll."""
+
+    normalize_trigger_hooks(settings.trigger_hooks)
+    validate_schedule_expression(settings.schedule_expression)
 
 
 def _secure_directory(path: Path) -> None:

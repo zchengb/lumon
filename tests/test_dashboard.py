@@ -15,13 +15,41 @@ from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.dashboard.routes import create_app
 from lumon.dashboard.server import DashboardServer, create_dashboard_app, select_port
 from lumon.dashboard.service import DashboardService
+from lumon.errors import PreflightError
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.feishu_webhook import FeishuWebhookSender
 from lumon.version import __version__
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
-from lumon.workspace.settings import WorkspaceSettingsStore
+from lumon.workspace.settings import AutoDeliverySettings, WorkspaceSettingsStore
+
+
+class _NoopDeliveryScheduler:
+    def apply(
+        self,
+        workspace: Path,
+        workspace_id: UUID,
+        settings: AutoDeliverySettings,
+    ) -> None:
+        del workspace, workspace_id, settings
+
+
+class _RecordingDeliveryScheduler:
+    def __init__(self) -> None:
+        self.calls: list[AutoDeliverySettings] = []
+        self.fail = False
+
+    def apply(
+        self,
+        workspace: Path,
+        workspace_id: UUID,
+        settings: AutoDeliverySettings,
+    ) -> None:
+        del workspace, workspace_id
+        self.calls.append(settings)
+        if self.fail:
+            raise PreflightError("scheduler test failure")
 
 
 def _flow_content(
@@ -92,6 +120,7 @@ def _service(
         initializer=initializer,
         webhook_sender=FeishuWebhookSender(opener=_opener),
         folder_picker=folder_picker,
+        delivery_scheduler=_NoopDeliveryScheduler(),
     )
 
 
@@ -456,7 +485,30 @@ def test_settings_update_masks_webhook_and_test_does_not_persist_draft(
         "configured": True,
         "masked_url": "https://open.feishu.cn/open-apis/bot/v2/hook/priv*****oken",
     }
+    assert saved.json()["auto_delivery"] == {
+        "enabled": False,
+        "trigger_hooks": ["jira.delivery_ready"],
+        "schedule_expression": "*/5 * * * *",
+    }
     assert url not in saved.text
+
+    enabled = client.put(
+        f"/api/workspaces/{workspace_id}/settings",
+        json={
+            "feishu_webhook": {"enabled": True},
+            "auto_delivery": {
+                "enabled": True,
+                "trigger_hooks": ["jira.delivery_ready", "mail.delivery_ready"],
+                "schedule_expression": "0 9 * * 1-5",
+            },
+        },
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["auto_delivery"] == {
+        "enabled": True,
+        "trigger_hooks": ["jira.delivery_ready", "mail.delivery_ready"],
+        "schedule_expression": "0 9 * * 1-5",
+    }
 
     tested = client.post(
         f"/api/workspaces/{workspace_id}/settings/feishu/test",
@@ -474,6 +526,11 @@ def test_settings_update_masks_webhook_and_test_does_not_persist_draft(
         json={"feishu_webhook": {"enabled": False}},
     )
     assert preserved.json()["feishu_webhook"]["configured"] is True
+    assert preserved.json()["auto_delivery"]["enabled"] is True
+    assert preserved.json()["auto_delivery"]["trigger_hooks"] == [
+        "jira.delivery_ready",
+        "mail.delivery_ready",
+    ]
 
     cleared = client.put(
         f"/api/workspaces/{workspace_id}/settings",
@@ -511,6 +568,52 @@ def test_workspace_settings_are_isolated_between_workspaces(tmp_path: Path) -> N
         client.get(f"/api/workspaces/{second}/settings").json()["feishu_webhook"]["configured"]
         is False
     )
+
+
+def test_auto_delivery_scheduler_is_updated_and_settings_roll_back_on_failure(
+    tmp_path: Path,
+) -> None:
+    scheduler = _RecordingDeliveryScheduler()
+    service = _service(tmp_path)
+    service.delivery_scheduler = scheduler
+    client = _client(service)
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(tmp_path / "workspace"), "repositories": []},
+    ).json()["workspace_id"]
+
+    saved = client.put(
+        f"/api/workspaces/{workspace_id}/settings",
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_delivery": {
+                "enabled": True,
+                "trigger_hooks": ["jira.delivery_ready"],
+                "schedule_expression": "*/10 * * * *",
+            },
+        },
+    )
+    assert saved.status_code == 200
+    assert scheduler.calls[-1].schedule_expression == "*/10 * * * *"
+
+    scheduler.fail = True
+    failed = client.put(
+        f"/api/workspaces/{workspace_id}/settings",
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_delivery": {
+                "enabled": False,
+                "trigger_hooks": ["jira.delivery_ready"],
+                "schedule_expression": "*/30 * * * *",
+            },
+        },
+    )
+    assert failed.status_code == 409
+    assert client.get(f"/api/workspaces/{workspace_id}/settings").json()["auto_delivery"] == {
+        "enabled": True,
+        "trigger_hooks": ["jira.delivery_ready"],
+        "schedule_expression": "*/10 * * * *",
+    }
 
 
 def test_register_existing_workspace_returns_registry_item(tmp_path: Path) -> None:

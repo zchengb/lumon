@@ -15,6 +15,7 @@ MessageDirection = Literal["inbound", "outbound"]
 AgentRunStatus = Literal["succeeded", "failed", "timed_out", "cancelled"]
 AgentProvider = Literal["codex"]
 AgentResultStatus = Literal["succeeded", "failed", "timed_out"]
+ChannelDeliveryMode = Literal["private_direct", "group_thread"]
 RunStatus = Literal[
     "running",
     "succeeded",
@@ -84,6 +85,20 @@ class InboundImage:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentChannelContext:
+    """The minimum current-message routing context exposed to the Agent."""
+
+    channel: Literal["feishu"]
+    chat_type: str
+    chat_id: str
+    source_message_id: str
+    thread_id: str | None
+    root_id: str | None
+    delivery_mode: ChannelDeliveryMode
+    identity: Literal["bot"] = "bot"
+
+
+@dataclass(frozen=True, slots=True)
 class InboundMessage:
     """A normalized Feishu message that passed through the channel seam."""
 
@@ -127,6 +142,20 @@ class InboundMessage:
         legacy_thread = self.root_id or self.thread_id
         legacy_key = f"{self.chat_id}:{legacy_thread}" if legacy_thread else self.chat_id
         return legacy_key if legacy_key != self.conversation_key else None
+
+    @property
+    def channel_context(self) -> AgentChannelContext:
+        """Return the current Feishu route without exposing credentials."""
+
+        return AgentChannelContext(
+            channel="feishu",
+            chat_type=self.chat_type,
+            chat_id=self.chat_id,
+            source_message_id=self.message_id,
+            thread_id=self.thread_id,
+            root_id=self.root_id,
+            delivery_mode="group_thread" if self.is_group else "private_direct",
+        )
 
     @property
     def admitted(self) -> bool:

@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Puzzle,
+  Rocket,
   Settings,
   X,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "./api";
 import { readNavigation, writeNavigation } from "./navigation";
 import { AgentSettingsPage } from "../features/agent/AgentSettingsPage";
+import { AutoDeliveryPage } from "../features/delivery/AutoDeliveryPage";
 import { CapabilitiesPage } from "../features/capabilities/CapabilitiesPage";
 import { FlowsPage } from "../features/flows/FlowsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -47,6 +49,7 @@ export function App(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [agentSettingsDirty, setAgentSettingsDirty] = useState(false);
+  const [autoDeliveryDirty, setAutoDeliveryDirty] = useState(false);
   const [flowsDirty, setFlowsDirty] = useState(false);
   const [capabilitiesDirty, setCapabilitiesDirty] = useState(false);
 
@@ -99,10 +102,11 @@ export function App(): React.JSX.Element {
 
   function changeWorkspace(nextId: string): void {
     if (
-      (settingsDirty || flowsDirty || capabilitiesDirty)
+      (settingsDirty || autoDeliveryDirty || flowsDirty || capabilitiesDirty)
       && !window.confirm(t("app.unsavedWorkspaceConfirm"))
     ) return;
     setSettingsDirty(false);
+    setAutoDeliveryDirty(false);
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
     setSelectedId(nextId);
@@ -113,7 +117,9 @@ export function App(): React.JSX.Element {
     const currentViewDirty = view === "settings"
       ? settingsDirty
       : view === "agent"
-        ? agentSettingsDirty
+          ? agentSettingsDirty
+        : view === "auto-delivery"
+          ? autoDeliveryDirty
         : view === "flows"
           ? flowsDirty
           : view === "capabilities"
@@ -122,6 +128,7 @@ export function App(): React.JSX.Element {
     if (currentViewDirty && !window.confirm(t("app.unsavedViewConfirm"))) return;
     setSettingsDirty(false);
     setAgentSettingsDirty(false);
+    setAutoDeliveryDirty(false);
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
     setView(nextView);
@@ -218,6 +225,7 @@ export function App(): React.JSX.Element {
           <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />{t("app.overview")}</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />{t("app.settings")}</button>
           <button className={view === "agent" ? "active" : ""} type="button" onClick={() => changeView("agent")}><Bot size={17} />{t("app.agentSettings")}</button>
+          <button className={view === "auto-delivery" ? "active" : ""} type="button" onClick={() => changeView("auto-delivery")}><Rocket size={17} />{t("app.autoDelivery")}</button>
           <button className={view === "flows" ? "active" : ""} type="button" onClick={() => changeView("flows")}><GitBranch size={17} />{t("app.flows")}</button>
           <button className={view === "capabilities" ? "active" : ""} type="button" onClick={() => changeView("capabilities")}><Puzzle size={17} />{t("app.capabilities")}</button>
         </nav>
@@ -239,6 +247,7 @@ export function App(): React.JSX.Element {
           {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
           {selectedId && view === "settings" && settings && <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />}
           {view === "agent" && agentSettings && <AgentSettingsPage settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
+          {selectedId && view === "auto-delivery" && settings && <AutoDeliveryPage settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />}
           {selectedId && view === "flows" && <FlowsPage workspaceId={selectedId} onDirtyChange={setFlowsDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && view === "capabilities" && <CapabilitiesPage workspaceId={selectedId} onDirtyChange={setCapabilitiesDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && refreshing && !overview && !settings && <div className="loading-inline"><LoaderCircle className="spin" size={22} />{t("app.readingWorkspace")}</div>}

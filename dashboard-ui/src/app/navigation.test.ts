@@ -26,6 +26,16 @@ describe("Dashboard navigation", () => {
     );
   });
 
+  it("keeps the Auto Delivery view in the URL", () => {
+    expect(readNavigation("?workspace=abc&view=auto-delivery")).toEqual({
+      workspaceId: "abc",
+      view: "auto-delivery",
+    });
+    expect(writeNavigation({ workspaceId: "abc", view: "auto-delivery" })).toBe(
+      "?workspace=abc&view=auto-delivery",
+    );
+  });
+
   it("keeps the Flows view in the URL", () => {
     expect(readNavigation("?workspace=abc&view=flows")).toEqual({
       workspaceId: "abc",

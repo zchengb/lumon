@@ -18,7 +18,8 @@ from lumon.agents.agent.config import (
 from lumon.capabilities.catalog import CapabilityCatalog, CapabilityValidationError
 from lumon.capabilities.model import CapabilityDefinition
 from lumon.dashboard.folder_picker import FolderPicker
-from lumon.errors import AgentConfigError, PreflightError, WorkspaceNotFoundError
+from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler
+from lumon.errors import AgentConfigError, LumonError, PreflightError, WorkspaceNotFoundError
 from lumon.flows.catalog import FlowCatalog, FlowValidationError
 from lumon.flows.model import FlowDefinition
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
@@ -30,6 +31,7 @@ from lumon.workspace.model import InitRequest, InitResult
 from lumon.workspace.registry import WorkspaceRegistration, WorkspaceRegistry
 from lumon.workspace.repositories import RepositoryProvisioner, spec_from_url
 from lumon.workspace.settings import (
+    AutoDeliverySettings,
     FeishuWebhookSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
@@ -83,11 +85,21 @@ class WebhookSettingsView:
 
 
 @dataclass(frozen=True, slots=True)
+class AutoDeliverySettingsView:
+    """Display-safe Auto Delivery permission for one Workspace."""
+
+    enabled: bool
+    trigger_hooks: tuple[str, ...]
+    schedule_expression: str
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceSettingsView:
     """The display-safe settings view for one Workspace."""
 
     workspace_id: UUID
     feishu_webhook: WebhookSettingsView
+    auto_delivery: AutoDeliverySettingsView
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,6 +223,7 @@ class DashboardService:
         repository_provisioner: RepositoryProvisioner | None = None,
         folder_picker: Callable[[], Path | None] | None = None,
         agent_config_store: AgentConfigStore | None = None,
+        delivery_scheduler: DeliveryScheduler | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
@@ -223,6 +236,9 @@ class DashboardService:
         self.webhook_sender = webhook_sender or FeishuWebhookSender()
         self.repository_provisioner = repository_provisioner or RepositoryProvisioner()
         self._folder_picker = folder_picker or FolderPicker().choose
+        self.delivery_scheduler = delivery_scheduler or LaunchdDeliveryScheduler(
+            self.registry.layout.root
+        )
 
     def list_workspaces(self) -> tuple[WorkspaceListItem, ...]:
         """Return registered Workspaces without scanning unregistered directories."""
@@ -507,10 +523,13 @@ class DashboardService:
         enabled: bool,
         url_provided: bool,
         url: str | None,
+        auto_delivery_enabled: bool | None = None,
+        auto_delivery_trigger_hooks: tuple[str, ...] | None = None,
+        auto_delivery_schedule_expression: str | None = None,
     ) -> WorkspaceSettingsView:
         """Update typed settings while retaining or clearing URL explicitly."""
 
-        self._require(workspace_id)
+        registration = self._require(workspace_id)
         current = self.settings_store.load(workspace_id)
         next_url = current.feishu_webhook.url
         if url_provided:
@@ -520,8 +539,35 @@ class DashboardService:
         updated = WorkspaceSettings(
             workspace_id=workspace_id,
             feishu_webhook=FeishuWebhookSettings(enabled=enabled, url=next_url),
+            auto_delivery=AutoDeliverySettings(
+                enabled=(
+                    current.auto_delivery.enabled
+                    if auto_delivery_enabled is None
+                    else auto_delivery_enabled
+                ),
+                trigger_hooks=(
+                    current.auto_delivery.trigger_hooks
+                    if auto_delivery_trigger_hooks is None
+                    else auto_delivery_trigger_hooks
+                ),
+                schedule_expression=(
+                    current.auto_delivery.schedule_expression
+                    if auto_delivery_schedule_expression is None
+                    else auto_delivery_schedule_expression
+                ),
+            ),
         )
-        self.settings_store.save(updated)
+        snapshot = self.settings_store.raw_snapshot(workspace_id)
+        try:
+            self.settings_store.save(updated)
+            self.delivery_scheduler.apply(
+                registration.path,
+                workspace_id,
+                updated.auto_delivery,
+            )
+        except LumonError:
+            self.settings_store.restore_raw(workspace_id, snapshot)
+            raise
         return _settings_view(updated)
 
     def test_feishu_webhook(
@@ -596,6 +642,11 @@ def _settings_view(settings: WorkspaceSettings) -> WorkspaceSettingsView:
             enabled=webhook.enabled,
             configured=bool(webhook.url),
             masked_url=masked_webhook_url(webhook.url),
+        ),
+        auto_delivery=AutoDeliverySettingsView(
+            enabled=settings.auto_delivery.enabled,
+            trigger_hooks=settings.auto_delivery.trigger_hooks,
+            schedule_expression=settings.auto_delivery.schedule_expression,
         ),
     )
 

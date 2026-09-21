@@ -141,11 +141,20 @@ class FeishuWebhookResponse(StrictModel):
     masked_url: str | None
 
 
+class AutoDeliveryResponse(StrictModel):
+    """Display-safe Auto Delivery settings."""
+
+    enabled: bool
+    trigger_hooks: list[str]
+    schedule_expression: str
+
+
 class WorkspaceSettingsResponse(StrictModel):
     """Display-safe Workspace settings."""
 
     workspace_id: UUID
     feishu_webhook: FeishuWebhookResponse
+    auto_delivery: AutoDeliveryResponse
 
 
 class FeishuWebhookUpdate(StrictModel):
@@ -155,10 +164,19 @@ class FeishuWebhookUpdate(StrictModel):
     url: str | None = None
 
 
+class AutoDeliveryUpdate(StrictModel):
+    """Workspace Auto Delivery permission update."""
+
+    enabled: bool
+    trigger_hooks: list[str] | None = None
+    schedule_expression: str | None = None
+
+
 class WorkspaceSettingsUpdate(StrictModel):
     """Typed settings update without a generic key-value escape hatch."""
 
     feishu_webhook: FeishuWebhookUpdate
+    auto_delivery: AutoDeliveryUpdate | None = None
 
 
 class FlowSummaryResponse(StrictModel):

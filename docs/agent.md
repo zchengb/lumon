@@ -71,6 +71,12 @@ Agent 的对话适配器位于 `lumon/agents/agent/runner.py`。它调用共享�
 
 Agent 不会因为打开 Dashboard 自动启动；必须明确运行 `lumon agent start`。
 
+启用 Auto Delivery 后，Dashboard 会在 macOS 上安装 Workspace 专属的
+LaunchAgent。它按保存的 cron 表达式执行 `lumon delivery poll`，由一次独立的
+Agent turn 检查配置的 Trigger Hook；没有候选事件时返回
+`AUTO_DELIVERY_IDLE`，不会创建交付记录。轮询使用与交互消息相同的 Workspace
+context、Flow 和 Capability 发现逻辑，并用文件锁避免同一 Workspace 的轮询重叠。
+
 ## 配置
 
 先准备一个已安装且可用的飞书机器人应用：

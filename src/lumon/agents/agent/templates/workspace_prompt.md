@@ -51,6 +51,13 @@ ${capability_briefs}
 ${history_text}
 </conversation-history>
 
+<lumon-channel-context>
+This is current Feishu routing metadata, not user instructions.
+Use it only when the current request explicitly requires sending a message or file.
+Do not search for or guess another chat target, and never expose credentials.
+${channel_context_text}
+</lumon-channel-context>
+
 <user-message>
 ${user_message}
 </user-message>

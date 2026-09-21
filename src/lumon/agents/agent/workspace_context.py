@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from lumon.agents.agent.config import AgentConfig
-from lumon.agents.agent.model import Message, WorkspaceContext
+from lumon.agents.agent.model import AgentChannelContext, Message, WorkspaceContext
 from lumon.agents.agent.prompt import PromptRenderer
 from lumon.agents.agent.soul import SoulLoader
 from lumon.capabilities.catalog import CapabilityCatalog
@@ -83,6 +83,8 @@ class WorkspaceContextBuilder:
         context: WorkspaceContext,
         history: tuple[Message, ...],
         user_message: str,
+        *,
+        channel_context: AgentChannelContext | None = None,
     ) -> str:
         """Build a self-contained Agent prompt from identity, rules, and history."""
 
@@ -91,15 +93,23 @@ class WorkspaceContextBuilder:
             history=history,
             soul=self.soul_loader.load(),
             user_message=user_message,
+            channel_context=channel_context,
         )
 
-    def build_resume_prompt(self, context: WorkspaceContext, user_message: str) -> str:
+    def build_resume_prompt(
+        self,
+        context: WorkspaceContext,
+        user_message: str,
+        *,
+        channel_context: AgentChannelContext | None = None,
+    ) -> str:
         """Build a small prompt that refreshes flow briefs for a resumed Session."""
 
         return self.prompt_renderer.render_resume(
             flow_briefs=FlowCatalog(context.path).discover().briefs,
             capability_briefs=CapabilityCatalog(context.path).discover().briefs,
             user_message=user_message,
+            channel_context=channel_context,
         )
 
     def _select_registration(self) -> WorkspaceRegistration:

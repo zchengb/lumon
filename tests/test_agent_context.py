@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from lumon.agents.agent.config import AgentConfig
-from lumon.agents.agent.model import Message
+from lumon.agents.agent.model import InboundMessage, Message
 from lumon.agents.agent.prompt import PromptRenderer
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
@@ -86,6 +86,17 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
             ),
         ),
         "Inspect the README",
+        channel_context=InboundMessage(
+            event_id="event-1",
+            message_id="om-source",
+            chat_id="oc-current",
+            chat_type="group",
+            text="Inspect the README",
+            sender_id="ou-user",
+            sender_type="user",
+            thread_id="omt-current",
+            root_id="om-root",
+        ).channel_context,
     )
 
     assert context.path == target.resolve()
@@ -103,6 +114,10 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "<available-capabilities>" in prompt
     assert "id: aws-cli; brief: Inspect AWS resources." in prompt
     assert "full detail: lumon/capabilities/aws-cli.md" in prompt
+    assert "<lumon-channel-context>" in prompt
+    assert "chat_id: oc-current" in prompt
+    assert "source_message_id: om-source" in prompt
+    assert "delivery_mode: group_thread" in prompt
     assert "Use the local AWS CLI guidance." not in prompt
     assert "match hints:" not in prompt
     assert "Treat acceptance criteria as the primary authority" not in prompt
@@ -125,6 +140,25 @@ def test_resumed_prompt_reloads_workspace_flow_briefs(tmp_path: Path) -> None:
     assert "Follow the Workspace flow." not in prompt
     assert "<lumon-flow-context>" in prompt
     assert "<lumon-capability-context>" in prompt
+    assert "<lumon-channel-context>" in prompt
+
+
+def test_channel_context_uses_direct_delivery_for_private_messages() -> None:
+    message = InboundMessage(
+        event_id="event-1",
+        message_id="om-private",
+        chat_id="oc-private",
+        chat_type="p2p",
+        text="send the file",
+        sender_id="ou-user",
+        sender_type="user",
+    )
+
+    context = message.channel_context
+
+    assert context.chat_id == "oc-private"
+    assert context.source_message_id == "om-private"
+    assert context.delivery_mode == "private_direct"
 
 
 def test_explicit_missing_workspace_does_not_fallback(tmp_path: Path) -> None:

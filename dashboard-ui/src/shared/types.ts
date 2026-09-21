@@ -1,6 +1,6 @@
 export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
-export type View = "overview" | "settings" | "agent" | "flows" | "capabilities";
+export type View = "overview" | "settings" | "agent" | "auto-delivery" | "flows" | "capabilities";
 
 export type AgentReasoningEffort =
   | "minimal"
@@ -49,9 +49,16 @@ export interface FeishuWebhookSettings {
   masked_url: string | null;
 }
 
+export interface AutoDeliverySettings {
+  enabled: boolean;
+  trigger_hooks: string[];
+  schedule_expression: string;
+}
+
 export interface WorkspaceSettings {
   workspace_id: string;
   feishu_webhook: FeishuWebhookSettings;
+  auto_delivery: AutoDeliverySettings;
 }
 
 export interface FlowSummary {
@@ -109,6 +116,11 @@ export interface SettingsUpdate {
   feishu_webhook: {
     enabled: boolean;
     url?: string;
+  };
+  auto_delivery?: {
+    enabled: boolean;
+    trigger_hooks?: string[];
+    schedule_expression?: string;
   };
 }
 

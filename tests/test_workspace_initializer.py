@@ -38,17 +38,19 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     agents = (target / "AGENTS.md").read_text(encoding="utf-8")
     template = files("lumon.workspace.templates").joinpath("AGENTS.md").read_text(encoding="utf-8")
     assert agents == template
-    assert "Global Agent Skills live under `~/.agents/skills/`" in agents
+    assert "全局 Agent Skill 位于 `~/.agents/skills/`" in agents
     assert "lumon/manifest.json" in agents
-    assert "Never use zsh special or read-only parameter names" in agents
-    assert "Offer two or three concrete next steps" in agents
-    assert "recent non-merge, non-release commit history" in agents
-    assert "If the format has an author prefix, use `lumon`" in agents
-    assert "Do not change Git author or committer configuration" in agents
-    assert "attempt the safest non-destructive resolution" in agents
-    assert "preferring rebase when the local commits can be replayed cleanly" in agents
-    assert "git diff --cached --check" in agents
-    assert "Blockers and task continuation" in agents
+    assert "不要使用 zsh 的特殊或只读参数名" in agents
+    assert "提供 2–3 个可执行方案" in agents
+    assert "证据与澄清" in agents
+    assert "一次性提出你的问题" in agents
+    assert "不能用通用证据或未标注假设代替" in agents
+    assert "近期非 merge、非 release 提交历史" in agents
+    assert "使用小写 `lumon`" in agents
+    assert "不修改 Git author 或 committer 配置" in agents
+    assert "以远端为准" in agents
+    assert "允许舍弃本地改动" in agents
+    assert "阻塞与任务续接" in agents
     assert (target / ".gitignore").is_file()
     assert tuple((target / "lumon" / "flows").glob("*.md")) == ()
     assert tuple((target / "lumon" / "capabilities").glob("*.md")) == ()

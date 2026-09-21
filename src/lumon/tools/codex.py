@@ -43,6 +43,7 @@ class CodexErrorCode(StrEnum):
 _CODEX_STREAM_LIMIT_BYTES = 16 * 1024 * 1024
 _CODEX_EVENT_TEXT_LIMIT = 16 * 1024
 _CODEX_DIAGNOSTIC_LIMIT = 16 * 1024
+DEFAULT_CODEX_TIMEOUT_SECONDS = 12 * 60 * 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +99,7 @@ class CodexTool:
     def __init__(
         self,
         binary: str | None = None,
-        timeout_seconds: float = 900.0,
+        timeout_seconds: float = DEFAULT_CODEX_TIMEOUT_SECONDS,
         environment: Mapping[str, str] | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,

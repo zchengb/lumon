@@ -10,6 +10,7 @@ import pytest
 
 from lumon.errors import InvalidInputError, PreflightError
 from lumon.workspace.settings import (
+    AutoDeliverySettings,
     FeishuWebhookSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
@@ -26,6 +27,7 @@ def test_settings_round_trip_is_typed_and_owner_only(tmp_path: Path) -> None:
             enabled=True,
             url="https://open.feishu.cn/open-apis/bot/v2/hook/private-token",
         ),
+        AutoDeliverySettings(enabled=True),
     )
 
     store.save(expected)
@@ -36,6 +38,23 @@ def test_settings_round_trip_is_typed_and_owner_only(tmp_path: Path) -> None:
         masked_webhook_url(expected.feishu_webhook.url)
         == "https://open.feishu.cn/open-apis/bot/v2/hook/priv*****oken"
     )
+
+
+def test_auto_delivery_settings_round_trip_trigger_hooks_and_schedule(tmp_path: Path) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "lumon")
+    workspace_id = uuid4()
+    expected = WorkspaceSettings(
+        workspace_id,
+        auto_delivery=AutoDeliverySettings(
+            enabled=True,
+            trigger_hooks=("jira.delivery_ready", "mail.delivery_ready"),
+            schedule_expression="0 9 * * 1-5",
+        ),
+    )
+
+    store.save(expected)
+
+    assert store.load(workspace_id).auto_delivery == expected.auto_delivery
 
 
 def test_settings_reject_profile_for_another_workspace(tmp_path: Path) -> None:

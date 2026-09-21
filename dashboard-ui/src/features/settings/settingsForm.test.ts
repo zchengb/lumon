@@ -9,7 +9,12 @@ describe("Webhook settings form", () => {
   });
 
   it("trims a replacement URL", () => {
-    expect(buildSettingsUpdate({ enabled: true, url: "  https://example.test/hook  " })).toEqual({
+    expect(
+      buildSettingsUpdate({
+        enabled: true,
+        url: "  https://example.test/hook  ",
+      }),
+    ).toEqual({
       feishu_webhook: { enabled: true, url: "https://example.test/hook" },
     });
   });

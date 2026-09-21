@@ -97,9 +97,8 @@ class AgentService:
             self._context_builder.resolve_workspace()
             self._stop_event = asyncio.Event()
             for message in self.session_store.recover_pending():
-                if message.admitted:
-                    session = self.session_store.get_or_create_session(message)
-                    self._schedule(message, session.session_id)
+                session = self.session_store.get_or_create_session(message)
+                self._schedule(message, session.session_id)
             await self._channel.connect(self.handle_message, self.handle_recalled)
         except asyncio.CancelledError:
             raise
@@ -287,10 +286,19 @@ class AgentService:
                         history_span.update(metadata={"message_count": len(history)})
                     stage = "build_prompt"
                     async with trace.span("prompt.build") as prompt_span:
-                        prompt = context_builder.build_prompt(context, history, message.text)
+                        prompt = context_builder.build_prompt(
+                            context,
+                            history,
+                            message.text,
+                            channel_context=message.channel_context,
+                        )
                         prompt_span.update(metadata={"prompt_length": len(prompt)})
                 else:
-                    prompt = context_builder.build_resume_prompt(context, message.text)
+                    prompt = context_builder.build_resume_prompt(
+                        context,
+                        message.text,
+                        channel_context=message.channel_context,
+                    )
                 trace.update(
                     input_text=prompt,
                     metadata={"resumed_agent_session": resume_session_id is not None},

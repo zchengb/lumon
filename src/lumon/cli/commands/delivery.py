@@ -2,19 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
+import fcntl
 import json
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
 
 import typer
 
+from lumon.agents.agent.config import AgentConfigStore
+from lumon.agents.agent.model import AgentResult
+from lumon.agents.agent.runner import create_agent_runner
+from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.delivery.model import DeliveryEvent, DeliveryRun
 from lumon.delivery.service import DeliveryNotification, DeliveryService
-from lumon.errors import LumonError, PreflightError
+from lumon.errors import AgentRuntimeError, LumonError, PreflightError
+from lumon.tools.safety import sanitize_output
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
+from lumon.workspace.registry import UserStateLayout, WorkspaceRegistry
+from lumon.workspace.settings import WorkspaceSettingsStore
 
 delivery_app = typer.Typer(
     name="delivery",
@@ -150,6 +162,133 @@ def block(
             root, workspace_id, run, reason, phase=phase
         ),
     )
+
+
+@delivery_app.command("poll")
+def poll(
+    workspace: Annotated[Path, typer.Option("--workspace", dir_okay=True)] = Path("."),
+    workspace_id: Annotated[str | None, typer.Option("--workspace-id")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Run one scheduled Auto Delivery detection turn for a Workspace."""
+
+    try:
+        root, manifest_id = _workspace_identity(workspace)
+        selected_id = _parse_workspace_id(workspace_id) if workspace_id else manifest_id
+        if selected_id != manifest_id:
+            raise PreflightError("The requested Workspace ID does not match its manifest.")
+
+        state_layout = UserStateLayout.from_root()
+        settings = WorkspaceSettingsStore(state_layout.root).load(selected_id)
+        if not settings.auto_delivery.enabled:
+            _emit_poll(
+                {"status": "disabled", "workspace_id": str(selected_id)},
+                json_output,
+            )
+            return
+
+        with _poll_lock(state_layout.root, selected_id):
+            result = asyncio.run(_run_poll(root, selected_id, settings.auto_delivery.trigger_hooks))
+        safe_text = sanitize_output((result.final_text or "").strip())[:500]
+        status = "idle" if "AUTO_DELIVERY_IDLE" in safe_text else "completed"
+        _emit_poll(
+            {
+                "status": status,
+                "workspace_id": str(selected_id),
+                "detail": safe_text,
+            },
+            json_output,
+        )
+    except LumonError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+async def _run_poll(
+    workspace: Path,
+    workspace_id: UUID,
+    trigger_hooks: tuple[str, ...],
+) -> AgentResult:
+    state_layout = UserStateLayout.from_root()
+    config = AgentConfigStore(state_layout.root).load()
+    if not config.enabled:
+        raise PreflightError("The Lumon Agent is disabled.")
+    registry = WorkspaceRegistry(state_layout.root)
+    if registry.find(workspace_id) is None:
+        raise PreflightError(f"Workspace is not registered: {workspace_id}")
+    context_builder = WorkspaceContextBuilder(
+        replace(config, default_workspace_id=workspace_id),
+        registry,
+    )
+    context = context_builder.resolve_workspace()
+    prompt = context_builder.build_prompt(
+        context,
+        (),
+        _scheduled_poll_prompt(trigger_hooks),
+    )
+    result = await create_agent_runner(config).run(workspace, prompt)
+    if result.status != "succeeded":
+        diagnostic = sanitize_output(result.failure_diagnostic or "Agent poll did not complete.")
+        raise AgentRuntimeError(diagnostic)
+    return result
+
+
+def _scheduled_poll_prompt(trigger_hooks: tuple[str, ...]) -> str:
+    hooks = "\n".join(f"- {hook}" for hook in trigger_hooks)
+    return f"""You are running one scheduled Lumon Auto Delivery poll.
+
+Configured trigger hooks:
+{hooks}
+
+Follow these rules:
+1. Inspect the available Workspace capabilities and flows, then use the matching
+   capability to check whether any configured hook has an eligible event.
+2. If there is no eligible event, make no file, Git, Jira, or Delivery changes
+   and return exactly AUTO_DELIVERY_IDLE.
+3. If there is an eligible approved Story, follow the Workspace Auto Delivery
+   flow. Use `lumon delivery start` before work and exactly one terminal command
+   (`complete`, `fail`, or `block`) after the outcome.
+4. Never invent an issue, claim verification, or claim a notification was sent
+   without a successful command result.
+5. Keep the final response short and do not include credentials or raw command output.
+"""
+
+
+@contextmanager
+def _poll_lock(state_root: Path, workspace_id: UUID) -> Generator[None, None, None]:
+    lock_directory = state_root / "locks"
+    lock_directory.mkdir(parents=True, exist_ok=True)
+    lock_directory.chmod(0o700)
+    lock_path = lock_directory / f"delivery-{workspace_id}.lock"
+    stream = lock_path.open("a+")
+    try:
+        os.fchmod(stream.fileno(), 0o600)
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise PreflightError("Another Auto Delivery poll is already running.") from exc
+        yield
+    finally:
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        finally:
+            stream.close()
+
+
+def _parse_workspace_id(value: str) -> UUID:
+    try:
+        return UUID(value)
+    except ValueError as exc:
+        raise PreflightError("Workspace ID must be a valid UUID.") from exc
+
+
+def _emit_poll(payload: dict[str, object], json_output: bool) -> None:
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Auto Delivery poll: {payload['status']}")
+    if payload.get("detail"):
+        typer.echo(str(payload["detail"]))
 
 
 def _workspace_identity(workspace: Path) -> tuple[Path, UUID]:

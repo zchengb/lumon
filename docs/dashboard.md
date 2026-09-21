@@ -112,8 +112,32 @@ The Settings page supports:
 The API returns only whether a URL is configured and a display-safe masked
 value that keeps the URL structure plus a short token prefix and suffix. The
 profile file is created with owner-only permissions. Future settings such as
-Auto Delivery must be introduced as typed settings domains with their own
-validation and UI; v1 has no arbitrary key-value editor.
+Auto Delivery are exposed as typed settings with their own validation rather
+than an arbitrary key-value editor.
+
+## Auto Delivery
+
+The **Auto Delivery** page controls the current Workspace's scheduled delivery
+poll. It stores:
+
+- one or more declarative **Trigger Hooks**, one ID per line (the default is
+  `jira.delivery_ready`);
+- a five-field numeric cron **Schedule Expression** (the default is
+  `*/5 * * * *`).
+
+When enabled on macOS, saving the page installs or updates an owner-level
+LaunchAgent named `com.lumon.delivery.<workspace-id>`. Each scheduled run
+executes `lumon delivery poll`, loads the Workspace's enabled flows and
+capabilities, and gives the configured hooks to one bounded Agent turn. A poll
+that finds no eligible event returns `AUTO_DELIVERY_IDLE` and makes no Delivery
+changes. An eligible event must use the existing Delivery lifecycle commands so
+the configured Feishu Webhook receives the normal started, completed, failed,
+or blocked notification.
+
+The scheduler currently supports interval expressions such as `*/5 * * * *`
+and fixed minute/hour expressions such as `0 9 * * 1-5`. The LaunchAgent and
+poll lock are owner-only; credentials are never placed in the schedule or poll
+output.
 
 ## Build the frontend
 
