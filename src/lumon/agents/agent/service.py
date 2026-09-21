@@ -128,9 +128,21 @@ class AgentService:
         if not message.admitted:
             return
         self._ensure_runtime()
-        session_id = self.session_store.get_or_create_session(message).session_id
+        if message.should_defer:
+            self.session_store.defer_card(message)
+            return
         if not self.session_store.claim_event(message.event_id, message):
             return
+        deferred_cards = self.session_store.deferred_cards(message.conversation_key)
+        if deferred_cards:
+            merged_text = _merge_deferred_card_context(deferred_cards, message.text)
+            self.session_store.merge_deferred_cards(
+                event_id=message.event_id,
+                conversation_key=message.conversation_key,
+                merged_text=merged_text,
+            )
+            message = replace(message, text=merged_text)
+        session_id = self.session_store.get_or_create_session(message).session_id
         self._schedule(message, session_id)
 
     async def handle_recalled(self, message: RecalledMessage) -> None:
@@ -991,6 +1003,18 @@ def _reply_metadata(delivered: bool) -> dict[str, str | bool]:
     if not delivered:
         metadata["error_code"] = "feishu_reply_failed"
     return metadata
+
+
+def _merge_deferred_card_context(
+    cards: tuple[InboundMessage, ...],
+    user_text: str,
+) -> str:
+    """Keep a deferred card as data while treating the follow-up as the request."""
+
+    card_text = "\n\n".join(card.text for card in cards if card.text.strip())
+    if not card_text:
+        return user_text
+    return f"<feishu-card-context>\n{card_text}\n</feishu-card-context>\n\n{user_text}"
 
 
 def _validated_flow_id(flow_id: str | None, context: WorkspaceContext) -> str | None:

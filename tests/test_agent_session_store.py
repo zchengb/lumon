@@ -69,6 +69,41 @@ def test_event_claim_is_idempotent_and_history_is_chronological(tmp_path: Path) 
     assert pending == (message,)
 
 
+def test_deferred_cards_are_merged_into_a_follow_up(tmp_path: Path) -> None:
+    store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
+    card = InboundMessage(
+        event_id="card-event",
+        message_id="card-message",
+        chat_id="chat-1",
+        chat_type="p2p",
+        text="Forwarded email preview",
+        sender_id="user-1",
+        sender_type="user",
+        card_only=True,
+    )
+    follow_up = _message("follow-up-event")
+
+    assert store.defer_card(card)
+    assert store.event_status(card.event_id) == "deferred"
+    assert store.deferred_cards(card.conversation_key) == (card,)
+    assert store.claim_event(follow_up.event_id, follow_up)
+    merged_text = "<feishu-card-context>\nForwarded email preview\n</feishu-card-context>\n\nhello"
+    store.merge_deferred_cards(
+        event_id=follow_up.event_id,
+        conversation_key=follow_up.conversation_key,
+        merged_text=merged_text,
+    )
+
+    assert store.deferred_cards(card.conversation_key) == ()
+    assert store.event_status(card.event_id) == "merged"
+    with sqlite3.connect(store.path) as connection:
+        row = connection.execute(
+            "SELECT text FROM events WHERE event_id = ?",
+            (follow_up.event_id,),
+        ).fetchone()
+    assert row == (merged_text,)
+
+
 def test_sessions_are_stable_for_direct_chats_and_group_threads(tmp_path: Path) -> None:
     store = AgentSessionStore(db_path=tmp_path / "agent.sqlite3")
     direct = _message()

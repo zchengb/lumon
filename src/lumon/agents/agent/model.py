@@ -113,12 +113,19 @@ class InboundMessage:
     thread_id: str | None = None
     root_id: str | None = None
     images: tuple[InboundImage, ...] = ()
+    card_only: bool = False
 
     @property
     def is_group(self) -> bool:
         """Return whether the message came from a group chat."""
 
         return self.chat_type.casefold() not in {"p2p", "private", "dm"}
+
+    @property
+    def should_defer(self) -> bool:
+        """Return whether this private card should wait for a text follow-up."""
+
+        return self.card_only and not self.is_group
 
     @property
     def conversation_key(self) -> str:

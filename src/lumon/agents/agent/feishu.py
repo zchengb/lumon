@@ -254,6 +254,7 @@ def normalize_message(raw: object) -> InboundMessage | None:
     chat_id = _text(_value(raw, "chat_id", _value(conversation, "chat_id", "")))
     chat_type = _text(_value(raw, "chat_type", _value(conversation, "chat_type", "unknown")))
     images = _image_references(_value(raw, "resources", ()))
+    plain_text = _plain_message_text(raw)
     text = _replace_image_markers(_message_text(raw), images)
     reply_message_id = _reply_message_id(raw)
     sender_id = _text(_value(raw, "sender_id", _value(sender, "open_id", "")))
@@ -302,6 +303,8 @@ def normalize_message(raw: object) -> InboundMessage | None:
         thread_id=thread_id,
         root_id=root_id,
         images=images,
+        card_only=_has_interactive_card(_value(raw, "content", None))
+        and (not plain_text or plain_text.casefold() in {"[interactive]", "[card]"}),
     )
 
 
@@ -340,6 +343,10 @@ def _message_text(raw: object) -> str:
     card_text = _interactive_card_text(_value(raw, "content", None))
     if card_text:
         return card_text
+    return _plain_message_text(raw)
+
+
+def _plain_message_text(raw: object) -> str:
     return _text(
         _value(
             raw,
@@ -359,7 +366,7 @@ def _interactive_card_text(content: object) -> str:
     its quoted history reach the Agent instead of only ``[interactive]``.
     """
 
-    card = _mapping(_value(content, "card", None)) or _mapping(content)
+    card = _interactive_card_payload(content)
     if card is None:
         return ""
 
@@ -407,6 +414,22 @@ def _interactive_card_text(content: object) -> str:
         if not deduplicated or deduplicated[-1] != line:
             deduplicated.append(line)
     return "\n".join(deduplicated).strip()
+
+
+def _has_interactive_card(content: object) -> bool:
+    return _interactive_card_payload(content) is not None
+
+
+def _interactive_card_payload(content: object) -> Mapping[str, object] | None:
+    card = _mapping(_value(content, "card", None))
+    if card is not None:
+        return card
+    mapping = _mapping(content)
+    if mapping is None:
+        return None
+    if any(key in mapping for key in ("header", "body", "elements", "i18n_elements")):
+        return mapping
+    return None
 
 
 def _mapping(value: object) -> Mapping[str, object] | None:

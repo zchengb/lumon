@@ -191,6 +191,61 @@ class AgentSessionStore:
             )
             return cursor.rowcount == 1
 
+    def defer_card(self, message: InboundMessage) -> bool:
+        """Persist a standalone private card until its text follow-up arrives."""
+
+        if not self.claim_event(message.event_id, message):
+            return False
+        self.mark_event_status(message.event_id, "deferred")
+        return True
+
+    def deferred_cards(self, conversation_key: str) -> tuple[InboundMessage, ...]:
+        """Return standalone cards waiting in one direct-chat conversation."""
+
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT event_id, message_id, chat_id, chat_type, text, sender_id,
+                       sender_type, thread_id, root_id
+                FROM events
+                WHERE conversation_key = ? AND status = 'deferred'
+                ORDER BY received_at ASC
+                """,
+                (conversation_key,),
+            ).fetchall()
+        return tuple(_inbound_from_row(row, card_only=True) for row in rows)
+
+    def merge_deferred_cards(
+        self,
+        *,
+        event_id: str,
+        conversation_key: str,
+        merged_text: str,
+    ) -> None:
+        """Attach deferred card context to a claimed follow-up event atomically."""
+
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT event_id
+                FROM events
+                WHERE conversation_key = ? AND status = 'deferred'
+                ORDER BY received_at ASC
+                """,
+                (conversation_key,),
+            ).fetchall()
+            if not rows:
+                return
+            connection.execute(
+                "UPDATE events SET text = ? WHERE event_id = ?",
+                (sanitize_output(merged_text), event_id),
+            )
+            placeholders = ", ".join("?" for _ in rows)
+            connection.execute(
+                f"UPDATE events SET status = 'merged' WHERE event_id IN ({placeholders})",
+                tuple(str(row["event_id"]) for row in rows),
+            )
+
     def record_message(self, message: Message) -> None:
         """Persist one transcript message without returning its content to callers."""
 
@@ -266,6 +321,8 @@ class AgentSessionStore:
 
         if status not in {
             "queued",
+            "deferred",
+            "merged",
             "processing",
             "cancel_requested",
             "cancelled",
@@ -303,7 +360,9 @@ class AgentSessionStore:
                 SELECT event_id, status
                 FROM events
                 WHERE message_id = ?
-                  AND status IN ('queued', 'processing', 'cancel_requested', 'cancelled')
+                  AND status IN (
+                      'queued', 'deferred', 'processing', 'cancel_requested', 'cancelled'
+                  )
                 ORDER BY received_at DESC
                 LIMIT 1
                 """,
@@ -312,7 +371,7 @@ class AgentSessionStore:
             if row is None:
                 return None
             event_id = str(row["event_id"])
-            if str(row["status"]) in {"queued", "processing"}:
+            if str(row["status"]) in {"queued", "deferred", "processing"}:
                 connection.execute(
                     "UPDATE events SET status = 'cancel_requested' WHERE event_id = ?",
                     (event_id,),
@@ -353,7 +412,7 @@ class AgentSessionStore:
                 UPDATE events
                 SET status = 'cancelled'
                 WHERE event_id = ?
-                  AND status IN ('queued', 'processing', 'cancel_requested')
+                  AND status IN ('queued', 'deferred', 'processing', 'cancel_requested')
                 """,
                 (event_id,),
             )
@@ -762,7 +821,7 @@ def _message_from_row(row: sqlite3.Row) -> Message:
     )
 
 
-def _inbound_from_row(row: sqlite3.Row) -> InboundMessage:
+def _inbound_from_row(row: sqlite3.Row, *, card_only: bool = False) -> InboundMessage:
     return InboundMessage(
         event_id=str(row["event_id"]),
         message_id=str(row["message_id"]),
@@ -773,6 +832,7 @@ def _inbound_from_row(row: sqlite3.Row) -> InboundMessage:
         sender_type=str(row["sender_type"]),
         thread_id=str(row["thread_id"]) if row["thread_id"] else None,
         root_id=str(row["root_id"]) if row["root_id"] else None,
+        card_only=card_only,
     )
 
 

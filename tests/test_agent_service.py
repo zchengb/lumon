@@ -405,8 +405,22 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         sender_type="user",
         images=(InboundImage(file_key="img-1"),),
     )
+    card = InboundMessage(
+        event_id="evt-card",
+        message_id="om-card",
+        chat_id="oc-1",
+        chat_type="p2p",
+        text="转发邮件的卡片内容",
+        sender_id="ou-1",
+        sender_type="user",
+        card_only=True,
+    )
 
     async def run() -> None:
+        await service.handle_message(card)
+        await service.wait_for_idle()
+        assert runner.prompts == []
+        assert channel.replies == []
         await service.handle_message(message)
         await service.wait_for_idle()
         runner.next_final_text = (
@@ -443,6 +457,8 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
         ("om-2", "reaction:om-2"),
     ]
     assert len(runner.prompts) == 2
+    assert "<feishu-card-context>" in runner.prompts[0]
+    assert "转发邮件的卡片内容" in runner.prompts[0]
     assert runner.agent_session_ids == [None, "provider-session-1"]
     assert runner.images[0][0].name == "img-1.png"
     assert not runner.images[0][0].exists()

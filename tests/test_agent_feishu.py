@@ -276,6 +276,28 @@ def test_interactive_email_card_keeps_v1_body_and_quoted_history() -> None:
     assert "Sender: AWS Notifications" in message.text
     assert "> Previous alert context" in message.text
     assert "[interactive]" not in message.text
+    assert message.card_only
+
+
+def test_regular_text_with_card_payload_is_not_deferred() -> None:
+    message = normalize_message(
+        {
+            **_raw("p2p", "請分析這封郵件"),
+            "content": SimpleNamespace(
+                card={
+                    "elements": [
+                        {
+                            "tag": "div",
+                            "text": {"tag": "lark_md", "content": "Email preview"},
+                        }
+                    ]
+                }
+            ),
+        }
+    )
+
+    assert message is not None
+    assert not message.card_only
 
 
 def test_group_reply_creates_a_thread_for_a_top_level_message(
