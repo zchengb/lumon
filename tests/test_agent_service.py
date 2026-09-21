@@ -462,14 +462,15 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     assert runner.agent_session_ids == [None, "provider-session-1"]
     assert runner.images[0][0].name == "img-1.png"
     assert not runner.images[0][0].exists()
-    assert "<lumon-flow-context>" in runner.prompts[1]
+    assert "<lumon-flow-context>" not in runner.prompts[1]
+    assert "<lumon-capability-context>" not in runner.prompts[1]
+    assert "test-case-generation" in runner.prompts[0]
     assert "<lumon-channel-context>" in runner.prompts[0]
     assert "chat_id: oc-1" in runner.prompts[0]
     assert "source_message_id: om-1" in runner.prompts[0]
     assert "delivery_mode: private_direct" in runner.prompts[0]
     assert "chat_id: oc-1" in runner.prompts[1]
     assert "source_message_id: om-2" in runner.prompts[1]
-    assert "test-case-generation" in runner.prompts[1]
     assert "请继续说明目录" in runner.prompts[1]
     assert "请检查 README" not in runner.prompts[1]
     assert "Workspace 已检查" not in runner.prompts[1]

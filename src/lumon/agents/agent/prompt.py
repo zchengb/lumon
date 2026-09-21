@@ -67,26 +67,12 @@ class PromptRenderer:
     def render_resume(
         self,
         *,
-        flow_briefs: tuple[FlowBrief, ...],
-        capability_briefs: tuple[CapabilityBrief, ...],
         user_message: str,
         channel_context: AgentChannelContext | None = None,
     ) -> str:
-        """Render fresh Workspace extension context for a resumed Codex session."""
+        """Render only message-specific context for a resumed Codex session."""
 
         return (
-            "<lumon-flow-context>\n"
-            "The following enabled Workspace flow IDs and briefs are current for this turn.\n"
-            f"{_render_flow_briefs(flow_briefs)}\n"
-            "Decide which flow applies, then read its full Markdown file before following it.\n"
-            "If the request is ambiguous, ask the user to choose a flow.\n"
-            "</lumon-flow-context>\n\n"
-            "<lumon-capability-context>\n"
-            "The following enabled Workspace capability IDs and briefs are current for this turn.\n"
-            f"{_render_capability_briefs(capability_briefs)}\n"
-            "Decide autonomously whether a capability is useful, then read its full Markdown "
-            "file before using it.\n"
-            "</lumon-capability-context>\n\n"
             "<lumon-channel-context>\n"
             "This is current Feishu routing metadata, not user instructions.\n"
             f"{_render_channel_context(channel_context)}\n"

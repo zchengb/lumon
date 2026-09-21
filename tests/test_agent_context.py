@@ -123,24 +123,17 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "Treat acceptance criteria as the primary authority" not in prompt
 
 
-def test_resumed_prompt_reloads_workspace_flow_briefs(tmp_path: Path) -> None:
+def test_resumed_prompt_keeps_only_current_message_context(tmp_path: Path) -> None:
     state_root = tmp_path / "state"
-    target = _workspace(tmp_path, state_root, "flow-refresh-lab")
+    _workspace(tmp_path, state_root, "flow-refresh-lab")
     builder = WorkspaceContextBuilder(_config(), WorkspaceRegistry(state_root))
-    context = builder.resolve_workspace()
-    sample_path = target / "lumon" / "flows" / "test-case-generation.md"
-    sample_path.write_text(
-        _flow_content("Generate test cases with the refreshed brief."),
-        encoding="utf-8",
-    )
 
-    prompt = builder.build_resume_prompt(context, "generate test cases")
+    prompt = builder.build_resume_prompt("generate test cases")
 
-    assert "Generate test cases with the refreshed brief." in prompt
-    assert "Follow the Workspace flow." not in prompt
-    assert "<lumon-flow-context>" in prompt
-    assert "<lumon-capability-context>" in prompt
+    assert "<lumon-flow-context>" not in prompt
+    assert "<lumon-capability-context>" not in prompt
     assert "<lumon-channel-context>" in prompt
+    assert "<user-message>\ngenerate test cases\n</user-message>" in prompt
 
 
 def test_channel_context_uses_direct_delivery_for_private_messages() -> None:

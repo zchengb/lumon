@@ -159,13 +159,17 @@ class CodexTool:
         if self.reasoning_effort:
             serialized_effort = json.dumps(self.reasoning_effort)
             command.extend(("--config", f"model_reasoning_effort={serialized_effort}"))
-        for image in images:
-            command.extend(("--image", str(image)))
         if resume_session_id:
             # ``--cd`` and the other execution options belong to the parent
-            # ``exec`` command. They must precede the ``resume`` subcommand;
-            # Codex rejects them when they appear after ``resume``.
-            command.extend(("resume", resume_session_id, "-"))
+            # ``exec`` command. ``--image`` belongs after ``resume`` because
+            # its variadic value otherwise consumes the subcommand name.
+            command.append("resume")
+            for image in images:
+                command.extend(("--image", str(image)))
+            command.extend((resume_session_id, "-"))
+        else:
+            for image in images:
+                command.extend(("--image", str(image)))
         return tuple(command)
 
     async def execute(

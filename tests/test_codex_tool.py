@@ -173,6 +173,26 @@ def test_codex_tool_attaches_images_before_the_prompt(tmp_path: Path) -> None:
     )
 
 
+def test_codex_tool_attaches_images_to_a_resumed_prompt(tmp_path: Path) -> None:
+    image = tmp_path / "screen.png"
+    image.write_bytes(b"image")
+    tool = CodexTool(binary="codex")
+
+    assert tool.build_command(tmp_path, "session-1", images=(image,))[1:] == (
+        "exec",
+        "--json",
+        "--cd",
+        str(tmp_path),
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "resume",
+        "--image",
+        str(image),
+        "session-1",
+        "-",
+    )
+
+
 def test_codex_tool_reads_jsonl_event_larger_than_asyncio_default_limit(
     tmp_path: Path,
 ) -> None:

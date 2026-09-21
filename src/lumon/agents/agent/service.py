@@ -307,7 +307,6 @@ class AgentService:
                         prompt_span.update(metadata={"prompt_length": len(prompt)})
                 else:
                     prompt = context_builder.build_resume_prompt(
-                        context,
                         message.text,
                         channel_context=message.channel_context,
                     )

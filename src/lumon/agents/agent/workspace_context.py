@@ -98,16 +98,13 @@ class WorkspaceContextBuilder:
 
     def build_resume_prompt(
         self,
-        context: WorkspaceContext,
         user_message: str,
         *,
         channel_context: AgentChannelContext | None = None,
     ) -> str:
-        """Build a small prompt that refreshes flow briefs for a resumed Session."""
+        """Build a small prompt for a resumed Session."""
 
         return self.prompt_renderer.render_resume(
-            flow_briefs=FlowCatalog(context.path).discover().briefs,
-            capability_briefs=CapabilityCatalog(context.path).discover().briefs,
             user_message=user_message,
             channel_context=channel_context,
         )
