@@ -184,7 +184,7 @@ Agent configuration is kept separately from Workspace settings in
 credentials are stored in the owner-only `600` configuration file. Dashboard
 responses expose only short prefix/suffix masks; full credentials never appear
 in CLI output, logs, or Feishu replies.
-Agent uses Codex CLI model `gpt-5.6-luna` with `max` reasoning effort by default.
+Agent uses Codex CLI model `gpt-6-luna` with `max` reasoning effort by default.
 The `agent_model` and `agent_reasoning_effort` fields in `agent.toml` can be
 edited to choose another supported model and effort; `lumon agent doctor`
 shows the selected pair. Existing `codex_model` files are read for compatibility

@@ -70,6 +70,8 @@ before changing the registry or default selection.
 The **Agent** page manages configuration that applies to the local Agent
 across all Workspaces: enabled state, Codex model, reasoning effort, default
 Workspace, Feishu App credentials, and Langfuse Cloud observability.
+The model field accepts an editable Codex model name, and the reasoning effort
+can be changed independently; both values are saved to the local Agent config.
 
 The API returns credential presence flags and short prefix/suffix masks. New or
 replacement secrets are accepted by the update endpoint but never returned in
