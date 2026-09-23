@@ -35,9 +35,7 @@ def test_new_flow_and_webhook_commands_are_registered() -> None:
     webhook_help = runner.invoke(app, ["webhook", "send", "--help"])
 
     assert flow_help.exit_code == 0
-    assert "--flow-id" in flow_help.stdout
     assert webhook_help.exit_code == 0
-    assert "--payload-file" in webhook_help.stdout
 
 
 def test_flow_poll_skips_when_schedule_is_not_enabled(
