@@ -149,12 +149,23 @@ class AutoDeliveryResponse(StrictModel):
     schedule_expression: str
 
 
+class AutoScanResponse(StrictModel):
+    """Display-safe Auto Scan settings."""
+
+    enabled: bool
+    lookback_days: int
+    trigger_hooks: list[str]
+    schedule_expression: str
+    workflow_description: str
+
+
 class WorkspaceSettingsResponse(StrictModel):
     """Display-safe Workspace settings."""
 
     workspace_id: UUID
     feishu_webhook: FeishuWebhookResponse
     auto_delivery: AutoDeliveryResponse
+    auto_scan: AutoScanResponse
 
 
 class FeishuWebhookUpdate(StrictModel):
@@ -172,11 +183,60 @@ class AutoDeliveryUpdate(StrictModel):
     schedule_expression: str | None = None
 
 
+class AutoScanUpdate(StrictModel):
+    """Workspace Auto Scan configuration update."""
+
+    enabled: bool
+    lookback_days: int = Field(ge=1, le=365)
+    trigger_hooks: list[str] | None = None
+    schedule_expression: str | None = None
+    workflow_description: str | None = Field(default=None, max_length=8_000)
+
+
 class WorkspaceSettingsUpdate(StrictModel):
     """Typed settings update without a generic key-value escape hatch."""
 
     feishu_webhook: FeishuWebhookUpdate
     auto_delivery: AutoDeliveryUpdate | None = None
+    auto_scan: AutoScanUpdate | None = None
+
+
+class ScanFindingResponse(StrictModel):
+    """One safe finding returned in Auto Scan history."""
+
+    title: str
+    severity: str
+    repository: str
+    impact: str
+    trigger: str
+    file: str
+    line_range: str
+    code_snippet: str
+    suggestion: str
+    root_cause: str
+    validation: str
+    issue_id: str
+    issue_status: str
+    pr_url: str | None
+
+
+class ScanRunResponse(StrictModel):
+    """One Auto Scan history row."""
+
+    run_id: str
+    state: str
+    phase: str
+    started_at: str
+    finished_at: str | None
+    lookback_days: int
+    repositories_scanned: int
+    repositories_failed: int
+    findings: list[ScanFindingResponse]
+    failures: list[str]
+    hook_results: list[str]
+    html_available: bool
+    pdf_available: bool
+    duration_seconds: int | None
 
 
 class FlowSummaryResponse(StrictModel):

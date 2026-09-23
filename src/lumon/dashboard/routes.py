@@ -7,7 +7,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from lumon import __version__
 from lumon.dashboard.schemas import (
@@ -15,6 +15,7 @@ from lumon.dashboard.schemas import (
     AgentSettingsResponse,
     AgentSettingsUpdate,
     AutoDeliveryResponse,
+    AutoScanResponse,
     BootstrapResponse,
     CapabilityContentRequest,
     CapabilityDocumentResponse,
@@ -30,6 +31,8 @@ from lumon.dashboard.schemas import (
     RegisterWorkspaceRequest,
     RepositoryOverviewResponse,
     RepositoryResultResponse,
+    ScanFindingResponse,
+    ScanRunResponse,
     WebhookTestResponse,
     WorkspaceFolderSelectionResponse,
     WorkspaceOverviewResponse,
@@ -52,6 +55,7 @@ from lumon.dashboard.service import (
     AgentSettingsUpdate as AgentSettingsUpdateRequest,
 )
 from lumon.errors import InvalidInputError, LumonError, PreflightError, WorkspaceNotFoundError
+from lumon.scan.model import ScanFinding, ScanRun
 
 # Route functions are consumed by FastAPI's runtime decorators.
 # pyright cannot observe that registration and reports them as unused otherwise.
@@ -192,6 +196,32 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
         return _settings_response(_service(request).settings(workspace_id))
 
     @router.get(
+        "/workspaces/{workspace_id}/scans",
+        response_model=list[ScanRunResponse],
+    )
+    def list_scans(request: Request, workspace_id: UUID) -> list[ScanRunResponse]:
+        return [_scan_response(item) for item in _service(request).scans(workspace_id)]
+
+    @router.post(
+        "/workspaces/{workspace_id}/scans",
+        response_model=ScanRunResponse,
+        status_code=201,
+    )
+    def start_scan(request: Request, workspace_id: UUID) -> ScanRunResponse:
+        return _scan_response(_service(request).start_scan(workspace_id))
+
+    @router.get("/workspaces/{workspace_id}/scans/{run_id}/artifacts/{kind}")
+    def scan_artifact(
+        request: Request,
+        workspace_id: UUID,
+        run_id: str,
+        kind: str,
+    ) -> FileResponse:
+        path = _service(request).scan_artifact(workspace_id, run_id, kind)
+        media_type = "application/pdf" if kind == "pdf" else "text/html"
+        return FileResponse(path, media_type=media_type, filename=path.name)
+
+    @router.get(
         "/workspaces/{workspace_id}/flows",
         response_model=list[FlowSummaryResponse],
     )
@@ -313,6 +343,7 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     ) -> WorkspaceSettingsResponse:
         update = payload.feishu_webhook
         auto_delivery = payload.auto_delivery
+        auto_scan = payload.auto_scan
         settings = _service(request).update_settings(
             workspace_id,
             enabled=update.enabled,
@@ -326,6 +357,19 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
             ),
             auto_delivery_schedule_expression=(
                 auto_delivery.schedule_expression if auto_delivery is not None else None
+            ),
+            auto_scan_enabled=(auto_scan.enabled if auto_scan is not None else None),
+            auto_scan_lookback_days=(auto_scan.lookback_days if auto_scan is not None else None),
+            auto_scan_trigger_hooks=(
+                tuple(auto_scan.trigger_hooks)
+                if auto_scan is not None and auto_scan.trigger_hooks is not None
+                else None
+            ),
+            auto_scan_schedule_expression=(
+                auto_scan.schedule_expression if auto_scan is not None else None
+            ),
+            auto_scan_workflow_description=(
+                auto_scan.workflow_description if auto_scan is not None else None
             ),
         )
         return _settings_response(settings)
@@ -386,6 +430,51 @@ def _settings_response(settings: WorkspaceSettingsView) -> WorkspaceSettingsResp
             trigger_hooks=list(settings.auto_delivery.trigger_hooks),
             schedule_expression=settings.auto_delivery.schedule_expression,
         ),
+        auto_scan=AutoScanResponse(
+            enabled=settings.auto_scan.enabled,
+            lookback_days=settings.auto_scan.lookback_days,
+            trigger_hooks=list(settings.auto_scan.trigger_hooks),
+            schedule_expression=settings.auto_scan.schedule_expression,
+            workflow_description=settings.auto_scan.workflow_description,
+        ),
+    )
+
+
+def _scan_response(run: ScanRun) -> ScanRunResponse:
+    return ScanRunResponse(
+        run_id=run.run_id,
+        state=run.state.value,
+        phase=run.phase,
+        started_at=run.started_at.isoformat(),
+        finished_at=run.finished_at.isoformat() if run.finished_at else None,
+        lookback_days=run.lookback_days,
+        repositories_scanned=run.repositories_scanned,
+        repositories_failed=run.repositories_failed,
+        findings=[_finding_response(finding) for finding in run.findings],
+        failures=list(run.failures),
+        hook_results=list(run.hook_results),
+        html_available=run.html_path is not None,
+        pdf_available=run.pdf_path is not None,
+        duration_seconds=run.duration_seconds,
+    )
+
+
+def _finding_response(finding: ScanFinding) -> ScanFindingResponse:
+    return ScanFindingResponse(
+        title=finding.title,
+        severity=finding.severity,
+        repository=finding.repository,
+        impact=finding.impact,
+        trigger=finding.trigger,
+        file=finding.file,
+        line_range=finding.line_range,
+        code_snippet=finding.code_snippet,
+        suggestion=finding.suggestion,
+        root_cause=finding.root_cause,
+        validation=finding.validation,
+        issue_id=finding.issue_id,
+        issue_status=finding.issue_status,
+        pr_url=finding.pr_url,
     )
 
 

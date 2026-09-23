@@ -14,6 +14,7 @@ import type {
   WorkspaceListItem,
   WorkspaceOverview,
   WorkspaceSettings,
+  ScanRun,
 } from "../shared/types";
 
 interface ErrorPayload {
@@ -197,6 +198,14 @@ export const dashboardApi = {
       method: "PUT",
       body: JSON.stringify(payload),
     });
+  },
+
+  listScans(workspaceId: string): Promise<ScanRun[]> {
+    return request<ScanRun[]>(`/api/workspaces/${workspaceId}/scans`);
+  },
+
+  startScan(workspaceId: string): Promise<ScanRun> {
+    return request<ScanRun>(`/api/workspaces/${workspaceId}/scans`, { method: "POST" });
   },
 
   testFeishu(workspaceId: string, url?: string): Promise<WebhookTestResponse> {

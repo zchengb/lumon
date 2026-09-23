@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   Puzzle,
   Rocket,
+  ScanSearch,
   Settings,
   X,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import { ApiError, dashboardApi } from "./api";
 import { readNavigation, writeNavigation } from "./navigation";
 import { AgentSettingsPage } from "../features/agent/AgentSettingsPage";
 import { AutoDeliveryPage } from "../features/delivery/AutoDeliveryPage";
+import { AutoScanPage } from "../features/scan/AutoScanPage";
 import { CapabilitiesPage } from "../features/capabilities/CapabilitiesPage";
 import { FlowsPage } from "../features/flows/FlowsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -50,6 +52,7 @@ export function App(): React.JSX.Element {
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [agentSettingsDirty, setAgentSettingsDirty] = useState(false);
   const [autoDeliveryDirty, setAutoDeliveryDirty] = useState(false);
+  const [autoScanDirty, setAutoScanDirty] = useState(false);
   const [flowsDirty, setFlowsDirty] = useState(false);
   const [capabilitiesDirty, setCapabilitiesDirty] = useState(false);
 
@@ -102,11 +105,12 @@ export function App(): React.JSX.Element {
 
   function changeWorkspace(nextId: string): void {
     if (
-      (settingsDirty || autoDeliveryDirty || flowsDirty || capabilitiesDirty)
+      (settingsDirty || autoDeliveryDirty || autoScanDirty || flowsDirty || capabilitiesDirty)
       && !window.confirm(t("app.unsavedWorkspaceConfirm"))
     ) return;
     setSettingsDirty(false);
     setAutoDeliveryDirty(false);
+    setAutoScanDirty(false);
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
     setSelectedId(nextId);
@@ -120,6 +124,8 @@ export function App(): React.JSX.Element {
           ? agentSettingsDirty
         : view === "auto-delivery"
           ? autoDeliveryDirty
+        : view === "auto-scan"
+          ? autoScanDirty
         : view === "flows"
           ? flowsDirty
           : view === "capabilities"
@@ -129,6 +135,7 @@ export function App(): React.JSX.Element {
     setSettingsDirty(false);
     setAgentSettingsDirty(false);
     setAutoDeliveryDirty(false);
+    setAutoScanDirty(false);
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
     setView(nextView);
@@ -226,6 +233,7 @@ export function App(): React.JSX.Element {
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />{t("app.settings")}</button>
           <button className={view === "agent" ? "active" : ""} type="button" onClick={() => changeView("agent")}><Bot size={17} />{t("app.agentSettings")}</button>
           <button className={view === "auto-delivery" ? "active" : ""} type="button" onClick={() => changeView("auto-delivery")}><Rocket size={17} />{t("app.autoDelivery")}</button>
+          <button className={view === "auto-scan" ? "active" : ""} type="button" onClick={() => changeView("auto-scan")}><ScanSearch size={17} />{t("app.autoScan")}</button>
           <button className={view === "flows" ? "active" : ""} type="button" onClick={() => changeView("flows")}><GitBranch size={17} />{t("app.flows")}</button>
           <button className={view === "capabilities" ? "active" : ""} type="button" onClick={() => changeView("capabilities")}><Puzzle size={17} />{t("app.capabilities")}</button>
         </nav>
@@ -248,6 +256,7 @@ export function App(): React.JSX.Element {
           {selectedId && view === "settings" && settings && <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />}
           {view === "agent" && agentSettings && <AgentSettingsPage settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
           {selectedId && view === "auto-delivery" && settings && <AutoDeliveryPage settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />}
+          {selectedId && view === "auto-scan" && settings && <AutoScanPage workspaceId={selectedId} settings={settings} onSave={saveSettings} onDirtyChange={setAutoScanDirty} onError={setError} />}
           {selectedId && view === "flows" && <FlowsPage workspaceId={selectedId} onDirtyChange={setFlowsDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && view === "capabilities" && <CapabilitiesPage workspaceId={selectedId} onDirtyChange={setCapabilitiesDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && refreshing && !overview && !settings && <div className="loading-inline"><LoaderCircle className="spin" size={22} />{t("app.readingWorkspace")}</div>}

@@ -703,6 +703,11 @@ code {
   background: rgba(169, 109, 43, 0.14);
 }
 
+.status-danger {
+  color: #a43d36;
+  background: rgba(164, 61, 54, 0.12);
+}
+
 .status-neutral {
   color: var(--muted);
   background: rgba(27, 28, 27, 0.07);
@@ -1130,6 +1135,55 @@ code {
 
 .auto-delivery-fields {
   padding: 0 24px;
+}
+
+.auto-scan-fields {
+  padding: 0 24px;
+}
+
+.scan-history-panel .settings-description {
+  margin-bottom: 18px;
+}
+
+.scan-history-scroll {
+  margin: 0 24px 24px;
+}
+
+.scan-history-table {
+  min-width: 680px;
+}
+
+.scan-artifacts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scan-artifacts a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--copper);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.scan-artifacts a:hover {
+  text-decoration: underline;
+}
+
+.empty-table {
+  padding: 30px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.scan-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 24px 24px;
 }
 
 .auto-delivery-fields .field-label {

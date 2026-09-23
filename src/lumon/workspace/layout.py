@@ -61,6 +61,12 @@ class WorkspaceLayout:
         return tuple(self.control_dir / name for name in ("runs", "artifacts", "logs", "tmp"))
 
     @property
+    def scan_runs_dir(self) -> Path:
+        """Return the Workspace-owned Auto Scan history directory."""
+
+        return self.control_dir / "runs" / "scans"
+
+    @property
     def generated_files(self) -> tuple[Path, ...]:
         return (
             self.readme,

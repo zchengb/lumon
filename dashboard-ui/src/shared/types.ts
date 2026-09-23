@@ -1,6 +1,6 @@
 export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
-export type View = "overview" | "settings" | "agent" | "auto-delivery" | "flows" | "capabilities";
+export type View = "overview" | "settings" | "agent" | "auto-delivery" | "auto-scan" | "flows" | "capabilities";
 
 export type AgentReasoningEffort =
   | "minimal"
@@ -55,10 +55,19 @@ export interface AutoDeliverySettings {
   schedule_expression: string;
 }
 
+export interface AutoScanSettings {
+  enabled: boolean;
+  lookback_days: number;
+  trigger_hooks: string[];
+  schedule_expression: string;
+  workflow_description: string;
+}
+
 export interface WorkspaceSettings {
   workspace_id: string;
   feishu_webhook: FeishuWebhookSettings;
   auto_delivery: AutoDeliverySettings;
+  auto_scan: AutoScanSettings;
 }
 
 export interface FlowSummary {
@@ -122,6 +131,47 @@ export interface SettingsUpdate {
     trigger_hooks?: string[];
     schedule_expression?: string;
   };
+  auto_scan?: {
+    enabled: boolean;
+    lookback_days: number;
+    trigger_hooks?: string[];
+    schedule_expression?: string;
+    workflow_description?: string;
+  };
+}
+
+export interface ScanFinding {
+  title: string;
+  severity: string;
+  repository: string;
+  impact: string;
+  trigger: string;
+  file: string;
+  line_range: string;
+  code_snippet: string;
+  suggestion: string;
+  root_cause: string;
+  validation: string;
+  issue_id: string;
+  issue_status: string;
+  pr_url: string | null;
+}
+
+export interface ScanRun {
+  run_id: string;
+  state: string;
+  phase: string;
+  started_at: string;
+  finished_at: string | null;
+  lookback_days: number;
+  repositories_scanned: number;
+  repositories_failed: number;
+  findings: ScanFinding[];
+  failures: string[];
+  hook_results: string[];
+  html_available: boolean;
+  pdf_available: boolean;
+  duration_seconds: number | null;
 }
 
 export interface AgentObservabilityUpdate {

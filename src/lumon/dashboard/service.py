@@ -22,6 +22,9 @@ from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler
 from lumon.errors import AgentConfigError, LumonError, PreflightError, WorkspaceNotFoundError
 from lumon.flows.catalog import FlowCatalog, FlowValidationError
 from lumon.flows.model import FlowDefinition
+from lumon.scan.model import ScanRun
+from lumon.scan.scheduler import LaunchdScanScheduler, ScanScheduler
+from lumon.scan.service import ScanService
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -32,6 +35,7 @@ from lumon.workspace.registry import WorkspaceRegistration, WorkspaceRegistry
 from lumon.workspace.repositories import RepositoryProvisioner, spec_from_url
 from lumon.workspace.settings import (
     AutoDeliverySettings,
+    AutoScanSettings,
     FeishuWebhookSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
@@ -94,12 +98,24 @@ class AutoDeliverySettingsView:
 
 
 @dataclass(frozen=True, slots=True)
+class AutoScanSettingsView:
+    """Display-safe Auto Scan configuration for one Workspace."""
+
+    enabled: bool
+    lookback_days: int
+    trigger_hooks: tuple[str, ...]
+    schedule_expression: str
+    workflow_description: str
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceSettingsView:
     """The display-safe settings view for one Workspace."""
 
     workspace_id: UUID
     feishu_webhook: WebhookSettingsView
     auto_delivery: AutoDeliverySettingsView
+    auto_scan: AutoScanSettingsView
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +240,8 @@ class DashboardService:
         folder_picker: Callable[[], Path | None] | None = None,
         agent_config_store: AgentConfigStore | None = None,
         delivery_scheduler: DeliveryScheduler | None = None,
+        scan_scheduler: ScanScheduler | None = None,
+        scan_service: ScanService | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
@@ -238,6 +256,13 @@ class DashboardService:
         self._folder_picker = folder_picker or FolderPicker().choose
         self.delivery_scheduler = delivery_scheduler or LaunchdDeliveryScheduler(
             self.registry.layout.root
+        )
+        self.scan_scheduler = scan_scheduler or LaunchdScanScheduler(self.registry.layout.root)
+        self.scan_service = scan_service or ScanService(
+            state_root=self.registry.layout.root,
+            registry=self.registry,
+            settings_store=self.settings_store,
+            agent_config_store=self.agent_config_store,
         )
 
     def list_workspaces(self) -> tuple[WorkspaceListItem, ...]:
@@ -321,6 +346,24 @@ class DashboardService:
         self._require(workspace_id)
         settings = self.settings_store.load(workspace_id)
         return _settings_view(settings)
+
+    def scans(self, workspace_id: UUID) -> tuple[ScanRun, ...]:
+        """Return recent Auto Scan receipts for one Workspace."""
+
+        registration = self._require(workspace_id)
+        return self.scan_service.list_runs(registration.path)
+
+    def start_scan(self, workspace_id: UUID) -> ScanRun:
+        """Start a manual Auto Scan even when its schedule is disabled."""
+
+        self._require(workspace_id)
+        return self.scan_service.run(workspace_id, force=True)
+
+    def scan_artifact(self, workspace_id: UUID, run_id: str, kind: str) -> Path:
+        """Return a safe report artifact path for the local Dashboard."""
+
+        registration = self._require(workspace_id)
+        return self.scan_service.artifact_path(registration.path, run_id, kind)
 
     def flows(self, workspace_id: UUID) -> tuple[FlowSummaryView, ...]:
         """List valid and invalid flow files for one Workspace."""
@@ -526,6 +569,11 @@ class DashboardService:
         auto_delivery_enabled: bool | None = None,
         auto_delivery_trigger_hooks: tuple[str, ...] | None = None,
         auto_delivery_schedule_expression: str | None = None,
+        auto_scan_enabled: bool | None = None,
+        auto_scan_lookback_days: int | None = None,
+        auto_scan_trigger_hooks: tuple[str, ...] | None = None,
+        auto_scan_schedule_expression: str | None = None,
+        auto_scan_workflow_description: str | None = None,
     ) -> WorkspaceSettingsView:
         """Update typed settings while retaining or clearing URL explicitly."""
 
@@ -556,6 +604,31 @@ class DashboardService:
                     else auto_delivery_schedule_expression
                 ),
             ),
+            auto_scan=AutoScanSettings(
+                enabled=(
+                    current.auto_scan.enabled if auto_scan_enabled is None else auto_scan_enabled
+                ),
+                lookback_days=(
+                    current.auto_scan.lookback_days
+                    if auto_scan_lookback_days is None
+                    else auto_scan_lookback_days
+                ),
+                trigger_hooks=(
+                    current.auto_scan.trigger_hooks
+                    if auto_scan_trigger_hooks is None
+                    else auto_scan_trigger_hooks
+                ),
+                schedule_expression=(
+                    current.auto_scan.schedule_expression
+                    if auto_scan_schedule_expression is None
+                    else auto_scan_schedule_expression
+                ),
+                workflow_description=(
+                    current.auto_scan.workflow_description
+                    if auto_scan_workflow_description is None
+                    else auto_scan_workflow_description
+                ),
+            ),
         )
         snapshot = self.settings_store.raw_snapshot(workspace_id)
         try:
@@ -565,6 +638,7 @@ class DashboardService:
                 workspace_id,
                 updated.auto_delivery,
             )
+            self.scan_scheduler.apply(registration.path, workspace_id, updated.auto_scan)
         except LumonError:
             self.settings_store.restore_raw(workspace_id, snapshot)
             raise
@@ -647,6 +721,13 @@ def _settings_view(settings: WorkspaceSettings) -> WorkspaceSettingsView:
             enabled=settings.auto_delivery.enabled,
             trigger_hooks=settings.auto_delivery.trigger_hooks,
             schedule_expression=settings.auto_delivery.schedule_expression,
+        ),
+        auto_scan=AutoScanSettingsView(
+            enabled=settings.auto_scan.enabled,
+            lookback_days=settings.auto_scan.lookback_days,
+            trigger_hooks=settings.auto_scan.trigger_hooks,
+            schedule_expression=settings.auto_scan.schedule_expression,
+            workflow_description=settings.auto_scan.workflow_description,
         ),
     )
 

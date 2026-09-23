@@ -22,7 +22,11 @@ from lumon.version import __version__
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
-from lumon.workspace.settings import AutoDeliverySettings, WorkspaceSettingsStore
+from lumon.workspace.settings import (
+    AutoDeliverySettings,
+    AutoScanSettings,
+    WorkspaceSettingsStore,
+)
 
 
 class _NoopDeliveryScheduler:
@@ -31,6 +35,16 @@ class _NoopDeliveryScheduler:
         workspace: Path,
         workspace_id: UUID,
         settings: AutoDeliverySettings,
+    ) -> None:
+        del workspace, workspace_id, settings
+
+
+class _NoopScanScheduler:
+    def apply(
+        self,
+        workspace: Path,
+        workspace_id: UUID,
+        settings: AutoScanSettings,
     ) -> None:
         del workspace, workspace_id, settings
 
@@ -121,6 +135,7 @@ def _service(
         webhook_sender=FeishuWebhookSender(opener=_opener),
         folder_picker=folder_picker,
         delivery_scheduler=_NoopDeliveryScheduler(),
+        scan_scheduler=_NoopScanScheduler(),
     )
 
 
@@ -614,6 +629,53 @@ def test_auto_delivery_scheduler_is_updated_and_settings_roll_back_on_failure(
         "trigger_hooks": ["jira.delivery_ready"],
         "schedule_expression": "*/10 * * * *",
     }
+
+
+def test_auto_scan_settings_and_history_are_available_from_dashboard(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(tmp_path / "workspace"), "repositories": []},
+    ).json()["workspace_id"]
+
+    defaults = client.get(f"/api/workspaces/{workspace_id}/settings")
+    assert defaults.status_code == 200
+    assert defaults.json()["auto_scan"] == {
+        "enabled": False,
+        "lookback_days": 7,
+        "trigger_hooks": [],
+        "schedule_expression": "0 12 * * 1-5",
+        "workflow_description": (
+            "Review recent repository changes for confirmed production-impacting bugs. "
+            "Keep the review evidence-based and report-only."
+        ),
+    }
+
+    saved = client.put(
+        f"/api/workspaces/{workspace_id}/settings",
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_scan": {
+                "enabled": True,
+                "lookback_days": 14,
+                "trigger_hooks": ["twg.create_bug"],
+                "schedule_expression": "0 9 * * 1-5",
+                "workflow_description": "Create a bug through the Workspace completion hook.",
+            },
+        },
+    )
+    assert saved.status_code == 200
+    assert saved.json()["auto_scan"] == {
+        "enabled": True,
+        "lookback_days": 14,
+        "trigger_hooks": ["twg.create_bug"],
+        "schedule_expression": "0 9 * * 1-5",
+        "workflow_description": "Create a bug through the Workspace completion hook.",
+    }
+    assert client.get(f"/api/workspaces/{workspace_id}/scans").json() == []
 
 
 def test_register_existing_workspace_returns_registry_item(tmp_path: Path) -> None:

@@ -19,6 +19,12 @@ from lumon.workspace.registry import UserStateLayout
 SETTINGS_SCHEMA_VERSION = 1
 DEFAULT_AUTO_DELIVERY_HOOKS = ("jira.delivery_ready",)
 DEFAULT_AUTO_DELIVERY_SCHEDULE = "*/5 * * * *"
+DEFAULT_AUTO_SCAN_HOOKS: tuple[str, ...] = ()
+DEFAULT_AUTO_SCAN_SCHEDULE = "0 12 * * 1-5"
+DEFAULT_AUTO_SCAN_DESCRIPTION = (
+    "Review recent repository changes for confirmed production-impacting bugs. "
+    "Keep the review evidence-based and report-only."
+)
 _HOOK_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9._:-]{0,63}\Z")
 _CRON_FIELD_PATTERN = re.compile(
     r"(?:\*|\*/[1-9][0-9]*|[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*)\Z"
@@ -43,12 +49,24 @@ class AutoDeliverySettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AutoScanSettings:
+    """Workspace configuration for scheduled, review-only code scans."""
+
+    enabled: bool = False
+    lookback_days: int = 7
+    trigger_hooks: tuple[str, ...] = DEFAULT_AUTO_SCAN_HOOKS
+    schedule_expression: str = DEFAULT_AUTO_SCAN_SCHEDULE
+    workflow_description: str = DEFAULT_AUTO_SCAN_DESCRIPTION
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceSettings:
     """All typed, mutable settings owned by one Workspace profile."""
 
     workspace_id: UUID
     feishu_webhook: FeishuWebhookSettings = FeishuWebhookSettings()
     auto_delivery: AutoDeliverySettings = AutoDeliverySettings()
+    auto_scan: AutoScanSettings = AutoScanSettings()
 
 
 class WorkspaceSettingsStore:
@@ -91,6 +109,7 @@ class WorkspaceSettingsStore:
         if settings.feishu_webhook.url is not None:
             validate_webhook_url(settings.feishu_webhook.url)
         _validate_auto_delivery(settings.auto_delivery)
+        _validate_auto_scan(settings.auto_scan)
         path = self.path_for(settings.workspace_id)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -219,6 +238,37 @@ def _parse_settings(
         )
     except InvalidInputError as exc:
         raise PreflightError(f"Invalid Auto Delivery settings: {source}") from exc
+    raw_auto_scan = payload.get("auto_scan", {})
+    if not isinstance(raw_auto_scan, dict):
+        raise PreflightError(f"Invalid Auto Scan settings: {source}")
+    auto_scan = cast(dict[str, object], raw_auto_scan)
+    auto_scan_enabled = auto_scan.get("enabled", False)
+    lookback_days = auto_scan.get("lookback_days", 7)
+    workflow_description = auto_scan.get("workflow_description", DEFAULT_AUTO_SCAN_DESCRIPTION)
+    if not isinstance(auto_scan_enabled, bool):
+        raise PreflightError(f"Invalid Auto Scan enabled value: {source}")
+    if (
+        not isinstance(lookback_days, int)
+        or isinstance(lookback_days, bool)
+        or not 1 <= lookback_days <= 365
+    ):
+        raise PreflightError(f"Invalid Auto Scan lookback_days value: {source}")
+    if not isinstance(workflow_description, str) or not workflow_description.strip():
+        raise PreflightError(f"Invalid Auto Scan workflow_description value: {source}")
+    if len(workflow_description.strip()) > 8_000:
+        raise PreflightError(f"Auto Scan workflow_description is too long: {source}")
+    try:
+        scan_hooks = normalize_trigger_hooks(
+            auto_scan.get("trigger_hooks", DEFAULT_AUTO_SCAN_HOOKS),
+            allow_empty=True,
+            label="Auto Scan",
+        )
+        scan_schedule = validate_schedule_expression(
+            auto_scan.get("schedule_expression", DEFAULT_AUTO_SCAN_SCHEDULE),
+            label="Auto Scan",
+        )
+    except InvalidInputError as exc:
+        raise PreflightError(f"Invalid Auto Scan settings: {source}") from exc
     return WorkspaceSettings(
         workspace_id=workspace_id,
         feishu_webhook=FeishuWebhookSettings(enabled=enabled, url=url),
@@ -226,6 +276,13 @@ def _parse_settings(
             enabled=auto_delivery_enabled,
             trigger_hooks=trigger_hooks,
             schedule_expression=schedule_expression,
+        ),
+        auto_scan=AutoScanSettings(
+            enabled=auto_scan_enabled,
+            lookback_days=lookback_days,
+            trigger_hooks=scan_hooks,
+            schedule_expression=scan_schedule,
+            workflow_description=workflow_description.strip(),
         ),
     )
 
@@ -247,6 +304,13 @@ def _render(settings: WorkspaceSettings) -> str:
             f"enabled = {'true' if settings.auto_delivery.enabled else 'false'}",
             f"trigger_hooks = {_toml_array(settings.auto_delivery.trigger_hooks)}",
             f"schedule_expression = {_toml_string(settings.auto_delivery.schedule_expression)}",
+            "",
+            "[auto_scan]",
+            f"enabled = {'true' if settings.auto_scan.enabled else 'false'}",
+            f"lookback_days = {settings.auto_scan.lookback_days}",
+            f"trigger_hooks = {_toml_array(settings.auto_scan.trigger_hooks)}",
+            f"schedule_expression = {_toml_string(settings.auto_scan.schedule_expression)}",
+            f"workflow_description = {_toml_string(settings.auto_scan.workflow_description)}",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -260,7 +324,12 @@ def _toml_array(values: tuple[str, ...]) -> str:
     return "[" + ", ".join(_toml_string(value) for value in values) + "]"
 
 
-def normalize_trigger_hooks(values: object) -> tuple[str, ...]:
+def normalize_trigger_hooks(
+    values: object,
+    *,
+    allow_empty: bool = False,
+    label: str = "Auto Delivery",
+) -> tuple[str, ...]:
     """Normalize declarative trigger IDs without accepting executable input."""
 
     candidates: tuple[object, ...]
@@ -271,34 +340,34 @@ def normalize_trigger_hooks(values: object) -> tuple[str, ...]:
     elif isinstance(values, tuple):
         candidates = tuple(cast(tuple[object, ...], values))
     else:
-        raise InvalidInputError("Auto Delivery trigger_hooks must be a list of IDs.")
+        raise InvalidInputError(f"{label} trigger_hooks must be a list of IDs.")
 
     normalized: list[str] = []
     for candidate in candidates:
         if not isinstance(candidate, str):
-            raise InvalidInputError("Auto Delivery trigger hooks must be strings.")
+            raise InvalidInputError(f"{label} trigger hooks must be strings.")
         hook = candidate.strip()
         if not hook:
             continue
         if not _HOOK_ID_PATTERN.fullmatch(hook):
-            raise InvalidInputError(f"Invalid Auto Delivery trigger hook ID: {hook!r}.")
+            raise InvalidInputError(f"Invalid {label} trigger hook ID: {hook!r}.")
         if hook not in normalized:
             normalized.append(hook)
-    if not normalized:
-        raise InvalidInputError("Auto Delivery requires at least one trigger hook.")
+    if not normalized and not allow_empty:
+        raise InvalidInputError(f"{label} requires at least one trigger hook.")
     return tuple(normalized)
 
 
-def validate_schedule_expression(value: object) -> str:
+def validate_schedule_expression(value: object, *, label: str = "Auto Delivery") -> str:
     """Validate the supported five-field numeric cron expression."""
 
     if not isinstance(value, str):
-        raise InvalidInputError("Auto Delivery schedule_expression must be a string.")
+        raise InvalidInputError(f"{label} schedule_expression must be a string.")
     expression = value.strip()
     fields = expression.split()
     if len(fields) != 5 or any(not _CRON_FIELD_PATTERN.fullmatch(field) for field in fields):
         raise InvalidInputError(
-            "Auto Delivery schedule_expression must contain five numeric cron fields."
+            f"{label} schedule_expression must contain five numeric cron fields."
         )
     return expression
 
@@ -308,6 +377,23 @@ def _validate_auto_delivery(settings: AutoDeliverySettings) -> None:
 
     normalize_trigger_hooks(settings.trigger_hooks)
     validate_schedule_expression(settings.schedule_expression)
+
+
+def _validate_auto_scan(settings: AutoScanSettings) -> None:
+    """Validate all values that control a scheduled Auto Scan poll."""
+
+    if not 1 <= settings.lookback_days <= 365:
+        raise InvalidInputError("Auto Scan lookback_days must be between 1 and 365.")
+    if not settings.workflow_description.strip():
+        raise InvalidInputError("Auto Scan workflow_description must not be empty.")
+    if len(settings.workflow_description) > 8_000:
+        raise InvalidInputError("Auto Scan workflow_description is too long.")
+    normalize_trigger_hooks(
+        settings.trigger_hooks,
+        allow_empty=True,
+        label="Auto Scan",
+    )
+    validate_schedule_expression(settings.schedule_expression, label="Auto Scan")
 
 
 def _secure_directory(path: Path) -> None:
