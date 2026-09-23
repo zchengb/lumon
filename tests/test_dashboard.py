@@ -158,7 +158,7 @@ def test_agent_settings_are_available_with_safe_defaults(
         "enabled": False,
         "default_workspace_id": None,
         "agent_provider": "codex",
-        "agent_model": "gpt-5.6-luna",
+        "agent_model": "gpt-6-luna",
         "agent_reasoning_effort": "max",
         "feishu_app_id": "",
         "feishu_app_configured": False,
