@@ -72,6 +72,7 @@ describe("Dashboard API", () => {
       .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "sample", content: "old" }) })
       .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "created", content: "new" }) })
       .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "created", content: "saved" }) })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ flow_id: "created", schedule_enabled: true }) })
       .mockResolvedValueOnce({ ok: true, text: async () => "" });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -79,6 +80,7 @@ describe("Dashboard API", () => {
     await dashboardApi.getFlow("workspace-1", "sample");
     await dashboardApi.createFlow("workspace-1", "new");
     await dashboardApi.updateFlow("workspace-1", "created", "saved");
+    await dashboardApi.updateFlowSchedule("workspace-1", "created", true, "0 8 * * 1-5");
     await dashboardApi.deleteFlow("workspace-1", "created");
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/workspaces/workspace-1/flows", {
@@ -101,7 +103,12 @@ describe("Dashboard API", () => {
         headers: { Accept: "application/json", "Content-Type": "application/json" },
       },
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/workspaces/workspace-1/flows/created", {
+    expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/workspaces/workspace-1/flows/created/schedule", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: true, schedule_expression: "0 8 * * 1-5" }),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(6, "/api/workspaces/workspace-1/flows/created", {
       method: "DELETE",
       headers: { Accept: "application/json" },
     });

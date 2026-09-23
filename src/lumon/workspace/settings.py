@@ -21,11 +21,13 @@ DEFAULT_AUTO_DELIVERY_HOOKS = ("jira.delivery_ready",)
 DEFAULT_AUTO_DELIVERY_SCHEDULE = "*/5 * * * *"
 DEFAULT_AUTO_SCAN_HOOKS: tuple[str, ...] = ()
 DEFAULT_AUTO_SCAN_SCHEDULE = "0 12 * * 1-5"
+DEFAULT_FLOW_SCHEDULE = "0 8 * * *"
 DEFAULT_AUTO_SCAN_DESCRIPTION = (
     "Review recent repository changes for confirmed production-impacting bugs. "
     "Keep the review evidence-based and report-only."
 )
 _HOOK_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9._:-]{0,63}\Z")
+_FLOW_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 _CRON_FIELD_PATTERN = re.compile(
     r"(?:\*|\*/[1-9][0-9]*|[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*)\Z"
 )
@@ -60,6 +62,15 @@ class AutoScanSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class FlowScheduleSettings:
+    """Machine-local schedule for one Workspace flow."""
+
+    flow_id: str
+    enabled: bool = False
+    schedule_expression: str = DEFAULT_FLOW_SCHEDULE
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceSettings:
     """All typed, mutable settings owned by one Workspace profile."""
 
@@ -67,6 +78,7 @@ class WorkspaceSettings:
     feishu_webhook: FeishuWebhookSettings = FeishuWebhookSettings()
     auto_delivery: AutoDeliverySettings = AutoDeliverySettings()
     auto_scan: AutoScanSettings = AutoScanSettings()
+    flow_schedules: tuple[FlowScheduleSettings, ...] = ()
 
 
 class WorkspaceSettingsStore:
@@ -110,6 +122,7 @@ class WorkspaceSettingsStore:
             validate_webhook_url(settings.feishu_webhook.url)
         _validate_auto_delivery(settings.auto_delivery)
         _validate_auto_scan(settings.auto_scan)
+        _validate_flow_schedules(settings.flow_schedules)
         path = self.path_for(settings.workspace_id)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -269,6 +282,38 @@ def _parse_settings(
         )
     except InvalidInputError as exc:
         raise PreflightError(f"Invalid Auto Scan settings: {source}") from exc
+    raw_flow_schedules = payload.get("flow_schedules", [])
+    if not isinstance(raw_flow_schedules, list):
+        raise PreflightError(f"Invalid Flow schedules: {source}")
+    flow_schedules: list[FlowScheduleSettings] = []
+    for raw_schedule in cast(list[object], raw_flow_schedules):
+        if not isinstance(raw_schedule, dict):
+            raise PreflightError(f"Invalid Flow schedule entry: {source}")
+        schedule = cast(dict[str, object], raw_schedule)
+        flow_id = schedule.get("flow_id")
+        flow_enabled = schedule.get("enabled", False)
+        expression = schedule.get("schedule_expression", DEFAULT_FLOW_SCHEDULE)
+        if not isinstance(flow_id, str) or _FLOW_ID_PATTERN.fullmatch(flow_id) is None:
+            raise PreflightError(f"Invalid Flow schedule ID: {source}")
+        if not isinstance(flow_enabled, bool):
+            raise PreflightError(f"Invalid Flow schedule enabled value: {source}")
+        try:
+            flow_schedules.append(
+                FlowScheduleSettings(
+                    flow_id=flow_id,
+                    enabled=flow_enabled,
+                    schedule_expression=validate_schedule_expression(
+                        expression,
+                        label="Flow",
+                    ),
+                )
+            )
+        except InvalidInputError as exc:
+            raise PreflightError(f"Invalid Flow schedule: {source}") from exc
+    try:
+        _validate_flow_schedules(tuple(flow_schedules))
+    except InvalidInputError as exc:
+        raise PreflightError(f"Invalid Flow schedules: {source}") from exc
     return WorkspaceSettings(
         workspace_id=workspace_id,
         feishu_webhook=FeishuWebhookSettings(enabled=enabled, url=url),
@@ -284,6 +329,7 @@ def _parse_settings(
             schedule_expression=scan_schedule,
             workflow_description=workflow_description.strip(),
         ),
+        flow_schedules=tuple(flow_schedules),
     )
 
 
@@ -313,6 +359,16 @@ def _render(settings: WorkspaceSettings) -> str:
             f"workflow_description = {_toml_string(settings.auto_scan.workflow_description)}",
         ]
     )
+    for schedule in sorted(settings.flow_schedules, key=lambda item: item.flow_id):
+        lines.extend(
+            [
+                "",
+                "[[flow_schedules]]",
+                f"flow_id = {_toml_string(schedule.flow_id)}",
+                f"enabled = {'true' if schedule.enabled else 'false'}",
+                f"schedule_expression = {_toml_string(schedule.schedule_expression)}",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -394,6 +450,17 @@ def _validate_auto_scan(settings: AutoScanSettings) -> None:
         label="Auto Scan",
     )
     validate_schedule_expression(settings.schedule_expression, label="Auto Scan")
+
+
+def _validate_flow_schedules(settings: tuple[FlowScheduleSettings, ...]) -> None:
+    flow_ids: set[str] = set()
+    for schedule in settings:
+        if _FLOW_ID_PATTERN.fullmatch(schedule.flow_id) is None:
+            raise InvalidInputError("Flow schedule ID is invalid.")
+        if schedule.flow_id in flow_ids:
+            raise InvalidInputError("Flow schedules must use unique Flow IDs.")
+        flow_ids.add(schedule.flow_id)
+        validate_schedule_expression(schedule.schedule_expression, label="Flow")
 
 
 def _secure_directory(path: Path) -> None:

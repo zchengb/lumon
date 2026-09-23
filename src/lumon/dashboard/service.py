@@ -19,9 +19,16 @@ from lumon.capabilities.catalog import CapabilityCatalog, CapabilityValidationEr
 from lumon.capabilities.model import CapabilityDefinition
 from lumon.dashboard.folder_picker import FolderPicker
 from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler
-from lumon.errors import AgentConfigError, LumonError, PreflightError, WorkspaceNotFoundError
+from lumon.errors import (
+    AgentConfigError,
+    InvalidInputError,
+    LumonError,
+    PreflightError,
+    WorkspaceNotFoundError,
+)
 from lumon.flows.catalog import FlowCatalog, FlowValidationError
 from lumon.flows.model import FlowDefinition
+from lumon.flows.scheduler import FlowScheduler, LaunchdFlowScheduler
 from lumon.scan.model import ScanRun
 from lumon.scan.scheduler import LaunchdScanScheduler, ScanScheduler
 from lumon.scan.service import ScanService
@@ -34,9 +41,11 @@ from lumon.workspace.model import InitRequest, InitResult
 from lumon.workspace.registry import WorkspaceRegistration, WorkspaceRegistry
 from lumon.workspace.repositories import RepositoryProvisioner, spec_from_url
 from lumon.workspace.settings import (
+    DEFAULT_FLOW_SCHEDULE,
     AutoDeliverySettings,
     AutoScanSettings,
     FeishuWebhookSettings,
+    FlowScheduleSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
     masked_secret,
@@ -142,6 +151,8 @@ class FlowDocumentView:
     path: str
     valid: bool
     content: str
+    schedule_enabled: bool = False
+    schedule_expression: str = DEFAULT_FLOW_SCHEDULE
     error: str | None = None
 
 
@@ -242,6 +253,7 @@ class DashboardService:
         delivery_scheduler: DeliveryScheduler | None = None,
         scan_scheduler: ScanScheduler | None = None,
         scan_service: ScanService | None = None,
+        flow_scheduler: FlowScheduler | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
@@ -258,6 +270,7 @@ class DashboardService:
             self.registry.layout.root
         )
         self.scan_scheduler = scan_scheduler or LaunchdScanScheduler(self.registry.layout.root)
+        self.flow_scheduler = flow_scheduler or LaunchdFlowScheduler(self.registry.layout.root)
         self.scan_service = scan_service or ScanService(
             state_root=self.registry.layout.root,
             registry=self.registry,
@@ -392,7 +405,7 @@ class DashboardService:
         registration = self._require(workspace_id)
         catalog = FlowCatalog(registration.path)
         try:
-            return _flow_document(catalog.read(flow_id))
+            return self._flow_document(catalog.read(flow_id), workspace_id)
         except FlowValidationError as validation_error:
             try:
                 path, content = catalog.read_raw(flow_id)
@@ -414,20 +427,169 @@ class DashboardService:
 
         registration = self._require(workspace_id)
         definition = FlowCatalog(registration.path).create(content)
-        return _flow_document(definition)
+        return self._flow_document(definition, workspace_id)
 
     def update_flow(self, workspace_id: UUID, flow_id: str, content: str) -> FlowDocumentView:
         """Replace one flow while keeping its stable ID and file path."""
 
         registration = self._require(workspace_id)
-        definition = FlowCatalog(registration.path).save(content, expected_id=flow_id)
-        return _flow_document(definition)
+        catalog = FlowCatalog(registration.path)
+        try:
+            previous = catalog.read(flow_id)
+        except FlowValidationError:
+            previous = None
+        settings = self.settings_store.load(workspace_id)
+        previous_schedule = (
+            _flow_schedule(settings.flow_schedules, flow_id) if previous is not None else None
+        )
+        snapshot = self.settings_store.raw_snapshot(workspace_id)
+        definition = catalog.save(content, expected_id=flow_id)
+        destination_schedule = _flow_schedule(settings.flow_schedules, definition.flow_id)
+        schedules = tuple(
+            item
+            for item in settings.flow_schedules
+            if item.flow_id not in {flow_id, definition.flow_id}
+        )
+        next_schedule: FlowScheduleSettings | None = previous_schedule
+        if previous_schedule is not None:
+            next_schedule = replace(
+                previous_schedule,
+                flow_id=definition.flow_id,
+                enabled=previous_schedule.enabled and definition.enabled,
+            )
+            schedules = (*schedules, next_schedule)
+        updated_settings = replace(settings, flow_schedules=schedules)
+        try:
+            self.settings_store.save(updated_settings)
+            if definition.flow_id != flow_id:
+                self.flow_scheduler.apply(
+                    registration.path,
+                    workspace_id,
+                    FlowScheduleSettings(flow_id, enabled=False),
+                )
+            if (
+                next_schedule is not None
+                or destination_schedule is not None
+                or definition.flow_id != flow_id
+                or not definition.enabled
+            ):
+                self.flow_scheduler.apply(
+                    registration.path,
+                    workspace_id,
+                    next_schedule or FlowScheduleSettings(definition.flow_id, enabled=False),
+                )
+        except LumonError:
+            self.settings_store.restore_raw(workspace_id, snapshot)
+            if definition.flow_id != flow_id:
+                self.flow_scheduler.apply(
+                    registration.path,
+                    workspace_id,
+                    FlowScheduleSettings(definition.flow_id, enabled=False),
+                )
+            if previous is not None:
+                _restore_flow(catalog, previous, definition.flow_id)
+                _restore_flow_schedule(
+                    self.flow_scheduler,
+                    registration.path,
+                    workspace_id,
+                    flow_id,
+                    previous_schedule,
+                )
+            else:
+                catalog.delete(definition.flow_id)
+            raise
+        return self._flow_document(definition, workspace_id)
+
+    def update_flow_schedule(
+        self,
+        workspace_id: UUID,
+        flow_id: str,
+        enabled: bool,
+        schedule_expression: str,
+    ) -> FlowDocumentView:
+        """Save and apply one Flow's machine-local schedule."""
+
+        registration = self._require(workspace_id)
+        current_settings = self.settings_store.load(workspace_id)
+        current_schedule = _flow_schedule(current_settings.flow_schedules, flow_id)
+        schedule = FlowScheduleSettings(
+            flow_id=flow_id,
+            enabled=enabled,
+            schedule_expression=schedule_expression,
+        )
+        if enabled:
+            definition = FlowCatalog(registration.path).read(flow_id)
+            if not definition.enabled:
+                raise InvalidInputError("Enable the Flow before scheduling it.")
+        else:
+            FlowCatalog(registration.path).read(flow_id)
+        schedules = tuple(
+            item for item in current_settings.flow_schedules if item.flow_id != flow_id
+        )
+        updated_settings = replace(current_settings, flow_schedules=(*schedules, schedule))
+        snapshot = self.settings_store.raw_snapshot(workspace_id)
+        try:
+            self.settings_store.save(updated_settings)
+            self.flow_scheduler.apply(registration.path, workspace_id, schedule)
+        except LumonError:
+            self.settings_store.restore_raw(workspace_id, snapshot)
+            _restore_flow_schedule(
+                self.flow_scheduler,
+                registration.path,
+                workspace_id,
+                flow_id,
+                current_schedule,
+            )
+            raise
+        return self._flow_document(FlowCatalog(registration.path).read(flow_id), workspace_id)
 
     def delete_flow(self, workspace_id: UUID, flow_id: str) -> None:
         """Delete one user-authored flow file."""
 
         registration = self._require(workspace_id)
-        FlowCatalog(registration.path).delete(flow_id)
+        catalog = FlowCatalog(registration.path)
+        current_settings = self.settings_store.load(workspace_id)
+        current_schedule = _flow_schedule(current_settings.flow_schedules, flow_id)
+        snapshot = self.settings_store.raw_snapshot(workspace_id)
+        try:
+            self.flow_scheduler.apply(
+                registration.path,
+                workspace_id,
+                FlowScheduleSettings(flow_id, enabled=False),
+            )
+            self.settings_store.save(
+                replace(
+                    current_settings,
+                    flow_schedules=tuple(
+                        item for item in current_settings.flow_schedules if item.flow_id != flow_id
+                    ),
+                )
+            )
+            catalog.delete(flow_id)
+        except LumonError:
+            self.settings_store.restore_raw(workspace_id, snapshot)
+            _restore_flow_schedule(
+                self.flow_scheduler,
+                registration.path,
+                workspace_id,
+                flow_id,
+                current_schedule,
+            )
+            raise
+
+    def _flow_document(self, definition: FlowDefinition, workspace_id: UUID) -> FlowDocumentView:
+        schedule = _flow_schedule(
+            self.settings_store.load(workspace_id).flow_schedules,
+            definition.flow_id,
+        )
+        document = _flow_document(definition)
+        if schedule is None:
+            return document
+        return replace(
+            document,
+            schedule_enabled=schedule.enabled,
+            schedule_expression=schedule.schedule_expression,
+        )
 
     def capabilities(self, workspace_id: UUID) -> tuple[CapabilitySummaryView, ...]:
         """List valid and invalid capability files for one Workspace."""
@@ -629,6 +791,7 @@ class DashboardService:
                     else auto_scan_workflow_description
                 ),
             ),
+            flow_schedules=current.flow_schedules,
         )
         snapshot = self.settings_store.raw_snapshot(workspace_id)
         try:
@@ -754,6 +917,31 @@ def _flow_document(definition: FlowDefinition) -> FlowDocumentView:
         valid=True,
         content=definition.content,
     )
+
+
+def _flow_schedule(
+    schedules: tuple[FlowScheduleSettings, ...], flow_id: str
+) -> FlowScheduleSettings | None:
+    return next((schedule for schedule in schedules if schedule.flow_id == flow_id), None)
+
+
+def _restore_flow(
+    catalog: FlowCatalog,
+    previous: FlowDefinition,
+    current_flow_id: str,
+) -> None:
+    catalog.save(previous.content, expected_id=current_flow_id)
+
+
+def _restore_flow_schedule(
+    scheduler: FlowScheduler,
+    workspace: Path,
+    workspace_id: UUID,
+    flow_id: str,
+    previous: FlowScheduleSettings | None,
+) -> None:
+    schedule = previous or FlowScheduleSettings(flow_id, enabled=False)
+    scheduler.apply(workspace, workspace_id, schedule)
 
 
 def _capability_summary(definition: CapabilityDefinition) -> CapabilitySummaryView:

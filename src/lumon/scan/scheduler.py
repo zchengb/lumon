@@ -43,7 +43,7 @@ class LaunchdScanScheduler:
             settings.schedule_expression,
             label="Auto Scan",
         )
-        timing = launchd_timing(expression)
+        timing = launchd_timing(expression, label="Auto Scan")
         path = self.plist_path(workspace_id)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)

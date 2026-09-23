@@ -82,26 +82,30 @@ class LaunchdDeliveryScheduler:
         return Path.home() / "Library" / "LaunchAgents" / f"com.lumon.delivery.{workspace_id}.plist"
 
 
-def launchd_timing(expression: str) -> dict[str, object]:
+def launchd_timing(
+    expression: str,
+    *,
+    label: str = "Auto Delivery",
+) -> dict[str, object]:
     """Translate the supported cron subset into Launchd calendar settings."""
 
-    fields = validate_schedule_expression(expression).split()
+    fields = validate_schedule_expression(expression, label=label).split()
     minute, hour, day_of_week = fields[0], fields[1], fields[4]
     if fields[2:4] != ["*", "*"]:
         raise PreflightError(
-            "Auto Delivery schedule supports minute/hour schedules only; use * for day and month."
+            f"{label} schedule supports minute/hour schedules only; use * for day and month."
         )
     if minute.startswith("*/") and hour == "*" and day_of_week == "*":
         return {"StartInterval": int(minute[2:]) * 60}
     if not minute.isdigit() or not hour.isdigit():
         raise PreflightError(
-            "Auto Delivery schedule must use a numeric minute and hour or */N intervals."
+            f"{label} schedule must use a numeric minute and hour or */N intervals."
         )
     minute_value = int(minute)
     hour_value = int(hour)
     if not 0 <= minute_value <= 59 or not 0 <= hour_value <= 23:
-        raise PreflightError("Auto Delivery schedule contains an invalid minute or hour.")
-    weekdays = _weekday_values(day_of_week)
+        raise PreflightError(f"{label} schedule contains an invalid minute or hour.")
+    weekdays = _weekday_values(day_of_week, label)
     entries = [
         {
             "Minute": minute_value,
@@ -113,18 +117,25 @@ def launchd_timing(expression: str) -> dict[str, object]:
     return {"StartCalendarInterval": entries[0] if len(entries) == 1 else entries}
 
 
-def _weekday_values(value: str) -> list[int | None]:
+def _weekday_values(value: str, label: str) -> list[int | None]:
     if value == "*":
         return [None]
     values: list[int | None] = []
-    for item in value.split(","):
-        if "-" in item:
-            start, end = (int(part) for part in item.split("-", 1))
-            values.extend(range(start, end + 1))
-        else:
-            values.append(int(item))
+    try:
+        for item in value.split(","):
+            if item.startswith("*/"):
+                raise ValueError
+            if "-" in item:
+                start, end = (int(part) for part in item.split("-", 1))
+                if start > end:
+                    raise ValueError
+                values.extend(range(start, end + 1))
+            else:
+                values.append(int(item))
+    except ValueError as exc:
+        raise PreflightError(f"{label} schedule contains an invalid weekday.") from exc
     if any(item is None or not 0 <= item <= 7 for item in values):
-        raise PreflightError("Auto Delivery schedule contains an invalid weekday.")
+        raise PreflightError(f"{label} schedule contains an invalid weekday.")
     return values
 
 

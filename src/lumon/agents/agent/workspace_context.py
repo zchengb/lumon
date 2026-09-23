@@ -11,6 +11,7 @@ from lumon.agents.agent.soul import SoulLoader
 from lumon.capabilities.catalog import CapabilityCatalog
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
 from lumon.flows.catalog import FlowCatalog
+from lumon.flows.model import FlowDefinition
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
@@ -85,6 +86,7 @@ class WorkspaceContextBuilder:
         user_message: str,
         *,
         channel_context: AgentChannelContext | None = None,
+        scheduled_flow: FlowDefinition | None = None,
     ) -> str:
         """Build a self-contained Agent prompt from identity, rules, and history."""
 
@@ -94,6 +96,7 @@ class WorkspaceContextBuilder:
             soul=self.soul_loader.load(),
             user_message=user_message,
             channel_context=channel_context,
+            scheduled_flow=scheduled_flow,
         )
 
     def build_resume_prompt(

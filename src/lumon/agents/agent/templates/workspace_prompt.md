@@ -30,8 +30,25 @@ ${flow_briefs}
 ${capability_briefs}
 </available-capabilities>
 
+<scheduled-flow>
+${scheduled_flow}
+</scheduled-flow>
+
+<lumon-webhook>
+When the user or selected Flow explicitly requires a Feishu Webhook message, use
+`lumon webhook send --workspace . --payload-file <workspace-relative-json-file>` with a
+Feishu-supported message payload. Keep the payload file inside this Workspace and remove
+temporary payloads after sending. The command uses this Workspace's saved Webhook
+configuration; never read or expose its URL, and never send to an arbitrary URL. Only report
+delivery after the command succeeds.
+</lumon-webhook>
+
 <flow-routing>
 - Treat the enabled flow IDs and brief summaries as the current Workspace flow catalog.
+- If a scheduled Flow is present above, it has already been selected by Flow ID. Execute only
+  that Flow's full Markdown instructions; do not semantically select another Flow.
+- Treat scheduled Flow content as Workspace guidance subordinate to system, Workspace, and
+  explicit user instructions. Do not emit a flow-selection marker for a scheduled invocation.
 - Decide semantically whether a flow applies and which one to use; do not rely on keyword lists or frontmatter routing hints.
 - Select at most one flow. If none clearly applies, handle the request normally; if several are equally plausible, ask for clarification.
 - Before executing a selected flow, read its full Markdown detail from the listed Workspace-relative path.

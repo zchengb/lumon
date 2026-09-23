@@ -25,6 +25,7 @@ from lumon.workspace.registry import WorkspaceRegistry
 from lumon.workspace.settings import (
     AutoDeliverySettings,
     AutoScanSettings,
+    FlowScheduleSettings,
     WorkspaceSettingsStore,
 )
 
@@ -49,6 +50,20 @@ class _NoopScanScheduler:
         del workspace, workspace_id, settings
 
 
+class _RecordingFlowScheduler:
+    def __init__(self) -> None:
+        self.calls: list[FlowScheduleSettings] = []
+
+    def apply(
+        self,
+        workspace: Path,
+        workspace_id: UUID,
+        schedule: FlowScheduleSettings,
+    ) -> None:
+        del workspace, workspace_id
+        self.calls.append(schedule)
+
+
 class _RecordingDeliveryScheduler:
     def __init__(self) -> None:
         self.calls: list[AutoDeliverySettings] = []
@@ -67,13 +82,17 @@ class _RecordingDeliveryScheduler:
 
 
 def _flow_content(
-    flow_id: str = "dashboard-flow", brief: str = "Handle a dashboard request."
+    flow_id: str = "dashboard-flow",
+    brief: str = "Handle a dashboard request.",
+    *,
+    enabled: bool = True,
 ) -> str:
+    enabled_value = "true" if enabled else "false"
     return (
         "---\n"
         f'id = "{flow_id}"\n'
         'name = "Dashboard flow"\n'
-        "enabled = true\n"
+        f"enabled = {enabled_value}\n"
         f'brief = "{brief}"\n'
         "---\n\n"
         "# Dashboard flow\n\n"
@@ -119,6 +138,7 @@ def _opener(request: Request, timeout: float) -> _Response:
 def _service(
     tmp_path: Path,
     folder_picker: Callable[[], Path | None] | None = None,
+    flow_scheduler: _RecordingFlowScheduler | None = None,
 ) -> DashboardService:
     state_root = tmp_path / "user-state"
     registry = WorkspaceRegistry(state_root)
@@ -136,6 +156,7 @@ def _service(
         folder_picker=folder_picker,
         delivery_scheduler=_NoopDeliveryScheduler(),
         scan_scheduler=_NoopScanScheduler(),
+        flow_scheduler=flow_scheduler or _RecordingFlowScheduler(),
     )
 
 
@@ -423,6 +444,78 @@ def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(
     assert changed_id.json()["flow_id"] == "other-id"
     assert not (target / "lumon" / "flows" / "dashboard-flow.md").exists()
     assert (target / "lumon" / "flows" / "other-id.md").exists()
+
+
+def test_flow_schedule_is_saved_applied_disabled_with_flow_and_removed_on_delete(
+    tmp_path: Path,
+) -> None:
+    scheduler = _RecordingFlowScheduler()
+    service = _service(tmp_path, flow_scheduler=scheduler)
+    client = _client(service)
+    target = tmp_path / "scheduled-flow-workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(target), "repositories": []},
+    ).json()["workspace_id"]
+    flow_path = f"/api/workspaces/{workspace_id}/flows"
+    created = client.post(flow_path, json={"content": _flow_content()})
+    assert created.status_code == 201
+    assert created.json()["schedule_enabled"] is False
+
+    scheduled = client.put(
+        f"{flow_path}/dashboard-flow/schedule",
+        json={"enabled": True, "schedule_expression": "0 8 * * 1-5"},
+    )
+    assert scheduled.status_code == 200
+    assert scheduled.json()["schedule_enabled"] is True
+    assert scheduled.json()["schedule_expression"] == "0 8 * * 1-5"
+    assert scheduler.calls[-1].enabled is True
+    service.update_settings(
+        UUID(workspace_id),
+        enabled=False,
+        url_provided=False,
+        url=None,
+    )
+    assert service.settings_store.load(UUID(workspace_id)).flow_schedules[0].enabled is True
+
+    disabled_flow = client.put(
+        f"{flow_path}/dashboard-flow",
+        json={"content": _flow_content(enabled=False)},
+    )
+    assert disabled_flow.status_code == 200
+    assert disabled_flow.json()["schedule_enabled"] is False
+    assert scheduler.calls[-1].enabled is False
+    assert service.settings_store.load(UUID(workspace_id)).flow_schedules[0].enabled is False
+
+    assert client.delete(f"{flow_path}/dashboard-flow").status_code == 204
+    assert service.settings_store.load(UUID(workspace_id)).flow_schedules == ()
+    assert scheduler.calls[-1].enabled is False
+
+
+def test_flow_schedule_rejects_enabled_disabled_flow_and_invalid_cron(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    target = tmp_path / "invalid-scheduled-flow-workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(target), "repositories": []},
+    ).json()["workspace_id"]
+    flow_path = f"/api/workspaces/{workspace_id}/flows"
+    client.post(flow_path, json={"content": _flow_content(enabled=False)})
+
+    disabled = client.put(
+        f"{flow_path}/dashboard-flow/schedule",
+        json={"enabled": True, "schedule_expression": "0 8 * * *"},
+    )
+    assert disabled.status_code == 422
+    assert "Enable the Flow" in disabled.json()["error"]["message"]
+
+    invalid_cron = client.put(
+        f"{flow_path}/dashboard-flow/schedule",
+        json={"enabled": False, "schedule_expression": "nope"},
+    )
+    assert invalid_cron.status_code == 422
+    assert service.settings_store.load(UUID(workspace_id)).flow_schedules == ()
 
 
 def test_dashboard_capability_crud_edits_the_workspace_files_and_supports_disable(

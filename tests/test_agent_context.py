@@ -12,6 +12,7 @@ from lumon.agents.agent.model import InboundMessage, Message
 from lumon.agents.agent.prompt import PromptRenderer
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
+from lumon.flows.catalog import FlowCatalog
 from lumon.skills.installer import SkillInstaller
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
@@ -187,3 +188,28 @@ def test_prompt_renderer_can_use_a_local_template_without_changing_context_resol
     prompt = builder.build_prompt(builder.resolve_workspace(), (), "Inspect the template")
 
     assert prompt == "workspace=template-lab\nmessage=Inspect the template\n"
+
+
+def test_scheduled_flow_prompt_contains_only_the_explicitly_selected_flow(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    target = _workspace(tmp_path, state_root, "scheduled-flow-lab")
+    selected = FlowCatalog(target).create(_flow_content())
+    other = FlowCatalog(target).create(
+        _flow_content().replace("test-case-generation", "other-flow")
+    )
+    builder = WorkspaceContextBuilder(_config(), WorkspaceRegistry(state_root))
+
+    prompt = builder.build_prompt(
+        builder.resolve_workspace(),
+        (),
+        f"Run the scheduled Workspace Flow '{selected.flow_id}' now.",
+        scheduled_flow=selected,
+    )
+
+    assert f"Selected Flow ID: {selected.flow_id}" in prompt
+    assert selected.content in prompt
+    assert "Follow the Workspace flow." in prompt
+    assert f"Selected Flow ID: {other.flow_id}" not in prompt
+    assert "do not semantically select another Flow" in prompt

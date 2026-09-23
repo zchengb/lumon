@@ -137,6 +137,21 @@ export const dashboardApi = {
     );
   },
 
+  updateFlowSchedule(
+    workspaceId: string,
+    flowId: string,
+    enabled: boolean,
+    scheduleExpression: string,
+  ): Promise<FlowDocument> {
+    return request<FlowDocument>(
+      `/api/workspaces/${workspaceId}/flows/${encodeURIComponent(flowId)}/schedule`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ enabled, schedule_expression: scheduleExpression }),
+      },
+    );
+  },
+
   deleteFlow(workspaceId: string, flowId: string): Promise<void> {
     return request<void>(`/api/workspaces/${workspaceId}/flows/${encodeURIComponent(flowId)}`, {
       method: "DELETE",

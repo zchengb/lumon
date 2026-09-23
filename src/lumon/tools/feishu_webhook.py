@@ -40,7 +40,7 @@ class WebhookTestResult:
 
 @dataclass(frozen=True, slots=True)
 class WebhookSendResult:
-    """The safe, non-sensitive outcome of a Card send."""
+    """The safe, non-sensitive outcome of sending a Webhook message."""
 
     success: bool
     detail: str
@@ -71,6 +71,16 @@ class FeishuWebhookSender:
 
         self._send_json(url, card, action="delivery card")
         return WebhookSendResult(True, "Feishu Delivery card sent.")
+
+    def send_message(
+        self,
+        url: str,
+        payload: Mapping[str, object],
+    ) -> WebhookSendResult:
+        """Send one Feishu custom-bot message payload."""
+
+        self._send_json(url, payload, action="message")
+        return WebhookSendResult(True, "Feishu Webhook message sent.")
 
     def _send_json(self, url: str, payload: Mapping[str, object], *, action: str) -> None:
         validate_webhook_url(url)
@@ -128,4 +138,4 @@ def _validate_feishu_response(body: bytes) -> None:
     payload = cast(dict[str, object], raw_payload)
     code = payload.get("code")
     if isinstance(code, int) and code != 0:
-        raise FeishuWebhookError("Feishu Webhook rejected the test message.")
+        raise FeishuWebhookError("Feishu Webhook rejected the message.")

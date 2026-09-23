@@ -24,6 +24,7 @@ from lumon.dashboard.schemas import (
     FeishuWebhookTestRequest,
     FlowContentRequest,
     FlowDocumentResponse,
+    FlowScheduleUpdate,
     FlowSummaryResponse,
     HealthResponse,
     InitializeWorkspaceRequest,
@@ -257,6 +258,25 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     ) -> FlowDocumentResponse:
         return _flow_document_response(
             _service(request).update_flow(workspace_id, flow_id, payload.content)
+        )
+
+    @router.put(
+        "/workspaces/{workspace_id}/flows/{flow_id}/schedule",
+        response_model=FlowDocumentResponse,
+    )
+    def update_flow_schedule(
+        request: Request,
+        workspace_id: UUID,
+        flow_id: str,
+        payload: FlowScheduleUpdate,
+    ) -> FlowDocumentResponse:
+        return _flow_document_response(
+            _service(request).update_flow_schedule(
+                workspace_id,
+                flow_id,
+                payload.enabled,
+                payload.schedule_expression,
+            )
         )
 
     @router.delete("/workspaces/{workspace_id}/flows/{flow_id}", status_code=204)
@@ -500,6 +520,8 @@ def _flow_document_response(document: FlowDocumentView) -> FlowDocumentResponse:
         valid=document.valid,
         error=document.error,
         content=document.content,
+        schedule_enabled=document.schedule_enabled,
+        schedule_expression=document.schedule_expression,
     )
 
 

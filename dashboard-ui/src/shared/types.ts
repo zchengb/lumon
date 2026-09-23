@@ -82,6 +82,8 @@ export interface FlowSummary {
 
 export interface FlowDocument extends FlowSummary {
   content: string;
+  schedule_enabled: boolean;
+  schedule_expression: string;
 }
 
 export interface CapabilitySummary {

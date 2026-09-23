@@ -8,7 +8,7 @@ from string import Template
 from lumon.agents.agent.model import AgentChannelContext, Message, WorkspaceContext
 from lumon.capabilities.model import CapabilityBrief
 from lumon.errors import AgentConfigError
-from lumon.flows.model import FlowBrief
+from lumon.flows.model import FlowBrief, FlowDefinition
 
 _TEMPLATE_PACKAGE = "lumon.agents.agent.templates"
 _PROMPT_TEMPLATE_NAME = "workspace_prompt.md"
@@ -38,6 +38,7 @@ class PromptRenderer:
         soul: str,
         user_message: str,
         channel_context: AgentChannelContext | None = None,
+        scheduled_flow: FlowDefinition | None = None,
     ) -> str:
         """Render a self-contained prompt for one Workspace request."""
 
@@ -57,6 +58,7 @@ class PromptRenderer:
             workspace_config_path=context.workspace_config_path,
             repository_text=repository_text,
             flow_briefs=flow_text,
+            scheduled_flow=_render_scheduled_flow(scheduled_flow),
             capability_briefs=capability_text,
             agents_text=context.agents_text,
             history_text=_render_history(history),
@@ -125,6 +127,12 @@ def _render_flow_briefs(flow_briefs: tuple[FlowBrief, ...]) -> str:
     for flow in flow_briefs:
         lines.append(f"- id: {flow.flow_id}; brief: {flow.brief}; full detail: {flow.path}")
     return "\n".join(lines)
+
+
+def _render_scheduled_flow(flow: FlowDefinition | None) -> str:
+    if flow is None:
+        return "(no scheduled Flow was selected)"
+    return f"Selected Flow ID: {flow.flow_id}\n\n{flow.content}"
 
 
 def _render_capability_briefs(capability_briefs: tuple[CapabilityBrief, ...]) -> str:

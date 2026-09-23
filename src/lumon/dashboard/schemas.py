@@ -255,12 +255,21 @@ class FlowDocumentResponse(FlowSummaryResponse):
     """One flow document returned to the Dashboard editor."""
 
     content: str
+    schedule_enabled: bool
+    schedule_expression: str
 
 
 class FlowContentRequest(StrictModel):
     """Markdown content submitted for flow creation or replacement."""
 
     content: str = Field(min_length=1)
+
+
+class FlowScheduleUpdate(StrictModel):
+    """Machine-local schedule for one exact Flow."""
+
+    enabled: bool
+    schedule_expression: str = Field(min_length=1, max_length=128)
 
 
 class CapabilitySummaryResponse(StrictModel):

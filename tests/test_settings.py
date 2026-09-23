@@ -12,6 +12,7 @@ from lumon.errors import InvalidInputError, PreflightError
 from lumon.workspace.settings import (
     AutoDeliverySettings,
     FeishuWebhookSettings,
+    FlowScheduleSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
     masked_webhook_url,
@@ -55,6 +56,44 @@ def test_auto_delivery_settings_round_trip_trigger_hooks_and_schedule(tmp_path: 
     store.save(expected)
 
     assert store.load(workspace_id).auto_delivery == expected.auto_delivery
+
+
+def test_flow_schedules_round_trip_and_old_profiles_default_to_unscheduled(
+    tmp_path: Path,
+) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "lumon")
+    workspace_id = uuid4()
+    store.save(WorkspaceSettings(workspace_id))
+
+    assert store.load(workspace_id).flow_schedules == ()
+
+    expected = WorkspaceSettings(
+        workspace_id,
+        flow_schedules=(
+            FlowScheduleSettings("auto-guard", enabled=True, schedule_expression="0 8 * * 1-5"),
+        ),
+    )
+    store.save(expected)
+
+    assert store.load(workspace_id) == expected
+
+
+@pytest.mark.parametrize(
+    "schedules",
+    [
+        (FlowScheduleSettings("../unsafe"),),
+        (FlowScheduleSettings("auto-guard"), FlowScheduleSettings("auto-guard")),
+        (FlowScheduleSettings("auto-guard", schedule_expression="not cron"),),
+    ],
+)
+def test_flow_schedules_reject_invalid_ids_duplicates_and_cron(
+    tmp_path: Path,
+    schedules: tuple[FlowScheduleSettings, ...],
+) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "lumon")
+
+    with pytest.raises(InvalidInputError):
+        store.save(WorkspaceSettings(uuid4(), flow_schedules=schedules))
 
 
 def test_settings_reject_profile_for_another_workspace(tmp_path: Path) -> None:

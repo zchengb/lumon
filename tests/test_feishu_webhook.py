@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import urllib.error
+from email.message import Message
 from urllib.request import Request
 
 import pytest
@@ -61,6 +62,30 @@ def test_sender_hides_transport_details_and_webhook_url() -> None:
 
     with pytest.raises(FeishuWebhookError, match="Unable to reach") as error:
         FeishuWebhookSender(opener=opener).send_test(url)
+    assert url not in str(error.value)
+
+
+def test_sender_hides_timeout_details_and_webhook_url() -> None:
+    url = "https://open.feishu.cn/open-apis/bot/v2/hook/private-token"
+
+    def opener(request: Request, timeout: float) -> _Response:
+        del request, timeout
+        raise TimeoutError(f"timed out while sending to {url}")
+
+    with pytest.raises(FeishuWebhookError, match="Unable to reach") as error:
+        FeishuWebhookSender(opener=opener).send_message(url, {"msg_type": "text"})
+    assert url not in str(error.value)
+
+
+def test_sender_reports_http_failure_without_exposing_webhook_url() -> None:
+    url = "https://open.feishu.cn/open-apis/bot/v2/hook/private-token"
+
+    def opener(request: Request, timeout: float) -> _Response:
+        del request, timeout
+        raise urllib.error.HTTPError(url, 503, "unavailable", Message(), None)
+
+    with pytest.raises(FeishuWebhookError, match="HTTP status 503") as error:
+        FeishuWebhookSender(opener=opener).send_message(url, {"msg_type": "text"})
     assert url not in str(error.value)
 
 

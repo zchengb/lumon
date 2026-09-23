@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { MarkdownPreview } from "../flows/MarkdownPreview";
 
 export interface MarkdownDocumentSummary {
@@ -82,6 +83,10 @@ interface MarkdownDocumentsPageProps<
   starterContent: string;
   api: MarkdownDocumentApi<TSummary, TDocument>;
   getId: (document: TSummary) => string;
+  renderDetails?: (
+    document: TDocument | null,
+    onDirtyChange: (dirty: boolean) => void,
+  ) => ReactNode;
 }
 
 type DocumentViewMode = "preview" | "edit";
@@ -99,6 +104,7 @@ export function MarkdownDocumentsPage<
   starterContent,
   api,
   getId,
+  renderDetails,
 }: MarkdownDocumentsPageProps<TSummary, TDocument>): React.JSX.Element {
   const [documents, setDocuments] = useState<TSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -110,6 +116,8 @@ export function MarkdownDocumentsPage<
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<DocumentViewMode>("preview");
+  const [detailsDirty, setDetailsDirty] = useState(false);
+  const [detailsRevision, setDetailsRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +127,8 @@ export function MarkdownDocumentsPage<
     setContent("");
     setSelectedId(null);
     setViewMode("preview");
+    setDetailsDirty(false);
+    setDetailsRevision((revision) => revision + 1);
     onDirtyChange(false);
     void api.list(workspaceId)
       .then((nextDocuments) => {
@@ -144,6 +154,8 @@ export function MarkdownDocumentsPage<
     setDraft(false);
     setContent("");
     setViewMode("preview");
+    setDetailsDirty(false);
+    setDetailsRevision((revision) => revision + 1);
     onDirtyChange(false);
     setLoadingDocument(true);
     try {
@@ -164,6 +176,8 @@ export function MarkdownDocumentsPage<
     setDraft(true);
     setContent(starterContent);
     setViewMode("edit");
+    setDetailsDirty(false);
+    setDetailsRevision((revision) => revision + 1);
     onDirtyChange(true);
   }
 
@@ -182,7 +196,7 @@ export function MarkdownDocumentsPage<
       setDraft(false);
       setContent(saved.content);
       setSelectedId(getId(saved));
-      onDirtyChange(false);
+      onDirtyChange(detailsDirty);
       await reloadDocuments(getId(saved));
       onNotice(draft ? labels.created : labels.saved);
     } catch (reason) {
@@ -195,6 +209,7 @@ export function MarkdownDocumentsPage<
   async function toggleDocument(): Promise<void> {
     if (!document || !selectedId || !document.valid) return;
     if (!confirmDiscard()) return;
+    discardDetailsChanges();
     const nextContent = replaceEnabledFlag(content, !document.enabled);
     if (!nextContent) {
       onError(labels.loadFailed);
@@ -205,6 +220,7 @@ export function MarkdownDocumentsPage<
       const saved = await api.update(workspaceId, selectedId, nextContent);
       setDocument(saved);
       setContent(saved.content);
+      setDetailsRevision((revision) => revision + 1);
       onDirtyChange(false);
       await reloadDocuments(getId(saved));
       onNotice(labels.saved);
@@ -217,6 +233,7 @@ export function MarkdownDocumentsPage<
 
   async function deleteDocument(): Promise<void> {
     if (!selectedId || !document || !window.confirm(labels.confirmDelete)) return;
+    discardDetailsChanges();
     setDeleting(true);
     try {
       await api.delete(workspaceId, selectedId);
@@ -226,6 +243,7 @@ export function MarkdownDocumentsPage<
       setDraft(false);
       setContent("");
       setViewMode("preview");
+      setDetailsRevision((revision) => revision + 1);
       onDirtyChange(false);
       await reloadDocuments(null, deletedId);
       onNotice(labels.deleted);
@@ -257,13 +275,18 @@ export function MarkdownDocumentsPage<
   }
 
   function confirmDiscard(): boolean {
-    if (draft || (document && content !== document.content)) {
+    if (draft || detailsDirty || (document && content !== document.content)) {
       return window.confirm(labels.unsavedConfirm);
     }
     return true;
   }
 
-  const dirty = draft || (document !== null && content !== document.content);
+  function discardDetailsChanges(): void {
+    setDetailsDirty(false);
+    setDetailsRevision((revision) => revision + 1);
+  }
+
+  const dirty = draft || detailsDirty || (document !== null && content !== document.content);
 
   return (
     <div className="page-stack">
@@ -353,7 +376,9 @@ export function MarkdownDocumentsPage<
                   aria-label={labels.content}
                   onChange={(event) => {
                     setContent(event.target.value);
-                    onDirtyChange(draft || (document !== null && event.target.value !== document.content));
+                    onDirtyChange(
+                      detailsDirty || draft || (document !== null && event.target.value !== document.content),
+                    );
                   }}
                   spellCheck={false}
                 />
@@ -381,6 +406,14 @@ export function MarkdownDocumentsPage<
           )}
         </section>
       </div>
+      {renderDetails && (
+        <div key={detailsRevision}>
+          {renderDetails(document, (value) => {
+            setDetailsDirty(value);
+            onDirtyChange(value || draft || (document !== null && content !== document.content));
+          })}
+        </div>
+      )}
     </div>
   );
 }
