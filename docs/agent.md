@@ -104,10 +104,10 @@ $LUMON_HOME/agent.toml
 写入 Workspace、日志、CLI 输出、Dashboard API 响应或飞书消息。运行前请确保本机
 用户目录本身受到保护。
 
-Codex CLI 默认使用 GPT-6 Luna 和 `max` reasoning effort。对应的配置项是：
+Codex CLI 默认使用 GPT-5.6 Luna 和 `max` reasoning effort。对应的配置项是：
 
 ```toml
-agent_model = "gpt-6-luna"
+agent_model = "gpt-5.6-luna"
 agent_reasoning_effort = "max"
 ```
 

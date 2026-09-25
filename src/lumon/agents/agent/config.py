@@ -17,7 +17,7 @@ from lumon.errors import AgentConfigError
 from lumon.workspace.registry import UserStateLayout
 
 AGENT_CONFIG_SCHEMA_VERSION = 1
-DEFAULT_AGENT_MODEL = "gpt-6-luna"
+DEFAULT_AGENT_MODEL = "gpt-5.6-luna"
 DEFAULT_AGENT_REASONING_EFFORT = "max"
 DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
 ExecutionMode = Literal["full_access"]

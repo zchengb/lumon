@@ -119,7 +119,7 @@ def test_agent_defaults_to_codex_luna_max(tmp_path: Path) -> None:
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
         "--model",
-        "gpt-6-luna",
+        "gpt-5.6-luna",
         "--config",
         'model_reasoning_effort="max"',
     )
