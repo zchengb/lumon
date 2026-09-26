@@ -16,10 +16,16 @@ from lumon.scan.report import ReportResult, write_report
 from lumon.scan.service import ScanService
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
+from lumon.tools.feishu_webhook import FeishuWebhookError, FeishuWebhookSender
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
-from lumon.workspace.settings import AutoScanSettings, WorkspaceSettings, WorkspaceSettingsStore
+from lumon.workspace.settings import (
+    AutoScanSettings,
+    FeishuWebhookSettings,
+    WorkspaceSettings,
+    WorkspaceSettingsStore,
+)
 
 
 class _FakeRunner:
@@ -152,8 +158,9 @@ def test_scan_run_store_round_trip_and_artifact_guard(tmp_path: Path) -> None:
     assert store.list(workspace) == (run,)
 
 
+@pytest.mark.parametrize("notification_fails", [False, True])
 def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, notification_fails: bool
 ) -> None:
     state_root = tmp_path / "state"
     registry = WorkspaceRegistry(state_root)
@@ -168,6 +175,7 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     settings_store.save(
         WorkspaceSettings(
             registration.workspace_id,
+            feishu_webhook=FeishuWebhookSettings(True, "https://example.test/hook"),
             auto_scan=AutoScanSettings(
                 enabled=True,
                 trigger_hooks=("twg.create_bug",),
@@ -189,6 +197,21 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
         pdf_path.write_bytes(b"%PDF")
 
     monkeypatch.setattr("lumon.scan.report._convert_via_chrome", fake_pdf)
+    from collections.abc import Mapping
+
+    from lumon.tools.feishu_webhook import WebhookSendResult
+
+    cards: list[Mapping[str, object]] = []
+
+    def send_card(
+        self: FeishuWebhookSender, url: str, card: Mapping[str, object]
+    ) -> WebhookSendResult:
+        cards.append(card)
+        if notification_fails:
+            raise FeishuWebhookError("Network unavailable")
+        return WebhookSendResult(True, "sent")
+
+    monkeypatch.setattr(FeishuWebhookSender, "send_card", send_card)
     service = ScanService(
         state_root=state_root,
         registry=registry,
@@ -201,7 +224,12 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
 
     assert result.state is ScanState.COMPLETED_WITH_FINDINGS
     assert result.pdf_path == "report.pdf"
-    assert result.hook_results == ("completed: TWG hook completed",)
+    outcome = "failed" if notification_fails else "sent"
+    assert result.hook_results == ("completed: TWG hook completed", f"notification: {outcome}")
+    assert len(cards) == 1
+    assert "Lumon — Code Quality & Security Scan Report" in json.dumps(cards, ensure_ascii=False)
+    assert "secret-value" not in json.dumps(cards)
+    assert service.list_runs(workspace)[0].hook_results == result.hook_results
     assert len(runner.prompts) == 2
     assert "scan-result.json" in runner.prompts[0]
     assert "twg.create_bug" in runner.prompts[1]

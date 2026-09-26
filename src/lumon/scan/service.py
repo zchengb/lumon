@@ -21,8 +21,10 @@ from lumon.agents.agent.runner import AgentRunner, create_agent_runner
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, LumonError, PreflightError
 from lumon.scan.model import ScanFinding, ScanRun, ScanState
+from lumon.scan.notification import build_scan_card
 from lumon.scan.report import write_report
 from lumon.scan.store import ScanRunStore
+from lumon.tools.feishu_webhook import FeishuWebhookSender
 from lumon.tools.safety import sanitize_output
 from lumon.workspace.registry import UserStateLayout, WorkspaceRegistry
 from lumon.workspace.settings import WorkspaceSettings, WorkspaceSettingsStore
@@ -39,6 +41,7 @@ class ScanService:
         agent_config_store: AgentConfigStore | None = None,
         runner: AgentRunner | None = None,
         run_store: ScanRunStore | None = None,
+        webhook_sender: FeishuWebhookSender | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
@@ -47,6 +50,7 @@ class ScanService:
         self.runner = runner
         self.run_store = run_store or ScanRunStore()
         self.state_root = state_layout.root
+        self.webhook_sender = webhook_sender or FeishuWebhookSender()
 
     def list_runs(self, workspace: Path) -> tuple[ScanRun, ...]:
         """Return history for a registered Workspace."""
@@ -76,17 +80,38 @@ class ScanService:
 
         workspace = registration.path
         run = ScanRun.start(run_id or uuid4().hex, settings.auto_scan.lookback_days)
-        self.run_store.save(workspace, run)
         with _scan_lock(self.state_root, workspace_id):
+            self.run_store.save(workspace, run)
             try:
-                return self._run_locked(workspace, workspace_id, settings, run)
+                result = self._run_locked(workspace, workspace_id, settings, run)
             except LumonError:
-                self._save_failed(workspace, run, "Lumon could not complete the scan.")
+                self._save_failed(
+                    workspace,
+                    self.run_store.load(workspace, run.run_id),
+                    "Lumon could not complete the scan.",
+                )
+                self._notify(workspace, settings, self.run_store.load(workspace, run.run_id))
                 raise
             except Exception as exc:
                 detail = sanitize_output(str(exc))[:500] or "Unexpected Auto Scan failure."
-                self._save_failed(workspace, run, detail)
+                self._save_failed(workspace, self.run_store.load(workspace, run.run_id), detail)
+                self._notify(workspace, settings, self.run_store.load(workspace, run.run_id))
                 raise AgentRuntimeError(detail) from exc
+            return self._notify(workspace, settings, result)
+
+    def _notify(self, workspace: Path, settings: WorkspaceSettings, run: ScanRun) -> ScanRun:
+        webhook = settings.feishu_webhook
+        if not webhook.enabled or not webhook.url:
+            return run
+        try:
+            model = self.agent_config_store.load().agent_model
+            self.webhook_sender.send_card(webhook.url, build_scan_card(run, model))
+            outcome = "notification: sent"
+        except LumonError:
+            outcome = "notification: failed"
+        notified = replace(run, hook_results=(*run.hook_results, outcome))
+        self.run_store.save(workspace, notified)
+        return notified
 
     def _run_locked(
         self,
@@ -135,6 +160,9 @@ class ScanService:
             result.final_text,
         )
         reviewed = _reviewed_run(run, payload, len(context.repositories))
+        self.run_store.save(
+            workspace, replace(reviewed, state=ScanState.RUNNING, phase="report", finished_at=None)
+        )
         report = write_report(reviewed, self.run_store.path_for(workspace, run.run_id))
         failures = list(reviewed.failures)
         if report.error:
@@ -153,6 +181,10 @@ class ScanService:
             and completed.state != ScanState.FAILED
             and settings.auto_scan.trigger_hooks
         ):
+            self.run_store.save(
+                workspace,
+                replace(completed, state=ScanState.RUNNING, phase="hooks", finished_at=None),
+            )
             hook_result = self._run_completion_hooks(
                 runner,
                 workspace,
@@ -171,6 +203,7 @@ class ScanService:
             failures=tuple(failures),
             hook_results=tuple(hook_results),
             finished_at=_now(),
+            phase="completed",
         )
         self.run_store.save(workspace, final)
         return final
@@ -204,7 +237,7 @@ class ScanService:
         failed = replace(
             run,
             state=ScanState.FAILED,
-            phase="preflight",
+            phase=run.phase,
             finished_at=_now(),
             failures=(sanitize_output(detail)[:500],),
         )
@@ -250,7 +283,14 @@ Use this JSON contract:
   "failures": []
 }}
 
-Only include findings with evidence, impact, and a realistic trigger. Never put
+Only include findings with evidence, impact, and a realistic trigger.
+Review each configured repository independently; continue when one is unavailable
+and record its failure. Review the configured branch, not arbitrary local HEAD.
+Use High for confirmed security, payment, data-loss or critical availability bugs;
+Medium for confirmed non-critical correctness/reliability bugs; Low for minor bugs.
+Omit stylistic suggestions, hypothetical concerns and already-fixed findings.
+Do not run other Workspace flows or create issues during this review.
+Never put
 credentials, tokens, webhook URLs, or raw private data in the JSON. Finish with
 a short summary after the file has been written.
 """

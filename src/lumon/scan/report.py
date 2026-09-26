@@ -130,7 +130,7 @@ def _render_html(run: ScanRun) -> str:
   <p>0 PR(s) created in this run.</p>
 
   <h2>4. Decisions</h2>
-  <p>Only confirmed High severity issues are eligible for automated fixes and PRs. Medium and Low issues remain report-only unless policy changes.</p>
+  <p>This scan is review-only. Confirmed findings are reported without changing code or creating PRs. Configured completion hooks handle any external issue tracking separately.</p>
 </body>
 </html>
 """
