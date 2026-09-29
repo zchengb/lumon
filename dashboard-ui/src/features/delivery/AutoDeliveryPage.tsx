@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, Rocket, Save } from "lucide-react";
+import { LoaderCircle, Rocket, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../shared/i18n";
 import type { SettingsUpdate, WorkspaceSettings } from "../../shared/types";
@@ -74,17 +74,13 @@ export function AutoDeliveryPage({
       <section className="panel settings-panel">
         <div className="panel-heading">
           <div className="settings-title">
-            <span className="settings-icon"><Rocket size={18} /></span>
+            <span className="workspace-glyph glyph-rose"><Rocket size={18} /></span>
             <div>
               <p className="eyebrow">{t("settings.automation")}</p>
               <h2>{t("settings.autoDelivery")}</h2>
             </div>
           </div>
           <div className="settings-heading-actions">
-            <span className={enabled ? "status-pill status-ready" : "status-pill status-neutral"}>
-              {enabled && <Check size={13} />}
-              {enabled ? t("settings.enabled") : t("settings.disabled")}
-            </span>
             <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
               <span>{enabled ? t("settings.enabled") : t("settings.disabled")}</span>
               <input

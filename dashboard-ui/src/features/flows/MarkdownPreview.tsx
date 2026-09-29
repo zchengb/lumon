@@ -12,7 +12,7 @@ export function MarkdownPreview({ content, metadataLabel }: MarkdownPreviewProps
   return (
     <div className="flow-markdown-preview" aria-label={metadataLabel}>
       {frontmatter && (
-        <details className="flow-markdown-frontmatter" open>
+        <details className="flow-markdown-frontmatter">
           <summary>{metadataLabel}</summary>
           <pre>{`---\n${frontmatter}\n---`}</pre>
         </details>

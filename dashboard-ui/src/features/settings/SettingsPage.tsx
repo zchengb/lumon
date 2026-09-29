@@ -81,7 +81,7 @@ export function SettingsPage({
 
       <section className="panel settings-panel">
         <div className="panel-heading">
-          <div className="settings-title"><span className="settings-icon"><Bell size={18} /></span><div><p className="eyebrow">{t("settings.notifications")}</p><h2>{t("settings.feishu")}</h2></div></div>
+          <div className="settings-title"><span className="workspace-glyph glyph-blue"><Bell size={18} /></span><div><p className="eyebrow">{t("settings.notifications")}</p><h2>{t("settings.feishu")}</h2></div></div>
           <div className="settings-heading-actions">
             <span className={settings.feishu_webhook.configured ? "status-pill status-ready" : "status-pill status-neutral"}>{settings.feishu_webhook.configured ? <><Check size={13} />{t("settings.configured")}</> : t("settings.notConfigured")}</span>
             <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>

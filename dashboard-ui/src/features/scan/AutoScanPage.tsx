@@ -1,4 +1,4 @@
-import { Check, FileText, LoaderCircle, Play, ScanSearch, Save } from "lucide-react";
+import { FileText, LoaderCircle, Play, ScanSearch, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, dashboardApi } from "../../app/api";
 import { useI18n } from "../../shared/i18n";
@@ -66,6 +66,13 @@ export function AutoScanPage({
     || description !== defaults.workflow_description;
   const pageCount = Math.ceil(runs.length / pageSize);
   const visibleRuns = runs.slice(historyPage * pageSize, (historyPage + 1) * pageSize);
+  const stateLabels: Record<string, string> = {
+    running: t("autoScan.running"),
+    completed: t("autoScan.completed"),
+    completed_with_findings: t("autoScan.completed_with_findings"),
+    completed_with_failures: t("autoScan.completed_with_failures"),
+    failed: t("autoScan.failed"),
+  };
 
   function markDirty(): void {
     onDirtyChange(true);
@@ -119,13 +126,10 @@ export function AutoScanPage({
       <section className="panel settings-panel">
         <div className="panel-heading">
           <div className="settings-title">
-            <span className="settings-icon"><ScanSearch size={18} /></span>
+            <span className="workspace-glyph glyph-amber"><ScanSearch size={18} /></span>
             <div><p className="eyebrow">{t("settings.automation")}</p><h2>{t("settings.autoScan")}</h2></div>
           </div>
           <div className="settings-heading-actions">
-            <span className={enabled ? "status-pill status-ready" : "status-pill status-neutral"}>
-              {enabled && <Check size={13} />}{enabled ? t("settings.enabled") : t("settings.disabled")}
-            </span>
             <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
               <span>{enabled ? t("settings.enabled") : t("settings.disabled")}</span>
               <input type="checkbox" role="switch" checked={enabled} aria-label={t("settings.autoScanToggleAria")} onChange={(event) => { setEnabled(event.target.checked); markDirty(); }} />
@@ -180,7 +184,7 @@ export function AutoScanPage({
               <tbody>
                 {runs.length ? visibleRuns.map((run) => <tr key={run.run_id}>
                   <td><span className="mono">{formatDate(run.started_at)}</span></td>
-                  <td><span className={`status-pill ${run.state === "completed" ? "status-ready" : run.state === "failed" ? "status-danger" : "status-warning"}`}>{run.state}</span></td>
+                  <td><span className={`status-pill ${run.state === "completed" ? "status-ready" : run.state === "failed" ? "status-danger" : "status-warning"}`}>{stateLabels[run.state] ?? run.state}</span></td>
                   <td>{run.findings.length}</td>
                   <td>{run.duration_seconds === null ? "—" : `${run.duration_seconds}s`}</td>
                   <td className="scan-artifacts">

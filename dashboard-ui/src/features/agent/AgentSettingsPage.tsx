@@ -116,7 +116,7 @@ export function AgentSettingsPage({
       <section className="panel agent-settings-panel">
         <div className="panel-heading">
           <div className="settings-title">
-            <span className="settings-icon"><Bot size={18} /></span>
+            <span className="workspace-glyph glyph-violet"><Bot size={18} /></span>
             <div>
               <p className="eyebrow">{t("agent.runtime")}</p>
               <h2>{t("agent.title")}</h2>
@@ -210,7 +210,7 @@ export function AgentSettingsPage({
       <section className="panel agent-settings-panel">
         <div className="panel-heading">
           <div className="settings-title">
-            <span className="settings-icon"><Activity size={18} /></span>
+            <span className="workspace-glyph glyph-violet"><Activity size={18} /></span>
             <div>
               <p className="eyebrow">{t("agent.observability")}</p>
               <h2>{t("agent.langfuse")}</h2>

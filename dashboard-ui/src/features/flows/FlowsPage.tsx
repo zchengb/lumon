@@ -19,16 +19,16 @@ interface FlowsPageProps {
 const starterContent = [
   "---",
   'id = "my-flow"',
-  'name = "My flow"',
+  'name = "My workflow"',
   "enabled = true",
-  'brief = "Describe the user request this flow handles."',
+  'brief = "Describe the user request this workflow handles."',
   "---",
   "",
-  "# My flow",
+  "# My workflow",
   "",
   "## When to use",
   "",
-  "Describe the request or business situation this flow handles.",
+  "Describe the request or business situation this workflow handles.",
   "",
   "## Inputs and evidence",
   "",
@@ -46,7 +46,7 @@ const starterContent = [
   "",
   "## Boundaries",
   "",
-  "State what this flow does not cover and when another Agent or flow should be used.",
+  "State what this workflow does not cover and when another Agent or workflow should be used.",
   "",
 ].join("\n");
 
@@ -170,7 +170,7 @@ function FlowSchedulePanel({
     <section className="panel settings-panel flow-schedule-panel">
       <div className="panel-heading">
         <div className="settings-title">
-          <span className="settings-icon"><Clock3 size={18} /></span>
+          <span className="workspace-glyph glyph-rose"><Clock3 size={18} /></span>
           <div><p className="eyebrow">{t("flows.eyebrow")}</p><h2>{t("flows.scheduleTitle")}</h2></div>
         </div>
         <div className="settings-heading-actions">

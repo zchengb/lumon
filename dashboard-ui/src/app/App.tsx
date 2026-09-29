@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
   Bot,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   GitBranch,
   LayoutDashboard,
@@ -55,6 +57,16 @@ export function App(): React.JSX.Element {
   const [autoScanDirty, setAutoScanDirty] = useState(false);
   const [flowsDirty, setFlowsDirty] = useState(false);
   const [capabilitiesDirty, setCapabilitiesDirty] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const viewLabels: Record<View, string> = {
+    overview: t("app.overview"),
+    settings: t("app.settings"),
+    agent: t("app.agentSettings"),
+    "auto-delivery": t("app.autoDelivery"),
+    "auto-scan": t("app.autoScan"),
+    flows: t("app.flows"),
+    capabilities: t("app.capabilities"),
+  };
 
   const refreshWorkspaces = useCallback(async (): Promise<WorkspaceListItem[]> => {
     const next = await dashboardApi.listWorkspaces();
@@ -216,43 +228,55 @@ export function App(): React.JSX.Element {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${sidebarCollapsed ? " sidebar-is-collapsed" : ""}`}>
+      <aside className="sidebar" id="dashboard-navigation">
         <div className="brand-lockup">
           <div className="brand-lockup-main">
             <img className="brand-logo" src="/lumon-mark.png" alt={t("app.brandAlt")} />
             <div className="brand-copy">
               <strong>Lumon</strong>
-              <small>{t("app.workspaceConsole")}</small>
-              <p className="sidebar-slogan">{t("app.slogan")}</p>
+              <small>{t("app.slogan")}</small>
             </div>
           </div>
         </div>
         <nav className="side-nav" aria-label={t("app.dashboardSections")}>
-          <button className={view === "overview" ? "active" : ""} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} />{t("app.overview")}</button>
-          <button className={view === "settings" ? "active" : ""} type="button" onClick={() => changeView("settings")}><Settings size={17} />{t("app.settings")}</button>
-          <button className={view === "agent" ? "active" : ""} type="button" onClick={() => changeView("agent")}><Bot size={17} />{t("app.agentSettings")}</button>
-          <button className={view === "auto-delivery" ? "active" : ""} type="button" onClick={() => changeView("auto-delivery")}><Rocket size={17} />{t("app.autoDelivery")}</button>
-          <button className={view === "auto-scan" ? "active" : ""} type="button" onClick={() => changeView("auto-scan")}><ScanSearch size={17} />{t("app.autoScan")}</button>
-          <button className={view === "flows" ? "active" : ""} type="button" onClick={() => changeView("flows")}><GitBranch size={17} />{t("app.flows")}</button>
-          <button className={view === "capabilities" ? "active" : ""} type="button" onClick={() => changeView("capabilities")}><Puzzle size={17} />{t("app.capabilities")}</button>
+          <p className="nav-group-label">{t("app.workspaceGroup")}</p>
+          <button className={view === "overview" ? "active" : ""} title={viewLabels.overview} aria-label={viewLabels.overview} aria-current={view === "overview" ? "page" : undefined} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} /><span>{viewLabels.overview}</span></button>
+          <button className={view === "settings" ? "active" : ""} title={viewLabels.settings} aria-label={viewLabels.settings} aria-current={view === "settings" ? "page" : undefined} type="button" onClick={() => changeView("settings")}><Settings size={17} /><span>{viewLabels.settings}</span></button>
+          <button className={view === "agent" ? "active" : ""} title={viewLabels.agent} aria-label={viewLabels.agent} aria-current={view === "agent" ? "page" : undefined} type="button" onClick={() => changeView("agent")}><Bot size={17} /><span>{viewLabels.agent}</span></button>
+          <p className="nav-group-label">{t("app.automationGroup")}</p>
+          <button className={view === "auto-delivery" ? "active" : ""} title={viewLabels["auto-delivery"]} aria-label={viewLabels["auto-delivery"]} aria-current={view === "auto-delivery" ? "page" : undefined} type="button" onClick={() => changeView("auto-delivery")}><Rocket size={17} /><span>{viewLabels["auto-delivery"]}</span></button>
+          <button className={view === "auto-scan" ? "active" : ""} title={viewLabels["auto-scan"]} aria-label={viewLabels["auto-scan"]} aria-current={view === "auto-scan" ? "page" : undefined} type="button" onClick={() => changeView("auto-scan")}><ScanSearch size={17} /><span>{viewLabels["auto-scan"]}</span></button>
+          <p className="nav-group-label">{t("app.libraryGroup")}</p>
+          <button className={view === "flows" ? "active" : ""} title={viewLabels.flows} aria-label={viewLabels.flows} aria-current={view === "flows" ? "page" : undefined} type="button" onClick={() => changeView("flows")}><GitBranch size={17} /><span>{viewLabels.flows}</span></button>
+          <button className={view === "capabilities" ? "active" : ""} title={viewLabels.capabilities} aria-label={viewLabels.capabilities} aria-current={view === "capabilities" ? "page" : undefined} type="button" onClick={() => changeView("capabilities")}><Puzzle size={17} /><span>{viewLabels.capabilities}</span></button>
         </nav>
         <div className="sidebar-footer">
           <img className="company-logo" src="/inspire-group-logo-white.png" alt={t("app.companyLogoAlt")} />
           <span className="sidebar-version">v{appVersion ?? "—"}</span>
         </div>
       </aside>
+      <button
+        className="sidebar-toggle"
+        type="button"
+        onClick={() => setSidebarCollapsed((value) => !value)}
+        aria-expanded={!sidebarCollapsed}
+        aria-controls="dashboard-navigation"
+        aria-label={sidebarCollapsed ? t("app.expandNavigation") : t("app.collapseNavigation")}
+        title={sidebarCollapsed ? t("app.expandNavigation") : t("app.collapseNavigation")}
+      >{sidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}</button>
 
       <div className="main-shell">
         <header className="topbar">
-          <div className="topbar-context"><span className="topbar-label">{t("app.currentWorkspace")}</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div>
+          <div className="topbar-page"><span>{t("app.workspaceConsole")}</span><ChevronRight size={14} aria-hidden="true" /><strong>{viewLabels[view]}</strong></div>
           <div className="topbar-actions">
             <LanguagePicker />
+            <div className="topbar-context"><span className="topbar-label">{t("app.currentWorkspace")}</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div>
           </div>
         </header>
         {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}
         <main className="content-area">
-          {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
+          {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} onNavigate={changeView} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
           {selectedId && view === "settings" && settings && <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />}
           {view === "agent" && agentSettings && <AgentSettingsPage settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
           {selectedId && view === "auto-delivery" && settings && <AutoDeliveryPage settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />}

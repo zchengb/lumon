@@ -90,6 +90,7 @@ export function CapabilitiesPage(props: CapabilitiesPageProps): React.JSX.Elemen
     <MarkdownDocumentsPage
       {...props}
       icon={Puzzle}
+      iconTone="blue"
       labels={labels}
       starterContent={starterContent}
       api={capabilityApi}

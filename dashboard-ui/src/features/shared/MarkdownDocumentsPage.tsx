@@ -79,6 +79,7 @@ interface MarkdownDocumentsPageProps<
   onNotice: (message: string) => void;
   onError: (message: string) => void;
   icon: LucideIcon;
+  iconTone?: "rose" | "blue";
   labels: MarkdownDocumentLabels;
   starterContent: string;
   api: MarkdownDocumentApi<TSummary, TDocument>;
@@ -100,6 +101,7 @@ export function MarkdownDocumentsPage<
   onNotice,
   onError,
   icon: DocumentIcon,
+  iconTone = "rose",
   labels,
   starterContent,
   api,
@@ -303,7 +305,7 @@ export function MarkdownDocumentsPage<
         <section className="panel flows-list-panel">
           <div className="panel-heading flows-panel-heading">
             <div className="settings-title">
-              <span className="settings-icon"><DocumentIcon size={18} /></span>
+              <span className={`workspace-glyph glyph-${iconTone}`}><DocumentIcon size={18} /></span>
               <div><p className="eyebrow">{labels.eyebrow}</p><h2>{labels.select}</h2></div>
             </div>
             <button className="icon-button" type="button" onClick={() => void refresh()} disabled={loading} aria-label={labels.refresh}>
@@ -336,7 +338,7 @@ export function MarkdownDocumentsPage<
                     key={summary.path + ":" + id}
                     onClick={() => void selectDocument(summary)}
                   >
-                    <span className="flow-row-icon">{summary.valid ? <DocumentIcon size={15} /> : <AlertTriangle size={15} />}</span>
+                    <span className={`workspace-glyph glyph-${summary.valid ? iconTone : "amber"}`}>{summary.valid ? <DocumentIcon size={18} /> : <AlertTriangle size={18} />}</span>
                     <span className="flow-row-copy"><strong>{summary.name || id}</strong><small>{summary.path}</small>{!summary.valid && <em>{summary.error ?? labels.invalid}</em>}</span>
                     <span className={summary.valid && summary.enabled ? "status-pill status-ready" : "status-pill status-neutral"}>{summary.valid && summary.enabled ? <><Check size={12} />{statusLabel}</> : statusLabel}</span>
                   </button>
@@ -402,7 +404,7 @@ export function MarkdownDocumentsPage<
               </div>
             </>
           ) : (
-            <div className="empty-inline flow-editor-empty"><DocumentIcon size={24} /><div><strong>{labels.select}</strong><p>{labels.idHelp}</p></div></div>
+            <div className="empty-inline flow-editor-empty"><span className={`workspace-glyph glyph-${iconTone}`}><DocumentIcon size={22} /></span><div><strong>{labels.select}</strong><p>{labels.idHelp}</p></div></div>
           )}
         </section>
       </div>
