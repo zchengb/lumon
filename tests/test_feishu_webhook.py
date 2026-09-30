@@ -42,15 +42,45 @@ def test_sender_posts_a_safe_test_message() -> None:
     assert result.success is True
 
 
-def test_sender_rejects_nonzero_feishu_response_code() -> None:
+@pytest.mark.parametrize("body", [b'{"code": 19001}', b'{"StatusCode": 19001}'])
+def test_sender_rejects_nonzero_feishu_response_code(body: bytes) -> None:
     def opener(request: Request, timeout: float) -> _Response:
         del request, timeout
-        return _Response(b'{"code": 19001}')
+        return _Response(body)
 
     with pytest.raises(FeishuWebhookError, match="rejected"):
         FeishuWebhookSender(opener=opener).send_test(
             "https://open.feishu.cn/open-apis/bot/v2/hook/token"
         )
+
+
+@pytest.mark.parametrize(
+    "body", [b"", b"not-json", b"[]", b"{}", b'{"code": "0"}', b'{"code": false}']
+)
+def test_sender_requires_a_valid_success_acknowledgement(body: bytes) -> None:
+    def opener(request: Request, timeout: float) -> _Response:
+        del request, timeout
+        return _Response(body)
+
+    with pytest.raises(FeishuWebhookError, match="invalid response"):
+        FeishuWebhookSender(opener=opener).send_message(
+            "https://open.feishu.cn/open-apis/bot/v2/hook/token",
+            {"msg_type": "text", "content": {"text": "Report"}},
+        )
+
+
+@pytest.mark.parametrize(
+    "body", [b'{"code": 0}', b'{"StatusCode": 0}', b'{"code": 0, "StatusCode": 0}']
+)
+def test_sender_accepts_current_and_legacy_success_acknowledgements(body: bytes) -> None:
+    def opener(request: Request, timeout: float) -> _Response:
+        del request, timeout
+        return _Response(body)
+
+    result = FeishuWebhookSender(opener=opener).send_test(
+        "https://open.feishu.cn/open-apis/bot/v2/hook/token"
+    )
+    assert result.success
 
 
 def test_sender_hides_transport_details_and_webhook_url() -> None:

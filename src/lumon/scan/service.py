@@ -100,15 +100,20 @@ class ScanService:
             return self._notify(workspace, settings, result)
 
     def _notify(self, workspace: Path, settings: WorkspaceSettings, run: ScanRun) -> ScanRun:
-        webhook = settings.feishu_webhook
-        if not webhook.enabled or not webhook.url:
-            return run
-        try:
-            model = self.agent_config_store.load().agent_model
-            self.webhook_sender.send_card(webhook.url, build_scan_card(run, model))
-            outcome = "notification: sent"
-        except LumonError:
-            outcome = "notification: failed"
+        # A long scan must honor webhook changes made while it was running.
+        webhook = self.settings_store.load(settings.workspace_id).feishu_webhook
+        if not webhook.enabled:
+            outcome = "notification: skipped: webhook disabled"
+        elif not webhook.url:
+            outcome = "notification: skipped: webhook not configured"
+        else:
+            try:
+                model = self.agent_config_store.load().agent_model
+                self.webhook_sender.send_card(webhook.url, build_scan_card(run, model))
+                outcome = "notification: sent"
+            except LumonError as exc:
+                detail = sanitize_output(str(exc).replace(webhook.url, "[REDACTED]"))[:400]
+                outcome = f"notification: failed: {detail}"
         notified = replace(run, hook_results=(*run.hook_results, outcome))
         self.run_store.save(workspace, notified)
         return notified

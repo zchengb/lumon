@@ -127,15 +127,16 @@ def validate_webhook_url(url: str) -> None:
 
 
 def _validate_feishu_response(body: bytes) -> None:
-    if not body:
-        return
     try:
         raw_payload: object = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise FeishuWebhookError("Feishu Webhook returned an invalid response.") from exc
     if not isinstance(raw_payload, dict):
-        return
+        raise FeishuWebhookError("Feishu Webhook returned an invalid response.")
     payload = cast(dict[str, object], raw_payload)
-    code = payload.get("code")
-    if isinstance(code, int) and code != 0:
-        raise FeishuWebhookError("Feishu Webhook rejected the message.")
+    codes = [payload[name] for name in ("code", "StatusCode") if name in payload]
+    if not codes or any(not isinstance(code, int) or isinstance(code, bool) for code in codes):
+        raise FeishuWebhookError("Feishu Webhook returned an invalid response.")
+    for code in codes:
+        if code != 0:
+            raise FeishuWebhookError(f"Feishu Webhook rejected the message (code {code}).")

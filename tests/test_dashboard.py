@@ -81,6 +81,23 @@ class _RecordingDeliveryScheduler:
             raise PreflightError("scheduler test failure")
 
 
+class _RecordingScanScheduler:
+    def __init__(self) -> None:
+        self.calls: list[AutoScanSettings] = []
+        self.fail = False
+
+    def apply(
+        self,
+        workspace: Path,
+        workspace_id: UUID,
+        settings: AutoScanSettings,
+    ) -> None:
+        del workspace, workspace_id
+        self.calls.append(settings)
+        if self.fail:
+            raise PreflightError("scheduler test failure")
+
+
 def _flow_content(
     flow_id: str = "dashboard-flow",
     brief: str = "Handle a dashboard request.",
@@ -678,50 +695,157 @@ def test_workspace_settings_are_isolated_between_workspaces(tmp_path: Path) -> N
     )
 
 
-def test_auto_delivery_scheduler_is_updated_and_settings_roll_back_on_failure(
+@pytest.mark.parametrize("automation", ["auto_delivery", "auto_scan"])
+def test_settings_updates_do_not_reload_unchanged_automation_schedules(
     tmp_path: Path,
+    automation: str,
 ) -> None:
-    scheduler = _RecordingDeliveryScheduler()
+    delivery_scheduler = _RecordingDeliveryScheduler()
+    scan_scheduler = _RecordingScanScheduler()
     service = _service(tmp_path)
-    service.delivery_scheduler = scheduler
+    service.delivery_scheduler = delivery_scheduler
+    service.scan_scheduler = scan_scheduler
     client = _client(service)
     workspace_id = client.post(
         "/api/workspaces/initialize",
         json={"path": str(tmp_path / "workspace"), "repositories": []},
     ).json()["workspace_id"]
+    endpoint = f"/api/workspaces/{workspace_id}/settings"
+    required_settings: dict[str, object] = {"lookback_days": 7} if automation == "auto_scan" else {}
+    saved = client.put(
+        endpoint,
+        json={
+            "feishu_webhook": {"enabled": False},
+            automation: {
+                "enabled": True,
+                "schedule_expression": "0 12 * * 1-5",
+                **required_settings,
+            },
+        },
+    )
+    assert saved.status_code == 200
+    expected_calls = (1, 0) if automation == "auto_delivery" else (0, 1)
+    assert (len(delivery_scheduler.calls), len(scan_scheduler.calls)) == expected_calls
+
+    webhook_updates = [
+        {"enabled": True, "url": "https://open.feishu.cn/open-apis/bot/v2/hook/test-token"},
+        {"enabled": False},
+        {"enabled": False, "url": ""},
+    ]
+    for webhook in webhook_updates:
+        updated = client.put(endpoint, json={"feishu_webhook": webhook})
+        assert updated.status_code == 200
+        assert updated.json()[automation] == saved.json()[automation]
+        assert (len(delivery_scheduler.calls), len(scan_scheduler.calls)) == expected_calls
+
+    execution_settings: dict[str, object] = {"trigger_hooks": ["mail.delivery_ready"]}
+    if automation == "auto_scan":
+        execution_settings = {
+            "lookback_days": 14,
+            "trigger_hooks": ["twg.create_bug"],
+            "workflow_description": "Review confirmed bugs only.",
+        }
+    updated = client.put(
+        endpoint,
+        json={
+            "feishu_webhook": {"enabled": False},
+            automation: {
+                "enabled": True,
+                "schedule_expression": "0 12 * * 1-5",
+                **execution_settings,
+            },
+        },
+    )
+    assert updated.status_code == 200
+    for setting, expected in execution_settings.items():
+        assert updated.json()[automation][setting] == expected
+    assert (len(delivery_scheduler.calls), len(scan_scheduler.calls)) == expected_calls
+
+
+@pytest.mark.parametrize("automation", ["auto_delivery", "auto_scan"])
+def test_automation_scheduler_is_updated_and_settings_roll_back_on_failure(
+    tmp_path: Path,
+    automation: str,
+) -> None:
+    delivery_scheduler = _RecordingDeliveryScheduler()
+    scan_scheduler = _RecordingScanScheduler()
+    scheduler = delivery_scheduler if automation == "auto_delivery" else scan_scheduler
+    other_scheduler = scan_scheduler if automation == "auto_delivery" else delivery_scheduler
+    service = _service(tmp_path)
+    service.delivery_scheduler = delivery_scheduler
+    service.scan_scheduler = scan_scheduler
+    client = _client(service)
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(tmp_path / "workspace"), "repositories": []},
+    ).json()["workspace_id"]
+    required_settings: dict[str, object] = {"lookback_days": 7} if automation == "auto_scan" else {}
 
     saved = client.put(
         f"/api/workspaces/{workspace_id}/settings",
         json={
             "feishu_webhook": {"enabled": False},
-            "auto_delivery": {
+            automation: {
                 "enabled": True,
                 "trigger_hooks": ["jira.delivery_ready"],
                 "schedule_expression": "*/10 * * * *",
+                **required_settings,
             },
         },
     )
     assert saved.status_code == 200
     assert scheduler.calls[-1].schedule_expression == "*/10 * * * *"
+    assert len(scheduler.calls) == 1
+    assert not other_scheduler.calls
+
+    rescheduled = client.put(
+        f"/api/workspaces/{workspace_id}/settings",
+        json={
+            "feishu_webhook": {"enabled": False},
+            automation: {
+                "enabled": True,
+                "schedule_expression": "*/15 * * * *",
+                **required_settings,
+            },
+        },
+    )
+    assert rescheduled.status_code == 200
+    assert scheduler.calls[-1].schedule_expression == "*/15 * * * *"
+    assert len(scheduler.calls) == 2
+    assert not other_scheduler.calls
+
+    snapshot = service.settings_store.raw_snapshot(UUID(workspace_id))
 
     scheduler.fail = True
     failed = client.put(
         f"/api/workspaces/{workspace_id}/settings",
         json={
             "feishu_webhook": {"enabled": False},
-            "auto_delivery": {
+            automation: {
                 "enabled": False,
                 "trigger_hooks": ["jira.delivery_ready"],
                 "schedule_expression": "*/30 * * * *",
+                **required_settings,
             },
         },
     )
     assert failed.status_code == 409
-    assert client.get(f"/api/workspaces/{workspace_id}/settings").json()["auto_delivery"] == {
-        "enabled": True,
-        "trigger_hooks": ["jira.delivery_ready"],
-        "schedule_expression": "*/10 * * * *",
-    }
+    assert len(scheduler.calls) == 3
+    assert not other_scheduler.calls
+    assert service.settings_store.raw_snapshot(UUID(workspace_id)) == snapshot
+
+    scheduler.fail = False
+    disabled = client.put(
+        f"/api/workspaces/{workspace_id}/settings",
+        json={
+            "feishu_webhook": {"enabled": False},
+            automation: {"enabled": False, **required_settings},
+        },
+    )
+    assert disabled.status_code == 200
+    assert scheduler.calls[-1].enabled is False
+    assert len(scheduler.calls) == 4
+    assert not other_scheduler.calls
 
 
 def test_auto_scan_settings_and_history_are_available_from_dashboard(

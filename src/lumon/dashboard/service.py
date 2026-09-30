@@ -796,12 +796,22 @@ class DashboardService:
         snapshot = self.settings_store.raw_snapshot(workspace_id)
         try:
             self.settings_store.save(updated)
-            self.delivery_scheduler.apply(
-                registration.path,
-                workspace_id,
-                updated.auto_delivery,
-            )
-            self.scan_scheduler.apply(registration.path, workspace_id, updated.auto_scan)
+            # Reloading launchd jobs terminates active runs; only timing changes require it.
+            if (
+                current.auto_delivery.enabled != updated.auto_delivery.enabled
+                or current.auto_delivery.schedule_expression
+                != updated.auto_delivery.schedule_expression
+            ):
+                self.delivery_scheduler.apply(
+                    registration.path,
+                    workspace_id,
+                    updated.auto_delivery,
+                )
+            if (
+                current.auto_scan.enabled != updated.auto_scan.enabled
+                or current.auto_scan.schedule_expression != updated.auto_scan.schedule_expression
+            ):
+                self.scan_scheduler.apply(registration.path, workspace_id, updated.auto_scan)
         except LumonError:
             self.settings_store.restore_raw(workspace_id, snapshot)
             raise

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -159,8 +160,14 @@ def test_scan_run_store_round_trip_and_artifact_guard(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("notification_fails", [False, True])
+@pytest.mark.parametrize(
+    "webhook_change", ["unchanged", "replaced", "enabled", "disabled", "cleared"]
+)
 def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, notification_fails: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    notification_fails: bool,
+    webhook_change: str,
 ) -> None:
     state_root = tmp_path / "state"
     registry = WorkspaceRegistry(state_root)
@@ -175,7 +182,9 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     settings_store.save(
         WorkspaceSettings(
             registration.workspace_id,
-            feishu_webhook=FeishuWebhookSettings(True, "https://example.test/hook"),
+            feishu_webhook=FeishuWebhookSettings(
+                webhook_change != "enabled", "https://example.test/hook"
+            ),
             auto_scan=AutoScanSettings(
                 enabled=True,
                 trigger_hooks=("twg.create_bug",),
@@ -195,6 +204,19 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     def fake_pdf(html_path: Path, pdf_path: Path) -> None:
         del html_path
         pdf_path.write_bytes(b"%PDF")
+        webhook_updates = {
+            "replaced": FeishuWebhookSettings(True, "https://example.test/new-hook"),
+            "enabled": FeishuWebhookSettings(True, "https://example.test/hook"),
+            "disabled": FeishuWebhookSettings(False, "https://example.test/hook"),
+            "cleared": FeishuWebhookSettings(True),
+        }
+        if webhook_change in webhook_updates:
+            settings_store.save(
+                replace(
+                    settings_store.load(registration.workspace_id),
+                    feishu_webhook=webhook_updates[webhook_change],
+                )
+            )
 
     monkeypatch.setattr("lumon.scan.report._convert_via_chrome", fake_pdf)
     from collections.abc import Mapping
@@ -202,13 +224,15 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     from lumon.tools.feishu_webhook import WebhookSendResult
 
     cards: list[Mapping[str, object]] = []
+    urls: list[str] = []
 
     def send_card(
         self: FeishuWebhookSender, url: str, card: Mapping[str, object]
     ) -> WebhookSendResult:
         cards.append(card)
+        urls.append(url)
         if notification_fails:
-            raise FeishuWebhookError("Network unavailable")
+            raise FeishuWebhookError(f"Network unavailable: {url}; token: secret-value")
         return WebhookSendResult(True, "sent")
 
     monkeypatch.setattr(FeishuWebhookSender, "send_card", send_card)
@@ -224,11 +248,31 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
 
     assert result.state is ScanState.COMPLETED_WITH_FINDINGS
     assert result.pdf_path == "report.pdf"
-    outcome = "failed" if notification_fails else "sent"
-    assert result.hook_results == ("completed: TWG hook completed", f"notification: {outcome}")
-    assert len(cards) == 1
-    assert "Lumon — Code Quality & Security Scan Report" in json.dumps(cards, ensure_ascii=False)
-    assert "secret-value" not in json.dumps(cards)
+    if webhook_change in {"disabled", "cleared"}:
+        reason = "disabled" if webhook_change == "disabled" else "not configured"
+        assert result.hook_results[-1] == f"notification: skipped: webhook {reason}"
+        assert not cards
+    else:
+        expected_url = (
+            "https://example.test/new-hook"
+            if webhook_change == "replaced"
+            else "https://example.test/hook"
+        )
+        assert urls == [expected_url]
+        assert len(cards) == 1
+        assert "Lumon — Code Quality & Security Scan Report" in json.dumps(
+            cards, ensure_ascii=False
+        )
+        assert "secret-value" not in json.dumps(cards)
+        if notification_fails:
+            assert result.hook_results[-1] == (
+                "notification: failed: Network unavailable: [REDACTED]; token: [REDACTED]"
+            )
+        else:
+            assert result.hook_results[-1] == "notification: sent"
+    assert result.hook_results[0] == "completed: TWG hook completed"
+    assert "secret-value" not in json.dumps(result.as_payload())
+    assert "https://example.test" not in json.dumps(result.as_payload())
     assert service.list_runs(workspace)[0].hook_results == result.hook_results
     assert len(runner.prompts) == 2
     assert "scan-result.json" in runner.prompts[0]
