@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Callable
 from pathlib import Path
 from urllib.request import Request
@@ -937,6 +938,29 @@ def test_dashboard_server_is_loopback_only_and_supports_injected_runner() -> Non
     assert int(captured["port"]) > 0
 
 
+def test_dashboard_server_uses_fixed_default_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ports: list[int] = []
+    captured: dict[str, object] = {}
+
+    def select(requested: int) -> int:
+        ports.append(requested)
+        return requested
+
+    def runner(application: object, **options: object) -> None:
+        del application
+        captured.update(options)
+
+    monkeypatch.setenv("LUMON_HOME", str(tmp_path / "state"))
+    monkeypatch.setattr("lumon.dashboard.server.select_port", select)
+    DashboardServer(runner=runner).run(open_browser=False)
+
+    assert ports == [15778]
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 15778
+
+
 def test_dashboard_server_selects_requested_workspace_in_browser_url() -> None:
     captured: dict[str, str] = {}
 
@@ -964,3 +988,12 @@ def test_select_port_rejects_invalid_port() -> None:
 
     with pytest.raises(PreflightError, match="between 0 and 65535"):
         select_port(-1)
+
+
+def test_select_port_does_not_switch_when_requested_port_is_occupied() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        occupied_port = listener.getsockname()[1]
+        with pytest.raises(PreflightError, match=f"port is unavailable: {occupied_port}"):
+            select_port(occupied_port)

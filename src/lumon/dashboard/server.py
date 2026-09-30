@@ -18,6 +18,7 @@ from lumon.dashboard.service import DashboardService
 from lumon.errors import PreflightError
 
 LOCAL_HOST = "127.0.0.1"
+DEFAULT_PORT = 15778
 
 
 class DashboardServer:
@@ -35,7 +36,7 @@ class DashboardServer:
         self._runner = runner or uvicorn.run
         self._initial_workspace_id = initial_workspace_id
 
-    def run(self, port: int = 0, open_browser: bool = True) -> None:
+    def run(self, port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
         """Select a local port, optionally open the browser, and block until stopped."""
 
         actual_port = select_port(port)

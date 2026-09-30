@@ -130,8 +130,10 @@ Start the local Dashboard with:
 lumon ui
 ```
 
-Lumon binds the Python API to `127.0.0.1`, selects an available port, and opens
-the browser. Use `lumon ui --no-open` when the browser should not be opened.
+Lumon opens the browser at the fixed local address `http://127.0.0.1:15778`.
+Use `lumon ui --port 8080` to choose another port, or `--port 0` to select an
+available port. If the requested port is occupied, Lumon reports an error
+instead of switching ports. Use `lumon ui --no-open` to skip opening the browser.
 The Dashboard can initialize a new Workspace, add an existing initialized
 Workspace, switch between registered Workspaces, inspect Repository health,
 configure the current Workspace's Feishu Webhook, edit Workspace flows, and

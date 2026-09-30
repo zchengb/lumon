@@ -8,7 +8,7 @@ from uuid import UUID
 
 import typer
 
-from lumon.dashboard.server import DashboardServer, create_dashboard_app
+from lumon.dashboard.server import DEFAULT_PORT, DashboardServer, create_dashboard_app
 from lumon.dashboard.service import DashboardService
 from lumon.errors import LumonError
 
@@ -20,7 +20,7 @@ def command(
     ] = None,
     port: Annotated[
         int, typer.Option("--port", help="Local TCP port; 0 selects an available port.")
-    ] = 0,
+    ] = DEFAULT_PORT,
     no_open: Annotated[
         bool, typer.Option("--no-open", help="Start the Dashboard without opening a browser.")
     ] = False,

@@ -8,9 +8,33 @@ from pathlib import Path
 import pytest
 
 from lumon.cli.app import main
+from lumon.dashboard.server import DashboardServer
 from lumon.version import __version__
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+@pytest.mark.parametrize(
+    ("options", "expected_port"),
+    [([], 15778), (["--port", "8080"], 8080), (["--port", "0"], 0)],
+)
+def test_ui_uses_fixed_default_port_and_allows_overrides(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    options: list[str],
+    expected_port: int,
+) -> None:
+    calls: list[tuple[int, bool]] = []
+
+    def run(self: DashboardServer, *, port: int, open_browser: bool) -> None:
+        del self
+        calls.append((port, open_browser))
+
+    monkeypatch.setenv("LUMON_HOME", str(tmp_path / "state"))
+    monkeypatch.setattr(DashboardServer, "run", run)
+
+    assert main(["ui", "--no-open", *options]) == 0
+    assert calls == [(expected_port, False)]
 
 
 def test_version_command(capsys: pytest.CaptureFixture[str]) -> None:

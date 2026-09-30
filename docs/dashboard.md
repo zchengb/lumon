@@ -11,9 +11,11 @@ lumon ui --port 8080
 lumon ui --workspace /path/to/lumon-workspace
 ```
 
-The server always binds to `127.0.0.1`. Port `0` (the default) means Lumon
-selects an available local port. The installed Wheel contains the compiled
-frontend, so Node is only needed when developing or building the package.
+The server always binds to `127.0.0.1`, using the fixed default port `15778`.
+Use `--port` to override it; `--port 0` selects an available local port.
+An occupied port produces an error instead of silently changing the address.
+The installed Wheel contains the compiled frontend, so Node is only needed
+when developing or building the package.
 
 ## Workspace registry
 
