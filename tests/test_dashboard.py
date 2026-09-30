@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from urllib.request import Request
 from uuid import UUID
@@ -17,6 +18,8 @@ from lumon.dashboard.routes import create_app
 from lumon.dashboard.server import DashboardServer, create_dashboard_app, select_port
 from lumon.dashboard.service import DashboardService
 from lumon.errors import PreflightError
+from lumon.scan.model import ScanRun, ScanState
+from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.feishu_webhook import FeishuWebhookSender
 from lumon.version import __version__
@@ -894,6 +897,44 @@ def test_auto_scan_settings_and_history_are_available_from_dashboard(
         "workflow_description": "Create a bug through the Workspace completion hook.",
     }
     assert client.get(f"/api/workspaces/{workspace_id}/scans").json() == []
+
+
+@pytest.mark.parametrize(
+    ("kind", "media_type", "disposition", "content"),
+    [
+        ("html", "text/html", "inline", b"<h1>Scan report</h1>"),
+        ("pdf", "application/pdf", "attachment", b"%PDF-1.4 test report"),
+    ],
+)
+def test_scan_reports_display_html_inline_and_download_pdf(
+    tmp_path: Path, kind: str, media_type: str, disposition: str, content: bytes
+) -> None:
+    client = _client(_service(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(workspace), "repositories": []},
+    ).json()["workspace_id"]
+    run = ScanRun.start("scan-report", 7)
+    run = replace(
+        run,
+        state=ScanState.COMPLETED,
+        phase="completed",
+        finished_at=run.started_at,
+        html_path="report.html",
+        pdf_path="report.pdf",
+    )
+    store = ScanRunStore()
+    store.save(workspace, run)
+    filename = f"report.{kind}"
+    (store.path_for(workspace, run.run_id) / filename).write_bytes(content)
+
+    response = client.get(f"/api/workspaces/{workspace_id}/scans/{run.run_id}/artifacts/{kind}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(media_type)
+    assert response.headers["content-disposition"] == f'{disposition}; filename="{filename}"'
+    assert response.content == content
 
 
 def test_register_existing_workspace_returns_registry_item(tmp_path: Path) -> None:

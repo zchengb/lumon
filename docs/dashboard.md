@@ -143,6 +143,15 @@ and fixed minute/hour expressions such as `0 9 * * 1-5`. The LaunchAgent and
 poll lock are owner-only; credentials are never placed in the schedule or poll
 output.
 
+## Auto Scan history
+
+The **Auto Scan** page shows one **Scan history** heading, finding counts by
+severity (High, Medium, Low), and elapsed time as minutes and seconds, such as
+`15m34s`. Empty findings and unfinished durations display a dash.
+HTML report links display the report directly in a new tab rather than opening
+a download dialog. PDF report links retain their download behavior.
+The **Auto Delivery** product label remains English in every interface language.
+
 ## Build the frontend
 
 From the repository root:

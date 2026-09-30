@@ -171,12 +171,11 @@ export function AutoScanPage({
 
       <section className="panel scan-history-panel">
         <div className="panel-heading">
-          <div><p className="eyebrow">{t("autoScan.historyEyebrow")}</p><h2>{t("autoScan.historyTitle")}</h2></div>
+          <h2>{t("autoScan.historyTitle")}</h2>
           <button className="button button-secondary" type="button" onClick={() => void startScan()} disabled={starting}>
             {starting ? <LoaderCircle size={15} className="spin" /> : <Play size={15} />}{t("autoScan.start")}
           </button>
         </div>
-        <p className="settings-description">{t("autoScan.historyDescription")}</p>
         {historyLoading ? <div className="loading-inline"><LoaderCircle size={18} className="spin" />{t("autoScan.loadingHistory")}</div> : (
           <div className="table-scroll scan-history-scroll">
             <table className="scan-history-table">
@@ -185,8 +184,8 @@ export function AutoScanPage({
                 {runs.length ? visibleRuns.map((run) => <tr key={run.run_id}>
                   <td><span className="mono">{formatDate(run.started_at)}</span></td>
                   <td><span className={`status-pill ${run.state === "completed" ? "status-ready" : run.state === "failed" ? "status-danger" : "status-warning"}`}>{stateLabels[run.state] ?? run.state}</span></td>
-                  <td>{run.findings.length}</td>
-                  <td>{run.duration_seconds === null ? "—" : `${run.duration_seconds}s`}</td>
+                  <td><SeverityBreakdown findings={run.findings} /></td>
+                  <td>{run.duration_seconds === null ? "—" : `${Math.floor(run.duration_seconds / 60)}m${run.duration_seconds % 60}s`}</td>
                   <td className="scan-artifacts">
                     {run.html_available && <a href={`/api/workspaces/${workspaceId}/scans/${encodeURIComponent(run.run_id)}/artifacts/html`} target="_blank" rel="noreferrer"><FileText size={14} />HTML</a>}
                     {run.pdf_available && <a href={`/api/workspaces/${workspaceId}/scans/${encodeURIComponent(run.run_id)}/artifacts/pdf`} target="_blank" rel="noreferrer"><FileText size={14} />PDF</a>}
@@ -205,4 +204,22 @@ export function AutoScanPage({
       </section>
     </div>
   );
+}
+
+function SeverityBreakdown({ findings }: { findings: ScanRun["findings"] }): React.JSX.Element {
+  const { t } = useI18n();
+  const levels = [
+    ["High", t("autoScan.high"), "high"],
+    ["Medium", t("autoScan.medium"), "medium"],
+    ["Low", t("autoScan.low"), "low"],
+  ] as const;
+  const present = levels.map(([severity, label, tone]) => ({
+    label,
+    tone,
+    count: findings.filter((finding) => finding.severity === severity).length,
+  })).filter(({ count }) => count > 0);
+
+  return present.length ? <span className="scan-severity-breakdown">
+    {present.map(({ label, tone, count }) => <span className={`scan-severity scan-severity-${tone}`} key={tone}>{label}: {count}</span>)}
+  </span> : <>—</>;
 }

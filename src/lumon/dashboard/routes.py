@@ -220,7 +220,12 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     ) -> FileResponse:
         path = _service(request).scan_artifact(workspace_id, run_id, kind)
         media_type = "application/pdf" if kind == "pdf" else "text/html"
-        return FileResponse(path, media_type=media_type, filename=path.name)
+        return FileResponse(
+            path,
+            media_type=media_type,
+            filename=path.name,
+            content_disposition_type="inline" if kind == "html" else "attachment",
+        )
 
     @router.get(
         "/workspaces/{workspace_id}/flows",

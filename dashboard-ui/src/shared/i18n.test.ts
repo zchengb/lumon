@@ -10,6 +10,15 @@ describe("Dashboard translations", () => {
     expect(translate("zh-TW", "settings.title")).toBe("設定");
   });
 
+  it.each(["en", "zh-CN", "zh-TW"] as const)(
+    "keeps Auto Delivery labels unchanged in %s",
+    (locale) => {
+      expect(translate(locale, "app.autoDelivery")).toBe("Auto Delivery");
+      expect(translate(locale, "autoDelivery.title")).toBe("Auto Delivery");
+      expect(translate(locale, "settings.autoDelivery")).toBe("Auto Delivery");
+    },
+  );
+
   it("interpolates dynamic values without changing the translation template", () => {
     expect(translate("en", "app.workspaceReady", { name: "Demo" })).toBe(
       "Workspace “Demo” is ready.",
