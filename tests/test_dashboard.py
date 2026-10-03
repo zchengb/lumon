@@ -659,6 +659,120 @@ def test_initialize_and_read_workspace_overview(tmp_path: Path) -> None:
     assert overview.status_code == 200
     assert overview.json()["name"] == "created-workspace"
     assert overview.json()["repositories"] == []
+    assert overview.json()["workflow_schedules"] == []
+
+
+def test_overview_lists_only_saved_workflow_schedules_without_changing_jobs(
+    tmp_path: Path,
+) -> None:
+    scheduler = _RecordingFlowScheduler()
+    service = _service(tmp_path, flow_scheduler=scheduler)
+    client = _client(service)
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(tmp_path / "scheduled-workspace"), "repositories": []},
+    ).json()["workspace_id"]
+    flows_url = f"/api/workspaces/{workspace_id}/flows"
+    for flow_id in ("auto-guard", "disabled-schedule", "disabled-workflow", "unscheduled"):
+        assert client.post(flows_url, json={"content": _flow_content(flow_id)}).status_code == 201
+    for flow_id, enabled in (("auto-guard", True), ("disabled-schedule", False)):
+        assert (
+            client.put(
+                f"{flows_url}/{flow_id}/schedule",
+                json={"enabled": enabled, "schedule_expression": "0 10 * * 1-5"},
+            ).status_code
+            == 200
+        )
+    assert (
+        client.put(
+            f"{flows_url}/disabled-workflow",
+            json={"content": _flow_content("disabled-workflow", enabled=False)},
+        ).status_code
+        == 200
+    )
+    settings = service.settings_store.load(UUID(workspace_id))
+    # A workflow can also be disabled by editing its Markdown outside the Dashboard.
+    service.settings_store.save(
+        replace(
+            settings,
+            flow_schedules=(
+                *settings.flow_schedules,
+                FlowScheduleSettings("disabled-workflow", True),
+            ),
+        )
+    )
+    profile_snapshot = service.settings_store.raw_snapshot(UUID(workspace_id))
+    scheduler_calls = scheduler.calls.copy()
+
+    response = client.get(f"/api/workspaces/{workspace_id}/overview")
+
+    assert response.status_code == 200
+    assert response.json()["workflow_schedules"] == [
+        {
+            "flow_id": "auto-guard",
+            "name": "Dashboard flow",
+            "enabled": True,
+            "schedule_expression": "0 10 * * 1-5",
+        },
+        {
+            "flow_id": "disabled-schedule",
+            "name": "Dashboard flow",
+            "enabled": False,
+            "schedule_expression": "0 10 * * 1-5",
+        },
+        {
+            "flow_id": "disabled-workflow",
+            "name": "Dashboard flow",
+            "enabled": False,
+            "schedule_expression": "0 8 * * *",
+        },
+    ]
+    assert service.settings_store.raw_snapshot(UUID(workspace_id)) == profile_snapshot
+    assert scheduler.calls == scheduler_calls
+    assert client.delete(f"{flows_url}/auto-guard").status_code == 204
+    remaining = client.get(f"/api/workspaces/{workspace_id}/overview").json()["workflow_schedules"]
+    assert [item["flow_id"] for item in remaining] == ["disabled-schedule", "disabled-workflow"]
+
+
+def test_overview_workflow_schedules_are_workspace_scoped_and_skip_invalid_files(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    workspace_ids: list[str] = []
+    for name in ("one", "two"):
+        target = tmp_path / name
+        workspace_id = client.post(
+            "/api/workspaces/initialize",
+            json={"path": str(target), "repositories": []},
+        ).json()["workspace_id"]
+        workspace_ids.append(workspace_id)
+        content = _flow_content("shared-id").replace("Dashboard flow", name)
+        client.post(f"/api/workspaces/{workspace_id}/flows", json={"content": content})
+        (target / "lumon" / "flows" / "broken.md").write_text("broken", encoding="utf-8")
+        settings = service.settings_store.load(UUID(workspace_id))
+        service.settings_store.save(
+            replace(
+                settings,
+                flow_schedules=(
+                    FlowScheduleSettings("shared-id", name == "one", "0 10 * * 1-5"),
+                    FlowScheduleSettings("broken", True),
+                    FlowScheduleSettings("deleted", True),
+                ),
+            )
+        )
+
+    for name, workspace_id in zip(("one", "two"), workspace_ids, strict=True):
+        response = client.get(f"/api/workspaces/{workspace_id}/overview")
+        assert response.status_code == 200
+        assert response.json()["workflow_schedules"] == [
+            {
+                "flow_id": "shared-id",
+                "name": name,
+                "enabled": name == "one",
+                "schedule_expression": "0 10 * * 1-5",
+            }
+        ]
 
 
 def test_dashboard_flow_crud_edits_the_workspace_files_and_reports_validation(

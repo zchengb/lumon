@@ -11,6 +11,7 @@ import {
 
 interface FlowsPageProps {
   workspaceId: string;
+  initialDocumentId?: string;
   onDirtyChange: (dirty: boolean) => void;
   onNotice: (message: string) => void;
   onError: (message: string) => void;

@@ -38,6 +38,7 @@ from lumon.dashboard.schemas import (
     ScanFindingResponse,
     ScanRunResponse,
     WebhookTestResponse,
+    WorkflowScheduleResponse,
     WorkspaceFolderSelectionResponse,
     WorkspaceOverviewResponse,
     WorkspaceResponse,
@@ -249,6 +250,15 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                     detail=item.detail,
                 )
                 for item in overview.repositories
+            ],
+            workflow_schedules=[
+                WorkflowScheduleResponse(
+                    flow_id=item.flow_id,
+                    name=item.name,
+                    enabled=item.enabled,
+                    schedule_expression=item.schedule_expression,
+                )
+                for item in overview.workflow_schedules
             ],
         )
 

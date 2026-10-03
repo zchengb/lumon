@@ -44,6 +44,7 @@ export function App(): React.JSX.Element {
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialNavigation.workspaceId);
   const [view, setView] = useState<View>(initialNavigation.view);
+  const [workflowId, setWorkflowId] = useState<string | undefined>();
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [overview, setOverview] = useState<WorkspaceOverviewData | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
@@ -95,16 +96,24 @@ export function App(): React.JSX.Element {
     let cancelled = false;
     setRefreshing(true);
     setError(null);
-    Promise.all([dashboardApi.getOverview(selectedId), dashboardApi.getSettings(selectedId)])
-      .then(([nextOverview, nextSettings]) => {
+    dashboardApi.getSettings(selectedId)
+      .then((nextSettings) => {
         if (cancelled) return;
-        setOverview(nextOverview);
         setSettings(nextSettings);
       })
       .catch((reason: unknown) => { if (!cancelled) setError(messageFor(reason, t)); })
       .finally(() => { if (!cancelled) setRefreshing(false); });
     return () => { cancelled = true; };
   }, [selectedId, t]);
+
+  useEffect(() => {
+    if (!selectedId || view !== "overview") return;
+    let cancelled = false;
+    void dashboardApi.getOverview(selectedId)
+      .then((nextOverview) => { if (!cancelled) setOverview(nextOverview); })
+      .catch((reason: unknown) => { if (!cancelled) setError(messageFor(reason, t)); });
+    return () => { cancelled = true; };
+  }, [selectedId, view, t]);
 
   useEffect(() => {
     window.history.replaceState(null, "", writeNavigation({ workspaceId: selectedId, view }));
@@ -127,6 +136,9 @@ export function App(): React.JSX.Element {
     setAutoScanDirty(false);
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
+    setWorkflowId(undefined);
+    setOverview(null);
+    setSettings(null);
     setSelectedId(nextId);
   }
 
@@ -151,6 +163,11 @@ export function App(): React.JSX.Element {
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
     setView(nextView);
+  }
+
+  function openWorkflow(flowId: string): void {
+    setWorkflowId(flowId);
+    changeView("flows");
   }
 
   async function handleOnboardingReady(workspace: WorkspaceListItem): Promise<void> {
@@ -276,7 +293,7 @@ export function App(): React.JSX.Element {
         </header>
         {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}
         <main className="content-area">
-          {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} onNavigate={changeView} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
+          {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} onNavigate={changeView} onOpenWorkflow={openWorkflow} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
           {selectedId && view === "settings" && settings && <div className="page-stack">
             <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />
             {agentSettings && <AgentSettingsPage key={selectedId} settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
@@ -284,7 +301,7 @@ export function App(): React.JSX.Element {
           {selectedId && view === "agent" && <ChatHistoryPage key={selectedId} workspaceId={selectedId} />}
           {selectedId && view === "auto-delivery" && settings && <AutoDeliveryPage settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />}
           {selectedId && view === "auto-scan" && settings && <AutoScanPage workspaceId={selectedId} settings={settings} onSave={saveSettings} onDirtyChange={setAutoScanDirty} onError={setError} />}
-          {selectedId && view === "flows" && <FlowsPage workspaceId={selectedId} onDirtyChange={setFlowsDirty} onNotice={setNotice} onError={setError} />}
+          {selectedId && view === "flows" && <FlowsPage workspaceId={selectedId} initialDocumentId={workflowId} onDirtyChange={setFlowsDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && view === "capabilities" && <CapabilitiesPage workspaceId={selectedId} onDirtyChange={setCapabilitiesDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && refreshing && !overview && !settings && <div className="loading-inline"><LoaderCircle className="spin" size={22} />{t("app.readingWorkspace")}</div>}
         </main>

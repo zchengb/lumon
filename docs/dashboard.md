@@ -128,6 +128,18 @@ and Langfuse configuration, still require `lumon agent stop` followed by
 
 ## Workspace flows
 
+The Overview **Automation** panel also lists the selected Workspace's saved
+workflow schedules, alongside Auto Delivery and Auto Scan. Each row shows the
+workflow name, effective enabled/disabled state and cron expression in the local
+timezone. Selecting a row opens that workflow and its schedule settings in
+**Workflows**. Returning to Overview reloads the saved schedules.
+
+Workflows without a saved schedule, deleted workflows and invalid Markdown files
+are omitted. Saved disabled schedules remain visible; a disabled workflow never
+appears enabled even when its saved schedule flag is still set. This is a
+read-only configuration summary, not a check of launchd job health, and does not
+install, reload or start any jobs.
+
 The **Flows** page edits Markdown files under the selected Workspace's
 `lumon/flows/` directory. The list shows enabled and disabled valid flows as
 well as validation errors for files that Agent will ignore. The editor supports

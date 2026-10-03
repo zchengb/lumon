@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "../shared/i18n";
-import type { AgentSettings, WorkspaceListItem, WorkspaceSettings } from "../shared/types";
+import type { AgentSettings, FlowDocument, WorkspaceListItem, WorkspaceSettings } from "../shared/types";
 import { dashboardApi } from "./api";
 import { App } from "./App";
 
@@ -40,7 +40,7 @@ it("merges history into Agent, moves global configuration to Settings and protec
   })));
   vi.spyOn(dashboardApi, "getSettings").mockImplementation(async (workspaceId) => ({ ...settings, workspace_id: workspaceId }));
   vi.spyOn(dashboardApi, "getOverview").mockImplementation(async (workspaceId) => ({
-    workspace_id: workspaceId, name: workspaceId, path: "/test", created_at: "2026-09-30T04:00:00Z", lumon_version: "1.4.9", repositories: [],
+    workspace_id: workspaceId, name: workspaceId, path: "/test", created_at: "2026-09-30T04:00:00Z", lumon_version: "1.4.9", repositories: [], workflow_schedules: [],
   }));
   vi.spyOn(dashboardApi, "listConversations").mockResolvedValue({ items: [], total: 0 });
   const saveAgent = vi.spyOn(dashboardApi, "updateAgentSettings").mockImplementation(async (update) => ({
@@ -121,6 +121,67 @@ it("merges history into Agent, moves global configuration to Settings and protec
     await act(async () => navigation("Agent").click());
     expect(container.querySelector("#agent-model")).toBeNull();
     expect(container.querySelector("h1")?.textContent).toBe("Agent");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("opens a scheduled workflow, reloads its saved schedule on return, and isolates workspaces", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  window.history.replaceState(null, "", "?workspace=workspace-one&view=overview");
+  let flow: FlowDocument = {
+    flow_id: "auto-guard", name: "Auto Guard", enabled: true, brief: "Inspect production.", path: "lumon/flows/auto-guard.md",
+    valid: true, error: null, content: "# Auto Guard", schedule_enabled: true, schedule_expression: "0 10 * * 1-5",
+  };
+  vi.spyOn(dashboardApi, "listWorkspaces").mockResolvedValue(workspaces);
+  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.4.10", workspace_count: 2, has_workspaces: true });
+  vi.spyOn(dashboardApi, "getAgentSettings").mockResolvedValue(agent);
+  vi.spyOn(dashboardApi, "getSettings").mockImplementation(async (workspaceId) => ({ ...settings, workspace_id: workspaceId }));
+  const overview = vi.spyOn(dashboardApi, "getOverview").mockImplementation(async (workspaceId) => ({
+    workspace_id: workspaceId, name: workspaceId, path: "/test", created_at: "2026-09-30T04:00:00Z", lumon_version: "1.4.10", repositories: [],
+    workflow_schedules: workspaceId === "workspace-one" ? [{ flow_id: flow.flow_id, name: flow.name, enabled: flow.schedule_enabled, schedule_expression: flow.schedule_expression }] : [],
+  }));
+  const flowRequest = vi.fn(async (path: string) => {
+    if (path.endsWith("/flows")) return new Response(JSON.stringify([flow]));
+    if (path === "/api/workspaces/workspace-one/flows/auto-guard") return new Response(JSON.stringify(flow));
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  vi.stubGlobal("fetch", flowRequest);
+  const saveSchedule = vi.spyOn(dashboardApi, "updateFlowSchedule").mockImplementation(async (_workspaceId, _flowId, enabled, scheduleExpression) => {
+    flow = { ...flow, schedule_enabled: enabled, schedule_expression: scheduleExpression };
+    return flow;
+  });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>));
+    const scheduled = Array.from(container.querySelectorAll<HTMLButtonElement>(".automation-summary")).find((row) => row.textContent?.includes("Auto Guard"))!;
+    await act(async () => scheduled.click());
+    expect(window.location.search).toContain("view=flows");
+    expect(flowRequest).toHaveBeenCalledWith("/api/workspaces/workspace-one/flows/auto-guard", expect.any(Object));
+    expect(container.querySelector(".flow-row.active strong")?.textContent).toBe("Auto Guard");
+    expect(container.querySelector<HTMLInputElement>("#flow-schedule-expression")?.value).toBe("0 10 * * 1-5");
+    expect(saveSchedule).not.toHaveBeenCalled();
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>("#flow-schedule-expression")!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "0 11 * * 1-5");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(".flow-schedule-panel .settings-actions button")!.click());
+    expect(saveSchedule).toHaveBeenCalledWith("workspace-one", "auto-guard", true, "0 11 * * 1-5");
+    await act(async () => container.querySelector<HTMLButtonElement>('.side-nav button[aria-label="Overview"]')!.click());
+    expect(overview).toHaveBeenCalledTimes(2);
+    expect(container.querySelector(".workspace-automation")?.textContent).toContain("0 11 * * 1-5");
+    await act(async () => {
+      const picker = container.querySelector<HTMLSelectElement>(".workspace-picker select")!;
+      picker.value = "workspace-two";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector(".workspace-automation")?.textContent).not.toContain("Auto Guard");
+    await act(async () => container.querySelector<HTMLButtonElement>('.side-nav button[aria-label="Workflows"]')!.click());
+    expect(container.querySelector("#flow-schedule-expression")).toBeNull();
+    expect(flowRequest.mock.calls.filter(([path]) => path.endsWith("/auto-guard"))).toHaveLength(1);
   } finally {
     await act(async () => root.unmount());
   }

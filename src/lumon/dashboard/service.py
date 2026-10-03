@@ -86,6 +86,16 @@ class RepositoryOverview:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowScheduleView:
+    """Saved schedule metadata, without a workflow's instructions or credentials."""
+
+    flow_id: str
+    name: str
+    enabled: bool
+    schedule_expression: str
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceOverview:
     """The read-only summary of one registered Workspace."""
 
@@ -95,6 +105,7 @@ class WorkspaceOverview:
     created_at: str
     lumon_version: str
     repositories: tuple[RepositoryOverview, ...]
+    workflow_schedules: tuple[WorkflowScheduleView, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,7 +353,7 @@ class DashboardService:
         return result, registration
 
     def overview(self, workspace_id: UUID) -> WorkspaceOverview:
-        """Read manifest and Repository health for one registered Workspace."""
+        """Read identity, Repository health and saved schedules without changing jobs."""
 
         registration = self._require(workspace_id)
         layout = WorkspaceLayout.from_root(registration.path)
@@ -367,6 +378,9 @@ class DashboardService:
             created_at=manifest.created_at,
             lumon_version=manifest.lumon_version,
             repositories=tuple(repositories),
+            workflow_schedules=_workflow_schedules(
+                layout.root, self.settings_store.load(workspace_id).flow_schedules
+            ),
         )
 
     def settings(self, workspace_id: UUID) -> WorkspaceSettingsView:
@@ -1000,6 +1014,28 @@ def _flow_document(definition: FlowDefinition) -> FlowDocumentView:
         valid=True,
         content=definition.content,
     )
+
+
+def _workflow_schedules(
+    workspace: Path, schedules: tuple[FlowScheduleSettings, ...]
+) -> tuple[WorkflowScheduleView, ...]:
+    if not schedules:
+        return ()
+    schedules_by_id = {schedule.flow_id: schedule for schedule in schedules}
+    summaries: list[WorkflowScheduleView] = []
+    for definition in FlowCatalog(workspace).discover().definitions:
+        schedule = schedules_by_id.get(definition.flow_id)
+        if schedule is None:
+            continue
+        summaries.append(
+            WorkflowScheduleView(
+                flow_id=definition.flow_id,
+                name=definition.name,
+                enabled=schedule.enabled and definition.enabled,
+                schedule_expression=schedule.schedule_expression,
+            )
+        )
+    return tuple(summaries)
 
 
 def _flow_schedule(

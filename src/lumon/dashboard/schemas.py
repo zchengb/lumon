@@ -143,8 +143,17 @@ class RepositoryOverviewResponse(StrictModel):
     detail: str
 
 
+class WorkflowScheduleResponse(StrictModel):
+    """Display-safe saved workflow schedule for the Overview automation panel."""
+
+    flow_id: str
+    name: str
+    enabled: bool
+    schedule_expression: str
+
+
 class WorkspaceOverviewResponse(StrictModel):
-    """Workspace identity and Repository health."""
+    """Workspace identity, Repository health and saved workflow schedules."""
 
     workspace_id: UUID
     name: str
@@ -152,6 +161,9 @@ class WorkspaceOverviewResponse(StrictModel):
     created_at: str
     lumon_version: str
     repositories: list[RepositoryOverviewResponse]
+    workflow_schedules: list[WorkflowScheduleResponse] = Field(
+        default_factory=list[WorkflowScheduleResponse]
+    )
 
 
 class FeishuWebhookResponse(StrictModel):

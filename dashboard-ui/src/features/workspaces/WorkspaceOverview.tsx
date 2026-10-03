@@ -8,6 +8,7 @@ interface WorkspaceOverviewProps {
   refreshing: boolean;
   settings: WorkspaceSettings | null;
   onNavigate: (view: View) => void;
+  onOpenWorkflow: (flowId: string) => void;
 }
 
 export function WorkspaceOverview({
@@ -16,6 +17,7 @@ export function WorkspaceOverview({
   refreshing,
   settings,
   onNavigate,
+  onOpenWorkflow,
 }: WorkspaceOverviewProps): React.JSX.Element {
   const { formatDate, t } = useI18n();
 
@@ -89,6 +91,11 @@ export function WorkspaceOverview({
           ].map(({ view, label, config, Icon }) => (
             <button className="automation-summary" type="button" key={view} onClick={() => onNavigate(view)}>
               <Icon size={18} /><span><strong>{label}</strong><small className={config.enabled ? "health-ok" : "muted"}>{config.enabled ? t("settings.enabled") : t("settings.disabled")}</small><code>{config.schedule_expression || t("overview.unscheduled")}</code></span><ArrowUpRight size={14} />
+            </button>
+          ))}
+          {overview.workflow_schedules.map((workflow) => (
+            <button className="automation-summary" type="button" key={workflow.flow_id} onClick={() => onOpenWorkflow(workflow.flow_id)}>
+              <GitBranch size={18} /><span><strong>{workflow.name}</strong><small className={workflow.enabled ? "health-ok" : "muted"}>{workflow.enabled ? t("settings.enabled") : t("settings.disabled")}</small><code>{workflow.schedule_expression}</code></span><ArrowUpRight size={14} />
             </button>
           ))}
         </section>

@@ -75,6 +75,7 @@ interface MarkdownDocumentsPageProps<
   TDocument extends TSummary & MarkdownDocumentContent,
 > {
   workspaceId: string;
+  initialDocumentId?: string;
   onDirtyChange: (dirty: boolean) => void;
   onNotice: (message: string) => void;
   onError: (message: string) => void;
@@ -97,6 +98,7 @@ export function MarkdownDocumentsPage<
   TDocument extends TSummary & MarkdownDocumentContent,
 >({
   workspaceId,
+  initialDocumentId,
   onDirtyChange,
   onNotice,
   onError,
@@ -124,6 +126,7 @@ export function MarkdownDocumentsPage<
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadingDocument(false);
     setDocument(null);
     setDraft(false);
     setContent("");
@@ -133,19 +136,33 @@ export function MarkdownDocumentsPage<
     setDetailsRevision((revision) => revision + 1);
     onDirtyChange(false);
     void api.list(workspaceId)
-      .then((nextDocuments) => {
-        if (!cancelled) setDocuments(nextDocuments);
+      .then(async (nextDocuments) => {
+        if (cancelled) return;
+        setDocuments(nextDocuments);
+        if (!initialDocumentId) return;
+        setSelectedId(initialDocumentId);
+        setLoadingDocument(true);
+        const selectedDocument = await api.get(workspaceId, initialDocumentId);
+        if (cancelled) return;
+        setDocument(selectedDocument);
+        setContent(selectedDocument.content);
       })
       .catch((reason: unknown) => {
-        if (!cancelled) onError(messageFor(reason, labels.loadFailed));
+        if (!cancelled) {
+          setSelectedId(null);
+          onError(messageFor(reason, labels.loadFailed));
+        }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setLoadingDocument(false);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [api, labels.loadFailed, onDirtyChange, onError, workspaceId]);
+  }, [api, initialDocumentId, labels.loadFailed, onDirtyChange, onError, workspaceId]);
 
   async function selectDocument(summary: TSummary): Promise<void> {
     const nextId = getId(summary);

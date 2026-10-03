@@ -522,7 +522,7 @@ code {
 .automation-summary > span { flex: 1; min-width: 0; }
 .automation-summary > svg { margin-top: 2px; color: #88848e; }
 .automation-summary:hover strong { text-decoration: underline; text-underline-offset: 3px; }
-.automation-summary strong { display: block; font-size: 13px; }
+.automation-summary strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
 .automation-summary small { display: block; font-size: 11px; margin-top: 7px; }
 .automation-summary code { display: block; font-size: 11px; color: var(--muted); margin-top: 9px; overflow-wrap: anywhere; }
 .workspace-details { padding: 0 6px; }

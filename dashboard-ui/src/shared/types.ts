@@ -76,6 +76,14 @@ export interface WorkspaceOverview {
   created_at: string;
   lumon_version: string;
   repositories: RepositoryOverview[];
+  workflow_schedules: WorkflowSchedule[];
+}
+
+export interface WorkflowSchedule {
+  flow_id: string;
+  name: string;
+  enabled: boolean;
+  schedule_expression: string;
 }
 
 export interface FeishuWebhookSettings {
