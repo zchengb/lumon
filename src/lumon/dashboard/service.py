@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -17,6 +17,12 @@ from lumon.agents.agent.config import (
 )
 from lumon.capabilities.catalog import CapabilityCatalog, CapabilityValidationError
 from lumon.capabilities.model import CapabilityDefinition
+from lumon.dashboard.chat_history import (
+    AgentChatHistory,
+    ChatInteractionDetail,
+    ChatInteractionPage,
+    ChatKind,
+)
 from lumon.dashboard.folder_picker import FolderPicker
 from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler
 from lumon.errors import (
@@ -32,6 +38,8 @@ from lumon.flows.scheduler import FlowScheduler, LaunchdFlowScheduler
 from lumon.scan.model import ScanRun
 from lumon.scan.scheduler import LaunchdScanScheduler, ScanScheduler
 from lumon.scan.service import ScanService
+from lumon.tools.codex_models import CodexModel, CodexModelCatalog
+from lumon.tools.feishu_directory import FeishuDirectory
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -254,11 +262,16 @@ class DashboardService:
         scan_scheduler: ScanScheduler | None = None,
         scan_service: ScanService | None = None,
         flow_scheduler: FlowScheduler | None = None,
+        feishu_directory: FeishuDirectory | None = None,
+        model_loader: Callable[[], Awaitable[tuple[CodexModel, ...]]] | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
         agent_state_root = state_root or self.registry.layout.root
         self.agent_config_store = agent_config_store or AgentConfigStore(agent_state_root)
+        self.chat_history = AgentChatHistory(agent_state_root)
+        self.feishu_directory = feishu_directory or FeishuDirectory()
+        self._model_loader = model_loader or CodexModelCatalog().list_models
         self.initializer = initializer or WorkspaceInitializer(
             registry=self.registry,
             settings_store=self.settings_store,
@@ -365,6 +378,53 @@ class DashboardService:
 
         registration = self._require(workspace_id)
         return self.scan_service.list_runs(registration.path)
+
+    def chat_conversations(
+        self,
+        workspace_id: UUID,
+        *,
+        kind: ChatKind = "all",
+        search: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ChatInteractionPage:
+        """List locally recorded Agent executions for a registered Workspace."""
+
+        self._require(workspace_id)
+        page = self.chat_history.conversations(
+            workspace_id, kind=kind, search=search, limit=limit, offset=offset
+        )
+        if not page.items:
+            return page
+        try:
+            config = self.agent_config_store.load()
+        except AgentConfigError:
+            return page
+        groups = tuple(
+            item.chat_id
+            for item in page.items
+            if item.chat_type.casefold() not in {"p2p", "private", "dm"}
+        )
+        names = self.feishu_directory.resolve(
+            config, groups, tuple(item.sender_id for item in page.items)
+        )
+        return replace(
+            page,
+            items=tuple(
+                replace(
+                    item,
+                    chat_name=names.chat_names.get(item.chat_id),
+                    sender_name=names.user_names.get(item.sender_id),
+                )
+                for item in page.items
+            ),
+        )
+
+    def chat_interaction(self, workspace_id: UUID, run_id: str) -> ChatInteractionDetail | None:
+        """Read one execution's message pair without loading prompts or telemetry."""
+
+        self._require(workspace_id)
+        return self.chat_history.interaction(workspace_id, run_id)
 
     def start_scan(self, workspace_id: UUID) -> ScanRun:
         """Start a manual Auto Scan even when its schedule is disabled."""
@@ -675,6 +735,11 @@ class DashboardService:
         """Read display-safe global Agent settings."""
 
         return _agent_settings_view(self._load_agent_config())
+
+    async def agent_models(self) -> tuple[CodexModel, ...]:
+        """Discover choices without changing saved Agent settings or running jobs."""
+
+        return await self._model_loader()
 
     def update_agent_settings(self, update: AgentSettingsUpdate) -> AgentSettingsView:
         """Validate and persist global Agent settings."""

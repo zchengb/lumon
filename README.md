@@ -140,6 +140,23 @@ configure the current Workspace's Feishu Webhook, edit Workspace flows, and
 manage the global Agent settings, including its Codex model and Langfuse
 Cloud telemetry.
 
+The **Agent** page shows a compact, read-only table of locally recorded Feishu
+executions for the selected Workspace: input/output summaries, user, source,
+status and duration (for example `12m13s`). Filter group or direct messages and
+search by Feishu user/chat/thread ID. Each row is one execution, not a complete
+transcript; previews are masked and limited to 240 characters. Expand either
+input/output cell to load the full, masked message pair on demand; outputs use
+safe Markdown rendering. Source types use distinct group/direct message tags.
+Group and user names are resolved using the configured Feishu app and cached for
+up to five minutes. Source shows the message-type tag and, for group chats, the
+group name; personal names and IDs appear only in User. Unavailable user names
+fall back to sender IDs; lookups never change conversation data or app permissions.
+Running executions and invalid historical timestamps show no duration. Opening the page does not
+resume sessions or change jobs, and does not backfill Feishu history. Internal
+prompts and provider diagnostics are not exposed. Agent and Langfuse configuration
+is under **Settings**, clearly marked as global across Workspaces; Webhook settings
+remain Workspace-specific. Old Chat history URLs open the Agent page.
+
 The machine-local registry and Workspace profiles live under `~/.lumon/`:
 
 ```text

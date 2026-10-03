@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
@@ -22,9 +23,10 @@ DEFAULT_AGENT_REASONING_EFFORT = "max"
 DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
 ExecutionMode = Literal["full_access"]
 ResponseMode = Literal["progress_and_final"]
-AgentReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+AgentReasoningEffort = str
 ObservabilityProvider = Literal["langfuse"]
-_AGENT_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "xhigh", "max", "ultra"})
+# Effort names are provider-owned tokens; new catalog values need no schema migration.
+AGENT_REASONING_EFFORT_PATTERN = r"^[a-z][a-z0-9_-]{0,31}$"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,8 +115,8 @@ class AgentConfig:
             raise AgentConfigError(f"Unsupported Agent provider: {self.agent_provider}")
         if not self.agent_model.strip():
             raise AgentConfigError("Agent model must be a non-empty name.")
-        if self.agent_reasoning_effort not in _AGENT_REASONING_EFFORTS:
-            raise AgentConfigError("Unsupported Agent reasoning effort.")
+        if re.fullmatch(AGENT_REASONING_EFFORT_PATTERN, self.agent_reasoning_effort) is None:
+            raise AgentConfigError("Invalid Agent reasoning effort.")
         self.observability.validate()
 
     def to_safe_dict(self) -> dict[str, object]:
@@ -225,7 +227,7 @@ def _parse_config(payload: dict[str, object], source: Path) -> AgentConfig:
         raise AgentConfigError(f"Invalid Agent model value: {source}")
     if (
         not isinstance(raw_reasoning_effort, str)
-        or raw_reasoning_effort not in _AGENT_REASONING_EFFORTS
+        or re.fullmatch(AGENT_REASONING_EFFORT_PATTERN, raw_reasoning_effort) is None
     ):
         raise AgentConfigError(f"Invalid Agent reasoning effort: {source}")
     if not isinstance(raw_feishu, dict):
@@ -249,7 +251,7 @@ def _parse_config(payload: dict[str, object], source: Path) -> AgentConfig:
         response_mode="progress_and_final",
         agent_provider="codex",
         agent_model=raw_model or DEFAULT_AGENT_MODEL,
-        agent_reasoning_effort=cast(AgentReasoningEffort, raw_reasoning_effort),
+        agent_reasoning_effort=raw_reasoning_effort,
         feishu_app_id=app_id,
         feishu_app_secret=app_secret,
         observability=observability,

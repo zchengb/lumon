@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "./api";
 import { readNavigation, writeNavigation } from "./navigation";
 import { AgentSettingsPage } from "../features/agent/AgentSettingsPage";
+import { ChatHistoryPage } from "../features/agent/ChatHistoryPage";
 import { AutoDeliveryPage } from "../features/delivery/AutoDeliveryPage";
 import { AutoScanPage } from "../features/scan/AutoScanPage";
 import { CapabilitiesPage } from "../features/capabilities/CapabilitiesPage";
@@ -117,10 +118,11 @@ export function App(): React.JSX.Element {
 
   function changeWorkspace(nextId: string): void {
     if (
-      (settingsDirty || autoDeliveryDirty || autoScanDirty || flowsDirty || capabilitiesDirty)
+      (settingsDirty || agentSettingsDirty || autoDeliveryDirty || autoScanDirty || flowsDirty || capabilitiesDirty)
       && !window.confirm(t("app.unsavedWorkspaceConfirm"))
     ) return;
     setSettingsDirty(false);
+    setAgentSettingsDirty(false);
     setAutoDeliveryDirty(false);
     setAutoScanDirty(false);
     setFlowsDirty(false);
@@ -131,9 +133,7 @@ export function App(): React.JSX.Element {
   function changeView(nextView: View): void {
     if (nextView === view) return;
     const currentViewDirty = view === "settings"
-      ? settingsDirty
-      : view === "agent"
-          ? agentSettingsDirty
+      ? settingsDirty || agentSettingsDirty
         : view === "auto-delivery"
           ? autoDeliveryDirty
         : view === "auto-scan"
@@ -277,8 +277,11 @@ export function App(): React.JSX.Element {
         {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}
         <main className="content-area">
           {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} onNavigate={changeView} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
-          {selectedId && view === "settings" && settings && <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />}
-          {view === "agent" && agentSettings && <AgentSettingsPage settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
+          {selectedId && view === "settings" && settings && <div className="page-stack">
+            <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />
+            {agentSettings && <AgentSettingsPage key={selectedId} settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
+          </div>}
+          {selectedId && view === "agent" && <ChatHistoryPage key={selectedId} workspaceId={selectedId} />}
           {selectedId && view === "auto-delivery" && settings && <AutoDeliveryPage settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />}
           {selectedId && view === "auto-scan" && settings && <AutoScanPage workspaceId={selectedId} settings={settings} onSave={saveSettings} onDirtyChange={setAutoScanDirty} onError={setError} />}
           {selectedId && view === "flows" && <FlowsPage workspaceId={selectedId} onDirtyChange={setFlowsDirty} onNotice={setNotice} onError={setError} />}

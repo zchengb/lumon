@@ -1,9 +1,13 @@
 import type {
+  AgentModel,
   AgentSettings,
   AgentSettingsUpdate,
   BootstrapState,
   CapabilityDocument,
   CapabilitySummary,
+  ChatInteractionDetail,
+  ChatInteractionPage,
+  ChatKind,
   FlowDocument,
   FlowSummary,
   InitializeWorkspaceRequest,
@@ -69,6 +73,19 @@ export const dashboardApi = {
 
   getAgentSettings(): Promise<AgentSettings> {
     return request<AgentSettings>("/api/agent/settings");
+  },
+
+  listAgentModels(): Promise<AgentModel[]> {
+    return request<AgentModel[]>("/api/agent/models", { cache: "no-store" });
+  },
+
+  listConversations(workspaceId: string, kind: ChatKind, search: string, offset: number): Promise<ChatInteractionPage> {
+    const query = new URLSearchParams({ kind, search, offset: String(offset), limit: "20" });
+    return request<ChatInteractionPage>(`/api/workspaces/${workspaceId}/conversations?${query}`);
+  },
+
+  getConversation(workspaceId: string, runId: string): Promise<ChatInteractionDetail> {
+    return request<ChatInteractionDetail>(`/api/workspaces/${workspaceId}/conversations/${encodeURIComponent(runId)}`);
   },
 
   updateAgentSettings(payload: AgentSettingsUpdate): Promise<AgentSettings> {

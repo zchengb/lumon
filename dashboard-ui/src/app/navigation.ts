@@ -9,7 +9,7 @@ export interface NavigationState {
 
 export function readNavigation(search: string): NavigationState {
   const params = new URLSearchParams(search);
-  const requestedView = params.get("view");
+  const requestedView = params.get("view") === "chat-history" ? "agent" : params.get("view");
   return {
     workspaceId: params.get("workspace"),
     view: views.includes(requestedView as View) ? (requestedView as View) : "overview",

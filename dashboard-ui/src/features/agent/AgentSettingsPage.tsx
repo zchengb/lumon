@@ -8,16 +8,7 @@ import type {
   WorkspaceListItem,
 } from "../../shared/types";
 import { buildAgentSettingsUpdate, type AgentSettingsDraft } from "./agentSettingsForm";
-
-const reasoningEfforts: readonly AgentReasoningEffort[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-];
+import { AgentModelPicker } from "./AgentModelPicker";
 
 interface AgentSettingsPageProps {
   settings: AgentSettings;
@@ -104,15 +95,6 @@ export function AgentSettingsPage({
 
   return (
     <div className="page-stack">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">{t("agent.eyebrow")}</p>
-          <h1>{t("agent.title")}</h1>
-          <p className="muted">{t("agent.subtitle")}</p>
-        </div>
-        {hasChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
-      </div>
-
       <section className="panel agent-settings-panel">
         <div className="panel-heading">
           <div className="settings-title">
@@ -122,17 +104,20 @@ export function AgentSettingsPage({
               <h2>{t("agent.title")}</h2>
             </div>
           </div>
-          <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
-            <span>{enabled ? t("settings.enabled") : t("settings.disabled")}</span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={enabled}
-              aria-label={t("agent.toggleAria")}
-              onChange={(event) => { setEnabled(event.target.checked); markDirty(); }}
-            />
-            <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
-          </label>
+          <div className="settings-heading-actions">
+            {hasChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
+            <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
+              <span>{enabled ? t("settings.enabled") : t("settings.disabled")}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={enabled}
+                aria-label={t("agent.toggleAria")}
+                onChange={(event) => { setEnabled(event.target.checked); markDirty(); }}
+              />
+              <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
+            </label>
+          </div>
         </div>
         <div className="agent-settings-body">
           <div className="form-grid">
@@ -140,27 +125,11 @@ export function AgentSettingsPage({
               <label className="field-label" htmlFor="agent-provider">{t("agent.provider")}</label>
               <input id="agent-provider" className="text-input" value={settings.agent_provider} readOnly />
             </div>
-            <div>
-              <label className="field-label" htmlFor="agent-model">{t("agent.model")}</label>
-              <input
-                id="agent-model"
-                className="text-input"
-                value={agentModel}
-                onChange={(event) => { setAgentModel(event.target.value); markDirty(); }}
-                autoComplete="off"
-              />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="agent-reasoning">{t("agent.reasoning")}</label>
-              <select
-                id="agent-reasoning"
-                className="text-input"
-                value={agentReasoningEffort}
-                onChange={(event) => { setAgentReasoningEffort(event.target.value as AgentReasoningEffort); markDirty(); }}
-              >
-                {reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
-              </select>
-            </div>
+            <AgentModelPicker
+              model={agentModel}
+              reasoningEffort={agentReasoningEffort}
+              onChange={(model, effort) => { setAgentModel(model); setAgentReasoningEffort(effort); markDirty(); }}
+            />
             <div>
               <label className="field-label" htmlFor="agent-default-workspace">{t("agent.defaultWorkspace")}</label>
               <select

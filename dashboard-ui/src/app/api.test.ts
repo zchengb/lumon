@@ -21,6 +21,21 @@ describe("Dashboard API", () => {
     });
   });
 
+  it("only reads scoped execution summaries and encodes filters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "{}" });
+    vi.stubGlobal("fetch", fetchMock);
+    await dashboardApi.listConversations("workspace-1", "group", "user & one", 20);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/workspaces/workspace-1/conversations?kind=group&search=user+%26+one&offset=20&limit=20", { headers: { Accept: "application/json" } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads one message pair on demand and encodes the execution ID", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "{}" });
+    vi.stubGlobal("fetch", fetchMock);
+    await dashboardApi.getConversation("workspace-1", "run & one");
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace-1/conversations/run%20%26%20one", { headers: { Accept: "application/json" } });
+  });
+
   it("loads and saves global Agent settings", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -63,6 +78,15 @@ describe("Dashboard API", () => {
         },
       }),
       headers: { Accept: "application/json", "Content-Type": "application/json" },
+    });
+  });
+
+  it("refreshes the local model catalog without using a cached HTTP response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "[]" });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(dashboardApi.listAgentModels()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledWith("/api/agent/models", {
+      cache: "no-store", headers: { Accept: "application/json" },
     });
   });
 

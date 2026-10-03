@@ -16,7 +16,7 @@ describe("Dashboard navigation", () => {
     });
   });
 
-  it("keeps the Agent settings view in the URL", () => {
+  it("keeps the Agent activity view in the URL", () => {
     expect(readNavigation("?workspace=abc&view=agent")).toEqual({
       workspaceId: "abc",
       view: "agent",
@@ -60,5 +60,9 @@ describe("Dashboard navigation", () => {
     expect(writeNavigation({ workspaceId: "abc", view: "settings" })).toBe(
       "?workspace=abc&view=settings",
     );
+  });
+
+  it("redirects old Chat history links to Agent", () => {
+    expect(readNavigation("?workspace=abc&view=chat-history")).toEqual({ workspaceId: "abc", view: "agent" });
   });
 });

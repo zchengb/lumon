@@ -183,7 +183,7 @@ export function AutoScanPage({
               <tbody>
                 {runs.length ? visibleRuns.map((run) => <tr key={run.run_id}>
                   <td><span className="mono">{formatDate(run.started_at)}</span></td>
-                  <td><span className={`status-pill ${run.state === "completed" ? "status-ready" : run.state === "failed" ? "status-danger" : "status-warning"}`}>{stateLabels[run.state] ?? run.state}</span></td>
+                  <td><span className={`status-pill ${run.state === "completed" ? "status-ready" : run.state === "failed" ? "status-danger" : "status-warning"}`} title={run.failures.join("\n") || undefined}>{stateLabels[run.state] ?? run.state}</span></td>
                   <td><SeverityBreakdown findings={run.findings} /></td>
                   <td>{run.duration_seconds === null ? "—" : `${Math.floor(run.duration_seconds / 60)}m${run.duration_seconds % 60}s`}</td>
                   <td className="scan-artifacts">

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from lumon.agents.agent.config import AGENT_REASONING_EFFORT_PATTERN
 
 
 class StrictModel(BaseModel):
@@ -57,6 +58,16 @@ class AgentSettingsResponse(StrictModel):
     observability: AgentObservabilityResponse
 
 
+class AgentModelResponse(StrictModel):
+    """Model metadata exposed by the local Codex catalog."""
+
+    model: str
+    display_name: str
+    description: str
+    default_reasoning_effort: str
+    supported_reasoning_efforts: list[str]
+
+
 class AgentObservabilityUpdate(StrictModel):
     """Langfuse settings with optional credential replacements."""
 
@@ -74,7 +85,7 @@ class AgentSettingsUpdate(StrictModel):
     enabled: bool
     default_workspace_id: UUID | None
     agent_model: str = Field(min_length=1)
-    agent_reasoning_effort: Literal["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+    agent_reasoning_effort: str = Field(pattern=AGENT_REASONING_EFFORT_PATTERN, max_length=32)
     feishu_app_id: str = Field(min_length=1)
     feishu_app_secret: str | None = None
     observability: AgentObservabilityUpdate

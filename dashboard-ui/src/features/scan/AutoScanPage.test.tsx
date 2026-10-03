@@ -34,6 +34,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     pdf_available: false,
     duration_seconds: seconds,
   }));
+  const interruptionReason = "Auto Scan was interrupted before completion.";
+  runs[0] = { ...runs[0], state: "failed", failures: [interruptionReason] };
   const findings = ["Low", "High", "Medium", "High"].map((severity, index): ScanFinding => ({
     title: `Finding ${index}`,
     severity,
@@ -76,6 +78,9 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
       durations.map(([, label]) => label),
     );
     const history = container.querySelector(".scan-history-panel");
+    const interruptedStatus = history?.querySelector("tbody tr:first-child .status-pill");
+    expect(interruptedStatus?.classList.contains("status-danger")).toBe(true);
+    expect(interruptedStatus?.getAttribute("title")).toBe(interruptionReason);
     expect(history?.querySelectorAll("h2")).toHaveLength(1);
     expect(history?.querySelector("h2")?.textContent).toBe("Scan history");
     expect(history?.querySelector(".eyebrow")).toBeNull();

@@ -69,11 +69,20 @@ before changing the registry or default selection.
 
 ## Global Agent settings
 
-The **Agent** page manages configuration that applies to the local Agent
+The **Settings** page manages configuration that applies to the local Agent
 across all Workspaces: enabled state, Codex model, reasoning effort, default
 Workspace, Feishu App credentials, and Langfuse Cloud observability.
-The model field accepts an editable Codex model name, and the reasoning effort
-can be changed independently; both values are saved to the local Agent config.
+The model picker loads `GET /api/agent/models` when the page opens. Its refresh
+button queries the local Codex CLI's `model/list` catalog again without starting
+an Agent turn or changing saved settings. Reasoning choices come from each
+model's supported efforts. Switching models retains a compatible effort or
+selects the new model's default effort; neither value is persisted until Save.
+
+The catalog depends on the installed Codex version and its account/provider
+configuration, not a hard-coded Lumon model list. Refreshing does not upgrade
+Codex or guarantee account access to every listed model. A saved model that is
+absent from the catalog, or a failed catalog request, never overwrites the
+current selection. Model discovery errors leave the rest of Settings usable.
 
 The API returns credential presence flags and short prefix/suffix masks. New or
 replacement secrets are accepted by the update endpoint but never returned in
@@ -151,6 +160,18 @@ severity (High, Medium, Low), and elapsed time as minutes and seconds, such as
 HTML report links display the report directly in a new tab rather than opening
 a download dialog. PDF report links retain their download behavior.
 The **Auto Delivery** product label remains English in every interface language.
+
+Opening scan history or starting the next scan reconciles abandoned `running`
+receipts under the same exclusive Workspace scan lock. If a scan still holds the
+lock, history leaves it untouched. Abandoned runs become failed with an interruption
+reason; existing findings and artifacts are preserved. An unknown interruption
+time remains unknown, so elapsed time displays a dash. Recovery never restarts
+reviews, runs completion hooks, sends Webhooks, or reloads schedules.
+
+Focus styles are shared globally: text fields, dropdowns, and Markdown editors
+use a graphite border and a single soft ring. Keyboard-focused buttons, links,
+switches, and scroll regions use a visible graphite outline. Focus is immediate,
+and high-contrast mode uses the system highlight color.
 
 ## Build the frontend
 

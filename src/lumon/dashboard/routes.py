@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 
 from lumon import __version__
+from lumon.dashboard.chat_history import ChatInteractionDetail, ChatInteractionPage, ChatKind
 from lumon.dashboard.schemas import (
+    AgentModelResponse,
     AgentObservabilityResponse,
     AgentSettingsResponse,
     AgentSettingsUpdate,
@@ -112,9 +114,56 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
         )
         return _agent_settings_response(settings)
 
+    @router.get("/agent/models", response_model=list[AgentModelResponse])
+    async def agent_models(request: Request, response: Response) -> list[AgentModelResponse]:
+        response.headers["Cache-Control"] = "no-store"
+        models = await _service(request).agent_models()
+        return [
+            AgentModelResponse(
+                model=model.model,
+                display_name=model.display_name,
+                description=model.description,
+                default_reasoning_effort=model.default_reasoning_effort,
+                supported_reasoning_efforts=list(model.supported_reasoning_efforts),
+            )
+            for model in models
+        ]
+
     @router.get("/workspaces", response_model=list[WorkspaceResponse])
     def list_workspaces(request: Request) -> list[WorkspaceResponse]:
         return [_workspace_response(item) for item in _service(request).list_workspaces()]
+
+    @router.get("/workspaces/{workspace_id}/conversations", response_model=ChatInteractionPage)
+    def chat_conversations(
+        request: Request,
+        response: Response,
+        workspace_id: UUID,
+        kind: ChatKind = "all",
+        search: str = Query(default="", max_length=200),
+        limit: int = Query(default=20, ge=1, le=50),
+        offset: int = Query(default=0, ge=0, le=2_147_483_647),
+    ) -> ChatInteractionPage:
+        response.headers["Cache-Control"] = "no-store"
+        return _service(request).chat_conversations(
+            workspace_id, kind=kind, search=search, limit=limit, offset=offset
+        )
+
+    @router.get(
+        "/workspaces/{workspace_id}/conversations/{run_id}",
+        response_model=ChatInteractionDetail,
+    )
+    def chat_interaction(
+        request: Request, response: Response, workspace_id: UUID, run_id: str
+    ) -> ChatInteractionDetail:
+        response.headers["Cache-Control"] = "no-store"
+        detail = _service(request).chat_interaction(workspace_id, run_id)
+        if detail is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation message not found.",
+                headers={"Cache-Control": "no-store"},
+            )
+        return detail
 
     @router.post(
         "/workspaces/select-folder",

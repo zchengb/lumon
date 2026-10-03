@@ -2,14 +2,42 @@ export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
 export type View = "overview" | "settings" | "agent" | "auto-delivery" | "auto-scan" | "flows" | "capabilities";
 
-export type AgentReasoningEffort =
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultra";
+export type ChatKind = "all" | "group" | "direct";
+
+export interface ChatInteraction {
+  run_id: string;
+  started_at: string;
+  chat_id: string;
+  chat_type: string;
+  sender_id: string;
+  chat_name: string | null;
+  sender_name: string | null;
+  input_preview: string;
+  output_preview: string;
+  status: string;
+  duration_seconds: number | null;
+}
+
+export interface ChatInteractionPage {
+  items: ChatInteraction[];
+  total: number;
+}
+
+export interface ChatInteractionDetail {
+  run_id: string;
+  input_text: string;
+  output_text: string;
+}
+
+export type AgentReasoningEffort = string;
+
+export interface AgentModel {
+  model: string;
+  display_name: string;
+  description: string;
+  default_reasoning_effort: AgentReasoningEffort;
+  supported_reasoning_efforts: AgentReasoningEffort[];
+}
 
 export interface BootstrapState {
   version: string;

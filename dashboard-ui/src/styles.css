@@ -12,6 +12,8 @@
   --muted-light: #77786e;
   --line: #e8e8e7;
   --line-soft: #f0f0ef;
+  --focus-border: #7b7d73;
+  --focus-ring: rgba(48, 49, 44, 0.12);
   --panel: #fff;
   --shadow: 0 2px 8px rgba(40, 40, 35, 0.025), 0 1px 2px rgba(40, 40, 35, 0.025);
   --lumon-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
@@ -60,16 +62,6 @@ button {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.56;
-}
-
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible,
-a:focus-visible,
-summary:focus-visible {
-  outline: 2px solid #a97723;
-  outline-offset: 3px;
 }
 
 .lucide { flex-shrink: 0; stroke-width: 1.75; }
@@ -355,7 +347,6 @@ code {
   padding: 10px 34px 10px 12px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  outline: 0;
   color: var(--ink);
   background: var(--panel);
   font-size: 14px;
@@ -366,11 +357,6 @@ code {
 
 .workspace-picker select:hover {
   border-color: #9e9ea4;
-}
-
-.workspace-picker select:focus {
-  border-color: var(--copper);
-  box-shadow: 0 0 0 3px rgba(169, 119, 35, 0.12);
 }
 
 .workspace-picker svg {
@@ -395,7 +381,6 @@ code {
   padding: 7px 8px;
   border: 1px solid transparent;
   border-radius: 9px;
-  outline: 0;
   color: var(--muted);
   background: transparent;
   font-size: 12px;
@@ -408,10 +393,6 @@ code {
   border-color: var(--line-soft);
   color: var(--ink);
   background: rgba(255, 255, 255, 0.42);
-}
-
-.language-picker select:focus-visible {
-  border-color: var(--copper);
 }
 
 .content-area {
@@ -1065,7 +1046,6 @@ code {
   padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  outline: 0;
   color: var(--ink);
   background: #fff;
   font-size: 14px;
@@ -1086,12 +1066,6 @@ code {
 .path-picker-button {
   min-height: 42px;
   white-space: nowrap;
-}
-
-.text-input:focus {
-  border-color: var(--copper);
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(169, 119, 35, 0.12);
 }
 
 .text-area {
@@ -1181,11 +1155,6 @@ code {
 
 .settings-toggle input:checked + .settings-switch .settings-switch-thumb {
   transform: translateX(16px);
-}
-
-.settings-toggle input:focus-visible + .settings-switch {
-  outline: 2px solid #a97723;
-  outline-offset: 2px;
 }
 
 .settings-icon {
@@ -1387,6 +1356,11 @@ code {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px 24px;
 }
+
+.model-picker-controls { display: flex; align-items: center; gap: 8px; }
+.model-picker-controls .text-input { min-width: 0; flex: 1; }
+.model-picker-controls .button { flex-shrink: 0; }
+.model-picker-error { color: #b84939; }
 
 .field-full {
   grid-column: 1 / -1;
@@ -1646,7 +1620,6 @@ code {
   margin: 18px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  outline: 0;
   color: var(--ink);
   background: rgba(255, 255, 255, 0.72);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -1772,6 +1745,54 @@ code {
   font-weight: 500;
 }
 
+.chat-activity .panel-heading { padding: 18px 20px; }
+.chat-activity .panel-heading h2 { font-size: 15px; }
+.chat-filters { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.chat-filters .text-input { font-size: 12px; }
+.chat-filters > select { width: 180px; }
+.chat-search { display: flex; gap: 6px; flex: 1; max-width: 420px; }
+.chat-search .text-input { min-width: 0; }
+.chat-search .icon-button { flex-shrink: 0; align-self: center; }
+.chat-table-scroll { border-radius: 0 0 12px 12px; }
+.chat-activity-table { table-layout: fixed; min-width: 900px; font-size: 12px; }
+.chat-activity-table td { vertical-align: top; line-height: 1.6; padding: 18px 16px; }
+.chat-time-column { width: 13%; }
+.chat-source-column, .chat-user-column { width: 12%; }
+.chat-text-column { width: 22%; }
+.chat-status-column { width: 10%; }
+.chat-duration-column { width: 9%; }
+.chat-activity-table time { color: var(--muted); font-size: 11px; }
+.chat-source-tag { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 7px; padding: 2px 7px; border: 1px solid; border-radius: 6px; font-size: 10px; font-weight: 500; line-height: 1.6; white-space: nowrap; }
+.chat-source-direct { color: #336b94; border-color: #dbe9f4; background: #f0f7fc; }
+.chat-source-group { color: #735a9c; border-color: #e8dff2; background: #f7f3fc; }
+.chat-id { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.chat-display-name { display: block; font-weight: 500; overflow-wrap: anywhere; }
+.chat-summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.chat-output > :first-child { margin-top: 0; }
+.chat-output { max-height: 4.8em; }
+.chat-output > :last-child { margin-bottom: 0; }
+.chat-output p, .chat-output pre, .chat-output blockquote, .chat-output ul, .chat-output ol { margin: 0 0 4px; }
+.chat-output h1, .chat-output h2, .chat-output h3, .chat-output h4, .chat-output h5, .chat-output h6 { margin: 0 0 4px; font-size: inherit; font-weight: 600; }
+.chat-output ul, .chat-output ol { padding-left: 18px; }
+.chat-output code { background: var(--line-soft); border-radius: 3px; padding: 1px 3px; font-size: 11px; }
+.chat-output pre { white-space: pre-wrap; }
+.chat-output a { color: var(--copper); text-decoration: underline; text-underline-offset: 2px; }
+.chat-output table { font-size: inherit; border-collapse: collapse; }
+.chat-output th, .chat-output td { padding: 1px 4px; }
+.chat-input.chat-message-expanded { white-space: pre-wrap; }
+.chat-summary.chat-message-expanded { display: block; -webkit-line-clamp: unset; max-height: 360px; overflow: auto; }
+.chat-message-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 3px 0; margin-top: 5px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font-size: 11px; }
+.chat-message-toggle:hover { color: var(--ink); }
+.chat-message-note { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+.chat-duration { white-space: nowrap; }
+.chat-activity-table .status-pill { padding: 4px 8px; font-size: 10px; }
+.chat-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; font-size: 11px; border-top: 1px solid var(--line); }
+.chat-pagination .button { padding: 7px 9px; font-size: 11px; }
+.chat-empty { padding: 28px 20px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.settings-section-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; padding-top: 12px; }
+.settings-section-heading h2 { margin: 0 0 8px; font-size: 16px; }
+.settings-section-heading p { margin: 0; font-size: 13px; }
+
 .flow-markdown-frontmatter {
   margin-bottom: 24px;
   border: 1px solid var(--line-soft);
@@ -1811,11 +1832,6 @@ code {
   margin: -7px 0 18px;
   color: var(--copper);
   font-size: 12px;
-}
-
-.flow-editor:focus {
-  border-color: var(--copper);
-  box-shadow: 0 0 0 3px rgba(169, 119, 35, 0.12);
 }
 
 .flow-editor-actions {
@@ -2057,5 +2073,30 @@ code {
 
   .spin {
     animation: none;
+  }
+}
+
+/* One focus policy for every page, including native controls and scroll regions. */
+:is(button, input, textarea, select, a, summary, [tabindex]):focus-visible,
+.settings-toggle input:focus-visible + .settings-switch {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 3px;
+  transition: none;
+}
+
+:is(input:not([type="checkbox"], [type="radio"]), textarea, select):focus {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  transition: none;
+}
+
+@media (forced-colors: active) {
+  :is(button, input, textarea, select, a, summary, [tabindex]):focus-visible,
+  :is(input:not([type="checkbox"], [type="radio"]), textarea, select):focus,
+  .settings-toggle input:focus-visible + .settings-switch {
+    outline: 2px solid Highlight;
+    outline-offset: 3px;
+    box-shadow: none;
   }
 }

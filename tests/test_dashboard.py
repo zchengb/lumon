@@ -3,24 +3,28 @@
 from __future__ import annotations
 
 import socket
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
 from urllib.request import Request
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from lumon.agents.agent.config import AgentConfig, AgentConfigStore
+from lumon.agents.agent.model import AgentRunResult, InboundMessage, Message
+from lumon.agents.agent.session_store import AgentSessionStore
 from lumon.dashboard.routes import create_app
 from lumon.dashboard.server import DashboardServer, create_dashboard_app, select_port
 from lumon.dashboard.service import DashboardService
-from lumon.errors import PreflightError
+from lumon.errors import AgentRuntimeError, PreflightError
 from lumon.scan.model import ScanRun, ScanState
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
+from lumon.tools.codex_models import CodexModel
+from lumon.tools.feishu_directory import FeishuDirectory, FeishuDisplayNames
 from lumon.tools.feishu_webhook import FeishuWebhookSender
 from lumon.version import __version__
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -160,6 +164,7 @@ def _service(
     tmp_path: Path,
     folder_picker: Callable[[], Path | None] | None = None,
     flow_scheduler: _RecordingFlowScheduler | None = None,
+    model_loader: Callable[[], Awaitable[tuple[CodexModel, ...]]] | None = None,
 ) -> DashboardService:
     state_root = tmp_path / "user-state"
     registry = WorkspaceRegistry(state_root)
@@ -178,6 +183,7 @@ def _service(
         delivery_scheduler=_NoopDeliveryScheduler(),
         scan_scheduler=_NoopScanScheduler(),
         flow_scheduler=flow_scheduler or _RecordingFlowScheduler(),
+        model_loader=model_loader,
     )
 
 
@@ -199,6 +205,125 @@ def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
         "has_workspaces": False,
     }
     assert client.get("/api/workspaces").json() == []
+
+
+@pytest.mark.parametrize("chat_type", ["p2p", "group"])
+def test_chat_history_http_contract_is_read_only_and_workspace_scoped(
+    tmp_path: Path, chat_type: str
+) -> None:
+    service = _service(tmp_path)
+    _, registration = service.initialize_workspace(tmp_path / "workspace", None, ())
+    workspace_id = registration.workspace_id
+    client = _client(service)
+    base = f"/api/workspaces/{workspace_id}/conversations"
+    assert client.get(base).json() == {"items": [], "total": 0}
+    assert not (service.registry.layout.root / "agent.sqlite3").exists()
+    store = AgentSessionStore(service.registry.layout.root)
+    message = InboundMessage(
+        event_id="event-one",
+        message_id="message-one",
+        chat_id="chat-one",
+        chat_type=chat_type,
+        text="password=secret-test-value",
+        sender_id="user-one",
+        sender_type="user",
+    )
+    session = store.get_or_create_session(message)
+    assert store.claim_event(message.event_id, message)
+    store.record_message(
+        Message(
+            conversation_key=message.conversation_key,
+            direction="inbound",
+            text=message.text,
+            created_at="2026-09-30T04:00:00Z",
+            message_id=message.message_id,
+            session_id=session.session_id,
+        )
+    )
+    store.attach_workspace(message.event_id, workspace_id)
+    store.record_result(
+        AgentRunResult(
+            run_id="failed-run",
+            event_id=message.event_id,
+            conversation_key=message.conversation_key,
+            status="failed",
+            started_at="2026-09-30T04:00:00Z",
+            ended_at="2026-09-30T04:01:00Z",
+            workspace_id=workspace_id,
+            session_id=session.session_id,
+            error_code="agent_failed",
+            prompt_text="PRIVATE RAW PROMPT",
+            failure_diagnostic="PRIVATE DIAGNOSTIC",
+        )
+    )
+    snapshot = store.path.read_bytes()
+
+    kind = "direct" if chat_type == "p2p" else "group"
+    listed = client.get(base, params={"kind": kind, "search": "user-one"})
+    assert listed.status_code == 200
+    assert listed.headers["cache-control"] == "no-store"
+    assert listed.json()["total"] == 1
+    assert listed.json()["items"][0]["status"] == "failed"
+    assert listed.json()["items"][0]["duration_seconds"] == 60
+    assert listed.json()["items"][0]["output_preview"] == ""
+    assert listed.json()["items"][0]["chat_name"] is None
+    assert listed.json()["items"][0]["sender_name"] is None
+
+    lookups: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+
+    def resolve_names(
+        app_id: str, secret: str, chats: tuple[str, ...], users: tuple[str, ...]
+    ) -> FeishuDisplayNames:
+        assert app_id == "cli_test" and secret == "test-secret"
+        lookups.append((chats, users))
+        return FeishuDisplayNames(
+            chat_names={"chat-one": "MBPass Engineering"} if chats else {},
+            user_names={"user-one": "Alice Li"},
+        )
+
+    service.feishu_directory = FeishuDirectory(lookup=resolve_names)
+    service.agent_config_store.save(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="test-secret")
+    )
+    named = client.get(base)
+    assert named.status_code == 200
+    assert named.json()["items"][0]["sender_name"] == "Alice Li"
+    assert named.json()["items"][0]["chat_name"] == (
+        "MBPass Engineering" if chat_type == "group" else None
+    )
+    expected_lookup = (("chat-one",) if chat_type == "group" else (), ("user-one",))
+    assert lookups == [expected_lookup]
+    assert "test-secret" not in named.text
+    detail = client.get(f"{base}/failed-run")
+    assert detail.status_code == 200
+    assert detail.headers["cache-control"] == "no-store"
+    assert detail.json() == {
+        "run_id": "failed-run",
+        "input_text": "password=[REDACTED]",
+        "output_text": "",
+    }
+    assert "PRIVATE" not in detail.text and "secret-test-value" not in detail.text
+    assert lookups == [expected_lookup]
+    assert client.get(f"{base}/{session.session_id}").status_code == 404
+    assert "secret-test-value" not in listed.text
+    assert "PRIVATE" not in listed.text
+    assert "prompt_text" not in listed.text
+    assert "failure_diagnostic" not in listed.text
+    assert client.get(f"{base}/{uuid4()}").status_code == 404
+    assert client.get(f"/api/workspaces/{uuid4()}/conversations").status_code == 404
+    assert client.get(f"/api/workspaces/{uuid4()}/conversations/failed-run").status_code == 404
+    assert lookups == [expected_lookup]
+    for parameters in (
+        {"limit": 0},
+        {"limit": 51},
+        {"offset": -1},
+        {"offset": 10**30},
+        {"kind": "invalid"},
+        {"search": "x" * 201},
+    ):
+        assert client.get(base, params=parameters).status_code == 422
+    assert client.post(base, json={}).status_code == 405
+    assert store.path.read_bytes() == snapshot
 
 
 def test_agent_settings_are_available_with_safe_defaults(
@@ -246,6 +371,79 @@ def test_agent_settings_masks_environment_credentials(
     assert response.json()["observability"]["secret_key_masked"] == "sk-l**************test"
     assert "pk-lf-environment-test" not in response.text
     assert "sk-lf-environment-test" not in response.text
+
+
+def test_agent_model_catalog_is_read_only_and_not_cached(tmp_path: Path) -> None:
+    async def models() -> tuple[CodexModel, ...]:
+        return (CodexModel("future-model", "Future model", "Description", "none", ("none", "max")),)
+
+    service = _service(tmp_path, model_loader=models)
+    service.agent_config_store.save(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    config_snapshot = service.agent_config_store.path.read_bytes()
+    client = _client(service)
+    response = client.get("/api/agent/models")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == [
+        {
+            "model": "future-model",
+            "display_name": "Future model",
+            "description": "Description",
+            "default_reasoning_effort": "none",
+            "supported_reasoning_efforts": ["none", "max"],
+        }
+    ]
+    assert "secret-value" not in response.text
+    assert service.agent_config_store.path.read_bytes() == config_snapshot
+    assert service.registry.list() == ()
+    assert client.post("/api/agent/models", json={}).status_code == 405
+
+
+def test_agent_model_discovery_failure_does_not_break_settings(tmp_path: Path) -> None:
+    async def unavailable() -> tuple[CodexModel, ...]:
+        raise AgentRuntimeError("Codex model discovery timed out. Try refreshing again.")
+
+    service = _service(tmp_path, model_loader=unavailable)
+    client = _client(service)
+    response = client.get("/api/agent/models")
+    assert response.status_code == 400
+    assert "timed out" in response.json()["error"]["message"]
+    assert client.get("/api/agent/settings").json()["agent_model"] == "gpt-5.6-luna"
+    assert not service.agent_config_store.path.exists()
+
+
+@pytest.mark.parametrize("effort", ["none", "adaptive", "unsafe token"])
+def test_agent_settings_supports_provider_efforts_but_rejects_invalid_tokens(
+    tmp_path: Path, effort: str
+) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    response = client.put(
+        "/api/agent/settings",
+        json={
+            "enabled": False,
+            "default_workspace_id": None,
+            "agent_model": "future-model",
+            "agent_reasoning_effort": effort,
+            "feishu_app_id": "cli_test",
+            "feishu_app_secret": "secret-value",
+            "observability": {
+                "enabled": False,
+                "base_url": "https://cloud.langfuse.com",
+                "sample_rate": 1,
+            },
+        },
+    )
+    if effort == "unsafe token":
+        assert response.status_code == 422
+        assert not service.agent_config_store.path.exists()
+    else:
+        assert response.status_code == 200
+        assert service.agent_config_store.load().agent_reasoning_effort == effort
+        assert "secret-value" not in response.text
 
 
 def test_agent_settings_update_persists_secrets_and_returns_only_masks(
@@ -935,6 +1133,35 @@ def test_scan_reports_display_html_inline_and_download_pdf(
     assert response.headers["content-type"].startswith(media_type)
     assert response.headers["content-disposition"] == f'{disposition}; filename="{filename}"'
     assert response.content == content
+
+
+def test_scan_history_reconciles_abandoned_runs_without_inventing_elapsed_time(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    workspace = tmp_path / "workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(workspace), "repositories": []},
+    ).json()["workspace_id"]
+    store = ScanRunStore()
+    run = ScanRun.start("interrupted-scan", 7)
+    store.save(workspace, run)
+
+    response = client.get(f"/api/workspaces/{workspace_id}/scans")
+
+    assert response.status_code == 200
+    receipt = response.json()[0]
+    assert receipt["state"] == "failed"
+    assert receipt["phase"] == "review"
+    assert receipt["findings"] == []
+    assert receipt["finished_at"] is None
+    assert receipt["duration_seconds"] is None
+    assert "interrupted" in receipt["failures"][0]
+    assert receipt["hook_results"] == []
+    assert store.load(workspace, run.run_id).state is ScanState.FAILED
+    assert client.get(f"/api/workspaces/{workspace_id}/scans").json() == response.json()
 
 
 def test_register_existing_workspace_returns_registry_item(tmp_path: Path) -> None:

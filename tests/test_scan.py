@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
+import fcntl
 import json
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
+from uuid import UUID
 
 import pytest
 
 from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.agents.agent.model import AgentResult
 from lumon.agents.agent.runner import AgentEventCallback, AgentRunner, ProgressCallback
+from lumon.errors import PreflightError
 from lumon.scan.model import ScanFinding, ScanRun, ScanState
 from lumon.scan.report import ReportResult, write_report
 from lumon.scan.service import ScanService
@@ -277,3 +283,217 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     assert len(runner.prompts) == 2
     assert "scan-result.json" in runner.prompts[0]
     assert "twg.create_bug" in runner.prompts[1]
+
+
+def _scan_service(
+    tmp_path: Path, runner: AgentRunner | None = None
+) -> tuple[ScanService, Path, UUID]:
+    state_root = tmp_path / "state"
+    registry = WorkspaceRegistry(state_root)
+    settings_store = WorkspaceSettingsStore(state_root)
+    workspace = tmp_path / "workspace"
+    WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        registry=registry,
+        settings_store=settings_store,
+    ).initialize(InitRequest(workspace, name="scan-recovery"))
+    workspace_id = registry.list()[0].workspace_id
+    AgentConfigStore(state_root).save(
+        AgentConfig(
+            enabled=True,
+            default_workspace_id=workspace_id,
+            feishu_app_id="cli_test",
+            feishu_app_secret="test-secret",
+        )
+    )
+    service = ScanService(state_root=state_root, registry=registry, runner=runner)
+    return service, workspace, workspace_id
+
+
+@pytest.mark.parametrize("phase", ["review", "report", "hooks"])
+def test_scan_history_recovers_only_unlocked_running_receipts(tmp_path: Path, phase: str) -> None:
+    service, workspace, workspace_id = _scan_service(tmp_path)
+    interrupted = replace(
+        ScanRun.start("interrupted", 7),
+        phase=phase,
+        findings=(_finding(),),
+        failures=("One repository was unavailable.",),
+        html_path="report.html",
+        pdf_path="report.pdf",
+        hook_results=("completed: first hook",),
+    )
+    completed = replace(
+        ScanRun.start("completed", 7),
+        state=ScanState.COMPLETED,
+        phase="completed",
+        finished_at=interrupted.started_at,
+    )
+    store = service.run_store
+    store.save(workspace, interrupted)
+    store.save(workspace, completed)
+    receipt_path = store.path_for(workspace, interrupted.run_id) / "run.json"
+    original_receipt = receipt_path.read_bytes()
+    lock_path = service.state_root / "locks" / f"scan-{workspace_id}.lock"
+    lock_path.parent.mkdir(parents=True)
+    with lock_path.open("a+") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert interrupted in service.list_runs(workspace)
+        assert receipt_path.read_bytes() == original_receipt
+        with pytest.raises(PreflightError, match="already running"):
+            service.run(workspace_id, force=True)
+        assert receipt_path.read_bytes() == original_receipt
+
+    history = service.list_runs(workspace)
+    recovered = next(run for run in history if run.run_id == interrupted.run_id)
+    assert recovered.state is ScanState.FAILED
+    assert recovered.phase == phase
+    assert recovered.started_at == interrupted.started_at
+    assert recovered.finished_at is None
+    assert recovered.duration_seconds is None
+    assert recovered.failures[0] == interrupted.failures[0]
+    assert "interrupted" in recovered.failures[-1]
+    assert "end time is unknown" in recovered.failures[-1]
+    assert recovered.findings == interrupted.findings
+    assert recovered.html_path == interrupted.html_path
+    assert recovered.pdf_path == interrupted.pdf_path
+    assert recovered.hook_results == interrupted.hook_results
+    assert completed in history
+    recovered_receipt = receipt_path.read_bytes()
+    assert service.list_runs(workspace) == history
+    assert receipt_path.read_bytes() == recovered_receipt
+
+
+def test_scan_history_recovers_after_process_is_killed(tmp_path: Path) -> None:
+    service, workspace, workspace_id = _scan_service(tmp_path)
+    run = ScanRun.start("killed", 7)
+    service.run_store.save(workspace, run)
+    lock_path = service.state_root / "locks" / f"scan-{workspace_id}.lock"
+    lock_path.parent.mkdir(parents=True)
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import fcntl, sys\n"
+            "with open(sys.argv[1], 'a+') as stream:\n"
+            "    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+            "    print('locked', flush=True)\n"
+            "    sys.stdin.read()\n",
+            str(lock_path),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert process.stdout is not None
+        assert process.stdout.readline().strip() == "locked"
+        assert service.list_runs(workspace) == (run,)
+        process.kill()
+        process.wait(timeout=5)
+        recovered = service.list_runs(workspace)[0]
+        assert recovered.state is ScanState.FAILED
+        assert recovered.duration_seconds is None
+        assert "interrupted" in recovered.failures[-1]
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        if process.stdin is not None:
+            process.stdin.close()
+        if process.stdout is not None:
+            process.stdout.close()
+
+
+def test_history_rechecks_receipts_after_acquiring_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, workspace, _workspace_id = _scan_service(tmp_path)
+    running = ScanRun.start("just-finished", 7)
+    completed = replace(
+        running, state=ScanState.COMPLETED, phase="completed", finished_at=running.started_at
+    )
+    store = service.run_store
+    store.save(workspace, running)
+    original_list = store.list
+    reads = 0
+
+    def finish_after_snapshot(workspace: Path) -> tuple[ScanRun, ...]:
+        nonlocal reads
+        snapshot = original_list(workspace)
+        reads += 1
+        if reads == 1:
+            store.save(workspace, completed)
+        return snapshot
+
+    monkeypatch.setattr(store, "list", finish_after_snapshot)
+    assert service.list_runs(workspace) == (completed,)
+    assert store.load(workspace, running.run_id) == completed
+
+
+@pytest.mark.parametrize("interruption", [KeyboardInterrupt, asyncio.CancelledError])
+def test_scan_cancellation_saves_failure_before_releasing_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interruption: type[BaseException]
+) -> None:
+    runner = _FakeRunner()
+    service, workspace, workspace_id = _scan_service(tmp_path, runner)
+
+    async def interrupt(workspace: Path, prompt: str) -> AgentResult:
+        del prompt
+        run = service.run_store.list(workspace)[0]
+        service.run_store.save(
+            workspace,
+            replace(run, phase="hooks", findings=(_finding(),), failures=("Existing failure.",)),
+        )
+        raise interruption("token: test-secret")
+
+    monkeypatch.setattr(runner, "run", interrupt)
+    with pytest.raises(interruption):
+        service.run(workspace_id, force=True, run_id="cancelled")
+
+    run = service.run_store.load(workspace, "cancelled")
+    assert run.state is ScanState.FAILED
+    assert run.phase == "hooks"
+    assert run.finished_at is not None
+    assert run.findings == (_finding(),)
+    assert run.failures == ("Existing failure.", "Auto Scan was interrupted before completion.")
+    assert "test-secret" not in json.dumps(run.as_payload())
+    assert service.list_runs(workspace) == (run,)
+
+
+def test_next_scan_recovers_abandoned_history_before_running_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _FakeRunner()
+    service, workspace, workspace_id = _scan_service(tmp_path, runner)
+    service.run_store.save(workspace, ScanRun.start("abandoned", 7))
+
+    async def fail_review(workspace: Path, prompt: str) -> AgentResult:
+        del prompt
+        assert service.run_store.load(workspace, "abandoned").state is ScanState.FAILED
+        assert service.run_store.load(workspace, "next-scan").state is ScanState.RUNNING
+        assert service.list_runs(workspace)[0].state is ScanState.RUNNING
+        return AgentResult(status="failed", failure_diagnostic="Review unavailable.")
+
+    monkeypatch.setattr(runner, "run", fail_review)
+    result = service.run(workspace_id, force=True, run_id="next-scan")
+    assert result.state is ScanState.FAILED
+    assert service.run_store.load(workspace, "abandoned").hook_results == ()
+    assert all(run.state is ScanState.FAILED for run in service.list_runs(workspace))
+
+
+def test_lock_errors_do_not_reclassify_running_scans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, workspace, _workspace_id = _scan_service(tmp_path)
+    run = ScanRun.start("unknown-lock", 7)
+    service.run_store.save(workspace, run)
+
+    def deny_lock(descriptor: int, operation: int) -> None:
+        del descriptor, operation
+        raise PermissionError("Lock access denied.")
+
+    monkeypatch.setattr(fcntl, "flock", deny_lock)
+    with pytest.raises(PermissionError):
+        service.list_runs(workspace)
+    assert service.run_store.load(workspace, run.run_id) == run

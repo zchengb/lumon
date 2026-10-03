@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import stat
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -71,6 +72,27 @@ def test_agent_model_and_reasoning_effort_can_be_overridden(tmp_path: Path) -> N
     assert store.load().agent_model == "gpt-5.6-sol"
     assert store.load().agent_reasoning_effort == "ultra"
     assert 'agent_model = "gpt-5.6-sol"' in store.path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("effort", ["none", "adaptive", "future-effort"])
+def test_provider_defined_reasoning_efforts_round_trip(tmp_path: Path, effort: str) -> None:
+    store = AgentConfigStore(tmp_path / "lumon")
+    config = replace(_config(), agent_model="future-model", agent_reasoning_effort=effort)
+    store.save(config)
+    assert store.load() == config
+
+
+@pytest.mark.parametrize("effort", ["", "unsafe token", "max\n", "x" * 33])
+def test_invalid_reasoning_efforts_are_rejected_without_changing_config(
+    tmp_path: Path, effort: str
+) -> None:
+    store = AgentConfigStore(tmp_path / "lumon")
+    config = _config()
+    store.save(config)
+    snapshot = store.path.read_bytes()
+    with pytest.raises(AgentConfigError, match="reasoning effort"):
+        store.save(replace(config, agent_reasoning_effort=effort))
+    assert store.path.read_bytes() == snapshot
 
 
 def test_existing_empty_model_config_uses_the_codex_default(tmp_path: Path) -> None:

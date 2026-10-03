@@ -53,9 +53,18 @@ class ScanService:
         self.webhook_sender = webhook_sender or FeishuWebhookSender()
 
     def list_runs(self, workspace: Path) -> tuple[ScanRun, ...]:
-        """Return history for a registered Workspace."""
+        """Return history, reconciling abandoned runs only when the lock is free."""
 
-        return self.run_store.list(workspace)
+        runs = self.run_store.list(workspace)
+        if not any(run.state == ScanState.RUNNING for run in runs):
+            return runs
+        registration = self.registry.find_by_path(workspace)
+        if registration is None:
+            return runs
+        with _scan_lock(self.state_root, registration.workspace_id, skip_if_busy=True) as acquired:
+            if acquired:
+                self._recover_interrupted_runs(workspace)
+            return self.run_store.list(workspace)
 
     def artifact_path(self, workspace: Path, run_id: str, kind: str) -> Path:
         """Resolve one report artifact for Dashboard download."""
@@ -79,11 +88,19 @@ class ScanService:
             raise PreflightError("Auto Scan is disabled for this Workspace.")
 
         workspace = registration.path
-        run = ScanRun.start(run_id or uuid4().hex, settings.auto_scan.lookback_days)
         with _scan_lock(self.state_root, workspace_id):
+            self._recover_interrupted_runs(workspace)
+            run = ScanRun.start(run_id or uuid4().hex, settings.auto_scan.lookback_days)
             self.run_store.save(workspace, run)
             try:
                 result = self._run_locked(workspace, workspace_id, settings, run)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                self._save_failed(
+                    workspace,
+                    self.run_store.load(workspace, run.run_id),
+                    "Auto Scan was interrupted before completion.",
+                )
+                raise
             except LumonError:
                 self._save_failed(
                     workspace,
@@ -98,6 +115,25 @@ class ScanService:
                 self._notify(workspace, settings, self.run_store.load(workspace, run.run_id))
                 raise AgentRuntimeError(detail) from exc
             return self._notify(workspace, settings, result)
+
+    def _recover_interrupted_runs(self, workspace: Path) -> None:
+        """Re-read under the exclusive scan lock; never resume hooks or send notifications."""
+
+        for run in self.run_store.list(workspace):
+            if run.state != ScanState.RUNNING:
+                continue
+            interrupted = replace(
+                run,
+                state=ScanState.FAILED,
+                # A released lock proves abandonment, not when the process exited.
+                finished_at=None,
+                failures=(
+                    *run.failures,
+                    "Auto Scan was interrupted before completion; no active scan holds "
+                    "the Workspace lock. The end time is unknown.",
+                ),
+            )
+            self.run_store.save(workspace, interrupted)
 
     def _notify(self, workspace: Path, settings: WorkspaceSettings, run: ScanRun) -> ScanRun:
         # A long scan must honor webhook changes made while it was running.
@@ -244,7 +280,7 @@ class ScanService:
             state=ScanState.FAILED,
             phase=run.phase,
             finished_at=_now(),
-            failures=(sanitize_output(detail)[:500],),
+            failures=(*run.failures, sanitize_output(detail)[:500]),
         )
         self.run_store.save(workspace, failed)
 
@@ -401,21 +437,27 @@ def _now() -> datetime:
 
 
 @contextmanager
-def _scan_lock(state_root: Path, workspace_id: UUID) -> Generator[None, None, None]:
+def _scan_lock(
+    state_root: Path, workspace_id: UUID, *, skip_if_busy: bool = False
+) -> Generator[bool, None, None]:
     lock_directory = state_root / "locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_directory.chmod(0o700)
     lock_path = lock_directory / f"scan-{workspace_id}.lock"
     stream = lock_path.open("a+")
+    acquired = False
     try:
         os.fchmod(stream.fileno(), 0o600)
         try:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
         except BlockingIOError as exc:
-            raise PreflightError("Another Auto Scan is already running.") from exc
-        yield
+            if not skip_if_busy:
+                raise PreflightError("Another Auto Scan is already running.") from exc
+        yield acquired
     finally:
         try:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            if acquired:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
         finally:
             stream.close()
