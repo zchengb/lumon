@@ -39,6 +39,7 @@ from lumon.scan.model import ScanRun
 from lumon.scan.scheduler import LaunchdScanScheduler, ScanScheduler
 from lumon.scan.service import ScanService
 from lumon.tools.codex_models import CodexModel, CodexModelCatalog
+from lumon.tools.codex_status import CodexCliStatus, CodexCliUpdateChecker
 from lumon.tools.feishu_directory import FeishuDirectory
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
 from lumon.workspace.config import load_workspace_config
@@ -264,6 +265,7 @@ class DashboardService:
         flow_scheduler: FlowScheduler | None = None,
         feishu_directory: FeishuDirectory | None = None,
         model_loader: Callable[[], Awaitable[tuple[CodexModel, ...]]] | None = None,
+        codex_update_checker: CodexCliUpdateChecker | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
@@ -272,6 +274,7 @@ class DashboardService:
         self.chat_history = AgentChatHistory(agent_state_root)
         self.feishu_directory = feishu_directory or FeishuDirectory()
         self._model_loader = model_loader or CodexModelCatalog().list_models
+        self._codex_update_checker = codex_update_checker or CodexCliUpdateChecker()
         self.initializer = initializer or WorkspaceInitializer(
             registry=self.registry,
             settings_store=self.settings_store,
@@ -740,6 +743,11 @@ class DashboardService:
         """Discover choices without changing saved Agent settings or running jobs."""
 
         return await self._model_loader()
+
+    async def codex_cli_status(self, *, refresh: bool = False) -> CodexCliStatus:
+        """Check for CLI updates without changing settings, executables, or schedules."""
+
+        return await self._codex_update_checker.check(refresh=refresh)
 
     def update_agent_settings(self, update: AgentSettingsUpdate) -> AgentSettingsView:
         """Validate and persist global Agent settings."""

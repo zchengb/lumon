@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from lumon.agents.agent.config import AGENT_REASONING_EFFORT_PATTERN
+from lumon.tools.codex_status import CodexCliUpdateStatus
 
 
 class StrictModel(BaseModel):
@@ -66,6 +67,15 @@ class AgentModelResponse(StrictModel):
     description: str
     default_reasoning_effort: str
     supported_reasoning_efforts: list[str]
+
+
+class CodexCliStatusResponse(StrictModel):
+    """Read-only update metadata for Lumon's active Codex CLI."""
+
+    status: CodexCliUpdateStatus
+    binary_path: str
+    installed_version: str | None
+    latest_version: str | None
 
 
 class AgentObservabilityUpdate(StrictModel):

@@ -24,6 +24,7 @@ from lumon.scan.model import ScanRun, ScanState
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.codex_models import CodexModel
+from lumon.tools.codex_status import CodexCliUpdateChecker
 from lumon.tools.feishu_directory import FeishuDirectory, FeishuDisplayNames
 from lumon.tools.feishu_webhook import FeishuWebhookSender
 from lumon.version import __version__
@@ -165,6 +166,7 @@ def _service(
     folder_picker: Callable[[], Path | None] | None = None,
     flow_scheduler: _RecordingFlowScheduler | None = None,
     model_loader: Callable[[], Awaitable[tuple[CodexModel, ...]]] | None = None,
+    codex_update_checker: CodexCliUpdateChecker | None = None,
 ) -> DashboardService:
     state_root = tmp_path / "user-state"
     registry = WorkspaceRegistry(state_root)
@@ -184,6 +186,7 @@ def _service(
         scan_scheduler=_NoopScanScheduler(),
         flow_scheduler=flow_scheduler or _RecordingFlowScheduler(),
         model_loader=model_loader,
+        codex_update_checker=codex_update_checker,
     )
 
 
@@ -400,6 +403,61 @@ def test_agent_model_catalog_is_read_only_and_not_cached(tmp_path: Path) -> None
     assert service.agent_config_store.path.read_bytes() == config_snapshot
     assert service.registry.list() == ()
     assert client.post("/api/agent/models", json={}).status_code == 405
+
+
+def test_codex_update_notice_is_read_only_and_manual_refresh_bypasses_cache(tmp_path: Path) -> None:
+    latest_calls: list[str] = []
+
+    def latest() -> str:
+        latest_calls.append("latest")
+        return "0.160.0"
+
+    checker = CodexCliUpdateChecker(
+        binary="/test/codex", version_reader=lambda _: "0.156.1", latest_reader=latest
+    )
+    service = _service(tmp_path, codex_update_checker=checker)
+    service.agent_config_store.save(
+        AgentConfig(feishu_app_id="cli_test", feishu_app_secret="secret-value")
+    )
+    config_snapshot = service.agent_config_store.path.read_bytes()
+    client = _client(service)
+    response = client.get("/api/agent/codex-status")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "status": "update_available",
+        "binary_path": "/test/codex",
+        "installed_version": "0.156.1",
+        "latest_version": "0.160.0",
+    }
+    assert "secret-value" not in response.text
+    assert client.get("/api/agent/codex-status").status_code == 200
+    assert len(latest_calls) == 1
+    assert client.get("/api/agent/codex-status?refresh=true").status_code == 200
+    assert len(latest_calls) == 2
+    assert client.post("/api/agent/codex-status", json={}).status_code == 405
+    assert service.agent_config_store.path.read_bytes() == config_snapshot
+    assert service.registry.list() == ()
+
+
+def test_codex_update_failure_does_not_block_models_or_settings(tmp_path: Path) -> None:
+    def latest() -> str:
+        raise TimeoutError("secret-value")
+
+    async def models() -> tuple[CodexModel, ...]:
+        return ()
+
+    checker = CodexCliUpdateChecker(
+        binary="/test/codex", version_reader=lambda _: "0.156.1", latest_reader=latest
+    )
+    client = _client(_service(tmp_path, codex_update_checker=checker, model_loader=models))
+    response = client.get("/api/agent/codex-status")
+    assert response.status_code == 200
+    assert response.json()["status"] == "check_failed"
+    assert response.json()["latest_version"] is None
+    assert "secret-value" not in response.text
+    assert client.get("/api/agent/models").json() == []
+    assert client.get("/api/agent/settings").json()["agent_model"] == "gpt-5.6-luna"
 
 
 def test_agent_model_discovery_failure_does_not_break_settings(tmp_path: Path) -> None:

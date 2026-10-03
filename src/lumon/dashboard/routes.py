@@ -22,6 +22,7 @@ from lumon.dashboard.schemas import (
     CapabilityContentRequest,
     CapabilityDocumentResponse,
     CapabilitySummaryResponse,
+    CodexCliStatusResponse,
     FeishuWebhookResponse,
     FeishuWebhookTestRequest,
     FlowContentRequest,
@@ -128,6 +129,19 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
             )
             for model in models
         ]
+
+    @router.get("/agent/codex-status", response_model=CodexCliStatusResponse)
+    async def codex_cli_status(
+        request: Request, response: Response, refresh: bool = False
+    ) -> CodexCliStatusResponse:
+        response.headers["Cache-Control"] = "no-store"
+        status = await _service(request).codex_cli_status(refresh=refresh)
+        return CodexCliStatusResponse(
+            status=status.status,
+            binary_path=status.binary_path,
+            installed_version=status.installed_version,
+            latest_version=status.latest_version,
+        )
 
     @router.get("/workspaces", response_model=list[WorkspaceResponse])
     def list_workspaces(request: Request) -> list[WorkspaceResponse]:

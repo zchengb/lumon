@@ -23,7 +23,8 @@ async function mount(onChange: (model: string, effort: string) => void) {
   function Harness(): React.JSX.Element {
     const [model, setModel] = useState("gpt-5.6-luna");
     const [effort, setEffort] = useState("max");
-    return <I18nProvider><LanguagePicker /><AgentModelPicker model={model} reasoningEffort={effort} onChange={(nextModel, nextEffort) => {
+    const [refreshVersion, setRefreshVersion] = useState(0);
+    return <I18nProvider><LanguagePicker /><AgentModelPicker model={model} reasoningEffort={effort} refreshVersion={refreshVersion} onRefresh={() => setRefreshVersion((previous) => previous + 1)} onChange={(nextModel, nextEffort) => {
       onChange(nextModel, nextEffort); setModel(nextModel); setEffort(nextEffort);
     }} /></I18nProvider>;
   }
@@ -59,6 +60,9 @@ it("loads provider models without changing the saved model or effort", async () 
     expect(Array.from(view.model().options, (option) => option.text)).toEqual(["GPT-5.6 Luna", "Future model"]);
     expect(view.refresh().disabled).toBe(false);
     expect(view.effort().value).toBe("max");
+    expect(view.model().getAttribute("aria-describedby")).toBeNull();
+    expect(view.container.querySelector("#agent-model-help")).toBeNull();
+    expect(view.container.textContent).not.toContain("Current model");
     expect(onChange).not.toHaveBeenCalled();
     await view.select(".language-picker select", "zh-TW");
     expect(view.refresh().getAttribute("aria-label")).toBe("重新整理模型列表");

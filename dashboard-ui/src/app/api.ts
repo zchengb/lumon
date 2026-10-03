@@ -8,6 +8,7 @@ import type {
   ChatInteractionDetail,
   ChatInteractionPage,
   ChatKind,
+  CodexCliStatus,
   FlowDocument,
   FlowSummary,
   InitializeWorkspaceRequest,
@@ -77,6 +78,11 @@ export const dashboardApi = {
 
   listAgentModels(): Promise<AgentModel[]> {
     return request<AgentModel[]>("/api/agent/models", { cache: "no-store" });
+  },
+
+  getCodexCliStatus(refresh = false): Promise<CodexCliStatus> {
+    const query = refresh ? "?refresh=true" : "";
+    return request<CodexCliStatus>(`/api/agent/codex-status${query}`, { cache: "no-store" });
   },
 
   listConversations(workspaceId: string, kind: ChatKind, search: string, offset: number): Promise<ChatInteractionPage> {

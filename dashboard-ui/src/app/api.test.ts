@@ -90,6 +90,19 @@ describe("Dashboard API", () => {
     });
   });
 
+  it("only reads CLI update status and explicitly bypasses the server cache on retry", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "{}" });
+    vi.stubGlobal("fetch", fetchMock);
+    await dashboardApi.getCodexCliStatus();
+    await dashboardApi.getCodexCliStatus(true);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/agent/codex-status", {
+      cache: "no-store", headers: { Accept: "application/json" },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/agent/codex-status?refresh=true", {
+      cache: "no-store", headers: { Accept: "application/json" },
+    });
+  });
+
   it("uses the Workspace flow CRUD endpoints", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify([{ flow_id: "sample" }]) })

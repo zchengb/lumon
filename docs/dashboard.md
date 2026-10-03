@@ -84,6 +84,25 @@ Codex or guarantee account access to every listed model. A saved model that is
 absent from the catalog, or a failed catalog request, never overwrites the
 current selection. Model discovery errors leave the rest of Settings usable.
 
+The Agent provider field also checks `GET /api/agent/codex-status` for **Codex CLI** updates.
+When an update is available, it shows the installed version and **Update available**
+badge inline with **codex** inside the provider field, leaving the model picker
+without a separate CLI status line. Model descriptions, executable
+paths, upgrade instructions, and extra update controls are omitted. No notice is
+shown while checking, when the CLI is current, or when a check cannot complete.
+The check uses Lumon's normal PATH resolver; a standalone installation can shadow
+the newer app-bundled CLI. This is separate from Lumon package updates and never
+installs software, changes models, or restarts jobs.
+
+Release metadata comes from the official `@openai/codex` npm package's `latest`
+endpoint without account credentials. Successful checks are cached for ten
+minutes and failed checks for one minute. **Refresh models** bypasses that cache.
+The installed version is always read again. Timeouts, invalid metadata, and
+unavailable CLIs remain unknown/unavailable in the API without blocking model
+choice or Settings. Prereleases ahead of the stable release do not prompt a downgrade.
+After upgrading the CLI, refresh models; account/provider rollout can still
+limit model availability.
+
 The API returns credential presence flags and short prefix/suffix masks. New or
 replacement secrets are accepted by the update endpoint but never returned in
 full. Lumon saves them in `$LUMON_HOME/agent.toml` (normally

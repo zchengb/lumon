@@ -39,6 +39,13 @@ export interface AgentModel {
   supported_reasoning_efforts: AgentReasoningEffort[];
 }
 
+export interface CodexCliStatus {
+  status: "update_available" | "up_to_date" | "check_failed" | "cli_unavailable";
+  binary_path: string;
+  installed_version: string | null;
+  latest_version: string | null;
+}
+
 export interface BootstrapState {
   version: string;
   workspace_count: number;

@@ -9,6 +9,7 @@ import type {
 } from "../../shared/types";
 import { buildAgentSettingsUpdate, type AgentSettingsDraft } from "./agentSettingsForm";
 import { AgentModelPicker } from "./AgentModelPicker";
+import { CodexCliNotice } from "./CodexCliNotice";
 
 interface AgentSettingsPageProps {
   settings: AgentSettings;
@@ -27,6 +28,7 @@ export function AgentSettingsPage({
   const [enabled, setEnabled] = useState(settings.enabled);
   const [defaultWorkspaceId, setDefaultWorkspaceId] = useState(settings.default_workspace_id ?? "");
   const [agentModel, setAgentModel] = useState(settings.agent_model);
+  const [modelRefreshVersion, setModelRefreshVersion] = useState(0);
   const [agentReasoningEffort, setAgentReasoningEffort] = useState<AgentReasoningEffort>(
     settings.agent_reasoning_effort,
   );
@@ -123,11 +125,16 @@ export function AgentSettingsPage({
           <div className="form-grid">
             <div>
               <label className="field-label" htmlFor="agent-provider">{t("agent.provider")}</label>
-              <input id="agent-provider" className="text-input" value={settings.agent_provider} readOnly />
+              <div className="text-input agent-provider-control">
+                <input id="agent-provider" className="agent-provider-value" value={settings.agent_provider} readOnly />
+                <CodexCliNotice modelRefresh={modelRefreshVersion} />
+              </div>
             </div>
             <AgentModelPicker
               model={agentModel}
               reasoningEffort={agentReasoningEffort}
+              refreshVersion={modelRefreshVersion}
+              onRefresh={() => setModelRefreshVersion((previous) => previous + 1)}
               onChange={(model, effort) => { setAgentModel(model); setAgentReasoningEffort(effort); markDirty(); }}
             />
             <div>

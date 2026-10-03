@@ -30,14 +30,17 @@ it("merges history into Agent, moves global configuration to Settings and protec
   localStorage.setItem("lumon.locale", "en");
   window.history.replaceState(null, "", "?workspace=workspace-one&view=chat-history");
   vi.spyOn(dashboardApi, "listWorkspaces").mockResolvedValue(workspaces);
-  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.4.7", workspace_count: 2, has_workspaces: true });
+  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.4.8", workspace_count: 2, has_workspaces: true });
   vi.spyOn(dashboardApi, "getAgentSettings").mockResolvedValue(agent);
+  vi.spyOn(dashboardApi, "getCodexCliStatus").mockResolvedValue({
+    status: "up_to_date", binary_path: "/test/codex", installed_version: "0.160.0", latest_version: "0.160.0",
+  });
   vi.spyOn(dashboardApi, "listAgentModels").mockResolvedValue(["gpt-5.6-luna", "gpt-test"].map((model) => ({
     model, display_name: model, description: "", default_reasoning_effort: "max", supported_reasoning_efforts: ["max"],
   })));
   vi.spyOn(dashboardApi, "getSettings").mockImplementation(async (workspaceId) => ({ ...settings, workspace_id: workspaceId }));
   vi.spyOn(dashboardApi, "getOverview").mockImplementation(async (workspaceId) => ({
-    workspace_id: workspaceId, name: workspaceId, path: "/test", created_at: "2026-09-30T04:00:00Z", lumon_version: "1.4.7", repositories: [],
+    workspace_id: workspaceId, name: workspaceId, path: "/test", created_at: "2026-09-30T04:00:00Z", lumon_version: "1.4.8", repositories: [],
   }));
   vi.spyOn(dashboardApi, "listConversations").mockResolvedValue({ items: [], total: 0 });
   const saveAgent = vi.spyOn(dashboardApi, "updateAgentSettings").mockImplementation(async (update) => ({ ...agent, agent_model: update.agent_model }));

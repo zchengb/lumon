@@ -7,15 +7,16 @@ import type { AgentModel } from "../../shared/types";
 interface AgentModelPickerProps {
   model: string;
   reasoningEffort: string;
+  refreshVersion: number;
+  onRefresh: () => void;
   onChange: (model: string, reasoningEffort: string) => void;
 }
 
-export function AgentModelPicker({ model, reasoningEffort, onChange }: AgentModelPickerProps): React.JSX.Element {
+export function AgentModelPicker({ model, reasoningEffort, refreshVersion, onRefresh, onChange }: AgentModelPickerProps): React.JSX.Element {
   const { t } = useI18n();
   const [models, setModels] = useState<AgentModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [refreshVersion, setRefreshVersion] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -33,6 +34,10 @@ export function AgentModelPicker({ model, reasoningEffort, onChange }: AgentMode
 
   const selected = models.find((choice) => choice.model === model);
   const efforts = selected?.supported_reasoning_efforts ?? [reasoningEffort];
+  let help: string | null = null;
+  if (loading) help = t("agent.modelsLoading");
+  else if (failed) help = t("agent.modelsFailed");
+  else if (!selected) help = t("agent.modelRetained");
 
   function selectModel(modelId: string): void {
     const choice = models.find((item) => item.model === modelId);
@@ -46,17 +51,15 @@ export function AgentModelPicker({ model, reasoningEffort, onChange }: AgentMode
     <div>
       <label className="field-label" htmlFor="agent-model">{t("agent.model")}</label>
       <div className="model-picker-controls">
-        <select id="agent-model" className="text-input" value={model} onChange={(event) => selectModel(event.target.value)} aria-describedby="agent-model-help">
+        <select id="agent-model" className="text-input" value={model} onChange={(event) => selectModel(event.target.value)} aria-describedby={help ? "agent-model-help" : undefined}>
           {!selected && <option value={model}>{model}</option>}
           {models.map((choice) => <option key={choice.model} value={choice.model}>{choice.display_name}</option>)}
         </select>
-        <button className="button button-secondary button-icon" type="button" aria-label={t("agent.refreshModels")} title={t("agent.refreshModels")} disabled={loading} onClick={() => setRefreshVersion((previous) => previous + 1)}>
+        <button className="button button-secondary button-icon" type="button" aria-label={t("agent.refreshModels")} title={t("agent.refreshModels")} disabled={loading} onClick={onRefresh}>
           {loading ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}
         </button>
       </div>
-      <p id="agent-model-help" className={`field-help ${failed ? "model-picker-error" : ""}`} role={failed ? "alert" : "status"}>
-        {loading ? t("agent.modelsLoading") : failed ? t("agent.modelsFailed") : selected ? selected.description || t("agent.modelsSource") : t("agent.modelRetained")}
-      </p>
+      {help && <p id="agent-model-help" className={`field-help ${failed ? "model-picker-error" : ""}`} role={failed ? "alert" : "status"}>{help}</p>}
     </div>
     <div>
       <label className="field-label" htmlFor="agent-reasoning">{t("agent.reasoning")}</label>

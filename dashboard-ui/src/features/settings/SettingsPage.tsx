@@ -121,7 +121,7 @@ export function SettingsPage({
             {testing ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}{t("settings.test")}
           </button>
           <button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || testing || !hasChanges}>
-            {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{t("settings.save")}
+            {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{t("settings.webhookSave")}
           </button>
         </div>
       </section>
