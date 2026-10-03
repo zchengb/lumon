@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
+
+import pytest
 
 from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.agents.agent.feishu import AgentFeishuChannel, MessageHandler
@@ -20,7 +23,7 @@ from lumon.agents.agent.model import (
     ProgressPhase,
     RecalledMessage,
 )
-from lumon.agents.agent.runner import AgentEventCallback, ProgressCallback
+from lumon.agents.agent.runner import AgentEventCallback, AgentRunner, ProgressCallback
 from lumon.agents.agent.service import AgentService
 from lumon.agents.agent.session_store import AgentSessionStore
 from lumon.errors import AgentRuntimeError
@@ -202,8 +205,9 @@ class FakeChannel(AgentFeishuChannel):
 
 
 class RecordingSpan:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, metadata: TelemetryMetadata | None = None) -> None:
         self.name = name
+        self.metadata = dict(metadata) if metadata else {}
         self.updates: list[dict[str, object]] = []
         self.children: list[RecordingSpan] = []
 
@@ -287,9 +291,9 @@ class RecordingTrace:
         as_type: ObservationType = "span",
         metadata: TelemetryMetadata | None = None,
     ):
-        del as_type, metadata
+        del as_type
         self.span_names.append(name)
-        span = RecordingSpan(name)
+        span = RecordingSpan(name, metadata)
         self.spans.append(span)
         try:
             yield span
@@ -868,3 +872,232 @@ def test_recalled_message_cancels_only_its_running_task(tmp_path: Path) -> None:
         ).fetchone()
     assert row == ("cancelled", "message_recalled")
     assert telemetry.traces[0].finished == ("cancelled", "message_recalled", None)
+
+
+class PausableTypingChannel(FakeChannel):
+    def __init__(self, config: AgentConfig) -> None:
+        super().__init__(config)
+        self.pause_message_id: str | None = None
+        self.typing_started = asyncio.Event()
+        self.resume_typing = asyncio.Event()
+        self.replied = asyncio.Event()
+
+    async def add_typing(self, message_id: str) -> str:
+        reaction_id = await super().add_typing(message_id)
+        if message_id == self.pause_message_id:
+            self.typing_started.set()
+            await self.resume_typing.wait()
+        return reaction_id
+
+    async def reply(self, message: InboundMessage, text: str) -> None:
+        await super().reply(message, text)
+        self.replied.set()
+
+
+@dataclass
+class ReloadRuntime:
+    config: AgentConfig
+    config_store: AgentConfigStore
+    service: AgentService
+    channel: PausableTypingChannel
+    telemetry: RecordingTelemetry
+    runners: list[tuple[AgentConfig, FakeRunner]]
+
+
+@pytest.fixture
+def reload_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ReloadRuntime:
+    state_root = tmp_path / "state"
+    registry = WorkspaceRegistry(state_root)
+    WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"), registry=registry
+    ).initialize(InitRequest(tmp_path / "workspace", name="model-reload-test"))
+    config = AgentConfig(
+        enabled=True,
+        default_workspace_id=registry.list()[0].workspace_id,
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+    )
+    config_store = AgentConfigStore(state_root)
+    config_store.save(config)
+    runners: list[tuple[AgentConfig, FakeRunner]] = []
+
+    def create_runner(execution_config: AgentConfig) -> AgentRunner:
+        runner = FakeRunner()
+        runners.append((execution_config, runner))
+        return runner
+
+    monkeypatch.setattr("lumon.agents.agent.service.create_agent_runner", create_runner)
+    channel = PausableTypingChannel(config)
+    telemetry = RecordingTelemetry()
+    service = AgentService(
+        config_store=config_store,
+        registry=registry,
+        session_store=AgentSessionStore(state_root),
+        channel=channel,
+        telemetry=telemetry,
+    )
+    return ReloadRuntime(config, config_store, service, channel, telemetry, runners)
+
+
+def reload_message(event_id: str, *, chat_id: str = "oc-reload") -> InboundMessage:
+    return InboundMessage(
+        event_id=event_id,
+        message_id=f"om-{event_id}",
+        chat_id=chat_id,
+        chat_type="p2p",
+        text=event_id,
+        sender_id="ou-1",
+        sender_type="user",
+    )
+
+
+@pytest.mark.parametrize(
+    ("model", "effort"),
+    [("gpt-6.1-sol", "max"), ("gpt-5.6-luna", "medium"), ("gpt-6.1-sol", "medium")],
+)
+def test_saved_execution_settings_apply_to_resumed_request(
+    reload_runtime: ReloadRuntime, model: str, effort: str
+) -> None:
+    runtime = reload_runtime
+    saved_config = replace(runtime.config, agent_model=model, agent_reasoning_effort=effort)
+
+    async def run() -> None:
+        await runtime.service.handle_message(reload_message("first"))
+        await runtime.service.wait_for_idle()
+        runtime.config_store.save(saved_config)
+        await runtime.service.handle_message(reload_message("second"))
+        await runtime.service.wait_for_idle()
+        await runtime.service.stop()
+
+    asyncio.run(run())
+
+    assert [config for config, _runner in runtime.runners] == [runtime.config, saved_config]
+    assert runtime.runners[0][1].agent_session_ids == [None]
+    assert runtime.runners[1][1].agent_session_ids == ["provider-session-1"]
+    trace = runtime.telemetry.traces[1]
+    expected_metadata = {"provider": "test-agent", "model": model, "reasoning_effort": effort}
+    assert any(update["metadata"] == expected_metadata for update in trace.updates)
+    execution_span = next(span for span in trace.spans if span.name == "codex.exec")
+    assert execution_span.metadata == {
+        **expected_metadata,
+        "resumed_agent_session": True,
+        "image_count": 0,
+    }
+    assert trace.finished == ("succeeded", None, "Workspace 已检查")
+
+
+def test_model_reload_keeps_active_snapshot_and_refreshes_queued_turn(
+    reload_runtime: ReloadRuntime,
+) -> None:
+    runtime = reload_runtime
+    first = reload_message("first")
+    runtime.channel.pause_message_id = first.message_id
+    saved_config = replace(
+        runtime.config, agent_model="gpt-6.1-sol", agent_reasoning_effort="medium"
+    )
+
+    async def run() -> None:
+        try:
+            await runtime.service.handle_message(first)
+            await asyncio.wait_for(runtime.channel.typing_started.wait(), timeout=5)
+            await runtime.service.handle_message(reload_message("queued"))
+            runtime.config_store.save(saved_config)
+            await runtime.service.handle_message(reload_message("other", chat_id="oc-other"))
+            await asyncio.wait_for(runtime.channel.replied.wait(), timeout=5)
+            assert runtime.runners[0][1].prompts == []
+            assert runtime.runners[1][1].agent_session_ids == [None]
+            runtime.channel.resume_typing.set()
+            await runtime.service.wait_for_idle()
+        finally:
+            await runtime.service.stop()
+
+    asyncio.run(run())
+
+    assert [config for config, _runner in runtime.runners] == [runtime.config, saved_config]
+    assert runtime.runners[0][1].agent_session_ids == [None]
+    assert runtime.runners[1][1].agent_session_ids == [None, "provider-session-1"]
+    assert runtime.channel.replies.count("Workspace 已检查") == 3
+    for trace in runtime.telemetry.traces:
+        expected = runtime.config if trace.arguments["event_id"] == "first" else saved_config
+        execution_span = next(span for span in trace.spans if span.name == "codex.exec")
+        assert execution_span.metadata["model"] == expected.agent_model
+        assert execution_span.metadata["reasoning_effort"] == expected.agent_reasoning_effort
+        assert trace.finished == ("succeeded", None, "Workspace 已检查")
+
+
+def test_non_execution_setting_save_does_not_replace_runtime(reload_runtime: ReloadRuntime) -> None:
+    runtime = reload_runtime
+
+    async def run() -> None:
+        await runtime.service.handle_message(reload_message("first"))
+        await runtime.service.wait_for_idle()
+        runtime.config_store.save(replace(runtime.config, feishu_app_secret="replacement-secret"))
+        await runtime.service.handle_message(reload_message("second"))
+        await runtime.service.wait_for_idle()
+        await runtime.service.stop()
+
+    asyncio.run(run())
+
+    assert len(runtime.runners) == 1
+    assert runtime.runners[0][1].agent_session_ids == [None, "provider-session-1"]
+    assert runtime.channel.config.feishu_app_secret == runtime.config.feishu_app_secret
+
+
+@pytest.mark.parametrize("failure", ["malformed", "missing", "insecure"])
+def test_invalid_saved_config_fails_safely_and_recovers_next_turn(
+    reload_runtime: ReloadRuntime, failure: str
+) -> None:
+    runtime = reload_runtime
+    failed_message = reload_message("invalid-config")
+
+    async def run() -> None:
+        await runtime.service.handle_message(reload_message("first"))
+        await runtime.service.wait_for_idle()
+        if failure == "malformed":
+            runtime.config_store.path.write_text("private-secret = [", encoding="utf-8")
+        elif failure == "missing":
+            runtime.config_store.path.unlink()
+        else:
+            runtime.config_store.path.chmod(0o644)
+        await runtime.service.handle_message(failed_message)
+        await runtime.service.wait_for_idle()
+        assert runtime.service.session_store.event_status(failed_message.event_id) == "failed"
+        assert len(runtime.runners[0][1].prompts) == 1
+        runtime.config_store.save(replace(runtime.config, agent_model="gpt-6.1-sol"))
+        await runtime.service.handle_message(reload_message("recovered"))
+        await runtime.service.wait_for_idle()
+        await runtime.service.stop()
+
+    asyncio.run(run())
+
+    assert len(runtime.runners) == 2
+    assert runtime.runners[1][1].agent_session_ids == ["provider-session-1"]
+    assert runtime.telemetry.traces[1].finished == ("failed", "agent_configuration_invalid", None)
+    assert "secret" not in " ".join(runtime.channel.replies)
+    assert runtime.telemetry.traces[2].finished == ("succeeded", None, "Workspace 已检查")
+
+
+def test_model_reload_preserves_injected_runner(reload_runtime: ReloadRuntime) -> None:
+    runtime = reload_runtime
+    runner = FakeRunner()
+    service = AgentService(
+        config_store=runtime.config_store,
+        registry=runtime.service.registry,
+        session_store=runtime.service.session_store,
+        agent_runner=runner,
+        channel=runtime.channel,
+        telemetry=runtime.telemetry,
+    )
+
+    async def run() -> None:
+        await service.handle_message(reload_message("first"))
+        await service.wait_for_idle()
+        runtime.config_store.save(replace(runtime.config, agent_model="gpt-6.1-sol"))
+        await service.handle_message(reload_message("second"))
+        await service.wait_for_idle()
+        await service.stop()
+
+    asyncio.run(run())
+
+    assert runtime.runners == []
+    assert runner.agent_session_ids == [None, "provider-session-1"]

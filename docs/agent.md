@@ -155,9 +155,11 @@ sample_rate = 1.0
 ```
 
 运行 `lumon agent doctor` 会显示 endpoint、content capture、sample rate、SDK
-安装状态和凭据是否存在；它只输出 presence，不输出 key 的值。Dashboard 保存 Agent
-配置后需要重启 Agent，运行中的进程不会自动重新加载模型、Feishu 凭据或 Langfuse
-客户端设置。使用环境变量时，启动前台或后台 Agent 也要确保变量对该进程可见。
+安装状态和凭据是否存在；它只输出 presence，不输出 key 的值。Dashboard 保存模型和
+reasoning effort 后，下一个请求开始执行时会自动加载新设置，包括排队请求和已有对话的
+后续消息；正在执行的请求仍使用原设置，不会被中断。Feishu 凭据、默认 Workspace 和
+Langfuse 等其他配置仍需重启 Agent。使用环境变量时，启动前台或后台 Agent 也要确保
+变量对该进程可见。
 
 `capture_content = true` 是固定设置，Dashboard 不再提供关闭开关。Lumon 会在客户端先
 遮盖已配置的 App/API secrets、Bearer token、密码、私钥和常见 key 格式，再把入站消息、

@@ -57,6 +57,18 @@ async function mount(initialSettings = settings) {
   };
 }
 
+it.each([
+  ["en", "Model and reasoning effort changes apply to the next request. Other settings require restarting Agent."],
+  ["zh-CN", "模型和 Reasoning effort 保存后从下一次请求生效；其他配置仍需重启 Agent。"],
+  ["zh-TW", "模型與 Reasoning effort 儲存後從下一次請求生效；其他設定仍需重新啟動 Agent。"],
+])("explains model hot reload in %s", async (locale, helpText) => {
+  localStorage.setItem("lumon.locale", locale);
+  const view = await mount();
+  try {
+    expect(view.panel("agent").querySelector(".field-help")?.textContent).toBe(helpText);
+  } finally { await view.unmount(); }
+});
+
 it("places one Save action inside each panel and tracks changes independently", async () => {
   const view = await mount();
   try {

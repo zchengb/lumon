@@ -119,9 +119,12 @@ only that panel's edits; unsaved edits in the other panel are preserved. Both
 buttons are disabled while a save is pending to serialize updates to the shared
 configuration. A failed save keeps the draft available for retry.
 
-Saving a panel updates the on-disk configuration. Restart Agent with
-`lumon agent stop` and `lumon agent start --background` for the running process
-to load the new settings.
+Saving a panel updates the on-disk configuration. Model and reasoning effort
+changes apply automatically when the next request starts, including queued turns
+and resumed conversations. Requests already in progress keep their original
+settings. Other settings, including Feishu credentials, the default Workspace,
+and Langfuse configuration, still require `lumon agent stop` followed by
+`lumon agent start --background`.
 
 ## Workspace flows
 

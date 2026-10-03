@@ -75,6 +75,7 @@ class AgentService:
         self.session_store = session_store or AgentSessionStore()
         self.soul_loader = soul_loader or SoulLoader()
         self.agent_runner = agent_runner
+        self._owns_agent_runner = agent_runner is None
         self._channel = channel
         self._now = now or (lambda: datetime.now(UTC))
         self._telemetry = telemetry
@@ -187,6 +188,21 @@ class AgentService:
         if self._channel is None:
             self._channel = AgentFeishuChannel(config)
 
+    def _load_execution_runtime(self, config: AgentConfig) -> tuple[AgentConfig, AgentRunner]:
+        saved_config = self.config_store.load()
+        execution_config = replace(
+            config,
+            agent_model=saved_config.agent_model,
+            agent_reasoning_effort=saved_config.agent_reasoning_effort,
+        )
+        runner = self.agent_runner
+        if runner is None or (self._owns_agent_runner and execution_config != config):
+            runner = create_agent_runner(execution_config)
+        # Keep connection settings fixed, and never mutate a runner used by an active turn.
+        self._config = execution_config
+        self.agent_runner = runner
+        return execution_config, runner
+
     def _schedule(self, message: InboundMessage, session_id: str) -> None:
         task = asyncio.create_task(self._process(message, session_id))
         self._tasks.add(task)
@@ -235,7 +251,7 @@ class AgentService:
             flow_id: str | None = None
             workspace_path: Path | None = None
             result_return_code: int | None = None
-            stage = "add_typing_reaction"
+            stage = "load_execution_settings"
             trace = self._start_trace(
                 run_id=run_id,
                 session_id=session_id,
@@ -253,6 +269,16 @@ class AgentService:
                 input_text=message.text,
             )
             try:
+                # Snapshot after acquiring the conversation lock so queued turns also reload.
+                config, runner = self._load_execution_runtime(config)
+                trace.update(
+                    metadata={
+                        "provider": runner.provider,
+                        "model": config.agent_model,
+                        "reasoning_effort": config.agent_reasoning_effort,
+                    }
+                )
+                stage = "add_typing_reaction"
                 typing_reaction_id = await self._add_typing_reaction(message)
                 stage = "record_inbound_message"
                 self.session_store.record_message(
@@ -314,9 +340,6 @@ class AgentService:
                     input_text=prompt,
                     metadata={"resumed_agent_session": resume_session_id is not None},
                 )
-                runner = self.agent_runner
-                if runner is None:
-                    raise AgentRuntimeError("Agent runtime is not ready.")
                 agent_provider = runner.provider
                 stage = "record_run_started"
                 self.session_store.record_run_started(

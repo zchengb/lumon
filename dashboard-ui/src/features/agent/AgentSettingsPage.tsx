@@ -197,7 +197,7 @@ export function AgentSettingsPage({
               />
             </div>
           </fieldset>
-          <p className="field-help"><Activity size={14} />{t("agent.restartHelp")}</p>
+          <p className="field-help"><Activity size={14} />{t("agent.applyHelp")}</p>
           <div className="settings-actions agent-settings-actions">
             <button className="button button-primary" type="button" aria-label={`${t("agent.save")} ${t("agent.title")}`} onClick={() => void save("agent")} disabled={saving !== null || !hasAgentChanges}>
               {saving === "agent" ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
