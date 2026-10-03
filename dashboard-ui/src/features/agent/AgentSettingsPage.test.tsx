@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { dashboardApi } from "../../app/api";
 import { I18nProvider, LanguagePicker } from "../../shared/i18n";
-import type { AgentSettings, CodexCliStatus } from "../../shared/types";
+import type { AgentSettings, AgentSettingsUpdate, CodexCliStatus } from "../../shared/types";
 import { AgentSettingsPage } from "./AgentSettingsPage";
 
 const settings: AgentSettings = {
@@ -29,20 +29,144 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-async function mount() {
+async function mount(initialSettings = settings) {
   const container = document.createElement("div");
   const root = createRoot(container);
   const onDirtyChange = vi.fn();
-  const onSave = vi.fn().mockResolvedValue(true);
-  await act(async () => root.render(<I18nProvider><LanguagePicker /><AgentSettingsPage settings={settings} workspaces={[]} onSave={onSave} onDirtyChange={onDirtyChange} /></I18nProvider>));
+  const onSave = vi.fn<(update: AgentSettingsUpdate) => Promise<boolean>>().mockResolvedValue(true);
+  async function rerender(nextSettings: AgentSettings): Promise<void> {
+    await act(async () => root.render(<I18nProvider><LanguagePicker /><AgentSettingsPage settings={nextSettings} workspaces={[]} onSave={onSave} onDirtyChange={onDirtyChange} /></I18nProvider>));
+  }
+  await rerender(initialSettings);
   return {
-    container, onDirtyChange, onSave,
+    container, onDirtyChange, onSave, rerender,
+    panel: (section: "agent" | "langfuse") => container.querySelector<HTMLElement>(`section[aria-labelledby="agent-${section === "agent" ? "runtime" : "langfuse"}-title"]`)!,
+    saveButton: (section: "agent" | "langfuse") => container.querySelector<HTMLButtonElement>(`button[aria-label="Save ${section === "agent" ? "Agent" : "Langfuse Cloud"}"]`)!,
+    field: (selector: string) => container.querySelector<HTMLInputElement>(selector)!,
+    edit: async (selector: string, value: string) => {
+      await act(async () => {
+        const input = container.querySelector<HTMLInputElement>(selector)!;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    },
     model: () => container.querySelector<HTMLSelectElement>("#agent-model")!,
     effort: () => container.querySelector<HTMLSelectElement>("#agent-reasoning")!,
     refresh: async () => { await act(async () => container.querySelector<HTMLButtonElement>(".model-picker-controls button")!.click()); },
     unmount: async () => { await act(async () => root.unmount()); },
   };
 }
+
+it("places one Save action inside each panel and tracks changes independently", async () => {
+  const view = await mount();
+  try {
+    expect(view.container.querySelectorAll(".agent-settings-actions")).toHaveLength(2);
+    for (const section of ["agent", "langfuse"] as const) {
+      expect(view.saveButton(section).closest("section")).toBe(view.panel(section));
+      expect(view.saveButton(section).textContent).toBe("Save");
+      expect(view.saveButton(section).disabled).toBe(true);
+    }
+    expect(view.container.querySelector(".page-stack > .settings-actions")).toBeNull();
+    await view.edit("#langfuse-base-url", "https://langfuse.test");
+    expect(view.saveButton("agent").disabled).toBe(true);
+    expect(view.saveButton("langfuse").disabled).toBe(false);
+    expect(view.panel("agent").querySelector(".unsaved-label")).toBeNull();
+    expect(view.panel("langfuse").querySelector(".unsaved-label")?.textContent).toBe("Unsaved changes");
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(true);
+    await view.edit("#langfuse-base-url", settings.observability.base_url);
+    expect(view.saveButton("langfuse").disabled).toBe(true);
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(false);
+  } finally { await view.unmount(); }
+});
+
+it.each(["agent", "langfuse"] as const)("saves %s without submitting or discarding the other panel's draft", async (section) => {
+  const view = await mount();
+  try {
+    await view.edit("#feishu-app-id", "cli_draft");
+    await view.edit("#feishu-app-secret", "app-draft-secret");
+    await view.edit("#langfuse-base-url", "https://draft.langfuse.test");
+    await view.edit("#langfuse-public-key", "public-draft-key");
+    await view.edit("#langfuse-secret-key", "secret-draft-key");
+    await act(async () => view.saveButton(section).click());
+    expect(view.onSave).toHaveBeenCalledTimes(1);
+    const update = view.onSave.mock.calls[0][0];
+    if (section === "agent") {
+      expect(update.feishu_app_id).toBe("cli_draft");
+      expect(update.feishu_app_secret).toBe("app-draft-secret");
+      expect(update.observability).toEqual({ enabled: false, base_url: settings.observability.base_url, sample_rate: 1 });
+      await view.rerender({ ...settings, feishu_app_id: "cli_draft", feishu_app_secret_masked: "app…cret" });
+      expect(view.field("#feishu-app-secret").value).toBe("");
+      expect(view.field("#langfuse-base-url").value).toBe("https://draft.langfuse.test");
+      expect(view.field("#langfuse-public-key").value).toBe("public-draft-key");
+      expect(view.field("#langfuse-secret-key").value).toBe("secret-draft-key");
+    } else {
+      expect(update.feishu_app_id).toBe(settings.feishu_app_id);
+      expect(update.feishu_app_secret).toBeUndefined();
+      expect(update.observability).toMatchObject({ base_url: "https://draft.langfuse.test", public_key: "public-draft-key", secret_key: "secret-draft-key" });
+      await view.rerender({ ...settings, observability: { ...settings.observability, base_url: "https://draft.langfuse.test", public_key_masked: "pub…key", secret_key_masked: "sec…key" } });
+      expect(view.field("#langfuse-public-key").value).toBe("");
+      expect(view.field("#langfuse-secret-key").value).toBe("");
+      expect(view.field("#feishu-app-id").value).toBe("cli_draft");
+      expect(view.field("#feishu-app-secret").value).toBe("app-draft-secret");
+    }
+    expect(view.saveButton(section).disabled).toBe(true);
+    expect(view.saveButton(section === "agent" ? "langfuse" : "agent").disabled).toBe(false);
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(true);
+  } finally { await view.unmount(); }
+});
+
+it.each(["agent", "langfuse"] as const)("keeps the %s draft after a failed save", async (section) => {
+  const view = await mount();
+  view.onSave.mockResolvedValue(false);
+  try {
+    await view.edit("#feishu-app-secret", "app-draft-secret");
+    await view.edit("#langfuse-secret-key", "langfuse-draft-secret");
+    await act(async () => view.saveButton(section).click());
+    expect(view.field("#feishu-app-secret").value).toBe("app-draft-secret");
+    expect(view.field("#langfuse-secret-key").value).toBe("langfuse-draft-secret");
+    expect(view.saveButton("agent").disabled).toBe(false);
+    expect(view.saveButton("langfuse").disabled).toBe(false);
+    expect(view.panel(section).getAttribute("aria-busy")).toBe("false");
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(true);
+  } finally { await view.unmount(); }
+});
+
+it.each(["agent", "langfuse"] as const)("clears a successful %s credential edit even if its saved mask is unchanged", async (section) => {
+  const view = await mount();
+  try {
+    const selector = section === "agent" ? "#feishu-app-secret" : "#langfuse-secret-key";
+    await view.edit(selector, "credential-replacement");
+    await act(async () => view.saveButton(section).click());
+    await view.rerender({ ...settings, observability: { ...settings.observability } });
+    expect(view.field(selector).value).toBe("");
+    expect(view.saveButton(section).disabled).toBe(true);
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(false);
+  } finally { await view.unmount(); }
+});
+
+it.each(["agent", "langfuse"] as const)("serializes a pending %s save and leaves the other panel editable", async (section) => {
+  const view = await mount();
+  let finish!: (saved: boolean) => void;
+  view.onSave.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  try {
+    await view.edit("#feishu-app-secret", "app-draft-secret");
+    await view.edit("#langfuse-secret-key", "langfuse-draft-secret");
+    await act(async () => view.saveButton(section).click());
+    expect(view.saveButton("agent").disabled).toBe(true);
+    expect(view.saveButton("langfuse").disabled).toBe(true);
+    expect(view.panel(section).getAttribute("aria-busy")).toBe("true");
+    expect(view.panel(section).querySelector<HTMLFieldSetElement>("fieldset")?.disabled).toBe(true);
+    const other = section === "agent" ? "langfuse" : "agent";
+    expect(view.panel(other).querySelector<HTMLFieldSetElement>("fieldset")?.disabled).toBe(false);
+    expect(view.panel(other).querySelector(".spin")).toBeNull();
+    await act(async () => view.saveButton(other).click());
+    expect(view.onSave).toHaveBeenCalledTimes(1);
+    await view.edit(section === "agent" ? "#langfuse-secret-key" : "#feishu-app-secret", "edited-while-saving");
+    await act(async () => finish(true));
+    expect(view.field(section === "agent" ? "#langfuse-secret-key" : "#feishu-app-secret").value).toBe("edited-while-saving");
+    expect(view.saveButton(other).disabled).toBe(false);
+  } finally { await view.unmount(); }
+});
 
 it("merges the installed version and update badge into the read-only provider field", async () => {
   const check = vi.mocked(dashboardApi.getCodexCliStatus).mockResolvedValue({

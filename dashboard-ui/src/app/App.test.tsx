@@ -30,7 +30,7 @@ it("merges history into Agent, moves global configuration to Settings and protec
   localStorage.setItem("lumon.locale", "en");
   window.history.replaceState(null, "", "?workspace=workspace-one&view=chat-history");
   vi.spyOn(dashboardApi, "listWorkspaces").mockResolvedValue(workspaces);
-  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.4.8", workspace_count: 2, has_workspaces: true });
+  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.4.9", workspace_count: 2, has_workspaces: true });
   vi.spyOn(dashboardApi, "getAgentSettings").mockResolvedValue(agent);
   vi.spyOn(dashboardApi, "getCodexCliStatus").mockResolvedValue({
     status: "up_to_date", binary_path: "/test/codex", installed_version: "0.160.0", latest_version: "0.160.0",
@@ -40,10 +40,12 @@ it("merges history into Agent, moves global configuration to Settings and protec
   })));
   vi.spyOn(dashboardApi, "getSettings").mockImplementation(async (workspaceId) => ({ ...settings, workspace_id: workspaceId }));
   vi.spyOn(dashboardApi, "getOverview").mockImplementation(async (workspaceId) => ({
-    workspace_id: workspaceId, name: workspaceId, path: "/test", created_at: "2026-09-30T04:00:00Z", lumon_version: "1.4.8", repositories: [],
+    workspace_id: workspaceId, name: workspaceId, path: "/test", created_at: "2026-09-30T04:00:00Z", lumon_version: "1.4.9", repositories: [],
   }));
   vi.spyOn(dashboardApi, "listConversations").mockResolvedValue({ items: [], total: 0 });
-  const saveAgent = vi.spyOn(dashboardApi, "updateAgentSettings").mockImplementation(async (update) => ({ ...agent, agent_model: update.agent_model }));
+  const saveAgent = vi.spyOn(dashboardApi, "updateAgentSettings").mockImplementation(async (update) => ({
+    ...agent, agent_model: update.agent_model, observability: { ...agent.observability, ...update.observability },
+  }));
   const saveWebhook = vi.spyOn(dashboardApi, "updateSettings").mockResolvedValue(settings);
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   const container = document.createElement("div");
@@ -85,6 +87,7 @@ it("merges history into Agent, moves global configuration to Settings and protec
     expect(container.querySelector<HTMLInputElement>("#feishu-app-secret")?.placeholder).toBe("abcd…wxyz");
 
     await edit("#agent-model", "gpt-test");
+    await edit("#langfuse-base-url", "https://draft.langfuse.test");
     expect(container.querySelector(".agent-settings-panel .unsaved-label")?.textContent).toBe("Unsaved changes");
     await act(async () => navigation("Agent").click());
     expect(confirm).toHaveBeenCalledTimes(1);
@@ -100,11 +103,20 @@ it("merges history into Agent, moves global configuration to Settings and protec
     expect(saveAgent).toHaveBeenCalledWith(expect.objectContaining({ agent_model: "gpt-test" }));
     expect(saveAgent.mock.calls[0][0].feishu_app_secret).toBeUndefined();
     expect(saveAgent.mock.calls[0][0].observability.secret_key).toBeUndefined();
+    expect(saveAgent.mock.calls[0][0].observability.base_url).toBe(agent.observability.base_url);
     expect(saveWebhook).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLInputElement>("#langfuse-base-url")?.value).toBe("https://draft.langfuse.test");
+    await act(async () => navigation("Agent").click());
+    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(container.querySelector("h1")?.textContent).toBe("Settings");
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Save Langfuse Cloud"]')!.click());
+    expect(saveAgent).toHaveBeenLastCalledWith(expect.objectContaining({
+      agent_model: "gpt-test", observability: expect.objectContaining({ base_url: "https://draft.langfuse.test" }),
+    }));
 
     await edit("#feishu-webhook-url", "https://example.test/replacement");
     await act(async () => navigation("Agent").click());
-    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(confirm).toHaveBeenCalledTimes(4);
     confirm.mockReturnValue(true);
     await act(async () => navigation("Agent").click());
     expect(container.querySelector("#agent-model")).toBeNull();

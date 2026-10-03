@@ -7,7 +7,7 @@ import type {
   AgentSettingsUpdate,
   WorkspaceListItem,
 } from "../../shared/types";
-import { buildAgentSettingsUpdate, type AgentSettingsDraft } from "./agentSettingsForm";
+import { buildAgentSectionUpdate, type AgentSettingsDraft, type AgentSettingsSection } from "./agentSettingsForm";
 import { AgentModelPicker } from "./AgentModelPicker";
 import { CodexCliNotice } from "./CodexCliNotice";
 
@@ -38,7 +38,7 @@ export function AgentSettingsPage({
   const [langfuseBaseUrl, setLangfuseBaseUrl] = useState(settings.observability.base_url);
   const [langfusePublicKey, setLangfusePublicKey] = useState("");
   const [langfuseSecretKey, setLangfuseSecretKey] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<AgentSettingsSection | null>(null);
 
   useEffect(() => {
     setEnabled(settings.enabled);
@@ -47,19 +47,24 @@ export function AgentSettingsPage({
     setAgentReasoningEffort(settings.agent_reasoning_effort);
     setFeishuAppId(settings.feishu_app_id);
     setFeishuAppSecret("");
+  }, [
+    settings.enabled, settings.default_workspace_id, settings.agent_model,
+    settings.agent_reasoning_effort, settings.feishu_app_id, settings.feishu_app_secret_masked,
+  ]);
+
+  useEffect(() => {
     setLangfuseEnabled(settings.observability.enabled);
     setLangfuseBaseUrl(settings.observability.base_url);
     setLangfusePublicKey("");
     setLangfuseSecretKey("");
-    onDirtyChange(false);
-  }, [onDirtyChange, settings]);
+  }, [
+    settings.observability.enabled, settings.observability.base_url,
+    settings.observability.public_key_masked, settings.observability.secret_key_masked,
+  ]);
 
-  function markDirty(): void {
-    onDirtyChange(true);
-  }
-
-  async function save(): Promise<void> {
-    setSaving(true);
+  async function save(section: AgentSettingsSection): Promise<void> {
+    if (saving !== null) return;
+    setSaving(section);
     try {
       const draft: AgentSettingsDraft = {
         enabled,
@@ -75,9 +80,16 @@ export function AgentSettingsPage({
         langfuseSecretKey,
         clearLangfuseCredentials: false,
       };
-      await onSave(buildAgentSettingsUpdate(draft));
+      const saved = await onSave(buildAgentSectionUpdate(draft, settings, section));
+      if (!saved) return;
+      if (section === "agent") {
+        setFeishuAppSecret("");
+      } else {
+        setLangfusePublicKey("");
+        setLangfuseSecretKey("");
+      }
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
 
@@ -95,19 +107,23 @@ export function AgentSettingsPage({
     Boolean(langfuseSecretKey.trim());
   const hasChanges = hasAgentChanges || hasLangfuseChanges;
 
+  useEffect(() => {
+    onDirtyChange(hasChanges);
+  }, [hasChanges, onDirtyChange]);
+
   return (
     <div className="page-stack">
-      <section className="panel agent-settings-panel">
+      <section className="panel agent-settings-panel" aria-labelledby="agent-runtime-title" aria-busy={saving === "agent"}>
         <div className="panel-heading">
           <div className="settings-title">
             <span className="workspace-glyph glyph-violet"><Bot size={18} /></span>
             <div>
               <p className="eyebrow">{t("agent.runtime")}</p>
-              <h2>{t("agent.title")}</h2>
+              <h2 id="agent-runtime-title">{t("agent.title")}</h2>
             </div>
           </div>
           <div className="settings-heading-actions">
-            {hasChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
+            {hasAgentChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
             <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
               <span>{enabled ? t("settings.enabled") : t("settings.disabled")}</span>
               <input
@@ -115,14 +131,16 @@ export function AgentSettingsPage({
                 role="switch"
                 checked={enabled}
                 aria-label={t("agent.toggleAria")}
-                onChange={(event) => { setEnabled(event.target.checked); markDirty(); }}
+                disabled={saving === "agent"}
+                onChange={(event) => setEnabled(event.target.checked)}
               />
               <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
             </label>
           </div>
         </div>
         <div className="agent-settings-body">
-          <div className="form-grid">
+          <fieldset className="form-grid agent-settings-fields" disabled={saving === "agent"}>
+            <legend className="sr-only">{t("agent.title")}</legend>
             <div>
               <label className="field-label" htmlFor="agent-provider">{t("agent.provider")}</label>
               <div className="text-input agent-provider-control">
@@ -135,7 +153,7 @@ export function AgentSettingsPage({
               reasoningEffort={agentReasoningEffort}
               refreshVersion={modelRefreshVersion}
               onRefresh={() => setModelRefreshVersion((previous) => previous + 1)}
-              onChange={(model, effort) => { setAgentModel(model); setAgentReasoningEffort(effort); markDirty(); }}
+              onChange={(model, effort) => { setAgentModel(model); setAgentReasoningEffort(effort); }}
             />
             <div>
               <label className="field-label" htmlFor="agent-default-workspace">{t("agent.defaultWorkspace")}</label>
@@ -143,7 +161,7 @@ export function AgentSettingsPage({
                 id="agent-default-workspace"
                 className="text-input"
                 value={defaultWorkspaceId}
-                onChange={(event) => { setDefaultWorkspaceId(event.target.value); markDirty(); }}
+                onChange={(event) => setDefaultWorkspaceId(event.target.value)}
               >
                 <option value="">
                   {workspaces.length === 1 ? t("agent.autoWorkspace") : t("agent.noDefaultWorkspace")}
@@ -162,7 +180,7 @@ export function AgentSettingsPage({
                 id="feishu-app-id"
                 className="text-input"
                 value={feishuAppId}
-                onChange={(event) => { setFeishuAppId(event.target.value); markDirty(); }}
+                onChange={(event) => setFeishuAppId(event.target.value)}
                 autoComplete="off"
               />
             </div>
@@ -173,40 +191,51 @@ export function AgentSettingsPage({
                 className="text-input"
                 type="password"
                 value={feishuAppSecret}
-                onChange={(event) => { setFeishuAppSecret(event.target.value); markDirty(); }}
+                onChange={(event) => setFeishuAppSecret(event.target.value)}
                 placeholder={settings.feishu_app_secret_masked ?? t("agent.secretNewPlaceholder")}
                 autoComplete="new-password"
               />
             </div>
-          </div>
+          </fieldset>
           <p className="field-help"><Activity size={14} />{t("agent.restartHelp")}</p>
+          <div className="settings-actions agent-settings-actions">
+            <button className="button button-primary" type="button" aria-label={`${t("agent.save")} ${t("agent.title")}`} onClick={() => void save("agent")} disabled={saving !== null || !hasAgentChanges}>
+              {saving === "agent" ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
+              {saving === "agent" ? t("onboarding.processing") : t("agent.save")}
+            </button>
+          </div>
         </div>
       </section>
 
-      <section className="panel agent-settings-panel">
+      <section className="panel agent-settings-panel" aria-labelledby="agent-langfuse-title" aria-busy={saving === "langfuse"}>
         <div className="panel-heading">
           <div className="settings-title">
             <span className="workspace-glyph glyph-violet"><Activity size={18} /></span>
             <div>
               <p className="eyebrow">{t("agent.observability")}</p>
-              <h2>{t("agent.langfuse")}</h2>
+              <h2 id="agent-langfuse-title">{t("agent.langfuse")}</h2>
             </div>
           </div>
-          <label className={`settings-toggle ${langfuseEnabled ? "is-enabled" : ""}`}>
-            <span>{langfuseEnabled ? t("settings.enabled") : t("settings.disabled")}</span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={langfuseEnabled}
-              aria-label={t("agent.langfuseToggleAria")}
-              onChange={(event) => { setLangfuseEnabled(event.target.checked); markDirty(); }}
-            />
-            <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
-          </label>
+          <div className="settings-heading-actions">
+            {hasLangfuseChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
+            <label className={`settings-toggle ${langfuseEnabled ? "is-enabled" : ""}`}>
+              <span>{langfuseEnabled ? t("settings.enabled") : t("settings.disabled")}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={langfuseEnabled}
+                aria-label={t("agent.langfuseToggleAria")}
+                disabled={saving === "langfuse"}
+                onChange={(event) => setLangfuseEnabled(event.target.checked)}
+              />
+              <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
+            </label>
+          </div>
         </div>
         <p className="settings-description">{t("agent.langfuseDescription")}</p>
         <div className="agent-settings-body">
-          <div className="form-grid">
+          <fieldset className="form-grid agent-settings-fields" disabled={saving === "langfuse"}>
+            <legend className="sr-only">{t("agent.langfuse")}</legend>
             <div className="field-full">
               <label className="field-label" htmlFor="langfuse-base-url">{t("agent.langfuseEndpoint")}</label>
               <input
@@ -214,7 +243,7 @@ export function AgentSettingsPage({
                 className="text-input"
                 type="url"
                 value={langfuseBaseUrl}
-                onChange={(event) => { setLangfuseBaseUrl(event.target.value); markDirty(); }}
+                onChange={(event) => setLangfuseBaseUrl(event.target.value)}
                 autoComplete="url"
               />
             </div>
@@ -225,7 +254,7 @@ export function AgentSettingsPage({
                 className="text-input"
                 type="password"
                 value={langfusePublicKey}
-                onChange={(event) => { setLangfusePublicKey(event.target.value); markDirty(); }}
+                onChange={(event) => setLangfusePublicKey(event.target.value)}
                 placeholder={settings.observability.public_key_masked ?? t("agent.keyNewPlaceholder")}
                 autoComplete="new-password"
               />
@@ -237,21 +266,20 @@ export function AgentSettingsPage({
                 className="text-input"
                 type="password"
                 value={langfuseSecretKey}
-                onChange={(event) => { setLangfuseSecretKey(event.target.value); markDirty(); }}
+                onChange={(event) => setLangfuseSecretKey(event.target.value)}
                 placeholder={settings.observability.secret_key_masked ?? t("agent.keyNewPlaceholder")}
                 autoComplete="new-password"
               />
             </div>
+          </fieldset>
+          <div className="settings-actions agent-settings-actions">
+            <button className="button button-primary" type="button" aria-label={`${t("agent.save")} ${t("agent.langfuse")}`} onClick={() => void save("langfuse")} disabled={saving !== null || !hasLangfuseChanges}>
+              {saving === "langfuse" ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
+              {saving === "langfuse" ? t("onboarding.processing") : t("agent.save")}
+            </button>
           </div>
         </div>
       </section>
-
-      <div className="settings-actions agent-settings-actions">
-        <button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || !hasChanges}>
-          {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
-          {saving ? t("onboarding.processing") : t("agent.save")}
-        </button>
-      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentSettingsUpdate, type AgentSettingsDraft } from "./agentSettingsForm";
+import type { AgentSettings } from "../../shared/types";
+import { buildAgentSectionUpdate, buildAgentSettingsUpdate, type AgentSettingsDraft } from "./agentSettingsForm";
 
 const draft: AgentSettingsDraft = {
   enabled: true,
@@ -46,6 +47,40 @@ describe("Agent settings form", () => {
         public_key: "pk-lf-public",
         secret_key: "sk-lf-secret",
         clear_credentials: true,
+      },
+    });
+  });
+
+  const saved: AgentSettings = {
+    enabled: false, default_workspace_id: null, agent_provider: "codex",
+    agent_model: "saved-model", agent_reasoning_effort: "medium", feishu_app_id: "cli_saved",
+    feishu_app_configured: true, feishu_app_secret_masked: "masked-app-secret",
+    observability: {
+      enabled: false, provider: "langfuse", base_url: "https://saved.langfuse.test", sample_rate: 0.5,
+      public_key_configured: true, secret_key_configured: true,
+      public_key_masked: "masked-public-key", secret_key_masked: "masked-secret-key",
+    },
+  };
+  const replacements: AgentSettingsDraft = {
+    ...draft, feishuAppSecret: "app-replacement", langfusePublicKey: "public-replacement",
+    langfuseSecretKey: "secret-replacement", clearLangfuseCredentials: true,
+  };
+
+  it("saves Agent edits using saved Langfuse values without its draft credentials", () => {
+    expect(buildAgentSectionUpdate(replacements, saved, "agent")).toEqual({
+      enabled: true, default_workspace_id: "workspace-1", agent_model: "gpt-5.6-luna",
+      agent_reasoning_effort: "max", feishu_app_id: "cli_test", feishu_app_secret: "app-replacement",
+      observability: { enabled: false, base_url: "https://saved.langfuse.test", sample_rate: 0.5 },
+    });
+  });
+
+  it("saves Langfuse edits using saved Agent values without its draft credential", () => {
+    expect(buildAgentSectionUpdate(replacements, saved, "langfuse")).toEqual({
+      enabled: false, default_workspace_id: null, agent_model: "saved-model",
+      agent_reasoning_effort: "medium", feishu_app_id: "cli_saved",
+      observability: {
+        enabled: true, base_url: "https://cloud.langfuse.com", sample_rate: 0.25,
+        public_key: "public-replacement", secret_key: "secret-replacement", clear_credentials: true,
       },
     });
   });

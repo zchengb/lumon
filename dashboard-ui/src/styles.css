@@ -1418,7 +1418,14 @@ code {
 }
 
 .agent-settings-actions {
+  padding: 24px 0 0;
+}
+
+.agent-settings-fields {
+  min-width: 0;
+  margin: 0;
   padding: 0;
+  border: 0;
 }
 
 .text-input:disabled {

@@ -1,4 +1,6 @@
-import type { AgentSettingsUpdate, AgentReasoningEffort } from "../../shared/types";
+import type { AgentSettings, AgentSettingsUpdate, AgentReasoningEffort } from "../../shared/types";
+
+export type AgentSettingsSection = "agent" | "langfuse";
 
 export interface AgentSettingsDraft {
   enabled: boolean;
@@ -35,4 +37,30 @@ export function buildAgentSettingsUpdate(draft: AgentSettingsDraft): AgentSettin
   };
   if (draft.feishuAppSecret.trim()) update.feishu_app_secret = draft.feishuAppSecret.trim();
   return update;
+}
+
+export function buildAgentSectionUpdate(
+  draft: AgentSettingsDraft,
+  settings: AgentSettings,
+  section: AgentSettingsSection,
+): AgentSettingsUpdate {
+  const update = buildAgentSettingsUpdate(draft);
+  if (section === "agent") {
+    return {
+      ...update,
+      observability: {
+        enabled: settings.observability.enabled,
+        base_url: settings.observability.base_url,
+        sample_rate: settings.observability.sample_rate,
+      },
+    };
+  }
+  return {
+    enabled: settings.enabled,
+    default_workspace_id: settings.default_workspace_id,
+    agent_model: settings.agent_model,
+    agent_reasoning_effort: settings.agent_reasoning_effort,
+    feishu_app_id: settings.feishu_app_id,
+    observability: update.observability,
+  };
 }

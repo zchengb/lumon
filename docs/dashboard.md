@@ -114,7 +114,12 @@ Langfuse content capture is always enabled when observability is enabled. Lumon
 redacts credentials client-side before sending prompt and response content, and
 the Dashboard does not expose a content capture switch.
 
-Saving the page updates the on-disk configuration. Restart Agent with
+Agent and Langfuse each have a Save button inside their panel. Each button saves
+only that panel's edits; unsaved edits in the other panel are preserved. Both
+buttons are disabled while a save is pending to serialize updates to the shared
+configuration. A failed save keeps the draft available for retry.
+
+Saving a panel updates the on-disk configuration. Restart Agent with
 `lumon agent stop` and `lumon agent start --background` for the running process
 to load the new settings.
 
