@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -27,6 +28,7 @@ DEFAULT_AUTO_SCAN_DESCRIPTION = (
     "Keep the review evidence-based and report-only."
 )
 _HOOK_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9._:-]{0,63}\Z")
+_UNSUPPORTED_PROMPT_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _FLOW_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 _CRON_FIELD_PATTERN = re.compile(
     r"(?:\*|\*/[1-9][0-9]*|[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*)\Z"
@@ -271,11 +273,7 @@ def _parse_settings(
     if len(workflow_description.strip()) > 8_000:
         raise PreflightError(f"Auto Scan workflow_description is too long: {source}")
     try:
-        scan_hooks = normalize_trigger_hooks(
-            auto_scan.get("trigger_hooks", DEFAULT_AUTO_SCAN_HOOKS),
-            allow_empty=True,
-            label="Auto Scan",
-        )
+        scan_hooks = _normalize_scan_hooks(auto_scan.get("trigger_hooks", DEFAULT_AUTO_SCAN_HOOKS))
         scan_schedule = validate_schedule_expression(
             auto_scan.get("schedule_expression", DEFAULT_AUTO_SCAN_SCHEDULE),
             label="Auto Scan",
@@ -373,11 +371,40 @@ def _render(settings: WorkspaceSettings) -> str:
 
 
 def _toml_string(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _toml_array(values: tuple[str, ...]) -> str:
     return "[" + ", ".join(_toml_string(value) for value in values) + "]"
+
+
+def _normalize_scan_hooks(values: object) -> tuple[str, ...]:
+    """Accept bounded Agent instructions while retaining legacy hook IDs."""
+
+    candidates: tuple[object, ...]
+    if isinstance(values, str):
+        candidates = (values,)
+    elif isinstance(values, list):
+        candidates = tuple(cast(list[object], values))
+    elif isinstance(values, tuple):
+        candidates = tuple(cast(tuple[object, ...], values))
+    else:
+        raise InvalidInputError("Auto Scan completion hooks must be text or a list of strings.")
+
+    normalized: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            raise InvalidInputError("Auto Scan completion hooks must be strings.")
+        if _UNSUPPORTED_PROMPT_CHARACTERS.search(candidate):
+            raise InvalidInputError(
+                "Auto Scan completion hooks contain unsupported control characters."
+            )
+        instruction = candidate.replace("\r\n", "\n").replace("\r", "\n").strip()
+        if instruction and instruction not in normalized:
+            normalized.append(instruction)
+    if len("\n".join(normalized)) > 8_000:
+        raise InvalidInputError("Auto Scan completion hooks must not exceed 8000 characters.")
+    return tuple(normalized)
 
 
 def normalize_trigger_hooks(
@@ -444,11 +471,7 @@ def _validate_auto_scan(settings: AutoScanSettings) -> None:
         raise InvalidInputError("Auto Scan workflow_description must not be empty.")
     if len(settings.workflow_description) > 8_000:
         raise InvalidInputError("Auto Scan workflow_description is too long.")
-    normalize_trigger_hooks(
-        settings.trigger_hooks,
-        allow_empty=True,
-        label="Auto Scan",
-    )
+    _normalize_scan_hooks(settings.trigger_hooks)
     validate_schedule_expression(settings.schedule_expression, label="Auto Scan")
 
 

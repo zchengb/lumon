@@ -6,6 +6,66 @@ import { I18nProvider } from "../../shared/i18n";
 import type { ScanFinding, ScanRun, WorkspaceSettings } from "../../shared/types";
 import { AutoScanPage } from "./AutoScanPage";
 
+it.each(["en", "zh-CN", "zh-TW"] as const)("saves a multiline completion prompt and supports clearing it in %s", async (locale) => {
+  const settings: WorkspaceSettings = {
+    workspace_id: "workspace-id",
+    feishu_webhook: { enabled: true, configured: true, masked_url: null },
+    auto_delivery: { enabled: false, trigger_hooks: [], schedule_expression: "*/5 * * * *" },
+    auto_scan: { enabled: true, trigger_hooks: ["twg.create_bug", "mail.scan_done"], schedule_expression: "0 12 * * 1-5", lookback_days: 7, workflow_description: "Review confirmed bugs only." },
+  };
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const listScans = vi.spyOn(dashboardApi, "listScans").mockResolvedValue([]);
+  const onSave = vi.fn().mockResolvedValue(true);
+  const onDirtyChange = vi.fn();
+  const onError = vi.fn();
+  const prompt = "Create verified Jira Bugs.\n\n1. Reuse duplicates.\n2. Include code evidence.";
+  try {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    localStorage.setItem("lumon.locale", locale);
+    const render = async (next: WorkspaceSettings) => act(async () => root.render(<I18nProvider><AutoScanPage
+      workspaceId={next.workspace_id} settings={next} onSave={onSave} onDirtyChange={onDirtyChange} onError={onError}
+    /></I18nProvider>));
+    await render(settings);
+    const field = container.querySelector<HTMLTextAreaElement>("#auto-scan-hooks")!;
+    const save = container.querySelector<HTMLButtonElement>(".settings-actions button")!;
+    expect(field.value).toBe("twg.create_bug\nmail.scan_done");
+    expect(field.maxLength).toBe(8000);
+    expect(field.getAttribute("aria-describedby")).toBe("auto-scan-hooks-help");
+    expect(save.disabled).toBe(true);
+
+    const fill = async (text: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, text);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await fill(prompt);
+    await act(async () => save.click());
+    expect(onSave).toHaveBeenLastCalledWith({
+      feishu_webhook: { enabled: true },
+      auto_scan: { ...settings.auto_scan, trigger_hooks: [prompt] },
+    });
+    await render({ ...settings, auto_scan: { ...settings.auto_scan, trigger_hooks: [prompt] } });
+    expect(field.value).toBe(prompt);
+    expect(save.disabled).toBe(true);
+
+    await fill(" \n ");
+    await act(async () => save.click());
+    expect(onSave).toHaveBeenLastCalledWith({
+      feishu_webhook: { enabled: true },
+      auto_scan: { ...settings.auto_scan, trigger_hooks: [] },
+    });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    listScans.mockRestore();
+    vi.unstubAllGlobals();
+    localStorage.removeItem("lumon.locale");
+  }
+});
+
 it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with severity counts and readable durations in %s", async (locale) => {
   const durations: Array<[number | null, string]> = [
     [null, "—"],

@@ -193,6 +193,16 @@ output.
 
 ## Auto Scan history
 
+The **Completion hooks** field accepts a multiline Agent prompt (up to 8000
+characters), saved only for the current Workspace. The review remains read-only;
+these instructions run in a separate Agent turn after report generation when
+there are findings. Existing hook IDs remain supported through Workspace
+capabilities. New Workspaces default to empty hooks (`trigger_hooks = []`), with
+no preset completion prompt. Empty hooks keep scans report-only; users opt in by
+configuring instructions separately for each Workspace.
+Editing this prompt does not reload the scheduled job or interrupt an active scan;
+the next scan loads the saved instructions.
+
 The **Auto Scan** page shows one **Scan history** heading, finding counts by
 severity (High, Medium, Low), and elapsed time as minutes and seconds, such as
 `15m34s`. Empty findings and unfinished durations display a dash.

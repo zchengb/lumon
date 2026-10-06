@@ -11,6 +11,7 @@ import pytest
 from lumon.errors import InvalidInputError, PreflightError
 from lumon.workspace.settings import (
     AutoDeliverySettings,
+    AutoScanSettings,
     FeishuWebhookSettings,
     FlowScheduleSettings,
     WorkspaceSettings,
@@ -56,6 +57,60 @@ def test_auto_delivery_settings_round_trip_trigger_hooks_and_schedule(tmp_path: 
     store.save(expected)
 
     assert store.load(workspace_id).auto_delivery == expected.auto_delivery
+
+
+@pytest.mark.parametrize(
+    "hooks",
+    [
+        (),
+        ("twg.create_bug", "mail.scan_done"),
+        (
+            'Create Jira Bugs after scanning.\n\nInclude "code evidence" '
+            "and paths like src\\app.py.\n保留原始證據。",
+        ),
+    ],
+)
+def test_auto_scan_completion_instructions_round_trip(
+    tmp_path: Path, hooks: tuple[str, ...]
+) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "lumon")
+    workspace_id = uuid4()
+    expected = WorkspaceSettings(workspace_id, auto_scan=AutoScanSettings(trigger_hooks=hooks))
+
+    store.save(expected)
+
+    assert store.load(workspace_id) == expected
+    assert store.load(uuid4()).auto_scan.trigger_hooks == ()
+    assert stat.S_IMODE(store.path_for(workspace_id).stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("prompt", ["x" * 8001, "private-prompt\x00", "private-prompt\x7f"])
+def test_auto_scan_rejects_unsafe_prompts_without_echoing_them(tmp_path: Path, prompt: str) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "lumon")
+    workspace_id = uuid4()
+    store.save(WorkspaceSettings(workspace_id))
+    snapshot = store.path_for(workspace_id).read_bytes()
+
+    with pytest.raises(InvalidInputError) as error:
+        store.save(
+            WorkspaceSettings(workspace_id, auto_scan=AutoScanSettings(trigger_hooks=(prompt,)))
+        )
+
+    assert prompt not in str(error.value)
+    assert store.path_for(workspace_id).read_bytes() == snapshot
+
+
+def test_auto_delivery_still_requires_hook_ids_not_prompts(tmp_path: Path) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "lumon")
+    with pytest.raises(InvalidInputError, match="trigger hook ID"):
+        store.save(
+            WorkspaceSettings(
+                uuid4(),
+                auto_delivery=AutoDeliverySettings(
+                    trigger_hooks=("Create a Jira Bug after scanning.",),
+                ),
+            )
+        )
 
 
 def test_flow_schedules_round_trip_and_old_profiles_default_to_unscheduled(

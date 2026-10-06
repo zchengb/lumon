@@ -83,6 +83,20 @@ def test_initialize_empty_workspace_uses_explicit_name(
     )
 
 
+def test_new_workspace_keeps_auto_scan_completion_hooks_empty(
+    initializer: WorkspaceInitializer, tmp_path: Path
+) -> None:
+    target = tmp_path / "report-only"
+    initializer.initialize(InitRequest(target))
+    workspace_id = initializer.registry.list()[0].workspace_id
+
+    assert initializer.settings_store.load(workspace_id).auto_scan.trigger_hooks == ()
+
+    initializer.initialize(InitRequest(target))
+
+    assert initializer.settings_store.load(workspace_id).auto_scan.trigger_hooks == ()
+
+
 def test_dry_run_does_not_create_workspace_or_skill_directory(
     initializer: WorkspaceInitializer, skills_root: Path, tmp_path: Path
 ) -> None:

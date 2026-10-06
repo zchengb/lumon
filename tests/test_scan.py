@@ -40,8 +40,14 @@ class _FakeRunner:
     display_name = "Fake Agent"
     executable = "fake-agent"
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, has_findings: bool = True, hook_result: AgentResult | None = None
+    ) -> None:
         self.prompts: list[str] = []
+        self.has_findings = has_findings
+        self.hook_result = hook_result or AgentResult(
+            status="succeeded", final_text="TWG hook completed"
+        )
 
     def is_available(self) -> bool:
         return True
@@ -62,7 +68,12 @@ class _FakeRunner:
         del agent_session_id, images, on_progress, on_event
         self.prompts.append(prompt)
         if "Configured completion hooks:" in prompt:
-            return AgentResult(status="succeeded", final_text="TWG hook completed")
+            run_json = next(workspace.rglob("run.json"))
+            receipt = json.loads(run_json.read_text(encoding="utf-8"))
+            assert receipt["state"] == "running"
+            assert receipt["phase"] == "hooks"
+            assert (run_json.parent / "report.html").is_file()
+            return self.hook_result
 
         run_json = next(workspace.rglob("run.json"))
         (run_json.parent / "scan-result.json").write_text(
@@ -83,7 +94,9 @@ class _FakeRunner:
                             "code_snippet": "return password: secret-value",
                             "suggestion": "Restore the guarded branch.",
                         }
-                    ],
+                    ]
+                    if self.has_findings
+                    else [],
                     "failures": [],
                 },
                 ensure_ascii=False,
@@ -167,6 +180,13 @@ def test_scan_run_store_round_trip_and_artifact_guard(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("notification_fails", [False, True])
 @pytest.mark.parametrize(
+    "hook",
+    [
+        "twg.create_bug",
+        "Create verified Jira Bugs.\n\nReuse duplicate cards and include scan evidence.",
+    ],
+)
+@pytest.mark.parametrize(
     "webhook_change", ["unchanged", "replaced", "enabled", "disabled", "cleared"]
 )
 def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
@@ -174,6 +194,7 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     monkeypatch: pytest.MonkeyPatch,
     notification_fails: bool,
     webhook_change: str,
+    hook: str,
 ) -> None:
     state_root = tmp_path / "state"
     registry = WorkspaceRegistry(state_root)
@@ -193,7 +214,7 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
             ),
             auto_scan=AutoScanSettings(
                 enabled=True,
-                trigger_hooks=("twg.create_bug",),
+                trigger_hooks=(hook,),
             ),
         )
     )
@@ -282,7 +303,9 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     assert service.list_runs(workspace)[0].hook_results == result.hook_results
     assert len(runner.prompts) == 2
     assert "scan-result.json" in runner.prompts[0]
-    assert "twg.create_bug" in runner.prompts[1]
+    assert hook in runner.prompts[1]
+    assert "Configured completion hooks:" not in runner.prompts[0]
+    assert f"Scan run ID: {result.run_id}" in runner.prompts[1]
 
 
 def _scan_service(
@@ -308,6 +331,69 @@ def _scan_service(
     )
     service = ScanService(state_root=state_root, registry=registry, runner=runner)
     return service, workspace, workspace_id
+
+
+@pytest.mark.parametrize("has_findings", [True, False])
+@pytest.mark.parametrize("configured", [True, False])
+def test_completion_prompt_is_skipped_without_findings_or_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_findings: bool, configured: bool
+) -> None:
+    runner = _FakeRunner(has_findings=has_findings)
+    service, _, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    prompt = "Create verified Bugs for these findings only."
+    service.settings_store.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_scan=AutoScanSettings(
+                trigger_hooks=(prompt,) if configured else (),
+            ),
+        )
+    )
+
+    def fake_pdf(html_path: Path, pdf_path: Path) -> None:
+        del html_path
+        pdf_path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr("lumon.scan.report._convert_via_chrome", fake_pdf)
+
+    result = service.run(workspace_id, force=True)
+
+    assert result.state is not ScanState.FAILED
+    assert len(runner.prompts) == (2 if configured and has_findings else 1)
+    if not configured or not has_findings:
+        assert not any(entry.startswith("completed:") for entry in result.hook_results)
+
+
+def test_completion_prompt_failure_preserves_report_and_failed_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _FakeRunner(
+        hook_result=AgentResult(status="failed", failure_diagnostic="Jira denied access")
+    )
+    service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    service.settings_store.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_scan=AutoScanSettings(
+                trigger_hooks=("Create verified Jira Bugs after the report.",),
+            ),
+        )
+    )
+
+    def fake_pdf(html_path: Path, pdf_path: Path) -> None:
+        del html_path
+        pdf_path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr("lumon.scan.report._convert_via_chrome", fake_pdf)
+
+    result = service.run(workspace_id, force=True)
+
+    assert result.state is ScanState.COMPLETED_WITH_FAILURES
+    assert result.html_path == "report.html"
+    assert result.findings
+    assert result.hook_results[0] == "failed: Jira denied access"
+    assert result.failures == ("failed: Jira denied access",)
+    assert service.run_store.load(workspace, result.run_id) == result
 
 
 @pytest.mark.parametrize("phase", ["review", "report", "hooks"])

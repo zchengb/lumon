@@ -1116,7 +1116,9 @@ def test_settings_updates_do_not_reload_unchanged_automation_schedules(
     if automation == "auto_scan":
         execution_settings = {
             "lookback_days": 14,
-            "trigger_hooks": ["twg.create_bug"],
+            "trigger_hooks": [
+                "Create verified Jira Bugs.\n\nReuse duplicates; include scan evidence."
+            ],
             "workflow_description": "Review confirmed bugs only.",
         }
     updated = client.put(
@@ -1267,6 +1269,51 @@ def test_auto_scan_settings_and_history_are_available_from_dashboard(
         "workflow_description": "Create a bug through the Workspace completion hook.",
     }
     assert client.get(f"/api/workspaces/{workspace_id}/scans").json() == []
+
+
+def test_completion_prompt_saves_only_to_selected_workspace(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    workspace_ids = [
+        client.post(
+            "/api/workspaces/initialize",
+            json={
+                "path": str(tmp_path / name),
+                "repositories": [],
+            },
+        ).json()["workspace_id"]
+        for name in ("first", "second")
+    ]
+    endpoint = f"/api/workspaces/{workspace_ids[0]}/settings"
+    prompt = 'Create verified Jira Bugs.\n\nInclude "code evidence" and reuse duplicates.'
+
+    saved = client.put(
+        endpoint,
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_scan": {"enabled": False, "lookback_days": 7, "trigger_hooks": [prompt]},
+        },
+    )
+
+    assert saved.status_code == 200
+    assert client.get(endpoint).json()["auto_scan"]["trigger_hooks"] == [prompt]
+    assert (
+        client.get(f"/api/workspaces/{workspace_ids[1]}/settings").json()["auto_scan"][
+            "trigger_hooks"
+        ]
+        == []
+    )
+    assert AutoScanSettings().trigger_hooks == ()
+
+    rejected = client.put(
+        endpoint,
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_scan": {"enabled": False, "lookback_days": 7, "trigger_hooks": ["x" * 8001]},
+        },
+    )
+    assert rejected.status_code == 422
+    assert client.get(endpoint).json()["auto_scan"]["trigger_hooks"] == [prompt]
 
 
 @pytest.mark.parametrize(

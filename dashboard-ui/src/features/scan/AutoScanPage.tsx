@@ -86,7 +86,7 @@ export function AutoScanPage({
         auto_scan: {
           enabled,
           lookback_days: Number(lookbackDays),
-          trigger_hooks: hooks.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+          trigger_hooks: hooks.trim() ? [hooks.trim()] : [],
           schedule_expression: scheduleExpression.trim(),
           workflow_description: description.trim(),
         },
@@ -152,8 +152,8 @@ export function AutoScanPage({
             </div>
             <div className="field-full">
               <label className="field-label" htmlFor="auto-scan-hooks">{t("settings.autoScanHooks")}</label>
-              <textarea id="auto-scan-hooks" className="text-input text-area mono" rows={3} value={hooks} placeholder="twg.create_bug" onChange={(event) => { setHooks(event.target.value); markDirty(); }} />
-              <p className="field-help">{t("settings.autoScanHooksHelp")}</p>
+              <textarea id="auto-scan-hooks" className="text-input text-area" rows={6} maxLength={8000} value={hooks} aria-describedby="auto-scan-hooks-help" placeholder={t("settings.autoScanHooksPlaceholder")} onChange={(event) => { setHooks(event.target.value); markDirty(); }} />
+              <p id="auto-scan-hooks-help" className="field-help">{t("settings.autoScanHooksHelp")}</p>
             </div>
             <div className="field-full">
               <label className="field-label" htmlFor="auto-scan-description">{t("settings.autoScanDescriptionLabel")}</label>
