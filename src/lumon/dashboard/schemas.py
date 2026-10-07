@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from lumon.agents.agent.config import AGENT_REASONING_EFFORT_PATTERN
+from lumon.delivery.model import DeliveryPollState, DeliveryState
 from lumon.tools.codex_status import CodexCliUpdateStatus
 
 
@@ -180,6 +182,48 @@ class AutoDeliveryResponse(StrictModel):
     enabled: bool
     trigger_hooks: list[str]
     schedule_expression: str
+
+
+class DeliveryRunResponse(StrictModel):
+    """A safe Story receipt with human-readable timing in the client."""
+
+    run_id: str
+    story_key: str
+    story_title: str
+    state: DeliveryState
+    phase: str
+    started_at: datetime
+    finished_at: datetime | None
+    jira_url: str | None
+    repository: str | None
+    branch: str | None
+    pull_request_url: str | None
+    verification_summary: str | None
+    detail: str | None
+    reason: str | None
+    poll_id: str | None
+    duration_seconds: int | None
+
+
+class DeliveryPollResponse(StrictModel):
+    run_id: str
+    state: DeliveryPollState
+    phase: str
+    started_at: datetime
+    finished_at: datetime | None
+    detail: str
+    duration_seconds: int | None
+
+
+class DeliveryHistoryResponse(StrictModel):
+    runs: list[DeliveryRunResponse]
+    polls: list[DeliveryPollResponse]
+
+
+class DeliveryActivityResponse(StrictModel):
+    at: datetime
+    phase: str
+    detail: str
 
 
 class AutoScanResponse(StrictModel):

@@ -246,7 +246,8 @@ def _parse_settings(
         raise PreflightError(f"Invalid Auto Delivery enabled value: {source}")
     try:
         trigger_hooks = normalize_trigger_hooks(
-            auto_delivery.get("trigger_hooks", DEFAULT_AUTO_DELIVERY_HOOKS)
+            auto_delivery.get("trigger_hooks", DEFAULT_AUTO_DELIVERY_HOOKS),
+            allow_empty=not auto_delivery_enabled,
         )
         schedule_expression = validate_schedule_expression(
             auto_delivery.get("schedule_expression", DEFAULT_AUTO_DELIVERY_SCHEDULE)
@@ -273,7 +274,10 @@ def _parse_settings(
     if len(workflow_description.strip()) > 8_000:
         raise PreflightError(f"Auto Scan workflow_description is too long: {source}")
     try:
-        scan_hooks = _normalize_scan_hooks(auto_scan.get("trigger_hooks", DEFAULT_AUTO_SCAN_HOOKS))
+        scan_hooks = _normalize_hook_instructions(
+            auto_scan.get("trigger_hooks", DEFAULT_AUTO_SCAN_HOOKS),
+            label="Auto Scan completion hooks",
+        )
         scan_schedule = validate_schedule_expression(
             auto_scan.get("schedule_expression", DEFAULT_AUTO_SCAN_SCHEDULE),
             label="Auto Scan",
@@ -378,7 +382,7 @@ def _toml_array(values: tuple[str, ...]) -> str:
     return "[" + ", ".join(_toml_string(value) for value in values) + "]"
 
 
-def _normalize_scan_hooks(values: object) -> tuple[str, ...]:
+def _normalize_hook_instructions(values: object, *, label: str) -> tuple[str, ...]:
     """Accept bounded Agent instructions while retaining legacy hook IDs."""
 
     candidates: tuple[object, ...]
@@ -389,21 +393,19 @@ def _normalize_scan_hooks(values: object) -> tuple[str, ...]:
     elif isinstance(values, tuple):
         candidates = tuple(cast(tuple[object, ...], values))
     else:
-        raise InvalidInputError("Auto Scan completion hooks must be text or a list of strings.")
+        raise InvalidInputError(f"{label} must be text or a list of strings.")
 
     normalized: list[str] = []
     for candidate in candidates:
         if not isinstance(candidate, str):
-            raise InvalidInputError("Auto Scan completion hooks must be strings.")
+            raise InvalidInputError(f"{label} must be strings.")
         if _UNSUPPORTED_PROMPT_CHARACTERS.search(candidate):
-            raise InvalidInputError(
-                "Auto Scan completion hooks contain unsupported control characters."
-            )
+            raise InvalidInputError(f"{label} contain unsupported control characters.")
         instruction = candidate.replace("\r\n", "\n").replace("\r", "\n").strip()
         if instruction and instruction not in normalized:
             normalized.append(instruction)
     if len("\n".join(normalized)) > 8_000:
-        raise InvalidInputError("Auto Scan completion hooks must not exceed 8000 characters.")
+        raise InvalidInputError(f"{label} must not exceed 8000 characters.")
     return tuple(normalized)
 
 
@@ -413,32 +415,16 @@ def normalize_trigger_hooks(
     allow_empty: bool = False,
     label: str = "Auto Delivery",
 ) -> tuple[str, ...]:
-    """Normalize declarative trigger IDs without accepting executable input."""
+    """Accept Agent instructions while preserving legacy newline-separated hook IDs."""
 
-    candidates: tuple[object, ...]
-    if isinstance(values, str):
-        candidates = tuple(values.splitlines())
-    elif isinstance(values, list):
-        candidates = tuple(cast(list[object], values))
-    elif isinstance(values, tuple):
-        candidates = tuple(cast(tuple[object, ...], values))
-    else:
-        raise InvalidInputError(f"{label} trigger_hooks must be a list of IDs.")
-
-    normalized: list[str] = []
-    for candidate in candidates:
-        if not isinstance(candidate, str):
-            raise InvalidInputError(f"{label} trigger hooks must be strings.")
-        hook = candidate.strip()
-        if not hook:
-            continue
-        if not _HOOK_ID_PATTERN.fullmatch(hook):
-            raise InvalidInputError(f"Invalid {label} trigger hook ID: {hook!r}.")
-        if hook not in normalized:
-            normalized.append(hook)
+    if isinstance(values, str) and not _UNSUPPORTED_PROMPT_CHARACTERS.search(values):
+        lines = values.splitlines()
+        if all(_HOOK_ID_PATTERN.fullmatch(line.strip()) for line in lines if line.strip()):
+            values = lines
+    normalized = _normalize_hook_instructions(values, label=f"{label} trigger hooks")
     if not normalized and not allow_empty:
-        raise InvalidInputError(f"{label} requires at least one trigger hook.")
-    return tuple(normalized)
+        raise InvalidInputError(f"{label} requires a trigger prompt or legacy hook ID.")
+    return normalized
 
 
 def validate_schedule_expression(value: object, *, label: str = "Auto Delivery") -> str:
@@ -458,7 +444,7 @@ def validate_schedule_expression(value: object, *, label: str = "Auto Delivery")
 def _validate_auto_delivery(settings: AutoDeliverySettings) -> None:
     """Validate all values that control a scheduled Auto Delivery poll."""
 
-    normalize_trigger_hooks(settings.trigger_hooks)
+    normalize_trigger_hooks(settings.trigger_hooks, allow_empty=not settings.enabled)
     validate_schedule_expression(settings.schedule_expression)
 
 
@@ -471,7 +457,7 @@ def _validate_auto_scan(settings: AutoScanSettings) -> None:
         raise InvalidInputError("Auto Scan workflow_description must not be empty.")
     if len(settings.workflow_description) > 8_000:
         raise InvalidInputError("Auto Scan workflow_description is too long.")
-    _normalize_scan_hooks(settings.trigger_hooks)
+    _normalize_hook_instructions(settings.trigger_hooks, label="Auto Scan completion hooks")
     validate_schedule_expression(settings.schedule_expression, label="Auto Scan")
 
 

@@ -9,6 +9,8 @@ import type {
   ChatInteractionPage,
   ChatKind,
   CodexCliStatus,
+  DeliveryActivity,
+  DeliveryHistory,
   FlowDocument,
   FlowSummary,
   InitializeWorkspaceRequest,
@@ -68,6 +70,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dashboardApi = {
+  getDeliveryHistory(workspaceId: string): Promise<DeliveryHistory> {
+    return request<DeliveryHistory>(`/api/workspaces/${workspaceId}/deliveries`, { cache: "no-store" });
+  },
+
+  getDeliveryActivity(workspaceId: string, runId: string): Promise<DeliveryActivity[]> {
+    return request<DeliveryActivity[]>(`/api/workspaces/${workspaceId}/deliveries/${encodeURIComponent(runId)}/activity`, { cache: "no-store" });
+  },
   getBootstrap(): Promise<BootstrapState> {
     return request<BootstrapState>("/api/bootstrap");
   },

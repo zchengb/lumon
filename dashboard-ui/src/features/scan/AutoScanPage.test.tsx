@@ -28,6 +28,9 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("saves a multiline completion prompt 
       workspaceId={next.workspace_id} settings={next} onSave={onSave} onDirtyChange={onDirtyChange} onError={onError}
     /></I18nProvider>));
     await render(settings);
+    const description = container.querySelector<HTMLTextAreaElement>("#auto-scan-description")!;
+    expect(description.value).toBe(settings.auto_scan.workflow_description);
+    expect(description.parentElement?.querySelector(".field-help")).toBeNull();
     const field = container.querySelector<HTMLTextAreaElement>("#auto-scan-hooks")!;
     const save = container.querySelector<HTMLButtonElement>(".settings-actions button")!;
     expect(field.value).toBe("twg.create_bug\nmail.scan_done");

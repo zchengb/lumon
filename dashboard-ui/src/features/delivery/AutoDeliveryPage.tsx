@@ -2,17 +2,20 @@ import { LoaderCircle, Rocket, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../shared/i18n";
 import type { SettingsUpdate, WorkspaceSettings } from "../../shared/types";
+import { DeliveryHistoryPanel } from "./DeliveryHistoryPanel";
 
 interface AutoDeliveryPageProps {
   settings: WorkspaceSettings;
   onSave: (update: SettingsUpdate) => Promise<boolean>;
   onDirtyChange: (dirty: boolean) => void;
+  onError: (message: string | null) => void;
 }
 
 export function AutoDeliveryPage({
   settings,
   onSave,
   onDirtyChange,
+  onError,
 }: AutoDeliveryPageProps): React.JSX.Element {
   const { t } = useI18n();
   const [enabled, setEnabled] = useState(settings.auto_delivery.enabled);
@@ -50,7 +53,7 @@ export function AutoDeliveryPage({
         feishu_webhook: { enabled: settings.feishu_webhook.enabled },
         auto_delivery: {
           enabled,
-          trigger_hooks: triggerHooks.split(/\r?\n/).map((hook) => hook.trim()).filter(Boolean),
+          trigger_hooks: triggerHooks.trim() ? [triggerHooks.trim()] : [],
           schedule_expression: scheduleExpression.trim(),
         },
       });
@@ -116,13 +119,15 @@ export function AutoDeliveryPage({
               </label>
               <textarea
                 id="auto-delivery-hooks"
-                className="text-input text-area mono"
-                rows={3}
+                className="text-input text-area"
+                rows={6}
+                maxLength={8000}
                 value={triggerHooks}
-                placeholder="jira.delivery_ready"
+                aria-describedby="auto-delivery-hooks-help"
+                placeholder={t("settings.autoDeliveryHooksPlaceholder")}
                 onChange={(event) => { setTriggerHooks(event.target.value); markDirty(); }}
               />
-              <p className="field-help">{t("settings.autoDeliveryHooksHelp")}</p>
+              <p id="auto-delivery-hooks-help" className="field-help">{t("settings.autoDeliveryHooksHelp")}</p>
             </div>
           </div>
         </div>
@@ -132,6 +137,7 @@ export function AutoDeliveryPage({
           </button>
         </div>
       </section>
+      <DeliveryHistoryPanel key={settings.workspace_id} workspaceId={settings.workspace_id} onError={onError} />
     </div>
   );
 }

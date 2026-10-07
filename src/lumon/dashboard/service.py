@@ -24,7 +24,9 @@ from lumon.dashboard.chat_history import (
     ChatKind,
 )
 from lumon.dashboard.folder_picker import FolderPicker
-from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler
+from lumon.delivery.model import DeliveryActivity, DeliveryPoll, DeliveryRun
+from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler, delivery_lock
+from lumon.delivery.service import DeliveryService
 from lumon.errors import (
     AgentConfigError,
     InvalidInputError,
@@ -304,6 +306,7 @@ class DashboardService:
             settings_store=self.settings_store,
             agent_config_store=self.agent_config_store,
         )
+        self.delivery_service = DeliveryService(settings_store=self.settings_store)
 
     def list_workspaces(self) -> tuple[WorkspaceListItem, ...]:
         """Return registered Workspaces without scanning unregistered directories."""
@@ -395,6 +398,38 @@ class DashboardService:
 
         registration = self._require(workspace_id)
         return self.scan_service.list_runs(registration.path)
+
+    def deliveries(
+        self, workspace_id: UUID
+    ) -> tuple[tuple[DeliveryRun, ...], tuple[DeliveryPoll, ...]]:
+        """Read Story history and scheduled checks without disrupting active work."""
+
+        workspace = self._require(workspace_id).path
+        with delivery_lock(self.registry.layout.root, workspace_id, skip_if_busy=True) as acquired:
+            if acquired:
+                self.delivery_service.recover_interrupted_polls(workspace, workspace_id)
+            store = self.delivery_service.run_store
+            runs = tuple(
+                run for run in store.list(workspace) if run.workspace_id in {None, workspace_id}
+            )
+            polls = tuple(
+                poll for poll in store.list_polls(workspace) if poll.workspace_id == workspace_id
+            )
+            return runs[:50], polls[:50]
+
+    def delivery_activity(self, workspace_id: UUID, run_id: str) -> tuple[DeliveryActivity, ...]:
+        """Read summaries only for a recorded run in the selected Workspace."""
+
+        workspace = self._require(workspace_id).path
+        store = self.delivery_service.run_store
+        directory = store.path_for(workspace, run_id)
+        if (directory / "poll.json").is_file():
+            owner = store.load_poll(workspace, run_id).workspace_id
+        else:
+            owner = store.load(workspace, run_id).workspace_id
+        if owner not in {None, workspace_id}:
+            raise PreflightError("Delivery record does not belong to this Workspace.")
+        return store.activity(workspace, run_id)
 
     def chat_conversations(
         self,

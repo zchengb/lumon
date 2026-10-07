@@ -42,14 +42,27 @@ def test_settings_round_trip_is_typed_and_owner_only(tmp_path: Path) -> None:
     )
 
 
-def test_auto_delivery_settings_round_trip_trigger_hooks_and_schedule(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "hooks",
+    [
+        ("jira.delivery_ready", "mail.delivery_ready"),
+        (
+            'Check approved Stories.\n\nInclude "verification" and paths like src\\app.py.\n'
+            "保留原始證據。",
+        ),
+        ("x" * 8000,),
+    ],
+)
+def test_auto_delivery_settings_round_trip_trigger_hooks_and_schedule(
+    tmp_path: Path, hooks: tuple[str, ...]
+) -> None:
     store = WorkspaceSettingsStore(tmp_path / "lumon")
     workspace_id = uuid4()
     expected = WorkspaceSettings(
         workspace_id,
         auto_delivery=AutoDeliverySettings(
             enabled=True,
-            trigger_hooks=("jira.delivery_ready", "mail.delivery_ready"),
+            trigger_hooks=hooks,
             schedule_expression="0 9 * * 1-5",
         ),
     )
@@ -85,32 +98,46 @@ def test_auto_scan_completion_instructions_round_trip(
 
 
 @pytest.mark.parametrize("prompt", ["x" * 8001, "private-prompt\x00", "private-prompt\x7f"])
-def test_auto_scan_rejects_unsafe_prompts_without_echoing_them(tmp_path: Path, prompt: str) -> None:
+@pytest.mark.parametrize("automation", ["auto_delivery", "auto_scan"])
+def test_automation_rejects_unsafe_prompts_without_echoing_them(
+    tmp_path: Path, prompt: str, automation: str
+) -> None:
     store = WorkspaceSettingsStore(tmp_path / "lumon")
     workspace_id = uuid4()
     store.save(WorkspaceSettings(workspace_id))
     snapshot = store.path_for(workspace_id).read_bytes()
 
     with pytest.raises(InvalidInputError) as error:
-        store.save(
-            WorkspaceSettings(workspace_id, auto_scan=AutoScanSettings(trigger_hooks=(prompt,)))
+        settings = WorkspaceSettings(
+            workspace_id, auto_scan=AutoScanSettings(trigger_hooks=(prompt,))
         )
+        if automation == "auto_delivery":
+            settings = WorkspaceSettings(
+                workspace_id, auto_delivery=AutoDeliverySettings(trigger_hooks=(prompt,))
+            )
+        store.save(settings)
 
     assert prompt not in str(error.value)
     assert store.path_for(workspace_id).read_bytes() == snapshot
 
 
-def test_auto_delivery_still_requires_hook_ids_not_prompts(tmp_path: Path) -> None:
+def test_auto_delivery_empty_prompt_is_allowed_only_when_disabled(tmp_path: Path) -> None:
     store = WorkspaceSettingsStore(tmp_path / "lumon")
-    with pytest.raises(InvalidInputError, match="trigger hook ID"):
+    workspace_id = uuid4()
+    store.save(
+        WorkspaceSettings(workspace_id, auto_delivery=AutoDeliverySettings(trigger_hooks=()))
+    )
+    snapshot = store.path_for(workspace_id).read_bytes()
+
+    assert store.load(workspace_id).auto_delivery.trigger_hooks == ()
+    with pytest.raises(InvalidInputError, match="requires a trigger prompt"):
         store.save(
             WorkspaceSettings(
-                uuid4(),
-                auto_delivery=AutoDeliverySettings(
-                    trigger_hooks=("Create a Jira Bug after scanning.",),
-                ),
+                workspace_id,
+                auto_delivery=AutoDeliverySettings(enabled=True, trigger_hooks=()),
             )
         )
+    assert store.path_for(workspace_id).read_bytes() == snapshot
 
 
 def test_flow_schedules_round_trip_and_old_profiles_default_to_unscheduled(

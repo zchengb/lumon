@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import plistlib
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID
@@ -15,6 +17,30 @@ from uuid import UUID
 from lumon.errors import PreflightError
 from lumon.workspace.registry import UserStateLayout
 from lumon.workspace.settings import AutoDeliverySettings, validate_schedule_expression
+
+
+@contextmanager
+def delivery_lock(
+    state_root: Path, workspace_id: UUID, *, skip_if_busy: bool = False
+) -> Generator[bool, None, None]:
+    """Share the existing poll lock with read-side interrupted-run recovery."""
+
+    directory = state_root / "locks"
+    directory.mkdir(parents=True, exist_ok=True)
+    directory.chmod(0o700)
+    with (directory / f"delivery-{workspace_id}.lock").open("a+") as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            if not skip_if_busy:
+                raise PreflightError("Another Auto Delivery poll is already running.") from exc
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 class DeliveryScheduler(Protocol):

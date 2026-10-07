@@ -23,6 +23,10 @@ from lumon.dashboard.schemas import (
     CapabilityDocumentResponse,
     CapabilitySummaryResponse,
     CodexCliStatusResponse,
+    DeliveryActivityResponse,
+    DeliveryHistoryResponse,
+    DeliveryPollResponse,
+    DeliveryRunResponse,
     FeishuWebhookResponse,
     FeishuWebhookTestRequest,
     FlowContentRequest,
@@ -268,6 +272,32 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     )
     def workspace_settings(request: Request, workspace_id: UUID) -> WorkspaceSettingsResponse:
         return _settings_response(_service(request).settings(workspace_id))
+
+    @router.get("/workspaces/{workspace_id}/deliveries", response_model=DeliveryHistoryResponse)
+    def delivery_history(
+        request: Request, response: Response, workspace_id: UUID
+    ) -> DeliveryHistoryResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runs, polls = _service(request).deliveries(workspace_id)
+        return DeliveryHistoryResponse(
+            runs=[DeliveryRunResponse.model_validate(run, from_attributes=True) for run in runs],
+            polls=[
+                DeliveryPollResponse.model_validate(poll, from_attributes=True) for poll in polls
+            ],
+        )
+
+    @router.get(
+        "/workspaces/{workspace_id}/deliveries/{run_id}/activity",
+        response_model=list[DeliveryActivityResponse],
+    )
+    def delivery_activity(
+        request: Request, response: Response, workspace_id: UUID, run_id: str
+    ) -> list[DeliveryActivityResponse]:
+        response.headers["Cache-Control"] = "no-store"
+        return [
+            DeliveryActivityResponse.model_validate(item, from_attributes=True)
+            for item in _service(request).delivery_activity(workspace_id, run_id)
+        ]
 
     @router.get(
         "/workspaces/{workspace_id}/scans",

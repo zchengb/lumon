@@ -31,6 +31,46 @@ export interface ChatInteractionDetail {
 
 export type AgentReasoningEffort = string;
 
+export interface DeliveryRun {
+  run_id: string;
+  story_key: string;
+  story_title: string;
+  state: "running" | "completed" | "failed" | "blocked";
+  phase: string;
+  started_at: string;
+  finished_at: string | null;
+  jira_url: string | null;
+  repository: string | null;
+  branch: string | null;
+  pull_request_url: string | null;
+  verification_summary: string | null;
+  detail: string | null;
+  reason: string | null;
+  poll_id: string | null;
+  duration_seconds: number | null;
+}
+
+export interface DeliveryPoll {
+  run_id: string;
+  state: "running" | "idle" | "completed" | "failed";
+  phase: string;
+  started_at: string;
+  finished_at: string | null;
+  detail: string;
+  duration_seconds: number | null;
+}
+
+export interface DeliveryHistory {
+  runs: DeliveryRun[];
+  polls: DeliveryPoll[];
+}
+
+export interface DeliveryActivity {
+  at: string;
+  phase: string;
+  detail: string;
+}
+
 export interface AgentModel {
   model: string;
   display_name: string;

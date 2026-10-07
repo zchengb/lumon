@@ -126,6 +126,33 @@ settings. Other settings, including Feishu credentials, the default Workspace,
 and Langfuse configuration, still require `lumon agent stop` followed by
 `lumon agent start --background`.
 
+## Auto Delivery execution history
+
+Available in Lumon 1.4.13, alongside multiline Auto Delivery trigger prompts.
+
+The Auto Delivery page reuses the earlier Dashboard's **Current progress**,
+**Delivery history**, and **Scheduler activity** layout. It refreshes every
+three seconds while open and supports inspecting a recorded Story or poll.
+History is scoped to the selected Workspace and shows Jira links, phase,
+verification, PR/result, and elapsed time such as `12m13s`.
+
+Each scheduled poll saves an owner-only `poll.json` under `lumon/runs/<poll-id>`.
+Claimed Stories keep the existing `run.json` receipt under their own run ID and
+link to their parent with `poll_id`. No eligible Story is an idle poll, not a
+successful development result. `activity.json` retains the latest 200 safe
+phase/operation summaries; prompts, command lines, and raw output are excluded.
+
+The poll prompt tells the Agent to pass `--poll-id` to `lumon delivery start`,
+report `implementation`, `verification`, and `handoff` with
+`lumon delivery progress`, and record exactly one terminal outcome. A poll that
+returns without closing its claimed Story is failed, not reported as completed.
+Duplicate starts cannot overwrite a receipt. The existing Workspace poll lock
+also guards interrupted-run recovery; recovery never retries work, changes Jira,
+or sends notifications. An unknown interruption time remains unknown.
+
+Configure eligibility and delivery authorization in the current Workspace's
+trigger prompt. Lumon does not add project-specific Jira rules to presets.
+
 ## Workspace flows
 
 The Overview **Automation** panel also lists the selected Workspace's saved
@@ -172,19 +199,25 @@ than an arbitrary key-value editor.
 The **Auto Delivery** page controls the current Workspace's scheduled delivery
 poll. It stores:
 
-- one or more declarative **Trigger Hooks**, one ID per line (the default is
-  `jira.delivery_ready`);
+- a multiline **Trigger prompt** (up to 8000 characters) describing which
+  approved Stories to check, delivery conditions, and verification requirements.
+  Existing hook IDs such as the default `jira.delivery_ready` remain supported;
 - a five-field numeric cron **Schedule Expression** (the default is
   `*/5 * * * *`).
 
 When enabled on macOS, saving the page installs or updates an owner-level
 LaunchAgent named `com.lumon.delivery.<workspace-id>`. Each scheduled run
 executes `lumon delivery poll`, loads the Workspace's enabled flows and
-capabilities, and gives the configured hooks to one bounded Agent turn. A poll
+capabilities, and gives the configured prompt to one bounded Agent turn. A poll
 that finds no eligible event returns `AUTO_DELIVERY_IDLE` and makes no Delivery
 changes. An eligible event must use the existing Delivery lifecycle commands so
 the configured Feishu Webhook receives the normal started, completed, failed,
 or blocked notification.
+
+The prompt is saved only for the current Workspace, with its line breaks preserved.
+It may be cleared while Auto Delivery is disabled; enabling requires a prompt or
+legacy hook ID. Editing only the prompt does not reload the scheduled job or
+interrupt an active poll; the next poll loads the saved instructions.
 
 The scheduler currently supports interval expressions such as `*/5 * * * *`
 and fixed minute/hour expressions such as `0 9 * * 1-5`. The LaunchAgent and

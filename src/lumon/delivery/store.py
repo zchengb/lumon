@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
-from lumon.delivery.model import DeliveryEvent, DeliveryRun, DeliveryState
+from lumon.delivery.model import (
+    DeliveryActivity,
+    DeliveryEvent,
+    DeliveryPoll,
+    DeliveryPollState,
+    DeliveryRun,
+    DeliveryState,
+)
 from lumon.errors import PreflightError
 from lumon.workspace.layout import WorkspaceLayout
 
@@ -27,7 +34,13 @@ class DeliveryRunStore:
 
         if _RUN_ID.fullmatch(run_id) is None:
             raise PreflightError("Delivery run ID contains unsafe characters.")
-        return WorkspaceLayout.from_root(workspace).control_dir / "runs" / run_id
+        directory = WorkspaceLayout.from_root(workspace).control_dir / "runs" / run_id
+        # Receipts must not follow a symlink into another Workspace or user directory.
+        if directory.resolve().parent != directory.parent.resolve() or directory.is_symlink():
+            raise PreflightError("Delivery run directory is outside this Workspace.")
+        if directory.parent.resolve() != workspace.resolve() / "lumon" / "runs":
+            raise PreflightError("Delivery run directory is outside this Workspace.")
+        return directory
 
     def save(self, workspace: Path, run: DeliveryRun) -> None:
         """Atomically write the non-sensitive run receipt."""
@@ -50,6 +63,8 @@ class DeliveryRunStore:
             "pull_request_url": run.pull_request_url,
             "reason": run.reason,
             "verification_summary": run.verification_summary,
+            "detail": run.detail,
+            "poll_id": run.poll_id,
         }
         _atomic_write(directory / "run.json", payload)
 
@@ -57,11 +72,115 @@ class DeliveryRunStore:
         """Read one persisted run."""
 
         path = self.path_for(workspace, run_id) / "run.json"
+        _reject_symlink(path)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise PreflightError(f"Unable to read Delivery run: {path}") from exc
-        return _run_from_payload(payload, path)
+        run = _run_from_payload(payload, path)
+        if run.run_id != run_id:
+            raise PreflightError("Delivery receipt ID does not match its directory.")
+        return run
+
+    def list(self, workspace: Path) -> tuple[DeliveryRun, ...]:
+        """List valid Story receipts, ignoring other workflow folders."""
+
+        runs: list[DeliveryRun] = []
+        for run_id in self._run_ids(workspace):
+            try:
+                runs.append(self.load(workspace, run_id))
+            except PreflightError:
+                continue
+        return tuple(sorted(runs, key=lambda run: run.started_at, reverse=True))
+
+    def save_poll(self, workspace: Path, poll: DeliveryPoll) -> None:
+        directory = self.path_for(workspace, poll.run_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        _secure_directory(directory)
+        payload = {
+            "run_id": poll.run_id,
+            "workspace_id": str(poll.workspace_id),
+            "state": poll.state.value,
+            "started_at": poll.started_at.isoformat(),
+            "finished_at": poll.finished_at.isoformat() if poll.finished_at else None,
+            "phase": poll.phase,
+            "detail": poll.detail,
+        }
+        _atomic_write(directory / "poll.json", payload)
+
+    def load_poll(self, workspace: Path, run_id: str) -> DeliveryPoll:
+        path = self.path_for(workspace, run_id) / "poll.json"
+        _reject_symlink(path)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a poll receipt.")
+            values = cast(dict[str, object], payload)
+            poll = DeliveryPoll(
+                run_id=_required_string(values, "run_id", path),
+                workspace_id=UUID(_required_string(values, "workspace_id", path)),
+                state=DeliveryPollState(_required_string(values, "state", path)),
+                started_at=_timestamp(_required_string(values, "started_at", path)),
+                finished_at=_optional_datetime(values.get("finished_at"), path),
+                phase=_required_string(values, "phase", path),
+                detail=_optional_string(values.get("detail"), path) or "",
+            )
+            if poll.run_id != run_id:
+                raise ValueError("Poll ID does not match its directory.")
+            return poll
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            raise PreflightError(f"Unable to read Delivery poll: {path}") from exc
+
+    def list_polls(self, workspace: Path) -> tuple[DeliveryPoll, ...]:
+        polls: list[DeliveryPoll] = []
+        for run_id in self._run_ids(workspace):
+            try:
+                polls.append(self.load_poll(workspace, run_id))
+            except PreflightError:
+                continue
+        return tuple(sorted(polls, key=lambda poll: poll.started_at, reverse=True))
+
+    def activity(self, workspace: Path, run_id: str) -> tuple[DeliveryActivity, ...]:
+        path = self.path_for(workspace, run_id) / "activity.json"
+        _reject_symlink(path)
+        if not path.exists():
+            return ()
+        try:
+            if path.stat().st_size > 1024 * 1024:
+                raise ValueError("Activity receipt exceeds the size limit.")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, list):
+                raise ValueError("Invalid activity receipt.")
+            entries = cast(list[object], payload)
+            if len(entries) > 200:
+                raise ValueError("Invalid activity receipt.")
+            return tuple(_activity_from_payload(item, path) for item in entries)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            raise PreflightError(f"Unable to read Delivery activity: {path}") from exc
+
+    def record_activity(self, workspace: Path, run_id: str, activity: DeliveryActivity) -> None:
+        directory = self.path_for(workspace, run_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        _secure_directory(directory)
+        # ponytail: one writer per run, bounded to 200 summaries; stream only if traces grow.
+        recent = (*self.activity(workspace, run_id), activity)[-200:]
+        _atomic_write(
+            directory / "activity.json",
+            [
+                {"at": item.at.isoformat(), "phase": item.phase, "detail": item.detail}
+                for item in recent
+            ],
+        )
+
+    def _run_ids(self, workspace: Path) -> tuple[str, ...]:
+        directory = WorkspaceLayout.from_root(workspace).control_dir / "runs"
+        if not directory.is_dir() or directory.is_symlink():
+            return ()
+        return tuple(
+            path.name
+            for path in directory.iterdir()
+            if path.is_dir() and not path.is_symlink() and _RUN_ID.fullmatch(path.name)
+        )
 
     def notification_sent(self, workspace: Path, run_id: str, event: DeliveryEvent) -> bool:
         """Return whether one lifecycle event was already sent."""
@@ -88,6 +207,7 @@ class DeliveryRunStore:
 
     def _load_notifications(self, workspace: Path, run_id: str) -> dict[str, object]:
         path = self.path_for(workspace, run_id) / "notifications.json"
+        _reject_symlink(path)
         if not path.exists():
             return {}
         try:
@@ -111,7 +231,7 @@ def _run_from_payload(payload: object, source: Path) -> DeliveryRun:
             story_title=_required_string(values, "story_title", source),
             state=DeliveryState(_required_string(values, "state", source)),
             phase=_required_string(values, "phase", source),
-            started_at=datetime.fromisoformat(_required_string(values, "started_at", source)),
+            started_at=_timestamp(_required_string(values, "started_at", source)),
             finished_at=_optional_datetime(values.get("finished_at"), source),
             workspace_id=(None if workspace_id is None else UUID(str(workspace_id))),
             jira_url=_optional_string(values.get("jira_url"), source),
@@ -120,6 +240,8 @@ def _run_from_payload(payload: object, source: Path) -> DeliveryRun:
             pull_request_url=_optional_string(values.get("pull_request_url"), source),
             reason=_optional_string(values.get("reason"), source),
             verification_summary=_optional_string(values.get("verification_summary"), source),
+            detail=_optional_string(values.get("detail"), source),
+            poll_id=_optional_string(values.get("poll_id"), source),
         )
     except (TypeError, ValueError) as exc:
         raise PreflightError(f"Invalid Delivery run receipt: {source}") from exc
@@ -146,12 +268,35 @@ def _optional_datetime(value: object, source: Path) -> datetime | None:
     if not isinstance(value, str):
         raise PreflightError(f"Invalid Delivery run timestamp: {source}")
     try:
-        return datetime.fromisoformat(value)
+        return _timestamp(value)
     except ValueError as exc:
         raise PreflightError(f"Invalid Delivery run timestamp: {source}") from exc
 
 
-def _atomic_write(path: Path, payload: Mapping[str, object]) -> None:
+def _activity_from_payload(payload: object, source: Path) -> DeliveryActivity:
+    if not isinstance(payload, dict):
+        raise PreflightError(f"Invalid Delivery activity: {source}")
+    values = cast(dict[str, object], payload)
+    return DeliveryActivity(
+        at=_timestamp(_required_string(values, "at", source)),
+        phase=_required_string(values, "phase", source),
+        detail=_required_string(values, "detail", source),
+    )
+
+
+def _timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.utcoffset() is None:
+        raise ValueError("Delivery timestamps must include a timezone.")
+    return parsed
+
+
+def _reject_symlink(path: Path) -> None:
+    if path.is_symlink():
+        raise PreflightError("Delivery receipt must not be a symbolic link.")
+
+
+def _atomic_write(path: Path, payload: Mapping[str, object] | list[dict[str, str]]) -> None:
     temporary: Path | None = None
     try:
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)

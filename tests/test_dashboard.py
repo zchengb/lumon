@@ -1112,7 +1112,9 @@ def test_settings_updates_do_not_reload_unchanged_automation_schedules(
         assert updated.json()[automation] == saved.json()[automation]
         assert (len(delivery_scheduler.calls), len(scan_scheduler.calls)) == expected_calls
 
-    execution_settings: dict[str, object] = {"trigger_hooks": ["mail.delivery_ready"]}
+    execution_settings: dict[str, object] = {
+        "trigger_hooks": ["Check approved Stories.\n\nDeliver only after verification."]
+    }
     if automation == "auto_scan":
         execution_settings = {
             "lookback_days": 14,
@@ -1271,7 +1273,8 @@ def test_auto_scan_settings_and_history_are_available_from_dashboard(
     assert client.get(f"/api/workspaces/{workspace_id}/scans").json() == []
 
 
-def test_completion_prompt_saves_only_to_selected_workspace(tmp_path: Path) -> None:
+@pytest.mark.parametrize("automation", ["auto_delivery", "auto_scan"])
+def test_hook_prompt_saves_only_to_selected_workspace(tmp_path: Path, automation: str) -> None:
     service = _service(tmp_path)
     client = _client(service)
     workspace_ids = [
@@ -1286,22 +1289,24 @@ def test_completion_prompt_saves_only_to_selected_workspace(tmp_path: Path) -> N
     ]
     endpoint = f"/api/workspaces/{workspace_ids[0]}/settings"
     prompt = 'Create verified Jira Bugs.\n\nInclude "code evidence" and reuse duplicates.'
+    required_settings: dict[str, object] = {"lookback_days": 7} if automation == "auto_scan" else {}
+    default_hooks = [] if automation == "auto_scan" else ["jira.delivery_ready"]
 
     saved = client.put(
         endpoint,
         json={
             "feishu_webhook": {"enabled": False},
-            "auto_scan": {"enabled": False, "lookback_days": 7, "trigger_hooks": [prompt]},
+            automation: {"enabled": False, "trigger_hooks": [prompt], **required_settings},
         },
     )
 
     assert saved.status_code == 200
-    assert client.get(endpoint).json()["auto_scan"]["trigger_hooks"] == [prompt]
+    assert client.get(endpoint).json()[automation]["trigger_hooks"] == [prompt]
     assert (
-        client.get(f"/api/workspaces/{workspace_ids[1]}/settings").json()["auto_scan"][
+        client.get(f"/api/workspaces/{workspace_ids[1]}/settings").json()[automation][
             "trigger_hooks"
         ]
-        == []
+        == default_hooks
     )
     assert AutoScanSettings().trigger_hooks == ()
 
@@ -1309,11 +1314,11 @@ def test_completion_prompt_saves_only_to_selected_workspace(tmp_path: Path) -> N
         endpoint,
         json={
             "feishu_webhook": {"enabled": False},
-            "auto_scan": {"enabled": False, "lookback_days": 7, "trigger_hooks": ["x" * 8001]},
+            automation: {"enabled": False, "trigger_hooks": ["x" * 8001], **required_settings},
         },
     )
     assert rejected.status_code == 422
-    assert client.get(endpoint).json()["auto_scan"]["trigger_hooks"] == [prompt]
+    assert client.get(endpoint).json()[automation]["trigger_hooks"] == [prompt]
 
 
 @pytest.mark.parametrize(

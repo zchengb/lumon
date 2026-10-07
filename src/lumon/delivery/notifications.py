@@ -85,7 +85,7 @@ def _event_detail(event: DeliveryEvent, run: DeliveryRun) -> str:
         published = "Changes were published successfully."
         if run.pull_request_url:
             published = "Changes were verified and a pull request was created."
-        return f"**Result**\n{published}"
+        return f"**Result**\n{run.detail or published}"
     if event is DeliveryEvent.BLOCKED:
         return (
             f"**Blocked at phase**  `{run.phase}`\n"

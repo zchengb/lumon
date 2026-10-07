@@ -29,6 +29,50 @@ class DeliveryState(StrEnum):
     BLOCKED = "blocked"
 
 
+class DeliveryPollState(StrEnum):
+    """A scheduled check can finish without claiming a Story."""
+
+    RUNNING = "running"
+    IDLE = "idle"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryActivity:
+    """One safe progress summary, never a command or its raw output."""
+
+    at: datetime
+    phase: str
+    detail: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "phase", sanitize_output(self.phase.strip())[:80])
+        object.__setattr__(self, "detail", sanitize_output(self.detail.strip())[:500])
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryPoll:
+    """The durable outcome of one scheduled Agent check."""
+
+    run_id: str
+    workspace_id: UUID
+    state: DeliveryPollState
+    started_at: datetime
+    phase: str = "discover"
+    finished_at: datetime | None = None
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "detail", sanitize_output(self.detail.strip())[:500])
+
+    @property
+    def duration_seconds(self) -> int | None:
+        if self.finished_at is None:
+            return None
+        return max(0, int((self.finished_at - self.started_at).total_seconds()))
+
+
 @dataclass(frozen=True, slots=True)
 class DeliveryResult:
     """Result details produced by one Delivery phase."""
@@ -58,6 +102,8 @@ class DeliveryRun:
     pull_request_url: str | None = None
     reason: str | None = None
     verification_summary: str | None = None
+    detail: str | None = None
+    poll_id: str | None = None
 
     def __post_init__(self) -> None:
         """Keep external text safe before it reaches Cards or receipts."""
@@ -72,6 +118,7 @@ class DeliveryRun:
             "pull_request_url",
             "reason",
             "verification_summary",
+            "detail",
         ):
             value = getattr(self, field_name)
             if isinstance(value, str):
@@ -82,8 +129,14 @@ class DeliveryRun:
                 try:
                     parsed = urlsplit(value)
                 except ValueError:
+                    object.__setattr__(self, field_name, None)
                     continue
-                if parsed.username or parsed.password:
+                if (
+                    parsed.scheme not in {"http", "https"}
+                    or not parsed.hostname
+                    or parsed.username
+                    or parsed.password
+                ):
                     object.__setattr__(self, field_name, None)
 
     @classmethod
@@ -96,6 +149,7 @@ class DeliveryRun:
         now: datetime | None = None,
         workspace_id: UUID | None = None,
         jira_url: str | None = None,
+        poll_id: str | None = None,
     ) -> DeliveryRun:
         """Create a claimed run before any Agent work begins."""
 
@@ -109,6 +163,7 @@ class DeliveryRun:
             started_at=timestamp,
             workspace_id=workspace_id,
             jira_url=jira_url,
+            poll_id=poll_id,
         )
 
     def with_result(
@@ -144,6 +199,7 @@ class DeliveryRun:
                 else None
             ),
             verification_summary=result.verification_summary,
+            detail=result.detail,
         )
 
     @property

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import json
-import os
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -16,12 +14,21 @@ from uuid import UUID, uuid4
 import typer
 
 from lumon.agents.agent.config import AgentConfigStore
-from lumon.agents.agent.model import AgentResult
+from lumon.agents.agent.model import AgentEvent, AgentProgress, AgentResult
 from lumon.agents.agent.runner import create_agent_runner
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
-from lumon.delivery.model import DeliveryEvent, DeliveryRun
+from lumon.delivery.model import (
+    DeliveryActivity,
+    DeliveryEvent,
+    DeliveryPoll,
+    DeliveryPollState,
+    DeliveryRun,
+    DeliveryState,
+)
+from lumon.delivery.scheduler import delivery_lock
 from lumon.delivery.service import DeliveryNotification, DeliveryService
 from lumon.errors import AgentRuntimeError, LumonError, PreflightError
+from lumon.observability import redact_text
 from lumon.tools.safety import sanitize_output
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
@@ -48,6 +55,9 @@ def start(
         str | None, typer.Option("--run-id", help="Stable run ID; generated when omitted.")
     ] = None,
     jira_url: Annotated[str | None, typer.Option("--jira-url")] = None,
+    poll_id: Annotated[
+        str | None, typer.Option("--poll-id", help="Parent scheduled poll ID.")
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Create a Delivery run and send its started notification."""
@@ -60,9 +70,30 @@ def start(
             story_title.strip(),
             workspace_id=workspace_id,
             jira_url=jira_url.strip() if jira_url else None,
+            poll_id=poll_id,
         )
         notification = DeliveryService().start(root, workspace_id, run)
         _emit(run, notification, json_output)
+    except LumonError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@delivery_app.command("progress")
+def progress(
+    run_id: Annotated[str, typer.Option("--run-id")],
+    phase: Annotated[str, typer.Option("--phase")],
+    detail: Annotated[str, typer.Option("--detail")],
+    workspace: Annotated[Path, typer.Option("--workspace", dir_okay=True)] = Path("."),
+) -> None:
+    """Publish a safe phase summary for the Dashboard's live progress view."""
+
+    try:
+        root, _workspace_id = _workspace_identity(workspace)
+        service = DeliveryService()
+        run = service.run_store.load(root, run_id)
+        updated = service.progress(root, run, phase=phase, detail=redact_text(detail)[:500])
+        typer.echo(f"Delivery {updated.run_id}: {updated.phase}")
     except LumonError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc
@@ -187,10 +218,10 @@ def poll(
             )
             return
 
-        with _poll_lock(state_layout.root, selected_id):
+        with delivery_lock(state_layout.root, selected_id):
             result = asyncio.run(_run_poll(root, selected_id, settings.auto_delivery.trigger_hooks))
         safe_text = sanitize_output((result.final_text or "").strip())[:500]
-        status = "idle" if "AUTO_DELIVERY_IDLE" in safe_text else "completed"
+        status = "idle" if safe_text == "AUTO_DELIVERY_IDLE" else "completed"
         _emit_poll(
             {
                 "status": status,
@@ -210,6 +241,75 @@ async def _run_poll(
     trigger_hooks: tuple[str, ...],
 ) -> AgentResult:
     state_layout = UserStateLayout.from_root()
+    service = DeliveryService(settings_store=WorkspaceSettingsStore(state_layout.root))
+    service.recover_interrupted_polls(workspace, workspace_id)
+    poll = DeliveryPoll(uuid4().hex, workspace_id, DeliveryPollState.RUNNING, datetime.now(UTC))
+    service.run_store.save_poll(workspace, poll)
+    try:
+        result = await _execute_poll(workspace, workspace_id, trigger_hooks, poll, service)
+        claimed = tuple(
+            run for run in service.run_store.list(workspace) if run.poll_id == poll.run_id
+        )
+        if any(run.state == DeliveryState.RUNNING for run in claimed):
+            raise AgentRuntimeError(
+                "Agent finished without recording the Story's terminal outcome."
+            )
+        unsuccessful = next((run for run in claimed if run.state != DeliveryState.COMPLETED), None)
+        if unsuccessful is not None:
+            raise AgentRuntimeError(
+                f"Story {unsuccessful.story_key} {unsuccessful.state}: "
+                f"{unsuccessful.detail or unsuccessful.reason or 'Delivery did not complete.'}"
+            )
+        idle = (result.final_text or "").strip() == "AUTO_DELIVERY_IDLE" and not claimed
+        if not idle and not claimed:
+            summary = redact_text(result.final_text or "")[:300]
+            raise AgentRuntimeError(
+                "Agent finished without an idle result or a claimed Story receipt. " + summary
+            )
+        service.run_store.save_poll(
+            workspace,
+            replace(
+                service.run_store.load_poll(workspace, poll.run_id),
+                state=DeliveryPollState.IDLE if idle else DeliveryPollState.COMPLETED,
+                finished_at=datetime.now(UTC),
+                detail=redact_text(result.final_text or "")[:500],
+            ),
+        )
+        return result
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        _fail_poll(workspace, poll, service, "Auto Delivery was interrupted before completion.")
+        raise
+    except Exception as exc:
+        detail = redact_text(str(exc))[:500] or "Unexpected Auto Delivery failure."
+        _fail_poll(workspace, poll, service, detail)
+        if isinstance(exc, LumonError):
+            raise
+        raise AgentRuntimeError(detail) from exc
+
+
+def _fail_poll(workspace: Path, poll: DeliveryPoll, service: DeliveryService, detail: str) -> None:
+    service.run_store.save_poll(
+        workspace,
+        replace(
+            service.run_store.load_poll(workspace, poll.run_id),
+            state=DeliveryPollState.FAILED,
+            finished_at=datetime.now(UTC),
+            detail=detail,
+        ),
+    )
+    for run in service.run_store.list(workspace):
+        if run.poll_id == poll.run_id and run.state == DeliveryState.RUNNING:
+            service.fail(workspace, poll.workspace_id, run, detail, phase=run.phase)
+
+
+async def _execute_poll(
+    workspace: Path,
+    workspace_id: UUID,
+    trigger_hooks: tuple[str, ...],
+    poll: DeliveryPoll,
+    service: DeliveryService,
+) -> AgentResult:
+    state_layout = UserStateLayout.from_root()
     config = AgentConfigStore(state_layout.root).load()
     if not config.enabled:
         raise PreflightError("The Lumon Agent is disabled.")
@@ -224,55 +324,73 @@ async def _run_poll(
     prompt = context_builder.build_prompt(
         context,
         (),
-        _scheduled_poll_prompt(trigger_hooks),
+        _scheduled_poll_prompt(trigger_hooks, poll.run_id),
     )
-    result = await create_agent_runner(config).run(workspace, prompt)
+    secrets = (
+        config.feishu_app_secret,
+        config.observability.secret_key,
+        config.observability.public_key,
+    )
+
+    async def observe_progress(progress: AgentProgress) -> None:
+        # Story stages come from explicit receipts, not generic Agent tool execution.
+        phase = "discover"
+        detail = redact_text(progress.message, secrets)[:500]
+        service.run_store.save_poll(workspace, replace(poll, phase=phase, detail=detail))
+        service.run_store.record_activity(
+            workspace, poll.run_id, DeliveryActivity(datetime.now(UTC), phase, detail)
+        )
+
+    async def observe_event(event: AgentEvent) -> None:
+        if event.kind == "progress":
+            return  # Only the validated, bounded progress callback records Agent text.
+        detail = f"{event.kind.replace('_', ' ')}: {event.lifecycle}"
+        if event.exit_code is not None:
+            detail += f" (exit {event.exit_code})"
+        current = service.run_store.load_poll(workspace, poll.run_id)
+        service.run_store.record_activity(
+            workspace, poll.run_id, DeliveryActivity(datetime.now(UTC), current.phase, detail)
+        )
+
+    result = await create_agent_runner(config).run(
+        workspace, prompt, on_progress=observe_progress, on_event=observe_event
+    )
     if result.status != "succeeded":
-        diagnostic = sanitize_output(result.failure_diagnostic or "Agent poll did not complete.")
+        diagnostic = redact_text(
+            result.failure_diagnostic or "Agent poll did not complete.", secrets
+        )
         raise AgentRuntimeError(diagnostic)
-    return result
+    return replace(result, final_text=redact_text(result.final_text or "", secrets))
 
 
-def _scheduled_poll_prompt(trigger_hooks: tuple[str, ...]) -> str:
-    hooks = "\n".join(f"- {hook}" for hook in trigger_hooks)
+def _scheduled_poll_prompt(trigger_hooks: tuple[str, ...], poll_id: str) -> str:
+    instructions = "\n\n".join(trigger_hooks)
     return f"""You are running one scheduled Lumon Auto Delivery poll.
 
-Configured trigger hooks:
-{hooks}
+Configured Auto Delivery instructions (legacy hook IDs are also supported):
+{instructions}
+
+This poll ID is {poll_id}. Pass `--poll-id {poll_id}` to `lumon delivery start`
+so that the development receipt is linked to this check in the Dashboard.
 
 Follow these rules:
 1. Inspect the available Workspace capabilities and flows, then use the matching
-   capability to check whether any configured hook has an eligible event.
+   capabilities to follow the configured instructions and check for eligible events.
+   These instructions are an Agent prompt, not method names to invoke directly.
+   Legacy hook IDs describe events to check using Workspace capabilities.
 2. If there is no eligible event, make no file, Git, Jira, or Delivery changes
    and return exactly AUTO_DELIVERY_IDLE.
 3. If there is an eligible approved Story, follow the Workspace Auto Delivery
-   flow. Use `lumon delivery start` before work and exactly one terminal command
+   flow. If no matching flow is installed, follow the explicit trigger prompt.
+   Use `lumon delivery start` before work and exactly one terminal command
    (`complete`, `fail`, or `block`) after the outcome.
-4. Never invent an issue, claim verification, or claim a notification was sent
+4. Record each phase using `lumon delivery progress --run-id <story-run-id>
+   --phase implementation|verification|handoff --detail <short safe summary>`.
+   Do not put credentials, prompts, or raw command output in progress summaries.
+5. Never invent an issue, claim verification, or claim a notification was sent
    without a successful command result.
-5. Keep the final response short and do not include credentials or raw command output.
+6. Keep the final response short and do not include credentials or raw command output.
 """
-
-
-@contextmanager
-def _poll_lock(state_root: Path, workspace_id: UUID) -> Generator[None, None, None]:
-    lock_directory = state_root / "locks"
-    lock_directory.mkdir(parents=True, exist_ok=True)
-    lock_directory.chmod(0o700)
-    lock_path = lock_directory / f"delivery-{workspace_id}.lock"
-    stream = lock_path.open("a+")
-    try:
-        os.fchmod(stream.fileno(), 0o600)
-        try:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise PreflightError("Another Auto Delivery poll is already running.") from exc
-        yield
-    finally:
-        try:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
-        finally:
-            stream.close()
 
 
 def _parse_workspace_id(value: str) -> UUID:

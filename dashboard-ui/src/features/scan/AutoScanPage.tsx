@@ -158,7 +158,6 @@ export function AutoScanPage({
             <div className="field-full">
               <label className="field-label" htmlFor="auto-scan-description">{t("settings.autoScanDescriptionLabel")}</label>
               <textarea id="auto-scan-description" className="text-input text-area" rows={5} value={description} onChange={(event) => { setDescription(event.target.value); markDirty(); }} />
-              <p className="field-help">{t("settings.autoScanDescriptionHelp")}</p>
             </div>
           </div>
         </div>
