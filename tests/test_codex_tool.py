@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from lumon.tools.codex import CodexRequest, CodexTool, parse_codex_line
 from lumon.tools.safety import sanitize_output
 
@@ -63,6 +65,84 @@ def test_codex_parser_keeps_terminal_failure_message() -> None:
 
     assert terminal is not None
     assert terminal.text == "provider failed"
+
+
+def test_codex_parser_distinguishes_recoverable_and_terminal_events() -> None:
+    retry = parse_codex_line('{"type":"error","message":"Reconnecting..."}')
+    completed = parse_codex_line('{"type":"turn.completed"}')
+    failed = parse_codex_line(
+        '{"type":"turn.failed","error":{"message":"app_secret=secret-value"}}'
+    )
+
+    assert retry is not None and retry.kind == "error" and retry.status is None
+    assert completed is not None and completed.kind == "turn_completed"
+    assert failed is not None and failed.kind == "error" and failed.status == "failed"
+    assert failed.text is not None and "[REDACTED]" in failed.text
+    assert "secret-value" not in failed.text
+
+
+@pytest.mark.parametrize(
+    ("event_types", "return_code", "expected_status"),
+    [
+        (("error", "agent_message", "turn.completed"), 0, "succeeded"),
+        (("error", "error", "agent_message", "turn.completed"), 0, "succeeded"),
+        (("error", "turn.completed"), 0, "succeeded"),
+        (("error", "agent_message"), 0, "failed"),
+        (("error", "turn.completed", "error"), 0, "failed"),
+        (("error", "turn.completed", "error", "turn.completed"), 0, "succeeded"),
+        (("error", "agent_message", "turn.failed"), 0, "failed"),
+        (("turn.failed", "error", "turn.completed"), 0, "failed"),
+        (("response.failed", "turn.completed"), 0, "failed"),
+        (("error", "agent_message", "turn.completed"), 7, "failed"),
+    ],
+)
+def test_codex_tool_uses_turn_outcome_after_stream_errors(
+    tmp_path: Path,
+    event_types: tuple[str, ...],
+    return_code: int,
+    expected_status: str,
+) -> None:
+    fake = tmp_path / "fake-codex"
+    events = [json.dumps({"type": kind, "message": kind}) for kind in event_types]
+    fake.write_text(
+        "#!/bin/sh\ncat >/dev/null\n"
+        + "".join(f"printf '%s\\n' '{event}'\n" for event in events)
+        + f"exit {return_code}\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    tool = CodexTool(binary=str(fake), timeout_seconds=5)
+
+    result = asyncio.run(tool.execute(CodexRequest(tmp_path, "inspect this")))
+
+    assert result.status == expected_status
+    assert result.return_code == return_code
+    if expected_status == "succeeded":
+        expected_text = "agent_message" if "agent_message" in event_types else None
+        assert result.final_text == expected_text
+        assert result.failure_diagnostic is None
+        assert result.error_code is None
+    else:
+        assert result.final_text is None
+        assert result.error_code == "execution_failed"
+
+
+def test_codex_tool_keeps_real_timeout_after_stream_error(tmp_path: Path) -> None:
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/bin/sh\ncat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"error","message":"Reconnecting..."}\'\n'
+        "exec sleep 5\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    tool = CodexTool(binary=str(fake), timeout_seconds=0.1)
+
+    result = asyncio.run(tool.execute(CodexRequest(tmp_path, "inspect this")))
+
+    assert result.status == "timed_out"
+    assert result.error_code == "timeout"
+    assert result.final_text is None
 
 
 def test_codex_tool_succeeds_after_advisory_item_error(tmp_path: Path) -> None:

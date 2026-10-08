@@ -64,6 +64,11 @@ lumon/tools/codex.py
 因此 Auto Scan、Auto Delivery 等 Flow 可以只检查执行状态或消费文件变化，忽略
 文本输出。
 
+从 v1.4.14 起，流中可恢复的 `error` 不会永久把请求标记为失败：收到
+`turn.completed` 且进程正常退出后，保留最终结果，聊天回答正常保存并发送到飞书。
+明确的 `turn.failed` / `response.failed`、未恢复的错误、非零退出码和执行超时仍为失败，
+不会把中间回答当作最终结果，也不会重新执行整个请求。
+
 Agent 的对话适配器位于 `lumon/agents/agent/runner.py`。它调用共享的
 `CodexTool`，把命令/文件事件转换为聊天进度，并额外要求有可回复的最终文本；
 没有最终文本时，才由 Agent 转换为 `EMPTY_RESULT`。这样聊天输出策略不会反向

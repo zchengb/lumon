@@ -23,6 +23,7 @@ CodexEventKind = Literal[
     "command_execution",
     "file_change",
     "error",
+    "turn_completed",
 ]
 CodexEventLifecycle = Literal["started", "completed", "observed"]
 CodexExecutionStatus = Literal["succeeded", "failed", "timed_out"]
@@ -235,8 +236,7 @@ class CodexTool:
             stderr_task = asyncio.create_task(process.stderr.read())
             events: list[CodexEvent] = []
             final_text: str | None = None
-            error_seen = False
-            terminal_diagnostic: str | None = None
+            pending_failure: CodexEvent | None = None
             async for raw_line in process.stdout:
                 event = parse_codex_line(raw_line)
                 if event is None:
@@ -247,17 +247,22 @@ class CodexTool:
                 if event.kind == "message" and event.text:
                     final_text = event.text
                 elif event.kind == "error":
-                    error_seen = True
-                    terminal_diagnostic = terminal_diagnostic or event.text
+                    if pending_failure is None or event.status == "failed":
+                        pending_failure = event
+                elif event.kind == "turn_completed":
+                    # Completion resolves stream retries, never an explicit terminal failure.
+                    if pending_failure is not None and pending_failure.status != "failed":
+                        pending_failure = None
                 if on_event is not None:
                     await on_event(event)
             await process.wait()
             stderr = await stderr_task
+            terminal_diagnostic = pending_failure.text if pending_failure is not None else None
             failure_diagnostic = _diagnostic_from_stderr(stderr) or terminal_diagnostic
 
-            if process.returncode != 0 or error_seen:
-                if failure_diagnostic is None and error_seen:
-                    failure_diagnostic = "Codex emitted a terminal error event."
+            if process.returncode != 0 or pending_failure is not None:
+                if failure_diagnostic is None and pending_failure is not None:
+                    failure_diagnostic = "Codex emitted an unresolved error event."
                 return CodexExecutionResult(
                     status="failed",
                     events=tuple(events),
@@ -372,13 +377,14 @@ def parse_codex_line(raw_line: bytes | str) -> CodexEvent | None:
         # Codex can emit advisory item errors while the turn still succeeds.
         # The process exit code and terminal turn event determine execution status.
         return None
+    if event_type == "turn.completed":
+        return CodexEvent("turn_completed", agent_session_id=agent_session_id)
     if effective_type in {"error", "turn.failed", "response.failed"}:
         return CodexEvent(
             "error",
-            text=_diagnostic_text(
-                _extract_text(item_payload if item_payload is not None else payload)
-            ),
+            text=_diagnostic_text(_extract_text(payload) or _extract_text(payload.get("error"))),
             agent_session_id=agent_session_id,
+            status="failed" if effective_type in {"turn.failed", "response.failed"} else None,
         )
     return None
 

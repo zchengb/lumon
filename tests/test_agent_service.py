@@ -23,7 +23,12 @@ from lumon.agents.agent.model import (
     ProgressPhase,
     RecalledMessage,
 )
-from lumon.agents.agent.runner import AgentEventCallback, AgentRunner, ProgressCallback
+from lumon.agents.agent.runner import (
+    AgentEventCallback,
+    AgentRunner,
+    CodexAgentRunner,
+    ProgressCallback,
+)
 from lumon.agents.agent.service import AgentService
 from lumon.agents.agent.session_store import AgentSessionStore
 from lumon.errors import AgentRuntimeError
@@ -35,6 +40,7 @@ from lumon.observability import (
     TelemetryStatus,
 )
 from lumon.skills.installer import SkillInstaller
+from lumon.tools.codex import CodexTool
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
@@ -590,6 +596,83 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
     assert telemetry.traces[0].finished == ("failed", "agent_unexpected_error", None)
     assert telemetry.traces[0].span_names[-2:] == ["codex.exec", "feishu.reply"]
     asyncio.run(service.stop())
+
+
+@pytest.mark.parametrize("recovered", [True, False])
+def test_service_sends_final_reply_only_after_recovered_codex_turn(
+    tmp_path: Path, recovered: bool
+) -> None:
+    state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    registry = WorkspaceRegistry(state_root)
+    WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        registry=registry,
+    ).initialize(InitRequest(workspace, name="stream-recovery-test"))
+    config = AgentConfig(
+        enabled=True,
+        default_workspace_id=registry.list()[0].workspace_id,
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret-value",
+    )
+    config_store = AgentConfigStore(state_root)
+    config_store.save(config)
+    fake = tmp_path / "fake-codex"
+    terminal_type = "turn.completed" if recovered else "turn.failed"
+    fake.write_text(
+        "#!/bin/sh\ncat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"recovered-thread"}\'\n'
+        'printf \'%s\\n\' \'{"type":"error","message":"Reconnecting..."}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed",'
+        '"item":{"type":"agent_message","text":"Final answer"}}\'\n'
+        f"printf '%s\\n' '{{\"type\":\"{terminal_type}\"}}'\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    store = AgentSessionStore(state_root)
+    channel = FakeChannel(config)
+    service = AgentService(
+        config_store=config_store,
+        registry=registry,
+        session_store=store,
+        agent_runner=CodexAgentRunner(tool=CodexTool(binary=str(fake), timeout_seconds=5)),
+        channel=channel,
+        telemetry=RecordingTelemetry(),
+    )
+    message = InboundMessage(
+        event_id="evt-stream-recovery",
+        message_id="om-stream-recovery",
+        chat_id="oc-stream-recovery",
+        chat_type="p2p",
+        text="test request",
+        sender_id="ou-1",
+        sender_type="user",
+    )
+
+    async def run() -> None:
+        await service.handle_message(message)
+        await service.wait_for_idle()
+        await service.handle_message(message)
+        await service.wait_for_idle()
+        await service.stop()
+
+    asyncio.run(run())
+
+    with sqlite3.connect(store.path) as connection:
+        rows = connection.execute(
+            "SELECT status, final_text, error_code FROM runs WHERE event_id = ?",
+            (message.event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    if recovered:
+        assert channel.replies == ["Final answer"]
+        assert rows[0] == ("succeeded", "Final answer", None)
+        session = store.get_or_create_session(message)
+        assert session.agent_session_id == "recovered-thread"
+    else:
+        assert len(channel.replies) == 1
+        assert "Final answer" not in channel.replies[0]
+        assert rows[0] == ("failed", None, "execution_failed")
 
 
 def test_service_writes_provider_failure_log_under_workspace(tmp_path: Path) -> None:
