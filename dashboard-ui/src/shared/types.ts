@@ -16,6 +16,7 @@ export interface ChatInteraction {
   output_preview: string;
   status: string;
   duration_seconds: number | null;
+  trace_url: string | null;
 }
 
 export interface ChatInteractionPage {
@@ -132,10 +133,16 @@ export interface FeishuWebhookSettings {
   masked_url: string | null;
 }
 
+export type DeliveryPublishMode = "local" | "branch" | "pr" | "direct";
+
 export interface AutoDeliverySettings {
   enabled: boolean;
   trigger_hooks: string[];
   schedule_expression: string;
+  jira_site: string;
+  trigger_jql: string;
+  publish_mode: DeliveryPublishMode;
+  target_branch: string;
 }
 
 export interface AutoScanSettings {
@@ -215,6 +222,10 @@ export interface SettingsUpdate {
     enabled: boolean;
     trigger_hooks?: string[];
     schedule_expression?: string;
+    jira_site?: string;
+    trigger_jql?: string;
+    publish_mode?: DeliveryPublishMode;
+    target_branch?: string;
   };
   auto_scan?: {
     enabled: boolean;

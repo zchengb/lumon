@@ -13,7 +13,7 @@ from uuid import UUID
 
 from lumon.agents.agent.session_store import resolve_database_path
 from lumon.errors import AgentRuntimeError
-from lumon.tools.safety import sanitize_output
+from lumon.tools.safety import safe_trace_url, sanitize_output
 
 ChatKind = Literal["all", "group", "direct"]
 
@@ -31,6 +31,7 @@ class ChatInteraction:
     duration_seconds: int | None
     chat_name: str | None = None
     sender_name: str | None = None
+    trace_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +99,7 @@ class AgentChatHistory:
                 f"SELECT COUNT(*) FROM ({_INTERACTIONS})", parameters
             ).fetchone()[0]
             rows = connection.execute(
-                _INTERACTIONS
+                _with_trace_url(connection)
                 + " ORDER BY r.started_at DESC, r.run_id DESC LIMIT :limit OFFSET :offset",
                 parameters,
             ).fetchall()
@@ -163,6 +164,16 @@ def _interaction(row: sqlite3.Row) -> ChatInteraction:
         output_preview=_preview(row["final_text"], preserve_lines=True),
         status=str(row["status"]),
         duration_seconds=_duration(str(row["status"]), row["started_at"], row["ended_at"]),
+        trace_url=safe_trace_url(row["trace_url"]),
+    )
+
+
+def _with_trace_url(connection: sqlite3.Connection) -> str:
+    # The read-only Dashboard must also work before the Agent migrates an older database.
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(runs)")}
+    trace_column = "r.trace_url" if "trace_url" in columns else "NULL"
+    return _INTERACTIONS.replace(
+        "SELECT r.run_id,", f"SELECT {trace_column} AS trace_url, r.run_id,"
     )
 
 

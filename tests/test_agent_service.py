@@ -261,6 +261,10 @@ class RecordingTrace:
         self.finished: tuple[TelemetryStatus, str | None, str | None] | None = None
         self.updates: list[dict[str, object]] = []
 
+    async def get_url(self) -> str:
+        trace_id = str(self.arguments["run_id"]).replace("-", "")
+        return f"https://cloud.langfuse.com/project/test-project/traces/{trace_id}"
+
     def update(
         self,
         *,
@@ -487,7 +491,8 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     assert store.event_status("evt-1") == "succeeded"
     with sqlite3.connect(store.path) as connection:
         rows = connection.execute(
-            "SELECT status, session_id, prompt_text, flow_id FROM runs ORDER BY started_at"
+            "SELECT status, session_id, prompt_text, flow_id, trace_url "
+            "FROM runs ORDER BY started_at"
         ).fetchall()
         session_row = connection.execute("SELECT agent_session_id FROM sessions").fetchone()
     assert len(rows) == 2
@@ -497,6 +502,8 @@ def test_service_persists_and_deduplicates_message(tmp_path: Path) -> None:
     assert rows[1][2] == runner.prompts[1]
     assert rows[0][3] is None
     assert rows[1][3] == "test-case-generation"
+    assert rows[0][4] == asyncio.run(telemetry.traces[0].get_url())
+    assert rows[1][4] == asyncio.run(telemetry.traces[1].get_url())
     assert session_row == ("provider-session-1",)
     assert len(telemetry.traces) == 2
     assert telemetry.traces[0].span_names == [
@@ -580,7 +587,7 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
 
     with sqlite3.connect(store.path) as connection:
         run_row = connection.execute(
-            "SELECT error_code, failure_diagnostic FROM runs WHERE event_id = ?",
+            "SELECT error_code, failure_diagnostic, trace_url FROM runs WHERE event_id = ?",
             (message.event_id,),
         ).fetchone()
 
@@ -594,6 +601,7 @@ def test_service_stores_safe_diagnostic_for_unexpected_errors(tmp_path: Path) ->
     assert channel.replies[-1].startswith("Agent 暂时无法完成这次请求")
     assert len(telemetry.traces) == 1
     assert telemetry.traces[0].finished == ("failed", "agent_unexpected_error", None)
+    assert run_row[2] == asyncio.run(telemetry.traces[0].get_url())
     assert telemetry.traces[0].span_names[-2:] == ["codex.exec", "feishu.reply"]
     asyncio.run(service.stop())
 

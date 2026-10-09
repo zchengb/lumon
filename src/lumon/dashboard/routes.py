@@ -486,6 +486,18 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
             auto_delivery_schedule_expression=(
                 auto_delivery.schedule_expression if auto_delivery is not None else None
             ),
+            auto_delivery_jira_site=(
+                auto_delivery.jira_site if auto_delivery is not None else None
+            ),
+            auto_delivery_trigger_jql=(
+                auto_delivery.trigger_jql if auto_delivery is not None else None
+            ),
+            auto_delivery_publish_mode=(
+                auto_delivery.publish_mode if auto_delivery is not None else None
+            ),
+            auto_delivery_target_branch=(
+                auto_delivery.target_branch if auto_delivery is not None else None
+            ),
             auto_scan_enabled=(auto_scan.enabled if auto_scan is not None else None),
             auto_scan_lookback_days=(auto_scan.lookback_days if auto_scan is not None else None),
             auto_scan_trigger_hooks=(
@@ -557,6 +569,10 @@ def _settings_response(settings: WorkspaceSettingsView) -> WorkspaceSettingsResp
             enabled=settings.auto_delivery.enabled,
             trigger_hooks=list(settings.auto_delivery.trigger_hooks),
             schedule_expression=settings.auto_delivery.schedule_expression,
+            jira_site=settings.auto_delivery.jira_site,
+            trigger_jql=settings.auto_delivery.trigger_jql,
+            publish_mode=settings.auto_delivery.publish_mode,
+            target_branch=settings.auto_delivery.target_branch,
         ),
         auto_scan=AutoScanResponse(
             enabled=settings.auto_scan.enabled,

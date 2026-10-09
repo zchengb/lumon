@@ -8,7 +8,7 @@ import { SettingsPage } from "./SettingsPage";
 const settings: WorkspaceSettings = {
   workspace_id: "test-workspace",
   feishu_webhook: { enabled: true, configured: true, masked_url: "https://example.test/…1234" },
-  auto_delivery: { enabled: false, trigger_hooks: [], schedule_expression: "" },
+  auto_delivery: { enabled: false, trigger_hooks: [], schedule_expression: "", jira_site: "", trigger_jql: "", publish_mode: "local", target_branch: "" },
   auto_scan: { enabled: false, lookback_days: 7, trigger_hooks: [], schedule_expression: "", workflow_description: "" },
 };
 

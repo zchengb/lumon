@@ -126,6 +126,20 @@ settings. Other settings, including Feishu credentials, the default Workspace,
 and Langfuse configuration, still require `lumon agent stop` followed by
 `lumon agent start --background`.
 
+## Agent conversation trace links
+
+The Agent conversation table includes a **Langfuse** column. **View trace** opens
+that execution's private trace in a new tab; Langfuse project access is still
+required. Lumon uses the SDK's `get_trace_url` and saves the credential-free URL
+with the run, including running, failed and interrupted executions. Changing
+the configured endpoint or project does not rewrite historical links.
+
+Project discovery runs off the event loop with a two-second wait limit. Disabled
+or unsampled traces and unavailable/invalid links show `—` and never fail the
+conversation. Opening history does not query Langfuse, change trace visibility,
+or migrate the database. Older runs without a saved mapping also show `—`;
+their trace IDs cannot be inferred from Lumon's run IDs.
+
 ## Auto Delivery execution history
 
 Available in Lumon 1.4.13, alongside multiline Auto Delivery trigger prompts.
@@ -150,8 +164,9 @@ Duplicate starts cannot overwrite a receipt. The existing Workspace poll lock
 also guards interrupted-run recovery; recovery never retries work, changes Jira,
 or sends notifications. An unknown interruption time remains unknown.
 
-Configure eligibility and delivery authorization in the current Workspace's
-trigger prompt. Lumon does not add project-specific Jira rules to presets.
+Configure eligibility in the current Workspace's Jira trigger query and delivery
+instructions in its execution prompt. Lumon does not add project-specific Jira
+rules to presets.
 
 ## Workspace flows
 
@@ -160,6 +175,12 @@ workflow schedules, alongside Auto Delivery and Auto Scan. Each row shows the
 workflow name, effective enabled/disabled state and cron expression in the local
 timezone. Selecting a row opens that workflow and its schedule settings in
 **Workflows**. Returning to Overview reloads the saved schedules.
+
+The selected Workflow's schedule controls are integrated into the top of its
+Markdown panel, above Preview/Edit content, so long documents cannot hide the
+scheduling option. The switch shows the schedule state without a duplicate status
+badge. Schedule and Markdown changes retain separate Save actions and draft guards;
+editing only the schedule does not enable the Markdown Save button.
 
 Workflows without a saved schedule, deleted workflows and invalid Markdown files
 are omitted. Saved disabled schedules remain visible; a disabled workflow never
@@ -196,28 +217,60 @@ than an arbitrary key-value editor.
 
 ## Auto Delivery
 
-The **Auto Delivery** page controls the current Workspace's scheduled delivery
-poll. It stores:
+The **Settings** page has a Workspace-scoped **Auto Delivery** panel with its own
+enable switch and Save button. It stores:
 
-- a multiline **Trigger prompt** (up to 8000 characters) describing which
-  approved Stories to check, delivery conditions, and verification requirements.
-  Existing hook IDs such as the default `jira.delivery_ready` remain supported;
+- a credential-free **Jira site** and **Trigger conditions (JQL)** that scope
+  eligible Stories, for example project, active sprint, Ready for Dev status and
+  the opt-in Flag. Use the actual status IDs behind the board column;
+- a multiline **Execution prompt** (up to 8000 characters) describing delivery
+  conditions and verification requirements. A Technical Plan is optional;
 - a five-field numeric cron **Schedule Expression** (the default is
-  `*/5 * * * *`).
+  `*/5 * * * *`);
+- a **Code submission policy**: local uncommitted handoff (default), commit/push
+  feature branch, feature branch plus PR, or direct fast-forward push to the target
+  branch. An optional target/PR-base override applies to this Workspace; blank
+  means each Repository's registered branch, not an assumed main/master.
 
-When enabled on macOS, saving the page installs or updates an owner-level
+When enabled on macOS, saving its timing settings installs or updates an owner-level
 LaunchAgent named `com.lumon.delivery.<workspace-id>`. Each scheduled run
-executes `lumon delivery poll`, loads the Workspace's enabled flows and
-capabilities, and gives the configured prompt to one bounded Agent turn. A poll
-that finds no eligible event returns `AUTO_DELIVERY_IDLE` and makes no Delivery
-changes. An eligible event must use the existing Delivery lifecycle commands so
+executes `lumon delivery poll`. Under the existing Workspace lock, it performs a
+read-only Jira search through the authenticated local TWG CLI (no Codex turn).
+Search uses the native paginated REST response, not an Agent interpretation of a
+CLI summary. Existing Story receipts in any state are excluded from automatic
+re-claim; failed or blocked Stories require an explicit human retry.
+
+An empty check records an idle poll and makes no Delivery changes. Incomplete,
+denied, invalid or timed-out searches record failure, never idle, and never fall
+back to Codex. Search is bounded to 30 seconds and 20 pages of 100 matches. Empty
+checks still use Jira API requests, but consume no Codex tokens or Agent quota.
+The disabled switch prevents both Jira queries and Agent execution.
+
+Only a new candidate starts a bounded Agent turn with the Workspace's flows and
+capabilities, the selected Story and a snapshot of the saved publishing policy.
+Before claiming, the Agent must re-read that Story's eligibility, preserve its
+Flag and block unclear requirements rather than inventing them. It must not
+repeat a backlog scan. The saved publishing policy supersedes older hook wording
+about local-only handoff/commits/PRs, but never broadens work beyond this Story.
+Development stays in isolated `codex/delivery-<Story-key>` worktrees, including
+direct mode, without changing registered checkouts or unrelated edits.
+Published modes require validation, scoped commits, remote read-back and, for PR
+mode, a verified PR link. Direct mode never force pushes; a moved/rejected target
+must block. No mode authorizes auto-merge, releases or deployment. Missing tools
+or credentials fail/block instead of triggering automatic credential repair.
+
+An eligible Story must use the existing Delivery lifecycle commands so
 the configured Feishu Webhook receives the normal started, completed, failed,
 or blocked notification.
 
 The prompt is saved only for the current Workspace, with its line breaks preserved.
-It may be cleared while Auto Delivery is disabled; enabling requires a prompt or
-legacy hook ID. Editing only the prompt does not reload the scheduled job or
-interrupt an active poll; the next poll loads the saved instructions.
+It may be cleared while Auto Delivery is disabled; enabling in Settings requires
+the Jira site, query and execution prompt. Older profiles keep their pause state
+and acquire neither Jira query assumptions nor publishing permission; their
+unconfigured polls fail before starting Codex until a query is configured.
+Editing only the query, prompt or submission policy does not reload the job or
+interrupt active work. The next poll loads the saved settings. If settings change
+during native detection, that check stops before starting an Agent.
 
 The scheduler currently supports interval expressions such as `*/5 * * * *`
 and fixed minute/hour expressions such as `0 9 * * 1-5`. The LaunchAgent and
@@ -225,6 +278,12 @@ poll lock are owner-only; credentials are never placed in the schedule or poll
 output.
 
 ## Auto Scan history
+
+The **Settings** page has a separate Workspace-scoped **Auto Scan** panel for its
+enable switch, review lookback (1–365 days), five-field cron schedule and completion
+hooks. Each automation panel saves independently and preserves drafts in the
+other Settings panels. Leaving Settings or switching Workspaces requires confirmation
+when any panel has unsaved edits.
 
 The **Completion hooks** field accepts a multiline Agent prompt (up to 8000
 characters), saved only for the current Workspace. The review remains read-only;
@@ -236,12 +295,30 @@ configuring instructions separately for each Workspace.
 Editing this prompt does not reload the scheduled job or interrupt an active scan;
 the next scan loads the saved instructions.
 
-The **Auto Scan** page shows one **Scan history** heading, finding counts by
+The **Auto Scan** page is an execution/history view, with the manual scan action,
+one **Scan history** heading, finding counts by
 severity (High, Medium, Low), and elapsed time as minutes and seconds, such as
 `15m34s`. Empty findings and unfinished durations display a dash.
 HTML report links display the report directly in a new tab rather than opening
 a download dialog. PDF report links retain their download behavior.
 The **Auto Delivery** product label remains English in every interface language.
+Its page is also execution-only: live delivery progress, Story history and scheduler
+activity remain available, without configuration forms.
+
+## Built-in automation workflows
+
+The built-in rules are separate packaged documents, not Dashboard-editable settings:
+
+- [Auto Scan workflow](../src/lumon/agents/agent/templates/auto_scan.md)
+- [Auto Delivery workflow](../src/lumon/agents/agent/templates/auto_delivery.md)
+
+The runtime renders these documents using the saved review lookback, run paths,
+poll IDs and custom hooks. Auto Scan's window comes exclusively from `lookback_days`;
+there is no hard-coded seven-day window in a workflow description. The old
+`workflow_description` profile/API field is retained for compatibility and preserved
+by partial updates, but it is no longer displayed, edited or used as review instructions.
+Custom Trigger prompts and Completion hooks remain editable in Settings. The built-in
+workflow documents are not Workspace library entries and are not exposed in Dashboard.
 
 Opening scan history or starting the next scan reconciles abandoned `running`
 receipts under the same exclusive Workspace scan lock. If a scan still holds the

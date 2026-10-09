@@ -14,6 +14,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from lumon.agents.agent.config import AgentConfig
+from lumon.tools.safety import safe_trace_url
 from lumon.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,11 @@ class TraceSpan(Protocol):
 
 class AgentTrace(Protocol):
     """A trace handle for one accepted Agent message."""
+
+    async def get_url(self) -> str | None:
+        """Return this trace's private inspection link when tracing is active."""
+
+        ...
 
     def update(
         self,
@@ -161,6 +167,9 @@ class NoopAgentTelemetry:
 
 
 class _NoopTrace:
+    async def get_url(self) -> str | None:
+        return None
+
     def update(
         self,
         *,
@@ -290,6 +299,7 @@ class LangfuseAgentTelemetry:
                 raise RuntimeError("Langfuse propagation context was not created.")
             propagation_manager.__enter__()
             return _LangfuseTrace(
+                client=self._client,
                 root_manager=root_manager,
                 propagation_manager=propagation_manager,
                 root_observation=root_observation,
@@ -318,16 +328,36 @@ class _LangfuseTrace:
     def __init__(
         self,
         *,
+        client: Any,
         root_manager: Any,
         propagation_manager: Any,
         root_observation: Any,
         redactor: _TextRedactor,
         metadata: TelemetryMetadata,
     ) -> None:
+        self._client = client
         self._root_manager = root_manager
         self._propagation_manager = propagation_manager
         self._root = _LangfuseObservation(root_observation, redactor, metadata=metadata)
         self._closed = False
+
+    async def get_url(self) -> str | None:
+        try:
+            span = importlib.import_module("opentelemetry.trace").get_current_span()
+            if not span.is_recording() or not span.get_span_context().trace_flags.sampled:
+                return None
+            trace_id = self._root.observation.trace_id
+            if not isinstance(trace_id, str) or not re.fullmatch(r"[0-9a-f]{32}", trace_id):
+                return None
+            # Bound project discovery and keep other message tasks responsive.
+            async with asyncio.timeout(2):
+                url = safe_trace_url(
+                    await asyncio.to_thread(self._client.get_trace_url, trace_id=trace_id)
+                )
+            return url if url and url.endswith(f"/traces/{trace_id}") else None
+        except Exception as exc:
+            _log_sdk_failure("get trace URL", exc)
+            return None
 
     def update(
         self,

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from lumon.agents.agent.config import AGENT_REASONING_EFFORT_PATTERN
 from lumon.delivery.model import DeliveryPollState, DeliveryState
 from lumon.tools.codex_status import CodexCliUpdateStatus
+from lumon.workspace.settings import DeliveryPublishMode
 
 
 class StrictModel(BaseModel):
@@ -182,6 +183,10 @@ class AutoDeliveryResponse(StrictModel):
     enabled: bool
     trigger_hooks: list[str]
     schedule_expression: str
+    jira_site: str
+    trigger_jql: str
+    publish_mode: DeliveryPublishMode
+    target_branch: str
 
 
 class DeliveryRunResponse(StrictModel):
@@ -258,6 +263,10 @@ class AutoDeliveryUpdate(StrictModel):
     enabled: bool
     trigger_hooks: list[str] | None = None
     schedule_expression: str | None = None
+    jira_site: str | None = Field(default=None, max_length=253)
+    trigger_jql: str | None = Field(default=None, max_length=8_000)
+    publish_mode: DeliveryPublishMode | None = None
+    target_branch: str | None = Field(default=None, max_length=256)
 
 
 class AutoScanUpdate(StrictModel):

@@ -230,6 +230,7 @@ class AgentRunResult:
     flow_id: str | None = None
     prompt_text: str | None = None
     failure_diagnostic: str | None = None
+    trace_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

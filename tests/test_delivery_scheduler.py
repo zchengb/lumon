@@ -22,6 +22,7 @@ from lumon.delivery.service import DeliveryService
 from lumon.delivery.store import DeliveryRunStore
 from lumon.errors import AgentRuntimeError, InvalidInputError, PreflightError
 from lumon.skills.installer import SkillInstaller
+from lumon.tools.jira_delivery import JiraDeliveryCandidate, JiraDeliveryTrigger
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
@@ -32,6 +33,25 @@ from lumon.workspace.settings import (
     normalize_trigger_hooks,
     validate_schedule_expression,
 )
+
+
+def _candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def find(
+        self: JiraDeliveryTrigger,
+        jira_site: str,
+        trigger_jql: str,
+        *,
+        excluded_keys: frozenset[str],
+    ) -> JiraDeliveryCandidate | None:
+        assert jira_site == "test.atlassian.net"
+        assert trigger_jql == "project = MBPAS"
+        if "MBPAS-1" in excluded_keys:
+            return None
+        return JiraDeliveryCandidate(
+            "MBPAS-1", "Version bump", "https://test.atlassian.net/browse/MBPAS-1"
+        )
+
+    monkeypatch.setattr(JiraDeliveryTrigger, "find_candidate", find)
 
 
 def test_trigger_hooks_are_normalized_and_deduplicated() -> None:
@@ -116,11 +136,17 @@ def test_scheduled_poll_runs_saved_instructions_and_loads_edits_on_next_poll(
         return PollRunner()
 
     monkeypatch.setattr("lumon.cli.commands.delivery.create_agent_runner", create_runner)
+    _candidate(monkeypatch)
     for instructions in (hooks, ("Check the newly approved Stories.\n\nVerify before delivery.",)):
         settings_store.save(
             WorkspaceSettings(
                 workspace_id,
-                auto_delivery=AutoDeliverySettings(enabled=True, trigger_hooks=instructions),
+                auto_delivery=AutoDeliverySettings(
+                    enabled=True,
+                    trigger_hooks=instructions,
+                    jira_site="test.atlassian.net",
+                    trigger_jql="project = MBPAS",
+                ),
             )
         )
         exit_code = main(["delivery", "poll", "--workspace", str(workspace), "--json"])
@@ -135,8 +161,9 @@ def test_scheduled_poll_runs_saved_instructions_and_loads_edits_on_next_poll(
         assert latest.phase == "discover"
         assert latest.duration_seconds is not None
         activity = DeliveryRunStore().activity(workspace, latest.run_id)
-        assert activity[0].detail == "Check active sprint Stories."
-        assert activity[1].detail == "command execution: completed (exit 0)"
+        assert activity[0].detail == "Jira matched MBPAS-1; starting Agent for this Story only."
+        assert activity[1].detail == "Check active sprint Stories."
+        assert activity[2].detail == "command execution: completed (exit 0)"
         assert "secret raw output" not in str(activity)
         assert "\n\n".join(instructions) not in output.out + output.err
         if status == "succeeded":
@@ -148,7 +175,7 @@ def test_scheduled_poll_runs_saved_instructions_and_loads_edits_on_next_poll(
 
 
 @pytest.mark.parametrize(
-    "outcome", ["completed", "blocked", "unfinished", "runner-failed", "invented"]
+    "outcome", ["completed", "blocked", "unfinished", "runner-failed", "invented", "wrong-story"]
 )
 def test_poll_requires_a_durable_story_outcome(
     tmp_path: Path,
@@ -167,7 +194,14 @@ def test_poll_requires_a_durable_story_outcome(
         settings_store=settings,
     ).initialize(InitRequest(workspace, name="Delivery test"))
     workspace_id = registry.list()[0].workspace_id
-    settings.save(WorkspaceSettings(workspace_id, auto_delivery=AutoDeliverySettings(enabled=True)))
+    settings.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_delivery=AutoDeliverySettings(
+                enabled=True, jira_site="test.atlassian.net", trigger_jql="project = MBPAS"
+            ),
+        )
+    )
     AgentConfigStore(state).save(
         AgentConfig(enabled=True, feishu_app_id="test-app", feishu_app_secret="test-secret")
     )
@@ -187,7 +221,7 @@ def test_poll_requires_a_durable_story_outcome(
             if outcome != "invented":
                 run = DeliveryRun.claim(
                     "story-1",
-                    "MBPAS-1",
+                    "MBPAS-2" if outcome == "wrong-story" else "MBPAS-1",
                     "Version bump",
                     workspace_id=workspace_id,
                     poll_id=poll.run_id,
@@ -211,6 +245,7 @@ def test_poll_requires_a_durable_story_outcome(
         return StoryRunner()
 
     monkeypatch.setattr("lumon.cli.commands.delivery.create_agent_runner", create_runner)
+    _candidate(monkeypatch)
     exit_code = main(["delivery", "poll", "--workspace", str(workspace), "--json"])
     output = capsys.readouterr()
     poll = service.run_store.list_polls(workspace)[0]
@@ -226,6 +261,16 @@ def test_poll_requires_a_durable_story_outcome(
     else:
         assert service.run_store.list(workspace) == ()
         assert "claimed Story receipt" in output.err
+
+    if outcome in {"completed", "blocked"}:
+
+        def unexpected_runner(_config: AgentConfig) -> StoryRunner:
+            pytest.fail("A Story with an existing receipt must not start Codex again.")
+
+        monkeypatch.setattr("lumon.cli.commands.delivery.create_agent_runner", unexpected_runner)
+        assert main(["delivery", "poll", "--workspace", str(workspace), "--json"]) == 0
+        assert '"status": "idle"' in capsys.readouterr().out
+        assert service.run_store.list_polls(workspace)[0].state == "idle"
 
 
 def test_schedule_expression_supports_interval_and_weekdays() -> None:

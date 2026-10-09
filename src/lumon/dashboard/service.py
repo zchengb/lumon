@@ -55,12 +55,16 @@ from lumon.workspace.settings import (
     DEFAULT_FLOW_SCHEDULE,
     AutoDeliverySettings,
     AutoScanSettings,
+    DeliveryPublishMode,
     FeishuWebhookSettings,
     FlowScheduleSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
     masked_secret,
     masked_webhook_url,
+    validate_delivery_jira_site,
+    validate_delivery_jql,
+    validate_delivery_target_branch,
 )
 
 WorkspaceHealth = Literal["ready", "missing", "invalid"]
@@ -126,6 +130,10 @@ class AutoDeliverySettingsView:
     enabled: bool
     trigger_hooks: tuple[str, ...]
     schedule_expression: str
+    jira_site: str
+    trigger_jql: str
+    publish_mode: DeliveryPublishMode
+    target_branch: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -853,6 +861,10 @@ class DashboardService:
         auto_delivery_enabled: bool | None = None,
         auto_delivery_trigger_hooks: tuple[str, ...] | None = None,
         auto_delivery_schedule_expression: str | None = None,
+        auto_delivery_jira_site: str | None = None,
+        auto_delivery_trigger_jql: str | None = None,
+        auto_delivery_publish_mode: DeliveryPublishMode | None = None,
+        auto_delivery_target_branch: str | None = None,
         auto_scan_enabled: bool | None = None,
         auto_scan_lookback_days: int | None = None,
         auto_scan_trigger_hooks: tuple[str, ...] | None = None,
@@ -887,6 +899,26 @@ class DashboardService:
                     if auto_delivery_schedule_expression is None
                     else auto_delivery_schedule_expression
                 ),
+                jira_site=(
+                    current.auto_delivery.jira_site
+                    if auto_delivery_jira_site is None
+                    else validate_delivery_jira_site(auto_delivery_jira_site)
+                ),
+                trigger_jql=(
+                    current.auto_delivery.trigger_jql
+                    if auto_delivery_trigger_jql is None
+                    else validate_delivery_jql(auto_delivery_trigger_jql)
+                ),
+                publish_mode=(
+                    current.auto_delivery.publish_mode
+                    if auto_delivery_publish_mode is None
+                    else auto_delivery_publish_mode
+                ),
+                target_branch=(
+                    current.auto_delivery.target_branch
+                    if auto_delivery_target_branch is None
+                    else validate_delivery_target_branch(auto_delivery_target_branch)
+                ),
             ),
             auto_scan=AutoScanSettings(
                 enabled=(
@@ -915,6 +947,12 @@ class DashboardService:
             ),
             flow_schedules=current.flow_schedules,
         )
+        if auto_delivery_enabled is True and (
+            not updated.auto_delivery.jira_site or not updated.auto_delivery.trigger_jql
+        ):
+            raise InvalidInputError(
+                "Configure Auto Delivery's Jira site and trigger JQL before enabling it."
+            )
         snapshot = self.settings_store.raw_snapshot(workspace_id)
         try:
             self.settings_store.save(updated)
@@ -1016,6 +1054,10 @@ def _settings_view(settings: WorkspaceSettings) -> WorkspaceSettingsView:
             enabled=settings.auto_delivery.enabled,
             trigger_hooks=settings.auto_delivery.trigger_hooks,
             schedule_expression=settings.auto_delivery.schedule_expression,
+            jira_site=settings.auto_delivery.jira_site,
+            trigger_jql=settings.auto_delivery.trigger_jql,
+            publish_mode=settings.auto_delivery.publish_mode,
+            target_branch=settings.auto_delivery.target_branch,
         ),
         auto_scan=AutoScanSettingsView(
             enabled=settings.auto_scan.enabled,

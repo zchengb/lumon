@@ -199,14 +199,29 @@ def test_full_prompt_is_stored_with_the_run_before_execution(tmp_path: Path) -> 
         agent_provider="test-agent",
         prompt_text=prompt,
         started_at="start",
+        trace_url="https://cloud.langfuse.com/project/project-one/traces/" + "a" * 32,
     )
 
     with sqlite3.connect(store.path) as connection:
         row = connection.execute(
-            "SELECT session_id, status, prompt_text FROM runs WHERE run_id = ?",
+            "SELECT session_id, status, prompt_text, trace_url FROM runs WHERE run_id = ?",
             ("run-prompt",),
         ).fetchone()
-    assert row == (session_id, "running", prompt)
+    trace_url = "https://cloud.langfuse.com/project/project-one/traces/" + "a" * 32
+    assert row == (session_id, "running", prompt, trace_url)
+    store.mark_run_interrupted("run-prompt", "interrupted")
+    store.record_result(
+        AgentRunResult(
+            run_id="run-prompt",
+            event_id=message.event_id,
+            conversation_key=message.conversation_key,
+            status="failed",
+            started_at="start",
+            ended_at="end",
+        )
+    )
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute("SELECT trace_url FROM runs").fetchone() == (trace_url,)
 
 
 def test_recalled_event_is_cancelled_and_removed_from_future_history(tmp_path: Path) -> None:
@@ -290,7 +305,13 @@ def test_existing_legacy_database_is_used_before_new_indexes_are_created(
     assert {"session_id", "session_key"} <= session_columns
     assert "session_id" in event_columns
     assert "session_id" in message_columns
-    assert {"session_id", "prompt_text", "failure_diagnostic", "flow_id"} <= run_columns
+    assert {
+        "session_id",
+        "prompt_text",
+        "failure_diagnostic",
+        "flow_id",
+        "trace_url",
+    } <= run_columns
     assert "recalled" in message_columns
     assert store.path == database.resolve()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from importlib.resources import files
 from string import Template
+from typing import Literal
 
 from lumon.agents.agent.model import AgentChannelContext, Message, WorkspaceContext
 from lumon.capabilities.model import CapabilityBrief
@@ -83,11 +84,25 @@ class PromptRenderer:
         )
 
 
-def _load_template() -> str:
+def render_automation_prompt(
+    template_name: Literal["auto_scan.md", "auto_delivery.md"], **variables: str
+) -> str:
+    """Render built-in automation rules separately from Workspace hook configuration."""
+
+    source = _load_template(template_name)
+    if not source.strip():
+        raise AgentConfigError(f"Packaged automation workflow is empty: {template_name}")
     try:
-        return files(_TEMPLATE_PACKAGE).joinpath(_PROMPT_TEMPLATE_NAME).read_text(encoding="utf-8")
+        return Template(source).substitute(variables)
+    except (KeyError, ValueError) as exc:
+        raise AgentConfigError(f"Packaged automation workflow is invalid: {template_name}") from exc
+
+
+def _load_template(template_name: str = _PROMPT_TEMPLATE_NAME) -> str:
+    try:
+        return files(_TEMPLATE_PACKAGE).joinpath(template_name).read_text(encoding="utf-8")
     except (ModuleNotFoundError, OSError, UnicodeDecodeError) as exc:
-        raise AgentConfigError("Packaged Agent Workspace prompt is unavailable.") from exc
+        raise AgentConfigError(f"Packaged Agent prompt is unavailable: {template_name}") from exc
 
 
 def _render_history(history: tuple[Message, ...]) -> str:

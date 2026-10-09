@@ -23,6 +23,7 @@ def _turn(
     sender_id: str = "user-one",
     thread_id: str | None = None,
     minute: int = 0,
+    trace_url: str | None = None,
 ) -> str:
     message_id = str(uuid4())
     inbound = InboundMessage(
@@ -64,6 +65,7 @@ def _turn(
             session_id=session.session_id,
             prompt_text="PRIVATE INITIAL PROMPT",
             failure_diagnostic="PRIVATE PROVIDER DIAGNOSTIC",
+            trace_url=trace_url,
         )
     )
     return run_id
@@ -126,8 +128,61 @@ def test_legacy_file_and_null_session_links_remain_readable(tmp_path: Path) -> N
         connection.execute("UPDATE messages SET session_id = NULL")
         connection.execute("UPDATE events SET session_id = NULL")
         connection.execute("UPDATE runs SET session_id = NULL")
+        connection.execute("ALTER TABLE runs DROP COLUMN trace_url")
+    snapshot = store.path.read_bytes()
     assert AgentChatHistory(tmp_path).conversations(workspace, search="user-one").total == 1
+    assert AgentChatHistory(tmp_path).conversations(workspace).items[0].trace_url is None
+    assert store.path.read_bytes() == snapshot
     assert not (tmp_path / "agent.sqlite3").exists()
+
+
+def test_trace_links_belong_to_each_run_and_do_not_require_current_configuration(
+    tmp_path: Path,
+) -> None:
+    store = AgentSessionStore(tmp_path)
+    workspace = uuid4()
+    other_workspace = uuid4()
+    old_url = "https://jp.cloud.langfuse.com/project/old-project/traces/" + "a" * 32
+    new_url = "http://localhost:3000/langfuse/project/new-project/traces/" + "b" * 32
+    first = _turn(store, workspace, chat_id="same-chat", trace_url=old_url)
+    second = _turn(store, workspace, chat_id="same-chat", minute=1, trace_url=new_url)
+    _turn(store, other_workspace, chat_id="other-chat", trace_url=old_url)
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("UPDATE runs SET status = 'running' WHERE run_id = ?", (second,))
+        connection.execute("UPDATE runs SET status = 'timed_out' WHERE run_id = ?", (first,))
+    snapshot = store.path.read_bytes()
+    page = AgentChatHistory(tmp_path).conversations(workspace)
+    assert [(item.run_id, item.trace_url) for item in page.items] == [
+        (second, new_url),
+        (first, old_url),
+    ]
+    assert store.path.read_bytes() == snapshot
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "javascript:alert(1)",
+        "https://user:private-secret@cloud.langfuse.com/project/test/traces/" + "a" * 32,
+        "https://cloud.langfuse.com/project/test/traces/" + "a" * 32 + "?token=private-secret",
+        "https://cloud.langfuse.com/project/test/traces/" + "a" * 32 + "#private-secret",
+        "https://cloud.langfuse.com/project/test/traces/invalid-id",
+        "https://[invalid-host/project/test/traces/" + "a" * 32,
+        "https://cloud.langfuse.com\n/project/test/traces/" + "a" * 32,
+        "https://cloud.langfuse.com:bad-port/project/test/traces/" + "a" * 32,
+    ],
+)
+def test_untrusted_trace_links_are_omitted_at_write_and_read_boundaries(
+    tmp_path: Path, url: str
+) -> None:
+    store = AgentSessionStore(tmp_path)
+    workspace = uuid4()
+    _turn(store, workspace, chat_id="same-chat", trace_url=url)
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute("SELECT trace_url FROM runs").fetchone() == (None,)
+        # An externally edited local database must not bypass API validation.
+        connection.execute("UPDATE runs SET trace_url = ?", (url,))
+    assert AgentChatHistory(tmp_path).conversations(workspace).items[0].trace_url is None
 
 
 def test_recalled_messages_and_cancelled_events_are_hidden(tmp_path: Path) -> None:

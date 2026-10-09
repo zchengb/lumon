@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from opentelemetry import trace as otel_trace
 
 import lumon.observability as observability
 from lumon.agents.agent.config import AgentConfig, ObservabilityConfig
@@ -38,6 +40,7 @@ class FakeObservation:
         self.updates: list[dict[str, object]] = []
         self.children: list[FakeObservation] = []
         self.contexts: list[FakeContext] = []
+        self.trace_id = "a" * 32
 
     def update(self, **arguments: object) -> None:
         self.updates.append(arguments)
@@ -62,6 +65,11 @@ class FakeClient:
         self.root: FakeObservation | None = None
         self.root_context: FakeContext | None = None
         self.shutdown_calls = 0
+        self.url_calls: list[str] = []
+
+    def get_trace_url(self, *, trace_id: str) -> str:
+        self.url_calls.append(trace_id)
+        return f"https://jp.cloud.langfuse.com/project/test-project/traces/{trace_id}"
 
     def start_as_current_observation(self, **arguments: object) -> FakeContext:
         observation_arguments = dict(arguments)
@@ -161,6 +169,109 @@ def test_redact_text_masks_configured_and_common_credentials() -> None:
     assert redacted.count("[REDACTED]") >= 4
 
 
+@pytest.mark.parametrize(("recording", "sampled"), [(True, True), (True, False), (False, False)])
+def test_trace_url_uses_sdk_identity_only_for_recorded_sampled_traces(
+    monkeypatch: pytest.MonkeyPatch, recording: bool, sampled: bool
+) -> None:
+    monkeypatch.setattr(
+        otel_trace,
+        "get_current_span",
+        lambda: SimpleNamespace(
+            is_recording=lambda: recording,
+            get_span_context=lambda: SimpleNamespace(trace_flags=SimpleNamespace(sampled=sampled)),
+        ),
+    )
+    client = FakeClient()
+    _, trace, _ = _start_trace(client, capture_content=True)
+    url = asyncio.run(trace.get_url())
+    if recording and sampled:
+        assert url == "https://jp.cloud.langfuse.com/project/test-project/traces/" + "a" * 32
+        assert client.url_calls == ["a" * 32]
+    else:
+        assert url is None
+        assert client.url_calls == []
+    trace.finish(status="failed")
+    assert client.root_context is not None and client.root_context.exited
+
+
+@pytest.mark.parametrize(
+    "failure", ["exception", "invalid_url", "wrong_trace", "missing_project", "invalid_trace"]
+)
+def test_trace_link_failures_never_break_tracing_or_disclose_credentials(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, failure: str
+) -> None:
+    monkeypatch.setattr(
+        otel_trace,
+        "get_current_span",
+        lambda: SimpleNamespace(
+            is_recording=lambda: True,
+            get_span_context=lambda: SimpleNamespace(trace_flags=SimpleNamespace(sampled=True)),
+        ),
+    )
+    client = FakeClient()
+
+    def get_url(*, trace_id: str) -> str | None:
+        if failure == "exception":
+            raise RuntimeError("password=private-secret")
+        if failure == "invalid_url":
+            return f"https://user:private-secret@cloud.langfuse.com/project/test/traces/{trace_id}"
+        if failure == "wrong_trace":
+            return "https://cloud.langfuse.com/project/test/traces/" + "b" * 32
+        return None
+
+    monkeypatch.setattr(client, "get_trace_url", get_url)
+    _, trace, _ = _start_trace(client, capture_content=True)
+    if failure == "invalid_trace":
+        assert client.root is not None
+        client.root.trace_id = "not-a-trace-id"
+    assert asyncio.run(trace.get_url()) is None
+    trace.finish(status="succeeded", final_text="completed")
+    assert client.root is not None and client.root.updates[-1]["output"] == "completed"
+    assert "private-secret" not in caplog.text
+
+
+def test_slow_trace_link_discovery_is_bounded_and_does_not_block_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        otel_trace,
+        "get_current_span",
+        lambda: SimpleNamespace(
+            is_recording=lambda: True,
+            get_span_context=lambda: SimpleNamespace(trace_flags=SimpleNamespace(sampled=True)),
+        ),
+    )
+    timeout = asyncio.timeout
+
+    def short_timeout(delay: float | None) -> asyncio.Timeout:
+        assert delay == 2
+        return timeout(0.01)
+
+    monkeypatch.setattr(observability.asyncio, "timeout", short_timeout)
+    release = threading.Event()
+    client = FakeClient()
+
+    def get_url(*, trace_id: str) -> str:
+        release.wait(1)
+        return f"https://cloud.langfuse.com/project/test/traces/{trace_id}"
+
+    monkeypatch.setattr(client, "get_trace_url", get_url)
+    _, trace, _ = _start_trace(client, capture_content=True)
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        responsive = asyncio.Event()
+        loop.call_later(0.001, responsive.set)
+        try:
+            assert await trace.get_url() is None
+            assert responsive.is_set()
+        finally:
+            release.set()
+            trace.finish(status="succeeded")
+
+    asyncio.run(run())
+
+
 def test_langfuse_trace_captures_redacted_content_when_legacy_toggle_is_false() -> None:
     client = FakeClient()
     telemetry, trace, propagation_calls = _start_trace(client, capture_content=False)
@@ -211,6 +322,19 @@ def test_create_agent_telemetry_requires_credentials(
     telemetry = observability.create_agent_telemetry(_config())
 
     assert isinstance(telemetry, NoopAgentTelemetry)
+    trace = telemetry.start_trace(
+        run_id="run-one",
+        session_id="session-one",
+        event_id="event-one",
+        sender_id="sender-one",
+        chat_type="p2p",
+        workspace_id=None,
+        provider="codex",
+        model="test-model",
+        reasoning_effort="max",
+        input_text="request",
+    )
+    assert asyncio.run(trace.get_url()) is None
 
 
 def test_create_agent_telemetry_uses_credentials_saved_in_agent_config(

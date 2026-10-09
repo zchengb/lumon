@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, LoaderCircle, MessageSquare, RefreshCw, Search, UserRound, UsersRound } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, LoaderCircle, MessageSquare, RefreshCw, Search, UserRound, UsersRound } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -60,8 +60,8 @@ export function ChatHistoryPage({ workspaceId }: { workspaceId: string }): React
         : loading ? <div className="loading-inline" role="status"><LoaderCircle size={18} className="spin" />{t("chat.loading")}</div>
           : page.items.length ? <div className="table-scroll chat-table-scroll" tabIndex={0} role="region" aria-label={t("chat.title")}>
             <table className="scan-history-table chat-activity-table">
-              <colgroup><col className="chat-time-column" /><col className="chat-source-column" /><col className="chat-user-column" /><col className="chat-text-column" /><col className="chat-text-column" /><col className="chat-status-column" /><col className="chat-duration-column" /></colgroup>
-              <thead><tr><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("chat.source")}</th><th scope="col">{t("chat.user")}</th><th scope="col">{t("chat.input")}</th><th scope="col">{t("chat.output")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th></tr></thead>
+              <colgroup><col className="chat-time-column" /><col className="chat-source-column" /><col className="chat-user-column" /><col className="chat-text-column" /><col className="chat-text-column" /><col className="chat-status-column" /><col className="chat-duration-column" /><col className="chat-trace-column" /></colgroup>
+              <thead><tr><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("chat.source")}</th><th scope="col">{t("chat.user")}</th><th scope="col">{t("chat.input")}</th><th scope="col">{t("chat.output")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th><th scope="col">Langfuse</th></tr></thead>
               <tbody>{page.items.map((interaction) => <InteractionRow key={`${workspaceId}:${interaction.run_id}`} workspaceId={workspaceId} interaction={interaction} timeLabel={timeLabel(interaction.started_at)} />)}</tbody>
             </table>
           </div> : <div className="chat-empty"><MessageSquare size={22} /><p>{t("chat.empty")}</p></div>}
@@ -101,6 +101,7 @@ function InteractionRow({ workspaceId, interaction, timeLabel }: {
 
   const direct = ["p2p", "private", "dm"].includes(interaction.chat_type.toLowerCase());
   const sourceName = direct ? null : interaction.chat_name;
+  const traceUrl = interaction.trace_url ? safeLink(interaction.trace_url) : "";
   return <tr>
     <td><time dateTime={interaction.started_at}>{timeLabel}</time></td>
     <td><span className={`chat-source-tag ${direct ? "chat-source-direct" : "chat-source-group"}`}>{direct ? <UserRound size={12} aria-hidden="true" /> : <UsersRound size={12} aria-hidden="true" />}{direct ? t("chat.direct") : t("chat.group")}</span>{sourceName && <span className="chat-display-name" title={sourceName}>{sourceName}</span>}</td>
@@ -111,6 +112,7 @@ function InteractionRow({ workspaceId, interaction, timeLabel }: {
     }} />)}
     <td><RunStatus status={interaction.status} /></td>
     <td className="chat-duration">{interaction.duration_seconds === null ? "—" : `${Math.floor(interaction.duration_seconds / 60)}m${interaction.duration_seconds % 60}s`}</td>
+    <td className="chat-trace">{traceUrl ? <a className="chat-trace-link" href={traceUrl} target="_blank" rel="noopener noreferrer" aria-label={`${t("chat.viewTrace")} · ${timeLabel}`}>{t("chat.viewTrace")}<ExternalLink size={12} aria-hidden="true" /></a> : "—"}</td>
   </tr>;
 }
 

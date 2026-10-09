@@ -15,6 +15,7 @@ import typer
 
 from lumon.agents.agent.config import AgentConfigStore
 from lumon.agents.agent.model import AgentEvent, AgentProgress, AgentResult
+from lumon.agents.agent.prompt import render_automation_prompt
 from lumon.agents.agent.runner import create_agent_runner
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.delivery.model import (
@@ -29,11 +30,12 @@ from lumon.delivery.scheduler import delivery_lock
 from lumon.delivery.service import DeliveryNotification, DeliveryService
 from lumon.errors import AgentRuntimeError, LumonError, PreflightError
 from lumon.observability import redact_text
+from lumon.tools.jira_delivery import JiraDeliveryCandidate, JiraDeliveryTrigger
 from lumon.tools.safety import sanitize_output
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
 from lumon.workspace.registry import UserStateLayout, WorkspaceRegistry
-from lumon.workspace.settings import WorkspaceSettingsStore
+from lumon.workspace.settings import AutoDeliverySettings, WorkspaceSettingsStore
 
 delivery_app = typer.Typer(
     name="delivery",
@@ -219,7 +221,7 @@ def poll(
             return
 
         with delivery_lock(state_layout.root, selected_id):
-            result = asyncio.run(_run_poll(root, selected_id, settings.auto_delivery.trigger_hooks))
+            result = asyncio.run(_run_poll(root, selected_id, settings.auto_delivery))
         safe_text = sanitize_output((result.final_text or "").strip())[:500]
         status = "idle" if safe_text == "AUTO_DELIVERY_IDLE" else "completed"
         _emit_poll(
@@ -238,7 +240,7 @@ def poll(
 async def _run_poll(
     workspace: Path,
     workspace_id: UUID,
-    trigger_hooks: tuple[str, ...],
+    settings: AutoDeliverySettings,
 ) -> AgentResult:
     state_layout = UserStateLayout.from_root()
     service = DeliveryService(settings_store=WorkspaceSettingsStore(state_layout.root))
@@ -246,7 +248,7 @@ async def _run_poll(
     poll = DeliveryPoll(uuid4().hex, workspace_id, DeliveryPollState.RUNNING, datetime.now(UTC))
     service.run_store.save_poll(workspace, poll)
     try:
-        result = await _execute_poll(workspace, workspace_id, trigger_hooks, poll, service)
+        result = await _execute_poll(workspace, workspace_id, settings, poll, service)
         claimed = tuple(
             run for run in service.run_store.list(workspace) if run.poll_id == poll.run_id
         )
@@ -272,7 +274,9 @@ async def _run_poll(
                 service.run_store.load_poll(workspace, poll.run_id),
                 state=DeliveryPollState.IDLE if idle else DeliveryPollState.COMPLETED,
                 finished_at=datetime.now(UTC),
-                detail=redact_text(result.final_text or "")[:500],
+                detail=(
+                    "No new eligible Story." if idle else redact_text(result.final_text or "")[:500]
+                ),
             ),
         )
         return result
@@ -305,10 +309,36 @@ def _fail_poll(workspace: Path, poll: DeliveryPoll, service: DeliveryService, de
 async def _execute_poll(
     workspace: Path,
     workspace_id: UUID,
-    trigger_hooks: tuple[str, ...],
+    settings: AutoDeliverySettings,
     poll: DeliveryPoll,
     service: DeliveryService,
 ) -> AgentResult:
+    excluded_keys = frozenset(
+        run.story_key.upper()
+        for run in service.run_store.list(workspace)
+        if run.workspace_id in (None, workspace_id)
+    )
+    candidate = await JiraDeliveryTrigger().find_candidate(
+        settings.jira_site, settings.trigger_jql, excluded_keys=excluded_keys
+    )
+    if (
+        candidate is not None
+        and service.settings_store.load(workspace_id).auto_delivery != settings
+    ):
+        raise PreflightError(
+            "Auto Delivery settings changed during detection; Codex was not started."
+        )
+    detection_detail = (
+        f"Jira matched {candidate.key}; starting Agent for this Story only."
+        if candidate
+        else "No new eligible Story; Codex was not started."
+    )
+    service.run_store.record_activity(
+        workspace, poll.run_id, DeliveryActivity(datetime.now(UTC), "discover", detection_detail)
+    )
+    if candidate is None:
+        return AgentResult(status="succeeded", final_text="AUTO_DELIVERY_IDLE")
+
     state_layout = UserStateLayout.from_root()
     config = AgentConfigStore(state_layout.root).load()
     if not config.enabled:
@@ -324,7 +354,7 @@ async def _execute_poll(
     prompt = context_builder.build_prompt(
         context,
         (),
-        _scheduled_poll_prompt(trigger_hooks, poll.run_id),
+        _scheduled_poll_prompt(settings, poll.run_id, candidate),
     )
     secrets = (
         config.feishu_app_secret,
@@ -360,37 +390,32 @@ async def _execute_poll(
             result.failure_diagnostic or "Agent poll did not complete.", secrets
         )
         raise AgentRuntimeError(diagnostic)
+    if any(
+        run.story_key != candidate.key
+        for run in service.run_store.list(workspace)
+        if run.poll_id == poll.run_id
+    ):
+        raise AgentRuntimeError("Agent claimed a Story other than the selected Jira candidate.")
     return replace(result, final_text=redact_text(result.final_text or "", secrets))
 
 
-def _scheduled_poll_prompt(trigger_hooks: tuple[str, ...], poll_id: str) -> str:
-    instructions = "\n\n".join(trigger_hooks)
-    return f"""You are running one scheduled Lumon Auto Delivery poll.
-
-Configured Auto Delivery instructions (legacy hook IDs are also supported):
-{instructions}
-
-This poll ID is {poll_id}. Pass `--poll-id {poll_id}` to `lumon delivery start`
-so that the development receipt is linked to this check in the Dashboard.
-
-Follow these rules:
-1. Inspect the available Workspace capabilities and flows, then use the matching
-   capabilities to follow the configured instructions and check for eligible events.
-   These instructions are an Agent prompt, not method names to invoke directly.
-   Legacy hook IDs describe events to check using Workspace capabilities.
-2. If there is no eligible event, make no file, Git, Jira, or Delivery changes
-   and return exactly AUTO_DELIVERY_IDLE.
-3. If there is an eligible approved Story, follow the Workspace Auto Delivery
-   flow. If no matching flow is installed, follow the explicit trigger prompt.
-   Use `lumon delivery start` before work and exactly one terminal command
-   (`complete`, `fail`, or `block`) after the outcome.
-4. Record each phase using `lumon delivery progress --run-id <story-run-id>
-   --phase implementation|verification|handoff --detail <short safe summary>`.
-   Do not put credentials, prompts, or raw command output in progress summaries.
-5. Never invent an issue, claim verification, or claim a notification was sent
-   without a successful command result.
-6. Keep the final response short and do not include credentials or raw command output.
-"""
+def _scheduled_poll_prompt(
+    settings: AutoDeliverySettings, poll_id: str, candidate: JiraDeliveryCandidate
+) -> str:
+    return render_automation_prompt(
+        "auto_delivery.md",
+        instructions="\n\n".join(settings.trigger_hooks),
+        poll_id=poll_id,
+        candidate=json.dumps(
+            {"key": candidate.key, "title": candidate.title, "url": candidate.url}
+        ),
+        jira_site=settings.jira_site,
+        trigger_jql=json.dumps(settings.trigger_jql),
+        publish_mode=settings.publish_mode,
+        target_branch=json.dumps(settings.target_branch)
+        if settings.target_branch
+        else "each Repository's registered branch",
+    )
 
 
 def _parse_workspace_id(value: str) -> UUID:

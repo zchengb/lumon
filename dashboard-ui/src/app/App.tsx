@@ -23,6 +23,8 @@ import { AutoScanPage } from "../features/scan/AutoScanPage";
 import { CapabilitiesPage } from "../features/capabilities/CapabilitiesPage";
 import { FlowsPage } from "../features/flows/FlowsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { AutoDeliverySettingsPanel } from "../features/settings/AutoDeliverySettingsPanel";
+import { AutoScanSettingsPanel } from "../features/settings/AutoScanSettingsPanel";
 import { WorkspaceOnboarding } from "../features/workspaces/WorkspaceOnboarding";
 import { WorkspaceOverview } from "../features/workspaces/WorkspaceOverview";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
@@ -145,11 +147,7 @@ export function App(): React.JSX.Element {
   function changeView(nextView: View): void {
     if (nextView === view) return;
     const currentViewDirty = view === "settings"
-      ? settingsDirty || agentSettingsDirty
-        : view === "auto-delivery"
-          ? autoDeliveryDirty
-        : view === "auto-scan"
-          ? autoScanDirty
+      ? settingsDirty || agentSettingsDirty || autoDeliveryDirty || autoScanDirty
         : view === "flows"
           ? flowsDirty
           : view === "capabilities"
@@ -296,11 +294,13 @@ export function App(): React.JSX.Element {
           {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} onNavigate={changeView} onOpenWorkflow={openWorkflow} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
           {selectedId && view === "settings" && settings && <div className="page-stack">
             <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />
+            <AutoDeliverySettingsPanel key={`delivery-${selectedId}`} settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />
+            <AutoScanSettingsPanel key={`scan-${selectedId}`} settings={settings} onSave={saveSettings} onDirtyChange={setAutoScanDirty} />
             {agentSettings && <AgentSettingsPage key={selectedId} settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
           </div>}
           {selectedId && view === "agent" && <ChatHistoryPage key={selectedId} workspaceId={selectedId} />}
-          {selectedId && view === "auto-delivery" && settings && <AutoDeliveryPage settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} onError={setError} />}
-          {selectedId && view === "auto-scan" && settings && <AutoScanPage workspaceId={selectedId} settings={settings} onSave={saveSettings} onDirtyChange={setAutoScanDirty} onError={setError} />}
+          {selectedId && view === "auto-delivery" && <AutoDeliveryPage key={selectedId} workspaceId={selectedId} onError={setError} />}
+          {selectedId && view === "auto-scan" && <AutoScanPage key={selectedId} workspaceId={selectedId} onError={setError} />}
           {selectedId && view === "flows" && <FlowsPage workspaceId={selectedId} initialDocumentId={workflowId} onDirtyChange={setFlowsDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && view === "capabilities" && <CapabilitiesPage workspaceId={selectedId} onDirtyChange={setCapabilitiesDirty} onNotice={setNotice} onError={setError} />}
           {selectedId && refreshing && !overview && !settings && <div className="loading-inline"><LoaderCircle className="spin" size={22} />{t("app.readingWorkspace")}</div>}

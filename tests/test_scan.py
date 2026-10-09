@@ -79,7 +79,7 @@ class _FakeRunner:
         (run_json.parent / "scan-result.json").write_text(
             json.dumps(
                 {
-                    "scan_status": "completed_with_findings",
+                    "scan_status": "completed_with_findings" if self.has_findings else "completed",
                     "repositories_scanned": 1,
                     "repositories_failed": 0,
                     "findings": [
@@ -331,6 +331,42 @@ def _scan_service(
     )
     service = ScanService(state_root=state_root, registry=registry, runner=runner)
     return service, workspace, workspace_id
+
+
+@pytest.mark.parametrize("lookback_days", [1, 14, 365])
+def test_review_window_comes_from_settings_not_legacy_description(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lookback_days: int
+) -> None:
+    runner = _FakeRunner(has_findings=False)
+    service, _workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    legacy_description = "Review the last 7 days. LEGACY_DESCRIPTION_MUST_NOT_EXECUTE."
+    service.settings_store.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_scan=AutoScanSettings(
+                enabled=True,
+                lookback_days=lookback_days,
+                workflow_description=legacy_description,
+            ),
+        )
+    )
+
+    def fake_pdf(_html_path: Path, pdf_path: Path) -> None:
+        pdf_path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr("lumon.scan.report._convert_via_chrome", fake_pdf)
+    result = service.run(workspace_id)
+    assert result.lookback_days == lookback_days
+    assert result.state is ScanState.COMPLETED
+    assert len(runner.prompts) == 1
+    assert f"changes in the last {lookback_days} days" in runner.prompts[0]
+    assert legacy_description not in runner.prompts[0]
+    assert "changes in the last 7 days" not in runner.prompts[0]
+    assert "Fetch the configured remote branch" in runner.prompts[0]
+    assert "Write all generated scan content in English" in runner.prompts[0]
+    assert service.settings_store.load(workspace_id).auto_scan.workflow_description == (
+        legacy_description
+    )
 
 
 @pytest.mark.parametrize("has_findings", [True, False])

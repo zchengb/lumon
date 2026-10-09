@@ -1223,7 +1223,45 @@ code {
 }
 
 .flow-schedule-fields {
-  padding: 0 24px;
+  min-width: 0;
+}
+
+.flow-schedule-panel {
+  padding: 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.flow-schedule-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.flow-schedule-heading h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.flow-schedule-heading h3 svg {
+  color: var(--muted);
+}
+
+.flow-schedule-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.flow-schedule-form .settings-actions {
+  padding: 0;
 }
 
 .auto-scan-fields {
@@ -1805,11 +1843,14 @@ code {
 .chat-table-scroll { border-radius: 0 0 12px 12px; }
 .chat-activity-table { table-layout: fixed; min-width: 900px; font-size: 12px; }
 .chat-activity-table td { vertical-align: top; line-height: 1.6; padding: 18px 16px; }
-.chat-time-column { width: 13%; }
-.chat-source-column, .chat-user-column { width: 12%; }
-.chat-text-column { width: 22%; }
+.chat-time-column { width: 12%; }
+.chat-source-column, .chat-user-column { width: 11%; }
+.chat-text-column { width: 19%; }
 .chat-status-column { width: 10%; }
-.chat-duration-column { width: 9%; }
+.chat-duration-column { width: 8%; }
+.chat-trace-column { width: 10%; }
+.chat-activity-table :is(.chat-duration, .chat-trace) { padding-inline: 10px; }
+.chat-trace-link { display: inline-flex; align-items: center; gap: 4px; color: var(--copper); font-size: 11px; white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; }
 .chat-activity-table time { color: var(--muted); font-size: 11px; }
 .chat-source-tag { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 7px; padding: 2px 7px; border: 1px solid; border-radius: 6px; font-size: 10px; font-weight: 500; line-height: 1.6; white-space: nowrap; }
 .chat-source-direct { color: #336b94; border-color: #dbe9f4; background: #f0f7fc; }
@@ -2049,6 +2090,10 @@ code {
   }
 
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-schedule-form {
     grid-template-columns: 1fr;
   }
 

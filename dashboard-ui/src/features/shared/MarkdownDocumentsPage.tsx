@@ -305,7 +305,8 @@ export function MarkdownDocumentsPage<
     setDetailsRevision((revision) => revision + 1);
   }
 
-  const dirty = draft || detailsDirty || (document !== null && content !== document.content);
+  const contentDirty = draft || (document !== null && content !== document.content);
+  const dirty = contentDirty || detailsDirty;
 
   return (
     <div className="page-stack">
@@ -382,6 +383,14 @@ export function MarkdownDocumentsPage<
               </div>
             )}
           </div>
+          {renderDetails && (
+            <div key={detailsRevision}>
+              {renderDetails(document, (value) => {
+                setDetailsDirty(value);
+                onDirtyChange(value || contentDirty);
+              })}
+            </div>
+          )}
           {loadingDocument ? (
             <div className="loading-inline"><LoaderCircle size={20} className="spin" />Loading…</div>
           ) : document || draft ? (
@@ -415,7 +424,7 @@ export function MarkdownDocumentsPage<
                     {deleting ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}{labels.delete}
                   </button>
                 )}
-                <button className="button button-primary" type="button" onClick={() => void saveDocument()} disabled={saving || deleting || !dirty}>
+                <button className="button button-primary" type="button" onClick={() => void saveDocument()} disabled={saving || deleting || !contentDirty}>
                   {saving ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{labels.save}
                 </button>
               </div>
@@ -425,14 +434,6 @@ export function MarkdownDocumentsPage<
           )}
         </section>
       </div>
-      {renderDetails && (
-        <div key={detailsRevision}>
-          {renderDetails(document, (value) => {
-            setDetailsDirty(value);
-            onDirtyChange(value || draft || (document !== null && content !== document.content));
-          })}
-        </div>
-      )}
     </div>
   );
 }

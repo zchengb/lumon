@@ -8,6 +8,7 @@ import re
 import tempfile
 import tomllib
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
@@ -43,6 +44,15 @@ class FeishuWebhookSettings:
     url: str | None = None
 
 
+class DeliveryPublishMode(StrEnum):
+    """The Workspace's explicit authorization for publishing delivered code."""
+
+    LOCAL = "local"
+    BRANCH = "branch"
+    PR = "pr"
+    DIRECT = "direct"
+
+
 @dataclass(frozen=True, slots=True)
 class AutoDeliverySettings:
     """Workspace permission for automated Story delivery."""
@@ -50,6 +60,10 @@ class AutoDeliverySettings:
     enabled: bool = False
     trigger_hooks: tuple[str, ...] = DEFAULT_AUTO_DELIVERY_HOOKS
     schedule_expression: str = DEFAULT_AUTO_DELIVERY_SCHEDULE
+    jira_site: str = ""
+    trigger_jql: str = ""
+    publish_mode: DeliveryPublishMode = DeliveryPublishMode.LOCAL
+    target_branch: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +74,7 @@ class AutoScanSettings:
     lookback_days: int = 7
     trigger_hooks: tuple[str, ...] = DEFAULT_AUTO_SCAN_HOOKS
     schedule_expression: str = DEFAULT_AUTO_SCAN_SCHEDULE
+    # Retained for old profiles; runtime review rules live in the packaged workflow.
     workflow_description: str = DEFAULT_AUTO_SCAN_DESCRIPTION
 
 
@@ -252,7 +267,14 @@ def _parse_settings(
         schedule_expression = validate_schedule_expression(
             auto_delivery.get("schedule_expression", DEFAULT_AUTO_DELIVERY_SCHEDULE)
         )
-    except InvalidInputError as exc:
+        jira_site = validate_delivery_jira_site(auto_delivery.get("jira_site", ""))
+        trigger_jql = validate_delivery_jql(auto_delivery.get("trigger_jql", ""))
+        raw_publish_mode = auto_delivery.get("publish_mode", "local")
+        if not isinstance(raw_publish_mode, str):
+            raise InvalidInputError("Auto Delivery publish_mode must be a string.")
+        publish_mode = DeliveryPublishMode(raw_publish_mode)
+        target_branch = validate_delivery_target_branch(auto_delivery.get("target_branch", ""))
+    except (InvalidInputError, ValueError) as exc:
         raise PreflightError(f"Invalid Auto Delivery settings: {source}") from exc
     raw_auto_scan = payload.get("auto_scan", {})
     if not isinstance(raw_auto_scan, dict):
@@ -323,6 +345,10 @@ def _parse_settings(
             enabled=auto_delivery_enabled,
             trigger_hooks=trigger_hooks,
             schedule_expression=schedule_expression,
+            jira_site=jira_site,
+            trigger_jql=trigger_jql,
+            publish_mode=publish_mode,
+            target_branch=target_branch,
         ),
         auto_scan=AutoScanSettings(
             enabled=auto_scan_enabled,
@@ -352,6 +378,10 @@ def _render(settings: WorkspaceSettings) -> str:
             f"enabled = {'true' if settings.auto_delivery.enabled else 'false'}",
             f"trigger_hooks = {_toml_array(settings.auto_delivery.trigger_hooks)}",
             f"schedule_expression = {_toml_string(settings.auto_delivery.schedule_expression)}",
+            f"jira_site = {_toml_string(settings.auto_delivery.jira_site)}",
+            f"trigger_jql = {_toml_string(settings.auto_delivery.trigger_jql)}",
+            f"publish_mode = {_toml_string(settings.auto_delivery.publish_mode)}",
+            f"target_branch = {_toml_string(settings.auto_delivery.target_branch)}",
             "",
             "[auto_scan]",
             f"enabled = {'true' if settings.auto_scan.enabled else 'false'}",
@@ -446,6 +476,58 @@ def _validate_auto_delivery(settings: AutoDeliverySettings) -> None:
 
     normalize_trigger_hooks(settings.trigger_hooks, allow_empty=not settings.enabled)
     validate_schedule_expression(settings.schedule_expression)
+    validate_delivery_jira_site(settings.jira_site)
+    validate_delivery_jql(settings.trigger_jql)
+    validate_delivery_target_branch(settings.target_branch)
+
+
+def validate_delivery_jira_site(value: object) -> str:
+    """Accept an optional, credential-free Jira Cloud hostname."""
+
+    if not isinstance(value, str):
+        raise InvalidInputError("Auto Delivery Jira site must be a string.")
+    site = value.strip().lower()
+    if site and re.fullmatch(r"[a-z0-9][a-z0-9-]*\.atlassian\.net", site) is None:
+        raise InvalidInputError(
+            "Auto Delivery Jira site must be a host such as team.atlassian.net."
+        )
+    return site
+
+
+def validate_delivery_jql(value: object) -> str:
+    """Keep trigger queries bounded without interpreting JQL as code or a prompt."""
+
+    if not isinstance(value, str) or len(value) > 8_000:
+        raise InvalidInputError(
+            "Auto Delivery trigger JQL must be text of at most 8000 characters."
+        )
+    if _UNSUPPORTED_PROMPT_CHARACTERS.search(value):
+        raise InvalidInputError(
+            "Auto Delivery trigger JQL contains unsupported control characters."
+        )
+    return value.strip()
+
+
+def validate_delivery_target_branch(value: object) -> str:
+    """Validate Git branch syntax without invoking Git during settings updates."""
+
+    if not isinstance(value, str):
+        raise InvalidInputError("Auto Delivery target branch must be a string.")
+    branch = value.strip()
+    if not branch:
+        return branch
+    invalid = (
+        len(branch) > 256
+        or branch == "@"
+        or branch.startswith(("-", "/"))
+        or branch.endswith(("/", "."))
+        or re.search(r"[\x00-\x20\x7f~^:?*\[\\]", branch) is not None
+        or any(part in branch for part in ("..", "@{", "//"))
+        or any(part.startswith(".") or part.endswith(".lock") for part in branch.split("/"))
+    )
+    if invalid:
+        raise InvalidInputError("Auto Delivery target branch must be a valid Git branch name.")
+    return branch
 
 
 def _validate_auto_scan(settings: AutoScanSettings) -> None:

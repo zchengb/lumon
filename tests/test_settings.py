@@ -12,6 +12,7 @@ from lumon.errors import InvalidInputError, PreflightError
 from lumon.workspace.settings import (
     AutoDeliverySettings,
     AutoScanSettings,
+    DeliveryPublishMode,
     FeishuWebhookSettings,
     FlowScheduleSettings,
     WorkspaceSettings,
@@ -70,6 +71,92 @@ def test_auto_delivery_settings_round_trip_trigger_hooks_and_schedule(
     store.save(expected)
 
     assert store.load(workspace_id).auto_delivery == expected.auto_delivery
+
+
+@pytest.mark.parametrize("mode", list(DeliveryPublishMode))
+def test_delivery_trigger_and_publish_policy_round_trip(
+    tmp_path: Path, mode: DeliveryPublishMode
+) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "state")
+    workspace_id = uuid4()
+    delivery = AutoDeliverySettings(
+        jira_site="test.atlassian.net",
+        trigger_jql="project = TEST AND Flagged = Impediment ORDER BY updated ASC",
+        publish_mode=mode,
+        target_branch="release/2026",
+    )
+    store.save(WorkspaceSettings(workspace_id, auto_delivery=delivery))
+    assert store.load(workspace_id).auto_delivery == delivery
+    assert store.load(uuid4()).auto_delivery.publish_mode == DeliveryPublishMode.LOCAL
+
+
+def test_old_delivery_profile_never_acquires_publishing_permission(tmp_path: Path) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "state")
+    workspace_id = uuid4()
+    store.save(WorkspaceSettings(workspace_id, auto_delivery=AutoDeliverySettings(enabled=True)))
+    path = store.path_for(workspace_id)
+    lines = [
+        line
+        for line in path.read_text().splitlines()
+        if not line.startswith(
+            ("jira_site =", "trigger_jql =", "publish_mode =", "target_branch =")
+        )
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    old = store.load(workspace_id).auto_delivery
+    assert old.enabled
+    assert old.jira_site == old.trigger_jql == old.target_branch == ""
+    assert old.publish_mode == DeliveryPublishMode.LOCAL
+
+
+@pytest.mark.parametrize(
+    "branch",
+    [
+        "--force",
+        "../main",
+        "main..other",
+        "branch@{1}",
+        "a//b",
+        ".hidden",
+        "foo.lock",
+        "a/.hidden/b",
+        "refs/main/",
+        "bad branch",
+        "main\x00",
+        "a:b",
+        "@",
+        "main.",
+    ],
+)
+def test_invalid_submission_branch_cannot_replace_a_profile(tmp_path: Path, branch: str) -> None:
+    store = WorkspaceSettingsStore(tmp_path / "state")
+    workspace_id = uuid4()
+    store.save(WorkspaceSettings(workspace_id))
+    snapshot = store.path_for(workspace_id).read_bytes()
+    with pytest.raises(InvalidInputError, match="branch"):
+        store.save(
+            WorkspaceSettings(
+                workspace_id, auto_delivery=AutoDeliverySettings(target_branch=branch)
+            )
+        )
+    assert store.path_for(workspace_id).read_bytes() == snapshot
+
+
+@pytest.mark.parametrize(
+    "site",
+    [
+        "https://test.atlassian.net",
+        "user:password@test.atlassian.net",
+        "localhost",
+        "test.atlassian.net/path",
+    ],
+)
+def test_jira_site_cannot_contain_credentials_or_urls(tmp_path: Path, site: str) -> None:
+    with pytest.raises(InvalidInputError) as error:
+        WorkspaceSettingsStore(tmp_path / "state").save(
+            WorkspaceSettings(uuid4(), auto_delivery=AutoDeliverySettings(jira_site=site))
+        )
+    assert site not in str(error.value)
 
 
 @pytest.mark.parametrize(

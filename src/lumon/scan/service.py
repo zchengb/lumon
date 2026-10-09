@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 
 from lumon.agents.agent.config import AgentConfigStore
 from lumon.agents.agent.model import WorkspaceContext
+from lumon.agents.agent.prompt import render_automation_prompt
 from lumon.agents.agent.runner import AgentRunner, create_agent_runner
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, LumonError, PreflightError
@@ -176,7 +177,6 @@ class ScanService:
             (),
             _scan_prompt(
                 run=run,
-                workflow_description=settings.auto_scan.workflow_description,
                 result_path=self.run_store.path_for(workspace, run.run_id) / "scan-result.json",
             ),
         )
@@ -285,56 +285,10 @@ class ScanService:
         self.run_store.save(workspace, failed)
 
 
-def _scan_prompt(run: ScanRun, workflow_description: str, result_path: Path) -> str:
-    return f"""You are running one Lumon Auto Scan review.
-
-Workflow description:
-{workflow_description}
-
-Review the configured repositories for changes in the last {run.lookback_days} days.
-The core flow is review-only: inspect git history, diffs, and related code, then
-report only confirmed bugs with concrete evidence. Do not require Jira, do not
-create issues, do not modify repositories, do not run builds or tests, and do not
-generate a PDF. Completion hooks run separately after this review.
-
-Write the only source of truth to:
-{result_path}
-
-Use this JSON contract:
-{{
-  "scan_status": "completed | completed_with_findings | completed_with_failures | failed",
-  "repositories_scanned": 0,
-  "repositories_failed": 0,
-  "findings": [
-    {{
-      "title": "short confirmed issue",
-      "severity": "High | Medium | Low",
-      "repository": "repository name",
-      "impact": "production impact",
-      "trigger": "realistic trigger",
-      "file": "path/to/file",
-      "line_range": "10-15",
-      "code_snippet": "redacted evidence",
-      "suggestion": "specific remediation",
-      "root_cause": "why it happens",
-      "validation": "Skipped: lightweight review-only mode",
-      "pr_url": null
-    }}
-  ],
-  "failures": []
-}}
-
-Only include findings with evidence, impact, and a realistic trigger.
-Review each configured repository independently; continue when one is unavailable
-and record its failure. Review the configured branch, not arbitrary local HEAD.
-Use High for confirmed security, payment, data-loss or critical availability bugs;
-Medium for confirmed non-critical correctness/reliability bugs; Low for minor bugs.
-Omit stylistic suggestions, hypothetical concerns and already-fixed findings.
-Do not run other Workspace flows or create issues during this review.
-Never put
-credentials, tokens, webhook URLs, or raw private data in the JSON. Finish with
-a short summary after the file has been written.
-"""
+def _scan_prompt(run: ScanRun, result_path: Path) -> str:
+    return render_automation_prompt(
+        "auto_scan.md", lookback_days=str(run.lookback_days), result_path=str(result_path)
+    )
 
 
 def _hook_prompt(run: ScanRun, hooks: tuple[str, ...]) -> str:

@@ -16,7 +16,7 @@ from lumon.agents.agent.model import (
     Message,
 )
 from lumon.errors import AgentRuntimeError
-from lumon.tools.safety import sanitize_output
+from lumon.tools.safety import safe_trace_url, sanitize_output
 from lumon.workspace.registry import UserStateLayout
 
 DATABASE_FILENAME = "agent.sqlite3"
@@ -474,6 +474,7 @@ class AgentSessionStore:
         agent_provider: str,
         prompt_text: str,
         started_at: str,
+        trace_url: str | None = None,
     ) -> None:
         """Persist the exact Agent prompt before starting the external process."""
 
@@ -483,8 +484,8 @@ class AgentSessionStore:
                 INSERT OR REPLACE INTO runs (
                     run_id, event_id, session_id, conversation_key, workspace_id,
                     agent_provider, status, error_code, started_at, ended_at,
-                    final_text, prompt_text, flow_id
-                ) VALUES (?, ?, ?, ?, ?, ?, 'running', NULL, ?, ?, NULL, ?, NULL)
+                    final_text, prompt_text, flow_id, trace_url
+                ) VALUES (?, ?, ?, ?, ?, ?, 'running', NULL, ?, ?, NULL, ?, NULL, ?)
                 """,
                 (
                     run_id,
@@ -496,6 +497,7 @@ class AgentSessionStore:
                     started_at,
                     started_at,
                     prompt_text,
+                    safe_trace_url(trace_url),
                 ),
             )
 
@@ -519,7 +521,8 @@ class AgentSessionStore:
                     ended_at = ?,
                     final_text = ?,
                     flow_id = COALESCE(?, flow_id),
-                    prompt_text = COALESCE(?, prompt_text)
+                    prompt_text = COALESCE(?, prompt_text),
+                    trace_url = COALESCE(?, trace_url)
                 WHERE run_id = ?
                 """,
                 (
@@ -536,6 +539,7 @@ class AgentSessionStore:
                     final_text,
                     result.flow_id,
                     result.prompt_text,
+                    safe_trace_url(result.trace_url),
                     result.run_id,
                 ),
             ).rowcount
@@ -545,8 +549,8 @@ class AgentSessionStore:
                     INSERT INTO runs (
                         run_id, event_id, session_id, conversation_key, workspace_id,
                         agent_provider, status, error_code, started_at, ended_at,
-                        final_text, prompt_text, failure_diagnostic, flow_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        final_text, prompt_text, failure_diagnostic, flow_id, trace_url
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         result.run_id,
@@ -563,6 +567,7 @@ class AgentSessionStore:
                         result.prompt_text,
                         result.failure_diagnostic,
                         result.flow_id,
+                        safe_trace_url(result.trace_url),
                     ),
                 )
             connection.execute(
@@ -707,7 +712,8 @@ class AgentSessionStore:
                         final_text TEXT,
                         prompt_text TEXT,
                         failure_diagnostic TEXT,
-                        flow_id TEXT
+                        flow_id TEXT,
+                        trace_url TEXT
                     );
                     """
                 )
@@ -726,6 +732,7 @@ class AgentSessionStore:
                 _ensure_column(connection, "runs", "prompt_text", "TEXT")
                 _ensure_column(connection, "runs", "failure_diagnostic", "TEXT")
                 _ensure_column(connection, "runs", "flow_id", "TEXT")
+                _ensure_column(connection, "runs", "trace_url", "TEXT")
                 connection.executescript(
                     """
                     CREATE INDEX IF NOT EXISTS sessions_activity_idx

@@ -11,6 +11,7 @@ const direct: ChatInteraction = {
   chat_name: null, sender_name: "Xiaobin Zheng",
   started_at: "2026-09-30T04:00:00Z", input_preview: "Review the change",
   output_preview: "Done. ![image](https://example.com/private-image.png)", status: "succeeded", duration_seconds: 733,
+  trace_url: null,
 };
 const group: ChatInteraction = {
   ...direct, run_id: "group-run", chat_id: "group-chat", chat_type: "group", sender_id: "user-two", chat_name: "MBPass Engineering", sender_name: null,
@@ -30,7 +31,7 @@ it("shows a compact table with source tags and keeps full messages unloaded by d
     await act(async () => root.render(<I18nProvider><LanguagePicker /><ChatHistoryPage workspaceId="workspace-one" /></I18nProvider>));
     expect(list).toHaveBeenLastCalledWith("workspace-one", "all", "", 0);
     expect(container.querySelectorAll("table")).toHaveLength(1);
-    expect(Array.from(container.querySelectorAll("th"), (cell) => cell.textContent)).toEqual(["Started", "Source", "User", "Input", "Output", "Status", "Duration"]);
+    expect(Array.from(container.querySelectorAll("th"), (cell) => cell.textContent)).toEqual(["Started", "Source", "User", "Input", "Output", "Status", "Duration", "Langfuse"]);
     expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(container.textContent).toContain("12m13s");
     expect(container.textContent).toContain("ou_123…abcd");
@@ -46,6 +47,7 @@ it("shows a compact table with source tags and keeps full messages unloaded by d
     expect(directCells[2].textContent).toContain("Xiaobin Zheng");
     expect(directCells[2].querySelector(".chat-id")?.getAttribute("title")).toBe(direct.sender_id);
     expect(container.querySelectorAll("tbody tr")[1].lastElementChild?.textContent).toBe("—");
+    expect(directCells[6].textContent).toBe("12m13s");
     expect(container.querySelectorAll("article, details, img, tbody a")).toHaveLength(0);
     expect(container.querySelector(".chat-source-direct")?.textContent).toBe("Direct message");
     expect(container.querySelector(".chat-source-group")?.textContent).toBe("Group thread");
@@ -81,6 +83,51 @@ it("shows a compact table with source tags and keeps full messages unloaded by d
     await act(async () => root.unmount());
   }
 });
+
+it.each([
+  ["en", "View trace"], ["zh-CN", "查看链路"], ["zh-TW", "查看鏈路"],
+])("links each recorded Langfuse trace in a new tab in %s", async (locale, label) => {
+  const traceUrl = "https://jp.cloud.langfuse.com/project/project-one/traces/" + "a".repeat(32);
+  const list = vi.spyOn(dashboardApi, "listConversations").mockResolvedValue({
+    items: [{ ...direct, status: "timed_out", trace_url: traceUrl }, group], total: 2,
+  });
+  const detail = vi.spyOn(dashboardApi, "getConversation");
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", locale);
+  try {
+    await act(async () => root.render(<I18nProvider><ChatHistoryPage workspaceId="workspace-one" /></I18nProvider>));
+    const link = container.querySelector<HTMLAnchorElement>(".chat-trace-link")!;
+    expect(link.textContent).toBe(label);
+    expect(link.getAttribute("href")).toBe(traceUrl);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.getAttribute("aria-label")).toContain(label);
+    expect(link.getAttribute("download")).toBeNull();
+    expect(container.querySelectorAll("tbody tr")[1].lastElementChild?.textContent).toBe("—");
+    expect(detail).not.toHaveBeenCalled();
+    expect(list).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it.each(["javascript:alert(1)", "https://user:secret@example.com/trace", "/private/trace"])(
+  "does not render unsafe trace URL %s", async (traceUrl) => {
+    vi.spyOn(dashboardApi, "listConversations").mockResolvedValue({ items: [{ ...direct, trace_url: traceUrl }], total: 1 });
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    try {
+      await act(async () => root.render(<I18nProvider><ChatHistoryPage workspaceId="workspace-one" /></I18nProvider>));
+      expect(container.querySelector(".chat-trace-link")).toBeNull();
+      expect(container.querySelector("tbody tr")?.lastElementChild?.textContent).toBe("—");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);
 
 it("expands input and Markdown output independently using one lazy, cached message read", async () => {
   vi.spyOn(dashboardApi, "listConversations").mockResolvedValue({ items: [direct], total: 1 });

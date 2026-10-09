@@ -242,6 +242,7 @@ class AgentService:
             agent_provider: str | None = None
             prompt: str | None = None
             failure_diagnostic: str | None = None
+            trace_url: str | None = None
             run_started = False
             completed = False
             typing_reaction_id: str | None = None
@@ -280,6 +281,7 @@ class AgentService:
                 )
                 stage = "add_typing_reaction"
                 typing_reaction_id = await self._add_typing_reaction(message)
+                trace_url = await trace.get_url()
                 stage = "record_inbound_message"
                 self.session_store.record_message(
                     Message(
@@ -351,6 +353,7 @@ class AgentService:
                     agent_provider=agent_provider,
                     prompt_text=prompt,
                     started_at=started_at,
+                    trace_url=trace_url,
                 )
                 run_started = True
                 reporter = _ProgressReporter(self._channel, message)
@@ -581,6 +584,7 @@ class AgentService:
                                 flow_id=flow_id,
                                 prompt_text=prompt if run_started else None,
                                 failure_diagnostic=failure_diagnostic,
+                                trace_url=trace_url,
                             )
                         )
                 finally:

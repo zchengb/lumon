@@ -13,7 +13,7 @@ it("shows saved automation configuration and navigates without starting jobs", a
   const onNavigate = vi.fn();
   await act(async () => root.render(<I18nProvider><WorkspaceOverview
     overview={{ name: "Example", workspace_id: "workspace-id", path: "/example", created_at: "2026-09-29", lumon_version: "1.0.0", repositories: [], workflow_schedules: [] }}
-    settings={{ workspace_id: "workspace-id", feishu_webhook: { enabled: false, configured: false, masked_url: null }, auto_delivery: { enabled: false, trigger_hooks: [], schedule_expression: "" }, auto_scan: { enabled: true, trigger_hooks: [], schedule_expression: "0 12 * * 1-5", lookback_days: 7, workflow_description: "" } }}
+    settings={{ workspace_id: "workspace-id", feishu_webhook: { enabled: false, configured: false, masked_url: null }, auto_delivery: { enabled: false, trigger_hooks: [], schedule_expression: "", jira_site: "", trigger_jql: "", publish_mode: "local", target_branch: "" }, auto_scan: { enabled: true, trigger_hooks: [], schedule_expression: "0 12 * * 1-5", lookback_days: 7, workflow_description: "" } }}
     onRefresh={() => {}} refreshing={false} onNavigate={onNavigate} onOpenWorkflow={vi.fn()}
   /></I18nProvider>));
   expect(container.textContent).toContain("0 12 * * 1-5");

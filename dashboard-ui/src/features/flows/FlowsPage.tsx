@@ -1,4 +1,4 @@
-import { Check, Clock3, GitBranch, LoaderCircle, Save } from "lucide-react";
+import { Clock3, GitBranch, LoaderCircle, Save } from "lucide-react";
 import { useState } from "react";
 import { dashboardApi } from "../../app/api";
 import { useI18n } from "../../shared/i18n";
@@ -168,68 +168,62 @@ function FlowSchedulePanel({
   }
 
   return (
-    <section className="panel settings-panel flow-schedule-panel">
-      <div className="panel-heading">
-        <div className="settings-title">
-          <span className="workspace-glyph glyph-rose"><Clock3 size={18} /></span>
-          <div><p className="eyebrow">{t("flows.eyebrow")}</p><h2>{t("flows.scheduleTitle")}</h2></div>
-        </div>
-        <div className="settings-heading-actions">
-          <span className={enabled && selectedFlow.enabled ? "status-pill status-ready" : "status-pill status-neutral"}>
-            {enabled && selectedFlow.enabled && <Check size={13} />}
-            {enabled && selectedFlow.enabled ? t("flows.enabled") : t("flows.disabled")}
-          </span>
-          <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
-            <span>{t("flows.scheduleToggle")}</span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={enabled}
-              disabled={!selectedFlow.enabled}
-              aria-label={t("flows.scheduleToggle")}
-              onChange={(event) => {
-                const nextEnabled = event.target.checked;
-                setEnabled(nextEnabled);
-                onDirtyChange(
-                  nextEnabled !== savedEnabled || scheduleExpression !== savedExpression,
-                );
-              }}
-            />
-            <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
-          </label>
-        </div>
-      </div>
-      <p className="settings-description">{t("flows.scheduleDescription")}</p>
-      <div className="flow-schedule-fields">
-        <label className="field-label" htmlFor="flow-schedule-expression">
-          {t("flows.scheduleExpression")}
+    <section className="flow-schedule-panel" aria-label={t("flows.scheduleTitle")}>
+      <div className="flow-schedule-heading">
+        <h3><Clock3 size={16} />{t("flows.scheduleTitle")}</h3>
+        <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
+          <span>{t("flows.scheduleToggle")}</span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={enabled}
+            disabled={!selectedFlow.enabled}
+            aria-label={t("flows.scheduleToggle")}
+            onChange={(event) => {
+              const nextEnabled = event.target.checked;
+              setEnabled(nextEnabled);
+              onDirtyChange(
+                nextEnabled !== savedEnabled || scheduleExpression !== savedExpression,
+              );
+            }}
+          />
+          <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
         </label>
-        <input
-          id="flow-schedule-expression"
-          className="text-input mono"
-          value={scheduleExpression}
-          maxLength={128}
-          placeholder="0 8 * * 1-5"
-          onChange={(event) => {
-            const nextExpression = event.target.value;
-            setScheduleExpression(nextExpression);
-            onDirtyChange(enabled !== savedEnabled || nextExpression !== savedExpression);
-          }}
-        />
-        <p className="field-help">{t("flows.scheduleHelp")}</p>
-        {!selectedFlow.enabled && <p className="field-help">{t("flows.scheduleFlowDisabled")}</p>}
       </div>
-      <div className="settings-actions">
-        <button
-          className="button button-primary"
-          type="button"
-          onClick={() => void saveSchedule()}
-          disabled={saving || !changed || (enabled && !selectedFlow.enabled)}
-        >
-          {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
-          {t("flows.scheduleSave")}
-        </button>
+      <div className="flow-schedule-form">
+        <div className="flow-schedule-fields">
+          <label className="field-label" htmlFor="flow-schedule-expression">
+            {t("flows.scheduleExpression")}
+          </label>
+          <input
+            id="flow-schedule-expression"
+            className="text-input mono"
+            value={scheduleExpression}
+            maxLength={128}
+            aria-describedby="flow-schedule-help"
+            placeholder="0 8 * * 1-5"
+            onChange={(event) => {
+              const nextExpression = event.target.value;
+              setScheduleExpression(nextExpression);
+              onDirtyChange(enabled !== savedEnabled || nextExpression !== savedExpression);
+            }}
+          />
+        </div>
+        <div className="settings-actions">
+          <button
+            className="button button-primary"
+            type="button"
+            onClick={() => void saveSchedule()}
+            disabled={saving || !changed || (enabled && !selectedFlow.enabled)}
+          >
+            {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
+            {t("flows.scheduleSave")}
+          </button>
+        </div>
       </div>
+      <p className="field-help">{t("flows.scheduleDescription")}</p>
+      <p id="flow-schedule-help" className="field-help">{t("flows.scheduleHelp")}</p>
+      {!selectedFlow.enabled && <p className="field-help">{t("flows.scheduleFlowDisabled")}</p>}
     </section>
   );
 }

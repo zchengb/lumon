@@ -257,6 +257,7 @@ def test_chat_history_http_contract_is_read_only_and_workspace_scoped(
             error_code="agent_failed",
             prompt_text="PRIVATE RAW PROMPT",
             failure_diagnostic="PRIVATE DIAGNOSTIC",
+            trace_url="https://cloud.langfuse.com/project/test-project/traces/" + "a" * 32,
         )
     )
     snapshot = store.path.read_bytes()
@@ -271,6 +272,9 @@ def test_chat_history_http_contract_is_read_only_and_workspace_scoped(
     assert listed.json()["items"][0]["output_preview"] == ""
     assert listed.json()["items"][0]["chat_name"] is None
     assert listed.json()["items"][0]["sender_name"] is None
+    assert listed.json()["items"][0]["trace_url"] == (
+        "https://cloud.langfuse.com/project/test-project/traces/" + "a" * 32
+    )
 
     lookups: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
 
@@ -988,6 +992,10 @@ def test_settings_update_masks_webhook_and_test_does_not_persist_draft(
         "enabled": False,
         "trigger_hooks": ["jira.delivery_ready"],
         "schedule_expression": "*/5 * * * *",
+        "jira_site": "",
+        "trigger_jql": "",
+        "publish_mode": "local",
+        "target_branch": "",
     }
     assert url not in saved.text
 
@@ -999,6 +1007,8 @@ def test_settings_update_masks_webhook_and_test_does_not_persist_draft(
                 "enabled": True,
                 "trigger_hooks": ["jira.delivery_ready", "mail.delivery_ready"],
                 "schedule_expression": "0 9 * * 1-5",
+                "jira_site": "test.atlassian.net",
+                "trigger_jql": "project = TEST",
             },
         },
     )
@@ -1007,6 +1017,10 @@ def test_settings_update_masks_webhook_and_test_does_not_persist_draft(
         "enabled": True,
         "trigger_hooks": ["jira.delivery_ready", "mail.delivery_ready"],
         "schedule_expression": "0 9 * * 1-5",
+        "jira_site": "test.atlassian.net",
+        "trigger_jql": "project = TEST",
+        "publish_mode": "local",
+        "target_branch": "",
     }
 
     tested = client.post(
@@ -1036,6 +1050,95 @@ def test_settings_update_masks_webhook_and_test_does_not_persist_draft(
         json={"feishu_webhook": {"enabled": False, "url": ""}},
     )
     assert cleared.json()["feishu_webhook"]["configured"] is False
+
+
+@pytest.mark.parametrize("publish_mode", ["local", "branch", "pr", "direct"])
+def test_delivery_query_and_publish_policy_are_saved_without_rescheduling(
+    tmp_path: Path, publish_mode: str
+) -> None:
+    scheduler = _RecordingDeliveryScheduler()
+    service = _service(tmp_path)
+    service.delivery_scheduler = scheduler
+    client = _client(service)
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(tmp_path / "workspace"), "repositories": []},
+    ).json()["workspace_id"]
+    endpoint = f"/api/workspaces/{workspace_id}/settings"
+    before = client.get(endpoint).json()
+    delivery = {
+        "enabled": False,
+        "trigger_hooks": ["Use the optional Technical Plan when present."],
+        "schedule_expression": "*/5 * * * *",
+        "jira_site": "test.atlassian.net",
+        "trigger_jql": "project = TEST AND Flagged = Impediment",
+        "publish_mode": publish_mode,
+        "target_branch": "release",
+    }
+    saved = client.put(
+        endpoint,
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_delivery": delivery,
+        },
+    )
+    assert saved.status_code == 200
+    assert saved.json()["auto_delivery"] == delivery
+    assert saved.json()["auto_scan"] == before["auto_scan"]
+    assert not scheduler.calls
+
+    enabled = client.put(
+        endpoint,
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_delivery": {"enabled": True},
+        },
+    )
+    assert enabled.status_code == 200 and len(scheduler.calls) == 1
+    changed = client.put(
+        endpoint,
+        json={
+            "feishu_webhook": {"enabled": False},
+            "auto_delivery": {
+                "enabled": True,
+                "publish_mode": "local",
+                "trigger_jql": "project = TEST",
+            },
+        },
+    )
+    assert changed.status_code == 200 and len(scheduler.calls) == 1
+    assert changed.json()["auto_delivery"]["target_branch"] == "release"
+    assert changed.json()["auto_delivery"]["trigger_hooks"] == delivery["trigger_hooks"]
+    assert client.get(endpoint).json()["auto_delivery"] == changed.json()["auto_delivery"]
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"enabled": True},
+        {"enabled": True, "jira_site": "test.atlassian.net"},
+        {"enabled": False, "jira_site": "user:password@test.atlassian.net"},
+        {"enabled": False, "target_branch": "--force"},
+        {"enabled": False, "trigger_jql": "private-query\x00"},
+        {"enabled": False, "publish_mode": "merge"},
+    ],
+)
+def test_invalid_delivery_trigger_policy_does_not_change_settings(
+    tmp_path: Path, update: dict[str, object]
+) -> None:
+    client = _client(_service(tmp_path))
+    workspace_id = client.post(
+        "/api/workspaces/initialize",
+        json={"path": str(tmp_path / "workspace"), "repositories": []},
+    ).json()["workspace_id"]
+    endpoint = f"/api/workspaces/{workspace_id}/settings"
+    before = client.get(endpoint).json()
+    invalid = client.put(
+        endpoint, json={"feishu_webhook": {"enabled": False}, "auto_delivery": update}
+    )
+    assert invalid.status_code in {400, 422}
+    assert "password" not in invalid.text and "private-query" not in invalid.text
+    assert client.get(endpoint).json() == before
 
 
 def test_workspace_settings_are_isolated_between_workspaces(tmp_path: Path) -> None:
@@ -1085,7 +1188,11 @@ def test_settings_updates_do_not_reload_unchanged_automation_schedules(
         json={"path": str(tmp_path / "workspace"), "repositories": []},
     ).json()["workspace_id"]
     endpoint = f"/api/workspaces/{workspace_id}/settings"
-    required_settings: dict[str, object] = {"lookback_days": 7} if automation == "auto_scan" else {}
+    required_settings: dict[str, object] = (
+        {"lookback_days": 7}
+        if automation == "auto_scan"
+        else {"jira_site": "test.atlassian.net", "trigger_jql": "project = TEST"}
+    )
     saved = client.put(
         endpoint,
         json={
@@ -1157,7 +1264,11 @@ def test_automation_scheduler_is_updated_and_settings_roll_back_on_failure(
         "/api/workspaces/initialize",
         json={"path": str(tmp_path / "workspace"), "repositories": []},
     ).json()["workspace_id"]
-    required_settings: dict[str, object] = {"lookback_days": 7} if automation == "auto_scan" else {}
+    required_settings: dict[str, object] = (
+        {"lookback_days": 7}
+        if automation == "auto_scan"
+        else {"jira_site": "test.atlassian.net", "trigger_jql": "project = TEST"}
+    )
 
     saved = client.put(
         f"/api/workspaces/{workspace_id}/settings",
