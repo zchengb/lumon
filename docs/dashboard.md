@@ -72,6 +72,9 @@ before changing the registry or default selection.
 The **Settings** page manages configuration that applies to the local Agent
 across all Workspaces: enabled state, Codex model, reasoning effort, default
 Workspace, Feishu App credentials, and Langfuse Cloud observability.
+The default Workspace picker labels missing paths and invalid configurations
+and disables those options. An unavailable saved default remains selected
+until the user explicitly changes it; opening Settings never rewrites it.
 The model picker loads `GET /api/agent/models` when the page opens. Its refresh
 button queries the local Codex CLI's `model/list` catalog again without starting
 an Agent turn or changing saved settings. Reasoning choices come from each
@@ -232,6 +235,13 @@ enable switch and Save button. It stores:
   branch. An optional target/PR-base override applies to this Workspace; blank
   means each Repository's registered branch, not an assumed main/master.
 
+Schedule, JQL, submission-policy and target-branch guidance is hidden by
+default. Click the question-mark button beside a field label to open a floating
+tooltip without shifting the form layout. Click again, click outside, or press
+Escape to close it; moving focus away, scrolling or resizing also closes it.
+Tooltips stay inside the viewport and are not clipped by the panel. Help controls
+do not change or save Workspace settings.
+
 When enabled on macOS, saving its timing settings installs or updates an owner-level
 LaunchAgent named `com.lumon.delivery.<workspace-id>`. Each scheduled run
 executes `lumon delivery poll`. Under the existing Workspace lock, it performs a
@@ -252,7 +262,7 @@ Before claiming, the Agent must re-read that Story's eligibility, preserve its
 Flag and block unclear requirements rather than inventing them. It must not
 repeat a backlog scan. The saved publishing policy supersedes older hook wording
 about local-only handoff/commits/PRs, but never broadens work beyond this Story.
-Development stays in isolated `codex/delivery-<Story-key>` worktrees, including
+Development stays in isolated `lumon/delivery-<Story-key>` worktrees, including
 direct mode, without changing registered checkouts or unrelated edits.
 Published modes require validation, scoped commits, remote read-back and, for PR
 mode, a verified PR link. Direct mode never force pushes; a moved/rejected target

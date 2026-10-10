@@ -164,13 +164,15 @@ export function AgentSettingsPage({
                 onChange={(event) => setDefaultWorkspaceId(event.target.value)}
               >
                 <option value="">
-                  {workspaces.length === 1 ? t("agent.autoWorkspace") : t("agent.noDefaultWorkspace")}
+                  {workspaces.length === 1 && workspaces[0]?.health === "ready" ? t("agent.autoWorkspace") : t("agent.noDefaultWorkspace")}
                 </option>
                 {settings.default_workspace_id && !workspaces.some((item) => item.workspace_id === settings.default_workspace_id) && (
-                  <option value={settings.default_workspace_id}>{t("agent.unavailableWorkspace")}</option>
+                  <option value={settings.default_workspace_id} disabled>{t("agent.unavailableWorkspace")}</option>
                 )}
                 {workspaces.map((workspace) => (
-                  <option key={workspace.workspace_id} value={workspace.workspace_id}>{workspace.name}</option>
+                  <option key={workspace.workspace_id} value={workspace.workspace_id} disabled={workspace.health !== "ready"}>
+                    {workspace.name}{workspace.health === "ready" ? "" : ` · ${t(workspace.health === "missing" ? "health.pathMissing" : "health.invalidConfig")}`}
+                  </option>
                 ))}
               </select>
             </div>

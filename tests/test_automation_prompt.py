@@ -46,6 +46,8 @@ def test_delivery_uses_explicit_policy_and_selected_story(mode: DeliveryPublishM
     assert "Preserve the opt-in Flag" in prompt
     assert "supersedes older hook text" in prompt
     assert "normal fast-forward push" in prompt
+    assert "lumon/delivery-<Story-key>" in prompt
+    assert "codex/delivery-" not in prompt
     assert "Do not scan the entire backlog again" in " ".join(prompt.split())
     assert '"key": "TEST-1"' in prompt
 

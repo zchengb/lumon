@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { dashboardApi } from "../../app/api";
 import { I18nProvider, LanguagePicker } from "../../shared/i18n";
-import type { AgentSettings, AgentSettingsUpdate, CodexCliStatus } from "../../shared/types";
+import type { AgentSettings, AgentSettingsUpdate, CodexCliStatus, WorkspaceListItem } from "../../shared/types";
 import { AgentSettingsPage } from "./AgentSettingsPage";
 
 const settings: AgentSettings = {
@@ -29,13 +29,13 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-async function mount(initialSettings = settings) {
+async function mount(initialSettings = settings, workspaces: WorkspaceListItem[] = []) {
   const container = document.createElement("div");
   const root = createRoot(container);
   const onDirtyChange = vi.fn();
   const onSave = vi.fn<(update: AgentSettingsUpdate) => Promise<boolean>>().mockResolvedValue(true);
   async function rerender(nextSettings: AgentSettings): Promise<void> {
-    await act(async () => root.render(<I18nProvider><LanguagePicker /><AgentSettingsPage settings={nextSettings} workspaces={[]} onSave={onSave} onDirtyChange={onDirtyChange} /></I18nProvider>));
+    await act(async () => root.render(<I18nProvider><LanguagePicker /><AgentSettingsPage settings={nextSettings} workspaces={workspaces} onSave={onSave} onDirtyChange={onDirtyChange} /></I18nProvider>));
   }
   await rerender(initialSettings);
   return {
@@ -56,6 +56,60 @@ async function mount(initialSettings = settings) {
     unmount: async () => { await act(async () => root.unmount()); },
   };
 }
+
+const workspaceOptions: WorkspaceListItem[] = [
+  { workspace_id: "ready-id", name: "MBPass", health: "ready", path: "/test/mbpass", registered_at: "2026-10-10T00:00:00Z", detail: "Available." },
+  { workspace_id: "missing-id", name: "workspace", health: "missing", path: "/test/missing", registered_at: "2026-10-10T00:00:00Z", detail: "Missing directory." },
+  { workspace_id: "invalid-id", name: "workspace", health: "invalid", path: "/test/invalid", registered_at: "2026-10-10T00:00:00Z", detail: "Invalid manifest." },
+];
+
+it.each([
+  ["en", "Path missing", "Invalid configuration"],
+  ["zh-CN", "路径不存在", "配置异常"],
+  ["zh-TW", "路徑不存在", "設定異常"],
+])("labels and disables unhealthy default Workspace options in %s", async (locale, missingLabel, invalidLabel) => {
+  localStorage.setItem("lumon.locale", locale);
+  const view = await mount({ ...settings, default_workspace_id: "ready-id" }, workspaceOptions);
+  try {
+    const picker = view.container.querySelector<HTMLSelectElement>("#agent-default-workspace")!;
+    expect(picker.value).toBe("ready-id");
+    expect(Array.from(picker.options, (option) => [option.textContent, option.disabled])).toEqual([
+      [picker.options[0]!.textContent, false],
+      ["MBPass", false],
+      [`workspace · ${missingLabel}`, true],
+      [`workspace · ${invalidLabel}`, true],
+    ]);
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(view.onSave).not.toHaveBeenCalled();
+  } finally { await view.unmount(); }
+});
+
+it.each(["missing-id", "invalid-id", "unregistered-id"])("preserves an unavailable saved default %s until the user chooses a healthy Workspace", async (workspaceId) => {
+  const initialSettings = { ...settings, default_workspace_id: workspaceId };
+  const view = await mount(initialSettings, workspaceOptions);
+  try {
+    const picker = view.container.querySelector<HTMLSelectElement>("#agent-default-workspace")!;
+    expect(picker.value).toBe(workspaceId);
+    expect(picker.selectedOptions[0]!.disabled).toBe(true);
+    expect(view.saveButton("agent").disabled).toBe(true);
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(view.onSave).not.toHaveBeenCalled();
+    await act(async () => { picker.value = "ready-id"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => view.saveButton("agent").click());
+    expect(view.onSave.mock.calls[0][0].default_workspace_id).toBe("ready-id");
+    expect(view.onSave.mock.calls[0][0].observability.base_url).toBe(settings.observability.base_url);
+  } finally { await view.unmount(); }
+});
+
+it.each(["ready", "missing", "invalid"] as const)("offers automatic sole-Workspace selection only for a healthy registration (%s)", async (health) => {
+  const view = await mount(settings, [{ ...workspaceOptions[0]!, health }]);
+  try {
+    const picker = view.container.querySelector<HTMLSelectElement>("#agent-default-workspace")!;
+    expect(picker.options[0]!.textContent).toBe(health === "ready" ? "Use the only Workspace automatically" : "No default Workspace");
+    expect(picker.value).toBe("");
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(false);
+  } finally { await view.unmount(); }
+});
 
 it.each([
   ["en", "Model and reasoning effort changes apply to the next request. Other settings require restarting Agent."],

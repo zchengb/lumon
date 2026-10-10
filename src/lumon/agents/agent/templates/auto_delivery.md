@@ -42,7 +42,7 @@ This saved policy supersedes older hook text about local-only handoff, commits,
 branches or PRs. It never authorizes changes outside this Story, bypassing checks,
 force pushes, automatic PR merging, releases or deployments.
 
-Always work in an isolated worktree on codex/delivery-<Story-key>, preserving the
+Always work in an isolated worktree on lumon/delivery-<Story-key>, preserving the
 registered Repository's checkout and unrelated edits. If no target override is
 set, use that Repository's registered branch; do not guess main or master.
 Read Repository guidance, inspect the actual diff and run its required validation

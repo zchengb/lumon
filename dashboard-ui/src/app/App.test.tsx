@@ -136,7 +136,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("saves automation panels independentl
   window.history.replaceState(null, "", "?workspace=workspace-one&view=settings");
   let persisted = structuredClone(settings);
   vi.spyOn(dashboardApi, "listWorkspaces").mockResolvedValue(workspaces);
-  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.4.15", workspace_count: 2, has_workspaces: true });
+  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.4.16", workspace_count: 2, has_workspaces: true });
   vi.spyOn(dashboardApi, "getAgentSettings").mockResolvedValue(agent);
   vi.spyOn(dashboardApi, "getSettings").mockImplementation(async () => structuredClone(persisted));
   vi.spyOn(dashboardApi, "listAgentModels").mockResolvedValue([]);
