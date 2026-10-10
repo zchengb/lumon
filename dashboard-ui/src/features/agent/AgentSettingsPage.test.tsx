@@ -119,7 +119,33 @@ it.each([
   localStorage.setItem("lumon.locale", locale);
   const view = await mount();
   try {
-    expect(view.panel("agent").querySelector(".field-help")?.textContent).toBe(helpText);
+    expect(view.panel("agent").querySelector(".field-help")).toBeNull();
+    const help = document.getElementById("agent-apply-help")!;
+    expect(help.textContent).toBe(helpText);
+    expect(help.hidden).toBe(true);
+    const button = view.panel("agent").querySelector<HTMLButtonElement>(".field-help-toggle")!;
+    await act(async () => button.click());
+    expect(help.hidden).toBe(false);
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(help.hidden).toBe(true);
+    expect(view.onSave).not.toHaveBeenCalled();
+    expect(view.onDirtyChange).toHaveBeenLastCalledWith(false);
+  } finally { await view.unmount(); }
+});
+
+it("keeps Langfuse guidance in a title tooltip while model errors remain visible", async () => {
+  vi.mocked(dashboardApi.listAgentModels).mockRejectedValue(new Error("Unavailable"));
+  const view = await mount();
+  try {
+    const panel = view.panel("langfuse");
+    expect(panel.querySelector(".settings-description")).toBeNull();
+    const help = document.getElementById("agent-langfuse-help")!;
+    expect(help.hidden).toBe(true);
+    expect(help.textContent).toContain("lifecycle trace");
+    await act(async () => panel.querySelector<HTMLButtonElement>(".field-help-toggle")!.click());
+    expect(help.hidden).toBe(false);
+    expect(view.panel("agent").querySelector('[role="alert"]')?.textContent).toContain("model");
+    expect(view.onSave).not.toHaveBeenCalled();
   } finally { await view.unmount(); }
 });
 

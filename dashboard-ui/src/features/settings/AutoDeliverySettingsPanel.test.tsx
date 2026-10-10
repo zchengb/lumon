@@ -32,6 +32,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("saves a multiline trigger prompt and
       settings={next} onSave={onSave} onDirtyChange={onDirtyChange}
     /></I18nProvider>));
     await render(settings);
+    expect(container.querySelector(".settings-description")).toBeNull();
     const field = container.querySelector<HTMLTextAreaElement>("#auto-delivery-hooks")!;
     const save = container.querySelector<HTMLButtonElement>(".settings-actions button")!;
     expect(field.value).toBe("jira.delivery_ready\nmail.delivery_ready");

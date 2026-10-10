@@ -10,6 +10,7 @@ import type {
 import { buildAgentSectionUpdate, type AgentSettingsDraft, type AgentSettingsSection } from "./agentSettingsForm";
 import { AgentModelPicker } from "./AgentModelPicker";
 import { CodexCliNotice } from "./CodexCliNotice";
+import { HelpTooltip } from "../shared/HelpTooltip";
 
 interface AgentSettingsPageProps {
   settings: AgentSettings;
@@ -119,7 +120,10 @@ export function AgentSettingsPage({
             <span className="workspace-glyph glyph-violet"><Bot size={18} /></span>
             <div>
               <p className="eyebrow">{t("agent.runtime")}</p>
-              <h2 id="agent-runtime-title">{t("agent.title")}</h2>
+              <div className="field-label-heading">
+                <h2 id="agent-runtime-title">{t("agent.title")}</h2>
+                <HelpTooltip helpId="agent-apply-help" label={t("agent.title")} help={t("agent.applyHelp")} />
+              </div>
             </div>
           </div>
           <div className="settings-heading-actions">
@@ -199,7 +203,6 @@ export function AgentSettingsPage({
               />
             </div>
           </fieldset>
-          <p className="field-help"><Activity size={14} />{t("agent.applyHelp")}</p>
           <div className="settings-actions agent-settings-actions">
             <button className="button button-primary" type="button" aria-label={`${t("agent.save")} ${t("agent.title")}`} onClick={() => void save("agent")} disabled={saving !== null || !hasAgentChanges}>
               {saving === "agent" ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
@@ -215,7 +218,10 @@ export function AgentSettingsPage({
             <span className="workspace-glyph glyph-violet"><Activity size={18} /></span>
             <div>
               <p className="eyebrow">{t("agent.observability")}</p>
-              <h2 id="agent-langfuse-title">{t("agent.langfuse")}</h2>
+              <div className="field-label-heading">
+                <h2 id="agent-langfuse-title">{t("agent.langfuse")}</h2>
+                <HelpTooltip helpId="agent-langfuse-help" label={t("agent.langfuse")} help={t("agent.langfuseDescription")} />
+              </div>
             </div>
           </div>
           <div className="settings-heading-actions">
@@ -234,7 +240,6 @@ export function AgentSettingsPage({
             </label>
           </div>
         </div>
-        <p className="settings-description">{t("agent.langfuseDescription")}</p>
         <div className="agent-settings-body">
           <fieldset className="form-grid agent-settings-fields" disabled={saving === "langfuse"}>
             <legend className="sr-only">{t("agent.langfuse")}</legend>

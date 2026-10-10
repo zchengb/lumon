@@ -2,6 +2,7 @@ import { LoaderCircle, Save, ScanSearch } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../shared/i18n";
 import type { SettingsUpdate, WorkspaceSettings } from "../../shared/types";
+import { FieldLabelWithHelp, HelpTooltip } from "../shared/HelpTooltip";
 
 export function AutoScanSettingsPanel({ settings, onSave, onDirtyChange }: {
   settings: WorkspaceSettings;
@@ -52,7 +53,13 @@ export function AutoScanSettingsPanel({ settings, onSave, onDirtyChange }: {
     <div className="panel-heading">
       <div className="settings-title">
         <span className="workspace-glyph glyph-amber"><ScanSearch size={18} /></span>
-        <div><p className="eyebrow">{t("settings.automation")}</p><h2>{t("settings.autoScan")}</h2></div>
+        <div>
+          <p className="eyebrow">{t("settings.automation")}</p>
+          <div className="field-label-heading">
+            <h2>{t("settings.autoScan")}</h2>
+            <HelpTooltip helpId="auto-scan-overview-help" label={t("settings.autoScan")} help={t("settings.autoScanDescription")} />
+          </div>
+        </div>
       </div>
       <div className="settings-heading-actions">
         {hasChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
@@ -63,18 +70,15 @@ export function AutoScanSettingsPanel({ settings, onSave, onDirtyChange }: {
         </label>
       </div>
     </div>
-    <p className="settings-description">{t("settings.autoScanDescription")}</p>
     <div className="auto-scan-fields">
       <div className="form-grid">
         <div>
-          <label className="field-label" htmlFor="auto-scan-lookback">{t("settings.autoScanLookback")}</label>
-          <input id="auto-scan-lookback" className="text-input" type="number" min="1" max="365" value={lookbackDays} onChange={(event) => setLookbackDays(event.target.value)} />
-          <p className="field-help">{t("settings.autoScanLookbackHelp")}</p>
+          <FieldLabelWithHelp htmlFor="auto-scan-lookback" helpId="auto-scan-lookback-help" label={t("settings.autoScanLookback")} help={t("settings.autoScanLookbackHelp")} />
+          <input id="auto-scan-lookback" className="text-input" type="number" min="1" max="365" value={lookbackDays} aria-describedby="auto-scan-lookback-help" onChange={(event) => setLookbackDays(event.target.value)} />
         </div>
         <div>
-          <label className="field-label" htmlFor="auto-scan-schedule">{t("settings.autoScanSchedule")}</label>
-          <input id="auto-scan-schedule" className="text-input mono" value={scheduleExpression} placeholder="0 12 * * 1-5" onChange={(event) => setScheduleExpression(event.target.value)} />
-          <p className="field-help">{t("settings.autoScanScheduleHelp")}</p>
+          <FieldLabelWithHelp htmlFor="auto-scan-schedule" helpId="auto-scan-schedule-help" label={t("settings.autoScanSchedule")} help={t("settings.autoScanScheduleHelp")} />
+          <input id="auto-scan-schedule" className="text-input mono" value={scheduleExpression} placeholder="0 12 * * 1-5" aria-describedby="auto-scan-schedule-help" onChange={(event) => setScheduleExpression(event.target.value)} />
         </div>
         <div className="field-full">
           <label className="field-label" htmlFor="auto-scan-hooks">{t("settings.autoScanHooks")}</label>

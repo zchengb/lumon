@@ -25,6 +25,24 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("saves a multiline completion prompt 
       settings={next} onSave={onSave} onDirtyChange={onDirtyChange}
     /></I18nProvider>));
     await render(settings);
+    expect(container.querySelector(".settings-description, .field-help")).toBeNull();
+    const helpButtons = container.querySelectorAll<HTMLButtonElement>(".field-help-toggle");
+    expect(helpButtons).toHaveLength(3);
+    for (const button of helpButtons) {
+      const help = document.getElementById(button.getAttribute("aria-controls")!)!;
+      expect(help.hidden).toBe(true);
+      expect(help.parentElement).toBe(document.body);
+      expect(help.textContent?.trim()).not.toBe("");
+      await act(async () => button.click());
+      expect(help.hidden).toBe(false);
+      await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+      expect(help.hidden).toBe(true);
+    }
+    for (const id of ["auto-scan-lookback", "auto-scan-schedule"]) {
+      expect(container.querySelector(`#${id}`)?.getAttribute("aria-describedby")).toBe(`${id}-help`);
+    }
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
     expect(container.querySelector("#auto-scan-description")).toBeNull();
     const field = container.querySelector<HTMLTextAreaElement>("#auto-scan-hooks")!;
     const save = container.querySelector<HTMLButtonElement>(".settings-actions button")!;

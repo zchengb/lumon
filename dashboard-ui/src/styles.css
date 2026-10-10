@@ -1262,7 +1262,7 @@ code {
 }
 
 .auto-delivery-fields {
-  padding: 0 24px;
+  padding: 24px 24px 0;
 }
 
 .flow-schedule-fields {
@@ -1308,7 +1308,7 @@ code {
 }
 
 .auto-scan-fields {
-  padding: 0 24px;
+  padding: 24px 24px 0;
 }
 
 .scan-history-scroll {
