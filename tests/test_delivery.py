@@ -16,8 +16,11 @@ from lumon.delivery.notifications import build_delivery_card
 from lumon.delivery.service import DeliveryService
 from lumon.errors import PreflightError
 from lumon.tools.feishu_webhook import FeishuWebhookError, FeishuWebhookSender
+from lumon.workspace.config import WorkspaceConfig
+from lumon.workspace.model import RepositoryRecord
 from lumon.workspace.settings import (
     AutoDeliverySettings,
+    DeliveryPublishMode,
     FeishuWebhookSettings,
     WorkspaceSettings,
     WorkspaceSettingsStore,
@@ -215,3 +218,121 @@ def test_delivery_card_drops_credential_bearing_links() -> None:
 
     assert "password" not in card
     assert "card_link" not in card
+
+
+def test_delivery_card_omits_verification_but_receipt_keeps_it(tmp_path: Path) -> None:
+    service = DeliveryService(settings_store=WorkspaceSettingsStore(tmp_path / "state"))
+    run = _run()
+    workspace_id = run.workspace_id
+    assert workspace_id is not None
+    completed, _ = service.complete(
+        tmp_path / "workspace",
+        workspace_id,
+        run,
+        "Published to master.",
+        branch="master",
+        verification_summary="Seven syntax checks passed; full build NOT RUN.",
+    )
+    card = json.dumps(build_delivery_card(DeliveryEvent.DEV_DONE, completed))
+
+    assert "Verification" not in card
+    assert "Seven syntax checks" not in card
+    assert "**Branch:**  `master`" in card
+    saved = service.run_store.load(tmp_path / "workspace", run.run_id)
+    assert saved.verification_summary == completed.verification_summary
+
+
+@pytest.mark.parametrize("target_override", ["", "release"])
+@pytest.mark.parametrize("reported_branch", [None, "lumon/delivery-MBPAS-1495", "target"])
+def test_direct_completion_records_target_not_worktree_branch(
+    tmp_path: Path, target_override: str, reported_branch: str | None
+) -> None:
+    run = _run()
+    workspace_id = run.workspace_id
+    assert workspace_id is not None
+    settings = WorkspaceSettingsStore(tmp_path / "state")
+    settings.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_delivery=AutoDeliverySettings(
+                publish_mode=DeliveryPublishMode.DIRECT,
+                target_branch=target_override,
+            ),
+        )
+    )
+    workspace = tmp_path / "workspace"
+    WorkspaceConfig(
+        "Test",
+        repositories=(
+            RepositoryRecord("admin", "https://example.test/admin.git", "repos/admin", "master"),
+        ),
+    ).write(workspace / "lumon" / "workspace.toml")
+    service = DeliveryService(settings_store=settings)
+    service.run_store.save(workspace, run)
+    expected_target = target_override or "master"
+    branch = expected_target if reported_branch == "target" else reported_branch
+
+    if reported_branch != "target":
+        with pytest.raises(PreflightError, match="verified target branch"):
+            service.complete(
+                workspace, workspace_id, run, "Published.", repository="admin", branch=branch
+            )
+        assert service.run_store.load(workspace, run.run_id) == run
+        assert service.run_store.activity(workspace, run.run_id) == ()
+        return
+
+    completed, _ = service.complete(
+        workspace, workspace_id, run, "Published.", repository="admin", branch=branch
+    )
+    assert service.run_store.load(workspace, run.run_id).branch == expected_target
+    assert f"**Branch:**  `{expected_target}`" in json.dumps(
+        build_delivery_card(DeliveryEvent.DEV_DONE, completed)
+    )
+
+
+@pytest.mark.parametrize(
+    "mode", [DeliveryPublishMode.LOCAL, DeliveryPublishMode.BRANCH, DeliveryPublishMode.PR]
+)
+def test_other_submission_modes_keep_source_branch(
+    tmp_path: Path, mode: DeliveryPublishMode
+) -> None:
+    run = _run()
+    workspace_id = run.workspace_id
+    assert workspace_id is not None
+    settings = WorkspaceSettingsStore(tmp_path / "state")
+    settings.save(
+        WorkspaceSettings(workspace_id, auto_delivery=AutoDeliverySettings(publish_mode=mode))
+    )
+    service = DeliveryService(settings_store=settings)
+    branch = "lumon/delivery-MBPAS-1495"
+    completed, _ = service.complete(
+        tmp_path / "workspace",
+        workspace_id,
+        run,
+        "Verified outcome.",
+        phase="handoff" if mode == DeliveryPublishMode.LOCAL else "publish",
+        branch=branch,
+    )
+    assert completed.branch == branch
+
+
+def test_direct_completion_rejects_unknown_repository(tmp_path: Path) -> None:
+    run = _run()
+    workspace_id = run.workspace_id
+    assert workspace_id is not None
+    settings = WorkspaceSettingsStore(tmp_path / "state")
+    settings.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_delivery=AutoDeliverySettings(publish_mode=DeliveryPublishMode.DIRECT),
+        )
+    )
+    workspace = tmp_path / "workspace"
+    WorkspaceConfig("Test").write(workspace / "lumon" / "workspace.toml")
+    service = DeliveryService(settings_store=settings)
+    service.run_store.save(workspace, run)
+    with pytest.raises(PreflightError, match="registered Repository"):
+        service.complete(
+            workspace, workspace_id, run, "Published.", repository="unknown", branch="master"
+        )
+    assert service.run_store.load(workspace, run.run_id) == run

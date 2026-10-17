@@ -20,7 +20,13 @@ from lumon.delivery.notifications import build_delivery_card
 from lumon.delivery.store import DeliveryRunStore
 from lumon.errors import LumonError, PreflightError
 from lumon.tools.feishu_webhook import FeishuWebhookError, FeishuWebhookSender
-from lumon.workspace.settings import WorkspaceSettingsStore
+from lumon.workspace.config import load_workspace_config
+from lumon.workspace.layout import WorkspaceLayout
+from lumon.workspace.settings import (
+    AutoDeliverySettings,
+    DeliveryPublishMode,
+    WorkspaceSettingsStore,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +130,13 @@ class DeliveryService:
         """Persist a successful development result and emit ``delivery.dev_done``."""
 
         _require_running(run)
+        if phase == "publish":
+            _require_direct_publish_branch(
+                workspace,
+                self.settings_store.load(workspace_id).auto_delivery,
+                repository=repository or run.repository,
+                branch=branch if branch is not None else run.branch,
+            )
         updated = run.with_result(
             DeliveryResult(
                 DeliveryState.COMPLETED,
@@ -221,3 +234,26 @@ class DeliveryService:
 def _require_running(run: DeliveryRun) -> None:
     if run.state != DeliveryState.RUNNING:
         raise PreflightError("A finished Delivery run cannot be completed again.")
+
+
+def _require_direct_publish_branch(
+    workspace: Path,
+    settings: AutoDeliverySettings,
+    *,
+    repository: str | None,
+    branch: str | None,
+) -> None:
+    if settings.publish_mode != DeliveryPublishMode.DIRECT:
+        return
+    target_branch = settings.target_branch
+    if not target_branch:
+        config = load_workspace_config(WorkspaceLayout.from_root(workspace).workspace_config)
+        registered = next((item for item in config.repositories if item.name == repository), None)
+        if registered is None:
+            raise PreflightError("Specify a registered Repository for direct publication.")
+        target_branch = registered.branch
+    if branch != target_branch:
+        raise PreflightError(
+            f"Direct publication must record the verified target branch '{target_branch}' "
+            "in --branch, not the isolated worktree branch."
+        )

@@ -69,8 +69,6 @@ def _overview(run: DeliveryRun) -> str:
         lines.append(f"**Branch:**  `{run.branch}`")
     if run.duration_seconds is not None:
         lines.append(f"**Duration:**  {_format_duration(run.duration_seconds)}")
-    if run.verification_summary:
-        lines.append(f"**Verification:**  {run.verification_summary}")
     return "\n".join(lines)
 
 

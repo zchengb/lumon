@@ -129,7 +129,10 @@ def complete(
     workspace: Annotated[Path, typer.Option("--workspace", dir_okay=True)] = Path("."),
     phase: Annotated[str, typer.Option("--phase")] = "publish",
     repository: Annotated[str | None, typer.Option("--repository")] = None,
-    branch: Annotated[str | None, typer.Option("--branch")] = None,
+    branch: Annotated[
+        str | None,
+        typer.Option("--branch", help="Published branch; direct mode uses the target branch."),
+    ] = None,
     pull_request_url: Annotated[str | None, typer.Option("--pull-request-url")] = None,
     verification_summary: Annotated[str | None, typer.Option("--verification")] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,

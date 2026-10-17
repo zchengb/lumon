@@ -61,6 +61,9 @@ and follow the Repository's commit convention with the Story key.
 Perform only the action for the saved mode. After pushing, verify the actual
 remote commit; a command exit alone is not proof of publication. Record the branch,
 verification and verified PR URL (only in pr mode) in the completion receipt.
+For direct mode, pass `--branch <verified-target-branch>` to `lumon delivery complete`,
+not the isolated worktree branch. For local, branch and pr modes, record the
+isolated worktree/source branch instead. Keep worktree details in the handoff.
 Local mode ends in handoff; published modes end in publish. Missing authentication,
 tools or publication verification must produce fail/block, never claimed success.
 Lifecycle commands send the normal Feishu notifications; do not send extras.
