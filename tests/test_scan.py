@@ -24,6 +24,7 @@ from lumon.scan.service import ScanService
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.feishu_webhook import FeishuWebhookError, FeishuWebhookSender
+from lumon.tools.steering import SteeringControl
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
@@ -64,8 +65,9 @@ class _FakeRunner:
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
-        del agent_session_id, images, on_progress, on_event
+        del agent_session_id, images, on_progress, on_event, control
         self.prompts.append(prompt)
         if "Configured completion hooks:" in prompt:
             run_json = next(workspace.rglob("run.json"))

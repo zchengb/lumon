@@ -14,7 +14,7 @@ Agent 是 Lumon 的本地 Workspace Agent。它通过飞书 WebSocket 长连接�
 - 读取 Workspace 根目录的 `AGENTS.md`、`lumon/manifest.json`、
   `lumon/workspace.toml` 和 Repository metadata。
 - 使用当前配置的 Agent CLI 完成用户明确提出的 Workspace 内分析、命令和文件操作；
-  v1 的具体实现使用本机 Codex CLI 的 `codex exec --json`。
+  对话使用本机 `codex app-server`，支持执行中追加输入。
 - 发送简短进度消息和一条最终回答。
 - 使用本地 SQLite 做 Session、消息去重、历史记录、运行结果和中断恢复。
 - 首次调用保存完整 bootstrap Prompt；后续调用复用 Codex 原生 Session，只发送新的用户消息，减少重复上下文。
@@ -70,7 +70,8 @@ lumon/tools/codex.py
 不会把中间回答当作最终结果，也不会重新执行整个请求。
 
 Agent 的对话适配器位于 `lumon/agents/agent/runner.py`。它调用共享的
-`CodexTool`，把命令/文件事件转换为聊天进度，并额外要求有可回复的最终文本；
+`CodexTool` 的配置和 `codex_app_server.py` 的双向执行适配器，
+把命令/文件事件转换为聊天进度，并额外要求有可回复的最终文本；
 没有最终文本时，才由 Agent 转换为 `EMPTY_RESULT`。这样聊天输出策略不会反向
 污染其他 Flow。
 
@@ -207,11 +208,38 @@ Agent 的 Session 边界是稳定的：
 3. 当前 Session 的有限历史消息。
 4. 当前用户消息以及执行约束。
 
-当同一个 Session 收到后续消息时，Lumon 执行 `codex exec resume <codex-session-id>`，只把新的用户消息作为本轮输入，不再重新发送 SOUL、Workspace 规则或完整历史。后续 Run 的 `prompt_text` 保存实际发送的这段增量输入；原始完整 bootstrap Prompt 仍保留在第一条 Run 中，Codex 原生 Session 负责维护后续上下文。
+当同一个 Session 收到后续消息时，Lumon 用 `thread/resume` 恢复原生会话，再用
+`turn/start` 发送增量输入，不再重复发送 SOUL、Workspace 规则或完整历史。
+如果该会话已有执行中的轮次，追加消息改用 `turn/steer` 注入同一个轮次。
+Run 的 `prompt_text` 保存初始输入；追加输入单独保存在该 Session 的消息历史中。
 
 一个 Lumon Session 只绑定一个 Codex 原生 Session：私聊按 `chat_id` 绑定，群聊按 Thread 绑定，互不共享。如果 Workspace 发生变化，或原生 Session resume 失败，Lumon 会清除绑定；当前失败请求不会自动重试，下一条消息会重新发送 bootstrap Prompt，避免重复执行用户动作。
 
 这是为分析 Agent 视角保留的本机审计数据，不会出现在日志、CLI 输出、诊断结果或飞书回复中。由于 Prompt 可能包含工作区中的敏感上下文，完整记录只保存在 `$LUMON_HOME/agent.sqlite3`，文件和父目录分别限制为当前用户可读写（`600` / `700`）。不要把该数据库同步到外部系统。
+
+## 即時 steering 與暫停
+
+- 同一私聊／群聊 Thread 的追加訊息使用 `turn/steer`，帶入精確的
+  `threadId` 與 `expectedTurnId`；其他會話仍可獨立執行。
+  既有接收規則不變：群組訊息仍須明確 @Agent。
+- 只有 Codex 確認接受後，才回覆「已送入目前任務」，並把追加事件標為
+  `merged`，避免同一訊息再啟動一次執行。這代表輸入已送達，不代表模型已完成新要求。
+- 若追加訊息到達時該輪已結束，未被接受的訊息會改為下一輪，不丟棄、不誤報已介入。
+- `先不要 commit／push`、`不要提交和推送`、`don't push` 等明確的發布限制，
+  以及 `/pause` 或單獨的「停止」，會先呼叫 `turn/interrupt`，等待舊輪次停止，
+  再用唯讀、禁止本機 shell 網路存取的 sandbox 接續。任意自然語言無法完整辨識；
+  不確定時請使用 `/pause`。安全指令的文字優先於附件下載。
+- 暫停狀態記錄在 SQLite，重啟、恢復原生會話或重新建立上下文都不會自動解除。
+  只有明確的 `/resume` 能恢復原有執行能力；較早的 resume 不能覆蓋較新的停止指令。
+- 若協定失敗、逾時或無法確認中斷，終止本次 app-server 與其工具程序群組，
+  不回退到仍在背景繼續執行的舊命令。
+- 這不是外部交易回滾：接收訊息前已完成的 commit／push、已送達遠端的操作，
+  或脫離程序群組的工作無法保證撤回。唯讀 sandbox 是本機工具限制，
+  不是對遠端 MCP 服務權限的撤銷。請勿把 steering 當成絕對的外部交易取消機制。
+- 對話 steering 不會控制獨立的定時 Auto Scan、Auto Delivery 或其他會話。
+  更新此功能後需重啟 Agent 接收新實作；不需要重建 Workspace。
+
+原生協定參考：[Codex App Server](https://developers.openai.com/codex/app-server/)。
 
 Langfuse telemetry 与本机审计是两条边界：telemetry 默认关闭；开启后会发送上述
 metadata 以及客户端脱敏后的输入、rendered Prompt 和最终回复。每个新 Workspace 都

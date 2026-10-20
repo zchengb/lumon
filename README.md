@@ -197,6 +197,16 @@ Use `lumon agent start --background`, `lumon agent status`, and
 `lumon agent stop` for a detached local process. Agent is deliberately not
 started by `lumon ui`.
 
+Messages added while the same conversation is running are sent through Codex's
+native `turn/steer`, rather than waiting for the next request. Direct chats and
+group Threads remain isolated. Explicit stop/publication-hold instructions such
+as `先不要 commit／push`, `don't push`, or `/pause` interrupt the active turn and
+continue in a read-only, network-disabled shell sandbox. The hold survives
+restarts; use `/resume` explicitly to restore the original execution permissions.
+Already completed external operations cannot be undone by steering. Scheduled
+Auto Scan and Auto Delivery jobs are separate and are not controlled by these
+chat messages. See [Agent steering](docs/agent.md#即時-steering-與暫停) for details.
+
 Agent configuration is kept separately from Workspace settings in
 `~/.lumon/agent.toml` (or `$LUMON_HOME/agent.toml`) and its SQLite state is in
 `~/.lumon/agent.sqlite3`. The App Secret and Dashboard-saved Langfuse

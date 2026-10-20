@@ -349,6 +349,41 @@ class AgentSessionStore:
                 (session_id, event_id),
             )
 
+    def request_write_control(self, session_id: str, event_id: str, *, pause: bool) -> None:
+        """Keep an explicit user hold across process failures and session resume."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """UPDATE sessions SET write_control_event_id = ?,
+                writes_paused = CASE WHEN ? THEN 1 ELSE writes_paused END
+                WHERE session_id = ?""",
+                (event_id, int(pause), session_id),
+            )
+
+    def is_current_write_control(self, session_id: str, event_id: str) -> bool:
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT write_control_event_id FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        return row is not None and row["write_control_event_id"] == event_id
+
+    def confirm_write_resume(self, session_id: str, event_id: str) -> None:
+        """An older resume must never clear a newer stop, including after restart."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """UPDATE sessions SET writes_paused = 0
+                WHERE session_id = ? AND write_control_event_id = ?""",
+                (session_id, event_id),
+            )
+
+    def writes_paused(self, session_id: str) -> bool:
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT writes_paused FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        return row is not None and bool(row["writes_paused"])
+
     def request_message_cancellation(self, message_id: str) -> str | None:
         """Request cancellation for the active event carrying a message ID."""
 
@@ -361,7 +396,7 @@ class AgentSessionStore:
                 FROM events
                 WHERE message_id = ?
                   AND status IN (
-                      'queued', 'deferred', 'processing', 'cancel_requested', 'cancelled'
+                      'queued', 'deferred', 'merged', 'processing', 'cancel_requested', 'cancelled'
                   )
                 ORDER BY received_at DESC
                 LIMIT 1
@@ -371,7 +406,7 @@ class AgentSessionStore:
             if row is None:
                 return None
             event_id = str(row["event_id"])
-            if str(row["status"]) in {"queued", "deferred", "processing"}:
+            if str(row["status"]) in {"queued", "deferred", "merged", "processing"}:
                 connection.execute(
                     "UPDATE events SET status = 'cancel_requested' WHERE event_id = ?",
                     (event_id,),
@@ -720,6 +755,10 @@ class AgentSessionStore:
                 _ensure_column(connection, "events", "workspace_id", "TEXT")
                 _ensure_column(connection, "events", "session_id", "TEXT")
                 _ensure_column(connection, "sessions", "agent_session_id", "TEXT")
+                _ensure_column(connection, "sessions", "write_control_event_id", "TEXT")
+                _ensure_column(
+                    connection, "sessions", "writes_paused", "INTEGER NOT NULL DEFAULT 0"
+                )
                 _ensure_column(connection, "messages", "session_id", "TEXT")
                 _ensure_column(
                     connection,

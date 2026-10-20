@@ -10,7 +10,7 @@ import time
 import traceback
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -30,9 +30,15 @@ from lumon.agents.agent.model import (
     RecalledMessage,
     WorkspaceContext,
 )
-from lumon.agents.agent.runner import AgentRunner, create_agent_runner
+from lumon.agents.agent.runner import (
+    AgentEventCallback,
+    AgentRunner,
+    ProgressCallback,
+    create_agent_runner,
+)
 from lumon.agents.agent.session_store import AgentSessionStore
 from lumon.agents.agent.soul import SoulLoader
+from lumon.agents.agent.steering_policy import steering_policy
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentConfigError, AgentRuntimeError, LumonError
 from lumon.flows.catalog import FlowCatalog
@@ -48,12 +54,23 @@ from lumon.observability import (
     create_agent_telemetry,
 )
 from lumon.tools.safety import sanitize_output
+from lumon.tools.steering import SteeringControl, SteeringInput
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.registry import WorkspaceRegistry
 
 logger = logging.getLogger(__name__)
 _CODEX_TRACE_CONTENT_LIMIT = 4096
 _AGENT_ERROR_LOG_LIMIT = 16 * 1024
+
+
+@dataclass(slots=True)
+class _ActiveExecution:
+    control: SteeringControl
+    message: InboundMessage
+    session_id: str
+    workspace_id: UUID
+    image_directory: Path
+    followups: list[asyncio.Task[None]] = field(default_factory=lambda: list[asyncio.Task[None]]())
 
 
 class AgentService:
@@ -86,6 +103,10 @@ class AgentService:
         self._tasks: set[asyncio.Task[None]] = set()
         self._tasks_by_event: dict[str, asyncio.Task[None]] = {}
         self._stop_event: asyncio.Event | None = None
+        self._active_executions: dict[str, _ActiveExecution] = {}
+        self._steered_parents: dict[str, InboundMessage] = {}
+        self._waiting_messages: dict[str, InboundMessage] = {}
+        self._stopping = False
 
     async def run_forever(self) -> None:
         """Start the Feishu WebSocket lifecycle and recover pending messages."""
@@ -144,6 +165,15 @@ class AgentService:
             )
             message = replace(message, text=merged_text)
         session_id = self.session_store.get_or_create_session(message).session_id
+        policy = steering_policy(message.text)
+        if policy is not None:
+            # Persist the hold before any async work, so a crash cannot resume stale writes.
+            self.session_store.request_write_control(
+                session_id, message.event_id, pause=policy == "pause"
+            )
+            active = self._active_executions.get(message.conversation_key)
+            if active is not None:
+                active.control.policy = policy
         self._schedule(message, session_id)
 
     async def handle_recalled(self, message: RecalledMessage) -> None:
@@ -152,6 +182,13 @@ class AgentService:
         event_id = self.session_store.request_message_cancellation(message.message_id)
         if event_id is None:
             return
+        self._waiting_messages.pop(event_id, None)
+        parent = self._steered_parents.get(event_id)
+        if parent is not None:
+            self.session_store.mark_event_cancelled(event_id)
+            parent_event = self.session_store.request_message_cancellation(parent.message_id)
+            if parent_event is not None:
+                event_id = parent_event
         task = self._tasks_by_event.get(event_id)
         if task is None or task.done():
             self.session_store.mark_event_cancelled(event_id)
@@ -203,8 +240,17 @@ class AgentService:
         self.agent_runner = runner
         return execution_config, runner
 
-    def _schedule(self, message: InboundMessage, session_id: str) -> None:
-        task = asyncio.create_task(self._process(message, session_id))
+    def _schedule(self, message: InboundMessage, session_id: str, *, steer: bool = True) -> None:
+        if self._stopping:
+            return  # Claimed but undelivered events stay durable for restart recovery.
+        active = self._active_executions.get(message.conversation_key) if steer else None
+        if active is not None and not active.control.closed:
+            task = asyncio.create_task(self._steer_message(message, active))
+            active.followups.append(task)
+            self._steered_parents[message.event_id] = active.message
+        else:
+            self._waiting_messages[message.event_id] = message
+            task = asyncio.create_task(self._process(message, session_id))
         self._tasks.add(task)
         self._tasks_by_event[message.event_id] = task
         task.add_done_callback(self._task_finished)
@@ -222,6 +268,9 @@ class AgentService:
     async def _process_locked(self, message: InboundMessage, session_id: str) -> None:
         lock = self._conversation_locks.setdefault(message.conversation_key, asyncio.Lock())
         async with lock:
+            self._waiting_messages.pop(message.event_id, None)
+            if self.session_store.event_status(message.event_id) == "merged":
+                return
             if self.session_store.is_cancellation_requested(message.event_id):
                 self.session_store.mark_event_cancelled(message.event_id)
                 return
@@ -375,13 +424,17 @@ class AgentService:
                         event_observer = _CodexTraceObserver(codex_span)
                         result: AgentResult | None = None
                         try:
-                            result = await runner.run(
-                                context.path,
+                            result = await self._run_with_steering(
+                                runner,
+                                context,
+                                message,
+                                session_id,
                                 prompt,
-                                agent_session_id=resume_session_id,
-                                images=image_paths,
-                                on_progress=reporter.notify,
-                                on_event=event_observer.observe,
+                                resume_session_id,
+                                image_paths,
+                                Path(image_directory),
+                                reporter.notify,
+                                event_observer.observe,
                             )
                         finally:
                             await event_observer.close(
@@ -594,6 +647,121 @@ class AgentService:
                         final_text=final_text,
                     )
 
+    async def _run_with_steering(
+        self,
+        runner: AgentRunner,
+        context: WorkspaceContext,
+        message: InboundMessage,
+        session_id: str,
+        prompt: str,
+        resume_session_id: str | None,
+        images: tuple[Path, ...],
+        image_directory: Path,
+        on_progress: ProgressCallback,
+        on_event: AgentEventCallback,
+    ) -> AgentResult:
+        policy = steering_policy(message.text)
+        if policy == "resume" and not self.session_store.is_current_write_control(
+            session_id, message.event_id
+        ):
+            policy = "pause"
+        if policy != "resume" and self.session_store.writes_paused(session_id):
+            policy = "pause"
+        control = SteeringControl(policy)
+        active = _ActiveExecution(
+            control, message, session_id, context.workspace_id, image_directory
+        )
+        self._active_executions[message.conversation_key] = active
+        # Adopt follow-ups received during context/attachment preparation, before run().
+        for waiting in tuple(self._waiting_messages.values()):
+            if waiting.conversation_key != message.conversation_key:
+                continue
+            queued_task = self._tasks_by_event.get(waiting.event_id)
+            if queued_task is not None:
+                queued_task.cancel()
+            self._waiting_messages.pop(waiting.event_id, None)
+            self._schedule(waiting, session_id)
+        try:
+            result = await runner.run(
+                context.path,
+                prompt,
+                agent_session_id=resume_session_id,
+                images=images,
+                on_progress=on_progress,
+                on_event=on_event,
+                control=control,
+            )
+            if policy == "resume" and result.status == "succeeded":
+                self.session_store.confirm_write_resume(session_id, message.event_id)
+            return result
+        finally:
+            control.close()
+            self._active_executions.pop(message.conversation_key, None)
+            await asyncio.gather(*active.followups, return_exceptions=True)
+            self._steered_parents = {
+                event: parent
+                for event, parent in self._steered_parents.items()
+                if parent.event_id != message.event_id
+            }
+
+    async def _steer_message(self, message: InboundMessage, active: _ActiveExecution) -> None:
+        try:
+            if self.session_store.is_cancellation_requested(message.event_id):
+                self.session_store.mark_event_cancelled(message.event_id)
+                return
+            builder = self._context_builder
+            assert builder is not None
+            policy = steering_policy(message.text)
+            if policy == "resume" and not self.session_store.is_current_write_control(
+                active.session_id, message.event_id
+            ):
+                policy = "pause"
+            images: tuple[Path, ...] = ()
+            # Safety commands reach interrupt before slow/failed attachment downloads.
+            if message.images and policy is None:
+                destination = active.image_directory / uuid4().hex
+                destination.mkdir()
+                images = await self._download_images(message, destination)
+            prompt = builder.build_resume_prompt(
+                message.text, channel_context=message.channel_context
+            )
+            receipt = active.control.submit(SteeringInput(prompt, images, policy))
+            if receipt is None and policy is not None:
+                # Never let a saturated ordinary-input queue delay a stop request.
+                parent = self._tasks_by_event.get(active.message.event_id)
+                if parent is not None:
+                    parent.cancel()
+            if receipt is None or not await receipt:
+                self._schedule(message, active.session_id, steer=False)
+                return
+            self.session_store.record_message(
+                Message(
+                    conversation_key=message.conversation_key,
+                    direction="inbound",
+                    message_id=message.message_id,
+                    workspace_id=active.workspace_id,
+                    text=message.text,
+                    created_at=_timestamp(self._now()),
+                    session_id=active.session_id,
+                )
+            )
+            self.session_store.mark_event_status(message.event_id, "merged")
+            if policy == "resume":
+                self.session_store.confirm_write_resume(active.session_id, message.event_id)
+            if policy == "pause":
+                text = (
+                    "已中斷舊輪次並以唯讀方式接續。已完成的操作無法撤回；"
+                    "輸入 /resume 才恢復操作能力。"
+                )
+            elif policy == "resume":
+                text = "已按你的指示恢復原有操作能力，並接續目前會話。"
+            else:
+                text = "補充訊息已送入目前處理中的任務，不需等待下一輪。"
+            await self._send(message, text)
+        except (LumonError, OSError):
+            self.session_store.mark_event_status(message.event_id, "failed")
+            await self._send(message, "追加訊息未能送入任務，請重試；若要停止操作，請輸入 /pause。")
+
     async def _send(self, message: InboundMessage, text: str) -> bool:
         if self._channel is None:
             return False
@@ -644,6 +812,7 @@ class AgentService:
             raise asyncio.CancelledError
 
     async def _shutdown_tasks(self) -> None:
+        self._stopping = True
         tasks = tuple(self._tasks)
         if not tasks:
             return
@@ -652,6 +821,7 @@ class AgentService:
         await asyncio.gather(*tasks, return_exceptions=True)
         self._tasks.clear()
         self._tasks_by_event.clear()
+        self._waiting_messages.clear()
 
     def _start_trace(
         self,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -41,6 +42,7 @@ from lumon.observability import (
 )
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.codex import CodexTool
+from lumon.tools.steering import SteeringControl
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest
 from lumon.workspace.registry import WorkspaceRegistry
@@ -73,8 +75,9 @@ class FakeRunner:
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
-        del workspace
+        del workspace, control
         self.prompts.append(prompt)
         self.agent_session_ids.append(agent_session_id)
         self.images.append(images)
@@ -110,8 +113,9 @@ class BlockingRunner(FakeRunner):
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, images, on_progress, on_event
+        del workspace, prompt, agent_session_id, images, on_progress, on_event, control
         self.started.set()
         await asyncio.Event().wait()
         raise AssertionError("blocking runner should only finish by cancellation")
@@ -127,8 +131,9 @@ class FailingRunner(FakeRunner):
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, images, on_progress, on_event
+        del workspace, prompt, agent_session_id, images, on_progress, on_event, control
         raise RuntimeError("private request content must not be stored")
 
 
@@ -142,8 +147,9 @@ class ProviderFailingRunner(FakeRunner):
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, images, on_progress, on_event
+        del workspace, prompt, agent_session_id, images, on_progress, on_event, control
         return AgentResult(
             status="failed",
             error_code=AgentErrorCode.EXECUTION_FAILED,
@@ -162,8 +168,9 @@ class TimedOutRunner(FakeRunner):
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
-        del workspace, prompt, agent_session_id, images, on_progress, on_event
+        del workspace, prompt, agent_session_id, images, on_progress, on_event, control
         return AgentResult(status="timed_out", error_code=AgentErrorCode.TIMEOUT)
 
 
@@ -626,14 +633,25 @@ def test_service_sends_final_reply_only_after_recovered_codex_turn(
     config_store = AgentConfigStore(state_root)
     config_store.save(config)
     fake = tmp_path / "fake-codex"
-    terminal_type = "turn.completed" if recovered else "turn.failed"
+    terminal_status = "completed" if recovered else "failed"
     fake.write_text(
-        "#!/bin/sh\ncat >/dev/null\n"
-        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"recovered-thread"}\'\n'
-        'printf \'%s\\n\' \'{"type":"error","message":"Reconnecting..."}\'\n'
-        'printf \'%s\\n\' \'{"type":"item.completed",'
-        '"item":{"type":"agent_message","text":"Final answer"}}\'\n'
-        f"printf '%s\\n' '{{\"type\":\"{terminal_type}\"}}'\n",
+        f"#!{sys.executable}\n"
+        "import json,sys\n"
+        "def send(value): print(json.dumps(value), flush=True)\n"
+        "for line in sys.stdin:\n"
+        "    r=json.loads(line); m=r['method']\n"
+        "    if m=='initialized': continue\n"
+        "    if m=='initialize': result={}\n"
+        "    elif m in ('thread/start','thread/resume'): "
+        "result={'thread':{'id':'recovered-thread'}}\n"
+        "    else: result={'turn':{'id':'turn-1'}}\n"
+        "    send({'id':r['id'],'result':result})\n"
+        "    if m=='turn/start':\n"
+        "        send({'method':'error','params':{'message':'Reconnecting...'}})\n"
+        "        send({'method':'item/completed','params':{'threadId':'recovered-thread',"
+        "'turnId':'turn-1','item':{'type':'agentMessage','text':'Final answer'}}})\n"
+        "        send({'method':'turn/completed','params':{'threadId':'recovered-thread',"
+        "'turn':{'id':'turn-1','status':'TERMINAL'}}})\n".replace("TERMINAL", terminal_status),
         encoding="utf-8",
     )
     fake.chmod(0o755)
@@ -1192,3 +1210,202 @@ def test_model_reload_preserves_injected_runner(reload_runtime: ReloadRuntime) -
 
     assert runtime.runners == []
     assert runner.agent_session_ids == [None, "provider-session-1"]
+
+
+class SteeringRunner(FakeRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.received = asyncio.Event()
+        self.release = asyncio.Event()
+        self.steered: list[str] = []
+        self.policies: list[str | None] = []
+
+    async def run(
+        self,
+        workspace: Path,
+        prompt: str,
+        *,
+        agent_session_id: str | None = None,
+        images: tuple[Path, ...] = (),
+        on_progress: ProgressCallback | None = None,
+        on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
+    ) -> AgentResult:
+        del workspace, agent_session_id, images, on_progress, on_event
+        assert control is not None
+        self.prompts.append(prompt)
+        self.policies.append(control.policy)
+        if len(self.prompts) == 1:
+            self.started.set()
+            request = await control.receive()
+            self.steered.append(request.input.text)
+            request.accepted.set_result(True)
+            self.received.set()
+            await self.release.wait()
+        return AgentResult(
+            status="succeeded", final_text="Updated outcome", agent_session_id="thread-1"
+        )
+
+
+@pytest.mark.parametrize("followup", ["please add tests", "先不要 commit／push"])
+def test_followup_steers_running_turn_once_and_persists_hold(
+    reload_runtime: ReloadRuntime,
+    followup: str,
+) -> None:
+    runtime = reload_runtime
+    runner = SteeringRunner()
+    runtime.service.agent_runner = runner
+    message = replace(reload_message("followup"), text=followup)
+
+    async def run() -> None:
+        try:
+            await runtime.service.handle_message(reload_message("first"))
+            await asyncio.wait_for(runner.started.wait(), 3)
+            await runtime.service.handle_message(message)
+            await runtime.service.handle_message(message)
+            await asyncio.wait_for(runner.received.wait(), 3)
+            for _ in range(20):
+                if runtime.service.session_store.event_status("followup") == "merged":
+                    break
+                await asyncio.sleep(0.01)
+            assert runtime.service.session_store.event_status("followup") == "merged"
+            assert len(runner.prompts) == 1
+            runner.release.set()
+            await runtime.service.wait_for_idle()
+        finally:
+            runner.release.set()
+            await runtime.service.stop()
+
+    asyncio.run(run())
+    assert len(runner.steered) == 1 and followup in runner.steered[0]
+    session = runtime.service.session_store.get_or_create_session(message)
+    assert runtime.service.session_store.writes_paused(session.session_id) == ("commit" in followup)
+    reopened = AgentSessionStore(db_path=runtime.service.session_store.path)
+    assert reopened.writes_paused(session.session_id) == ("commit" in followup)
+    history = reopened.load_history(session.session_id)
+    assert sum(item.text == followup for item in history) == 1
+
+
+@pytest.mark.parametrize("group_thread", [False, True])
+def test_different_conversation_runs_without_steering_original(
+    reload_runtime: ReloadRuntime,
+    group_thread: bool,
+) -> None:
+    runtime = reload_runtime
+    runner = SteeringRunner()
+    runtime.service.agent_runner = runner
+
+    async def run() -> None:
+        try:
+            first = reload_message("first")
+            other = reload_message("other", chat_id="other-chat")
+            if group_thread:
+                first = replace(
+                    first, chat_type="group", mentioned_agent=True, thread_id="thread-a"
+                )
+                other = replace(
+                    other,
+                    chat_id=first.chat_id,
+                    chat_type="group",
+                    mentioned_agent=True,
+                    thread_id="thread-b",
+                )
+            await runtime.service.handle_message(first)
+            await asyncio.wait_for(runner.started.wait(), 3)
+            await runtime.service.handle_message(other)
+            await asyncio.wait_for(runtime.channel.replied.wait(), 3)
+            assert len(runner.prompts) == 2
+            assert not runner.steered
+        finally:
+            await runtime.service.stop()
+
+    asyncio.run(run())
+
+
+def test_pause_survives_next_turn_until_explicit_resume(reload_runtime: ReloadRuntime) -> None:
+    runtime = reload_runtime
+    runner = SteeringRunner()
+    # Finish the first request normally for this policy propagation test.
+    runner.prompts.append("previous")
+    runtime.service.agent_runner = runner
+
+    async def run() -> None:
+        try:
+            for event, text in [
+                ("hold", "不要 push"),
+                ("next", "檢查目前狀態"),
+                ("resume", "/resume"),
+            ]:
+                await runtime.service.handle_message(replace(reload_message(event), text=text))
+                await runtime.service.wait_for_idle()
+            assert runner.policies == ["pause", "pause", "resume"]
+        finally:
+            await runtime.service.stop()
+
+    asyncio.run(run())
+
+
+def test_followup_during_preparation_is_adopted_by_active_turn(
+    reload_runtime: ReloadRuntime,
+) -> None:
+    runtime = reload_runtime
+    runner = SteeringRunner()
+    runtime.service.agent_runner = runner
+    runtime.channel.pause_message_id = "om-first"
+
+    async def run() -> None:
+        try:
+            await runtime.service.handle_message(reload_message("first"))
+            await asyncio.wait_for(runtime.channel.typing_started.wait(), 3)
+            await runtime.service.handle_message(reload_message("append while preparing"))
+            runtime.channel.resume_typing.set()
+            await asyncio.wait_for(runner.received.wait(), 3)
+            runner.release.set()
+            await runtime.service.wait_for_idle()
+            assert len(runner.prompts) == 1
+            assert len(runner.steered) == 1
+        finally:
+            runner.release.set()
+            await runtime.service.stop()
+
+    asyncio.run(run())
+
+
+def test_new_stop_cannot_be_cleared_by_older_resume(reload_runtime: ReloadRuntime) -> None:
+    store = reload_runtime.service.session_store
+    session = store.get_or_create_session(reload_message("first"))
+    store.request_write_control(session.session_id, "pause-1", pause=True)
+    store.request_write_control(session.session_id, "resume-1", pause=False)
+    assert store.writes_paused(session.session_id)
+    store.request_write_control(session.session_id, "pause-2", pause=True)
+    store.confirm_write_resume(session.session_id, "resume-1")
+    assert store.writes_paused(session.session_id)
+    reopened = AgentSessionStore(db_path=store.path)
+    assert reopened.is_current_write_control(session.session_id, "pause-2")
+
+
+def test_recalling_steered_input_stops_the_active_parent(reload_runtime: ReloadRuntime) -> None:
+    runtime = reload_runtime
+    runner = SteeringRunner()
+    runtime.service.agent_runner = runner
+
+    async def run() -> None:
+        try:
+            await runtime.service.handle_message(reload_message("first"))
+            await asyncio.wait_for(runner.started.wait(), 3)
+            await runtime.service.handle_message(reload_message("followup"))
+            await asyncio.wait_for(runner.received.wait(), 3)
+            for _ in range(20):
+                if runtime.service.session_store.event_status("followup") == "merged":
+                    break
+                await asyncio.sleep(0.01)
+            await runtime.service.handle_recalled(RecalledMessage("recall", "om-followup"))
+            await runtime.service.wait_for_idle()
+            assert runtime.service.session_store.event_status("followup") == "cancelled"
+            assert runtime.service.session_store.event_status("first") == "cancelled"
+            assert "Updated outcome" not in runtime.channel.replies
+        finally:
+            await runtime.service.stop()
+
+    asyncio.run(run())

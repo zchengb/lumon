@@ -26,6 +26,8 @@ from lumon.tools.codex import (
     CodexRequest,
     CodexTool,
 )
+from lumon.tools.codex_app_server import execute_steerable
+from lumon.tools.steering import SteeringControl
 
 ProgressCallback = Callable[[AgentProgress], Awaitable[None]]
 AgentEventCallback = Callable[[AgentEvent], Awaitable[None]]
@@ -70,6 +72,7 @@ class CodexAgentRunner:
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
         """Run Codex and apply Agent's requirement for a replyable final text."""
 
@@ -79,6 +82,9 @@ class CodexAgentRunner:
 
         async def observe(event: CodexEvent) -> None:
             nonlocal last_reply_text, selected_flow_id
+            if event.kind == "turn_started":
+                last_reply_text = None
+                selected_flow_id = None
             if event.kind == "message" and event.text:
                 marker_flow_id, _marker_status, cleaned_text = extract_flow_selection(event.text)
                 if marker_flow_id is not None:
@@ -95,15 +101,16 @@ class CodexAgentRunner:
             if on_progress is not None:
                 await on_progress(candidate)
 
-        result = await self.tool.execute(
-            CodexRequest(
-                workspace=workspace,
-                prompt=prompt,
-                resume_session_id=agent_session_id,
-                images=images,
-            ),
-            on_event=observe,
+        request = CodexRequest(
+            workspace=workspace,
+            prompt=prompt,
+            resume_session_id=agent_session_id,
+            images=images,
         )
+        if control is None:
+            result = await self.tool.execute(request, on_event=observe)
+        else:
+            result = await execute_steerable(self.tool, request, control, on_event=observe)
         if result.status == "timed_out":
             return AgentResult(
                 status="timed_out",
@@ -122,7 +129,10 @@ class CodexAgentRunner:
                 agent_session_id=result.agent_session_id,
                 flow_id=selected_flow_id,
             )
-        source_text = result.final_text or last_reply_text
+        # A replaced app-server turn must never reuse the interrupted turn's text.
+        source_text = (
+            result.final_text if control is not None else result.final_text or last_reply_text
+        )
         if not source_text:
             return AgentResult(
                 status="failed",
@@ -134,7 +144,7 @@ class CodexAgentRunner:
             )
         flow_id, _flow_status, final_text = extract_flow_selection(source_text)
         flow_id = flow_id or selected_flow_id
-        if not final_text.strip() and last_reply_text is not None:
+        if control is None and not final_text.strip() and last_reply_text is not None:
             final_text = last_reply_text
         return AgentResult(
             status="succeeded",
@@ -191,6 +201,7 @@ class AgentRunner(Protocol):
         images: tuple[Path, ...] = (),
         on_progress: ProgressCallback | None = None,
         on_event: AgentEventCallback | None = None,
+        control: SteeringControl | None = None,
     ) -> AgentResult:
         """Run one bounded request and return safe progress and final output."""
 

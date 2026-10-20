@@ -24,6 +24,7 @@ CodexEventKind = Literal[
     "file_change",
     "error",
     "turn_completed",
+    "turn_started",
 ]
 CodexEventLifecycle = Literal["started", "completed", "observed"]
 CodexExecutionStatus = Literal["succeeded", "failed", "timed_out"]
