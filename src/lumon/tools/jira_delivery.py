@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -22,38 +22,39 @@ class JiraDeliveryCandidate:
     url: str
 
 
-class _Fields(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    summary: str = Field(min_length=1, max_length=500)
-
-
 class _Issue(BaseModel):
     model_config = ConfigDict(strict=True)
 
     key: str = Field(pattern=r"^[A-Z][A-Z0-9_]*-[1-9][0-9]*$", max_length=128)
-    fields: _Fields
+    summary: str = Field(min_length=1, max_length=500)
 
 
 class _Page(BaseModel):
     model_config = ConfigDict(strict=True)
 
-    issues: list[_Issue] = Field(max_length=100)
-    is_last: bool = Field(alias="isLast")
-    next_token: str | None = Field(default=None, alias="nextPageToken", max_length=4096)
-
-
-class _ResponseData(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    status: int
-    body: dict[str, object]
+    issues: list[_Issue] = Field(max_length=1)
 
 
 class _Response(BaseModel):
     model_config = ConfigDict(strict=True)
 
-    data: _ResponseData
+    data: _Page
+    errors: list[object] = Field(default_factory=list[object], max_length=0)
+
+
+def _exclude_claimed(jql: str, keys: frozenset[str]) -> str:
+    if not keys:
+        return jql
+    if any(not re.fullmatch(r"[A-Z][A-Z0-9_]*-[1-9][0-9]*", key) for key in keys):
+        raise ValueError("Invalid receipt key")
+    # Ignore ORDER BY inside quoted JQL values, including escaped quotes.
+    tokens = re.finditer(
+        r"'[^'\\]*(?:\\.[^'\\]*)*'|\"[^\"\\]*(?:\\.[^\"\\]*)*\"|\border\s+by\b", jql, re.I
+    )
+    order = next((token.start() for token in tokens if token.group()[0] not in "'\""), len(jql))
+    clause, sorting = jql[:order].strip(), jql[order:]
+    excluded = ", ".join(sorted(keys))
+    return validate_delivery_jql(f"({clause}) AND key NOT IN ({excluded}) {sorting}".strip())
 
 
 class JiraDeliveryTrigger:
@@ -85,7 +86,8 @@ class JiraDeliveryTrigger:
             raise PreflightError("Configure Auto Delivery's Jira site and trigger JQL in Settings.")
         try:
             return await asyncio.wait_for(
-                self._find(site, jql, excluded_keys), timeout=self.timeout_seconds
+                self._find(site, _exclude_claimed(jql, excluded_keys), excluded_keys),
+                timeout=self.timeout_seconds,
             )
         except TimeoutError as exc:
             raise PreflightError(
@@ -103,52 +105,40 @@ class JiraDeliveryTrigger:
     async def _find(
         self, site: str, jql: str, excluded_keys: frozenset[str]
     ) -> JiraDeliveryCandidate | None:
-        token: str | None = None
-        seen_tokens: set[str] = set()
-        for _ in range(20):
-            query: dict[str, object] = {"jql": jql, "fields": ["summary"], "maxResults": 100}
-            if token is not None:
-                query["nextPageToken"] = token
-            page = await self._search(site, query)
-            for issue in page.issues:
-                if issue.key not in excluded_keys:
-                    return JiraDeliveryCandidate(
-                        issue.key, issue.fields.summary, f"https://{site}/browse/{issue.key}"
-                    )
-            if page.is_last:
-                return None
-            token = page.next_token
-            if not token or token in seen_tokens:
-                break
-            seen_tokens.add(token)
-        raise PreflightError("Jira detection was incomplete; Codex was not started.")
+        page = await self._search(site, jql)
+        if not page.issues:
+            return None
+        issue = page.issues[0]
+        if issue.key in excluded_keys:
+            raise ValueError("Jira returned an excluded key")
+        return JiraDeliveryCandidate(issue.key, issue.summary, f"https://{site}/browse/{issue.key}")
 
-    async def _search(self, site: str, query: dict[str, object]) -> _Page:
-        # The native query wrapper omits pagination; raw search preserves isLast/nextPageToken.
+    async def _search(self, site: str, jql: str) -> _Page:
+        # TWG strips pagination metadata; server-side receipt exclusion needs only one result.
         process = await asyncio.create_subprocess_exec(
             self.binary,
-            "api",
-            "jira:/rest/api/3/search/jql",
-            "--method",
-            "POST",
-            "--input",
-            "-",
+            "jira",
+            "workitem",
+            "query",
+            "--jql",
+            jql,
+            "--fields",
+            "summary",
+            "--first",
+            "1",
             "--site",
             site,
             "--output",
             "json",
             "--output-summary",
             "none",
-            stdin=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             env=self.environment,
         )
         try:
-            assert process.stdin is not None and process.stdout is not None
-            process.stdin.write(json.dumps(query).encode("utf-8"))
-            await process.stdin.drain()
-            process.stdin.close()
+            assert process.stdout is not None
             payload = bytearray()
             while chunk := await process.stdout.read(64 * 1024):
                 payload.extend(chunk)
@@ -161,9 +151,7 @@ class JiraDeliveryTrigger:
                     "Codex was not started."
                 )
             response = _Response.model_validate_json(payload)
-            if response.data.status != 200:
-                raise PreflightError("Jira detection failed; Codex was not started.")
-            return _Page.model_validate(response.data.body)
+            return response.data
         finally:
             if process.returncode is None:
                 try:

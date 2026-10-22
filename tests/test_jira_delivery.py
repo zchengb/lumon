@@ -15,7 +15,7 @@ from lumon.tools.jira_delivery import JiraDeliveryTrigger
 
 
 def _issue(key: str = "TEST-1") -> dict[str, object]:
-    return {"key": key, "fields": {"summary": "A small Story without a Technical Plan"}}
+    return {"key": key, "summary": "A small Story without a Technical Plan"}
 
 
 def _fake_twg(
@@ -30,7 +30,7 @@ def _fake_twg(
         f"pages = json.loads({json.dumps(pages)!r})\n"
         f"mode = {mode!r}\n"
         "(root / 'pid').write_text(str(os.getpid()))\n"
-        "query = json.load(sys.stdin)\n"
+        "query = sys.argv[sys.argv.index('--jql') + 1]\n"
         "with (root / 'requests').open('a') as log:\n"
         "    log.write(json.dumps({'args': sys.argv[1:], 'query': query}) + '\\n')\n"
         "if mode == 'timeout':\n"
@@ -43,8 +43,8 @@ def _fake_twg(
         "elif mode == 'oversized':\n"
         "    print('x' * (1024 * 1024 + 1))\n"
         "else:\n"
-        "    page = pages[1 if query.get('nextPageToken') else 0]\n"
-        "    reply = {'data': {'status': 403 if mode == 'denied' else 200, 'body': page}}\n"
+        "    reply = {'data': pages[0]}\n"
+        "    if mode == 'denied': reply['errors'] = ['secret-value']\n"
         "    print(json.dumps(reply))\n",
         encoding="utf-8",
     )
@@ -52,15 +52,14 @@ def _fake_twg(
     return JiraDeliveryTrigger(binary=str(script), timeout_seconds=5, environment={})
 
 
-def test_read_only_detection_paginates_past_existing_receipts(tmp_path: Path) -> None:
+def test_read_only_detection_excludes_receipts_on_server(tmp_path: Path) -> None:
     trigger = _fake_twg(
         tmp_path,
         [
-            {"issues": [_issue()], "isLast": False, "nextPageToken": "next"},
-            {"issues": [_issue("TEST-2")], "isLast": True},
+            {"issues": [_issue("TEST-2")]},
         ],
     )
-    jql = 'project = TEST AND Flagged = Impediment AND summary ~ "$(untrusted)"'
+    jql = 'project = TEST AND summary ~ "order by $(untrusted)" ORDER BY Rank ASC'
     candidate = asyncio.run(
         trigger.find_candidate("test.atlassian.net", jql, excluded_keys=frozenset({"TEST-1"}))
     )
@@ -68,16 +67,22 @@ def test_read_only_detection_paginates_past_existing_receipts(tmp_path: Path) ->
     assert candidate.key == "TEST-2"
     assert candidate.url == "https://test.atlassian.net/browse/TEST-2"
     requests = [json.loads(line) for line in (tmp_path / "requests").read_text().splitlines()]
-    assert len(requests) == 2
-    assert requests[0]["query"] == {"jql": jql, "fields": ["summary"], "maxResults": 100}
-    assert requests[1]["query"]["nextPageToken"] == "next"
+    assert len(requests) == 1
+    expected = (
+        '(project = TEST AND summary ~ "order by $(untrusted)") '
+        "AND key NOT IN (TEST-1) ORDER BY Rank ASC"
+    )
+    assert requests[0]["query"] == expected
     assert requests[0]["args"] == [
-        "api",
-        "jira:/rest/api/3/search/jql",
-        "--method",
-        "POST",
-        "--input",
-        "-",
+        "jira",
+        "workitem",
+        "query",
+        "--jql",
+        expected,
+        "--fields",
+        "summary",
+        "--first",
+        "1",
         "--site",
         "test.atlassian.net",
         "--output",
@@ -87,11 +92,8 @@ def test_read_only_detection_paginates_past_existing_receipts(tmp_path: Path) ->
     ]
 
 
-@pytest.mark.parametrize("issues", [[], [_issue()]])
-def test_empty_or_previously_claimed_search_is_idle(
-    tmp_path: Path, issues: list[dict[str, object]]
-) -> None:
-    trigger = _fake_twg(tmp_path, [{"issues": issues, "isLast": True}])
+def test_empty_server_filtered_search_is_idle(tmp_path: Path) -> None:
+    trigger = _fake_twg(tmp_path, [{"issues": []}])
     assert (
         asyncio.run(
             trigger.find_candidate(
@@ -100,6 +102,56 @@ def test_empty_or_previously_claimed_search_is_idle(
         )
         is None
     )
+
+
+@pytest.mark.parametrize(
+    ("jql", "expected"),
+    [
+        (
+            "project = TEST OR project = OTHER",
+            "(project = TEST OR project = OTHER) AND key NOT IN (TEST-1)",
+        ),
+        (
+            'summary ~ "say \\"order by\\"" order by updated DESC',
+            '(summary ~ "say \\"order by\\"") AND key NOT IN (TEST-1) order by updated DESC',
+        ),
+        (
+            "summary ~ 'order by' ORDER BY Rank",
+            "(summary ~ 'order by') AND key NOT IN (TEST-1) ORDER BY Rank",
+        ),
+    ],
+)
+def test_receipt_exclusion_preserves_jql_precedence_and_quotes(
+    tmp_path: Path, jql: str, expected: str
+) -> None:
+    trigger = _fake_twg(tmp_path, [{"issues": []}])
+    asyncio.run(
+        trigger.find_candidate("test.atlassian.net", jql, excluded_keys=frozenset({"TEST-1"}))
+    )
+    assert json.loads((tmp_path / "requests").read_text())["query"] == expected
+
+
+def test_excluded_result_is_rejected(tmp_path: Path) -> None:
+    trigger = _fake_twg(tmp_path, [{"issues": [_issue()]}])
+    with pytest.raises(PreflightError):
+        asyncio.run(
+            trigger.find_candidate(
+                "test.atlassian.net", "project = TEST", excluded_keys=frozenset({"TEST-1"})
+            )
+        )
+
+
+def test_invalid_receipt_does_not_start_query(tmp_path: Path) -> None:
+    trigger = _fake_twg(tmp_path, [{"issues": []}])
+    with pytest.raises(PreflightError):
+        asyncio.run(
+            trigger.find_candidate(
+                "test.atlassian.net",
+                "project = TEST",
+                excluded_keys=frozenset({"TEST-1) OR key = TEST-2"}),
+            )
+        )
+    assert not (tmp_path / "requests").exists()
 
 
 @pytest.mark.parametrize("mode", ["denied", "invalid", "exit", "oversized"])
@@ -119,10 +171,10 @@ def test_detection_errors_are_safe_and_never_return_idle(tmp_path: Path, mode: s
 @pytest.mark.parametrize(
     "page",
     [
-        {"issues": [], "isLast": False},
-        {"issues": [], "isLast": False, "nextPageToken": "loop"},
-        {"issues": []},
-        {"issues": [_issue("../../TEST-1")], "isLast": True},
+        {},
+        {"issues": [_issue("../../TEST-1")]},
+        {"issues": [_issue(), _issue("TEST-2")]},
+        {"issues": [{"key": "TEST-1", "summary": ""}]},
     ],
 )
 def test_incomplete_or_invalid_search_is_not_idle(tmp_path: Path, page: dict[str, object]) -> None:
@@ -138,7 +190,7 @@ def test_incomplete_or_invalid_search_is_not_idle(tmp_path: Path, page: dict[str
 @pytest.mark.parametrize("cancel", [False, True])
 def test_timeout_and_cancellation_reap_twg(tmp_path: Path, cancel: bool) -> None:
     trigger = _fake_twg(tmp_path, [], mode="timeout")
-    trigger.timeout_seconds = 5 if cancel else 0.5
+    trigger.timeout_seconds = 5 if cancel else 2
 
     async def detect() -> None:
         task = asyncio.create_task(

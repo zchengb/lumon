@@ -301,13 +301,16 @@ When enabled on macOS, saving its timing settings installs or updates an owner-l
 LaunchAgent named `com.lumon.delivery.<workspace-id>`. Each scheduled run
 executes `lumon delivery poll`. Under the existing Workspace lock, it performs a
 read-only Jira search through the authenticated local TWG CLI (no Codex turn).
-Search uses the native paginated REST response, not an Agent interpretation of a
-CLI summary. Existing Story receipts in any state are excluded from automatic
-re-claim; failed or blocked Stories require an explicit human retry.
+Search uses `twg jira workitem query` with full JSON output, not an Agent
+interpretation of a CLI summary or the removed `twg api` command. Existing
+receipts in any state are excluded in the server-side JQL before requesting one
+candidate, preserving the configured filter precedence and ordering. Failed or
+blocked cards require an explicit human retry. The stored Workspace JQL is unchanged.
 
 An empty check records an idle poll and makes no Delivery changes. Incomplete,
 denied, invalid or timed-out searches record failure, never idle, and never fall
-back to Codex. Search is bounded to 30 seconds and 20 pages of 100 matches. Empty
+back to Codex. Search is bounded to 30 seconds and one result. If receipt exclusions
+exceed the JQL length limit, detection fails instead of silently dropping exclusions. Empty
 checks still use Jira API requests, but consume no Codex tokens or Agent quota.
 The disabled switch prevents both Jira queries and Agent execution.
 

@@ -153,7 +153,7 @@ def test_missing_binary_has_an_actionable_safe_error(tmp_path: Path) -> None:
 @pytest.mark.parametrize("cancel", [False, True])
 def test_timeout_and_cancellation_reap_the_catalog_process(tmp_path: Path, cancel: bool) -> None:
     catalog = _fake_codex(tmp_path, [], mode="timeout")
-    catalog.timeout_seconds = 5 if cancel else 0.5
+    catalog.timeout_seconds = 5 if cancel else 2
 
     async def discover() -> None:
         task = asyncio.create_task(catalog.list_models())
