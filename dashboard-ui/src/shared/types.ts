@@ -70,6 +70,9 @@ export interface DeliveryActivity {
   at: string;
   phase: string;
   detail: string;
+  command?: string | null;
+  operation_id?: string | null;
+  exit_code?: number | null;
 }
 
 export interface AgentModel {

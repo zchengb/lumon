@@ -306,6 +306,10 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
             ],
         )
 
+    @router.delete("/workspaces/{workspace_id}/deliveries/{run_id}", status_code=204)
+    def delete_delivery_history(request: Request, workspace_id: UUID, run_id: str) -> None:
+        _service(request).delete_delivery_history(workspace_id, run_id)
+
     @router.get(
         "/workspaces/{workspace_id}/deliveries/{run_id}/activity",
         response_model=list[DeliveryActivityResponse],

@@ -24,7 +24,7 @@ from lumon.dashboard.chat_history import (
     ChatKind,
 )
 from lumon.dashboard.folder_picker import FolderPicker
-from lumon.delivery.model import DeliveryActivity, DeliveryPoll, DeliveryRun
+from lumon.delivery.model import DeliveryActivity, DeliveryPoll, DeliveryPollState, DeliveryRun
 from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler, delivery_lock
 from lumon.delivery.service import DeliveryService
 from lumon.errors import (
@@ -439,12 +439,30 @@ class DashboardService:
                 self.delivery_service.recover_interrupted_polls(workspace, workspace_id)
             store = self.delivery_service.run_store
             runs = tuple(
-                run for run in store.list(workspace) if run.workspace_id in {None, workspace_id}
+                run
+                for run in store.list(workspace)
+                if run.workspace_id in {None, workspace_id}
+                and not store.history_deleted(workspace, run.run_id)
             )
             polls = tuple(
                 poll for poll in store.list_polls(workspace) if poll.workspace_id == workspace_id
             )
             return runs[:50], polls[:50]
+
+    def delete_delivery_history(self, workspace_id: UUID, run_id: str) -> None:
+        """Soft-delete one finished Story history entry, never an active delivery."""
+
+        workspace = self._require(workspace_id).path
+        with delivery_lock(self.registry.layout.root, workspace_id):
+            store = self.delivery_service.run_store
+            run = store.load(workspace, run_id)
+            if run.workspace_id not in {None, workspace_id}:
+                raise PreflightError("Delivery record does not belong to this Workspace.")
+            if run.poll_id:
+                poll = store.load_poll(workspace, run.poll_id)
+                if poll.state == DeliveryPollState.RUNNING:
+                    raise PreflightError("An active Delivery poll cannot be changed.")
+            store.delete_history(workspace, run_id)
 
     def delivery_activity(self, workspace_id: UUID, run_id: str) -> tuple[DeliveryActivity, ...]:
         """Read summaries only for a recorded run in the selected Workspace."""

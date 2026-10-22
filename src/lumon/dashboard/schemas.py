@@ -230,6 +230,9 @@ class DeliveryActivityResponse(StrictModel):
     at: datetime
     phase: str
     detail: str
+    command: str | None = None
+    operation_id: str | None = None
+    exit_code: int | None = None
 
 
 class AutoScanResponse(StrictModel):

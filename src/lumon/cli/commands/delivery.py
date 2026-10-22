@@ -382,7 +382,18 @@ async def _execute_poll(
             detail += f" (exit {event.exit_code})"
         current = service.run_store.load_poll(workspace, poll.run_id)
         service.run_store.record_activity(
-            workspace, poll.run_id, DeliveryActivity(datetime.now(UTC), current.phase, detail)
+            workspace,
+            poll.run_id,
+            DeliveryActivity(
+                datetime.now(UTC),
+                current.phase,
+                detail,
+                command=redact_text(event.command, secrets) if event.command else None,
+                operation_id=redact_text(event.operation_id, secrets)
+                if event.operation_id
+                else None,
+                exit_code=event.exit_code,
+            ),
         )
 
     result = await create_agent_runner(config).run(

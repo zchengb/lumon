@@ -81,8 +81,15 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows every recorded issue with deta
   try {
     await act(async () => root.render(<I18nProvider><ScanFindingsPanel runs={runs} loading={false} unavailable={false} /></I18nProvider>));
     expect(container.querySelector("h2")?.textContent).toBe(translate(locale, "autoScan.issuesTitle"));
+    expect(container.querySelector(".scan-findings-note")).toBeNull();
+    expect(container.textContent).not.toContain(translate(locale, "autoScan.issuesDescription"));
     expect(container.querySelectorAll("article")).toHaveLength(6);
     expect(container.querySelector(".scan-severity")?.textContent).toBe("High");
+    const title = container.querySelector(".scan-finding h3")!;
+    const tags = title.nextElementSibling;
+    expect(tags?.classList.contains("scan-finding-tags")).toBe(true);
+    expect(tags?.querySelectorAll(".scan-finding-tag")).toHaveLength(2);
+    expect(tags?.querySelector(".status-pill")?.textContent).toBe(translate(locale, "autoScan.open"));
     const detail = container.querySelector("details");
     expect(detail?.open).toBe(false);
     await act(async () => { detail!.open = true; detail!.dispatchEvent(new Event("toggle")); });

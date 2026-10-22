@@ -78,6 +78,10 @@ export const dashboardApi = {
     return request<DeliveryHistory>(`/api/workspaces/${workspaceId}/deliveries`, { cache: "no-store" });
   },
 
+  deleteDeliveryHistory(workspaceId: string, runId: string): Promise<void> {
+    return request<void>(`/api/workspaces/${workspaceId}/deliveries/${encodeURIComponent(runId)}`, { method: "DELETE" });
+  },
+
   getDeliveryActivity(workspaceId: string, runId: string): Promise<DeliveryActivity[]> {
     return request<DeliveryActivity[]>(`/api/workspaces/${workspaceId}/deliveries/${encodeURIComponent(runId)}/activity`, { cache: "no-store" });
   },

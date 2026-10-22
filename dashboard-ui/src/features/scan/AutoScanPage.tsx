@@ -72,9 +72,7 @@ export function AutoScanPage({
     <div className="page-stack">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">{t("autoScan.eyebrow")}</p>
           <h1>{t("autoScan.title")}</h1>
-          <p className="muted">{t("autoScan.subtitle")}</p>
         </div>
       </div>
 

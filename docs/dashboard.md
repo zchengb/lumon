@@ -150,8 +150,19 @@ Available in Lumon 1.4.13, alongside multiline Auto Delivery trigger prompts.
 The Auto Delivery page reuses the earlier Dashboard's **Current progress**,
 **Delivery history**, and **Scheduler activity** layout. It refreshes every
 three seconds while open and supports inspecting a recorded Story or poll.
+Running elapsed times tick locally every second without extra API requests.
+Only a running Story's active stage shows a sweeping line and spinner; terminal
+states stay static and retain their recorded duration. Reduced-motion preferences
+disable both animations. The sweep indicates activity, not a completion percentage.
 History is scoped to the selected Workspace and shows the Story (including its
 Jira link and branch), start time, status, and elapsed time such as `12m13s`.
+The Jira key and task title share one line; long titles truncate with their full
+text available on hover, while the branch remains below. A final Actions column
+offers confirmed deletion of finished history entries. Active work cannot be
+deleted. Deletion is Workspace-scoped and soft: `history-deleted.json` hides the
+row from Dashboard history across reloads, but retains receipts, notifications,
+activity, and duplicate-delivery protection. Jira tasks, code, branches and
+worktrees are not deleted. Scheduler poll rows remain unchanged.
 Verification, result, and the phase label beneath each history status are not
 displayed in this table; persisted receipts and the progress/activity view are
 unchanged.
@@ -164,7 +175,13 @@ Each scheduled poll saves an owner-only `poll.json` under `lumon/runs/<poll-id>`
 Claimed Stories keep the existing `run.json` receipt under their own run ID and
 link to their parent with `poll_id`. No eligible Story is an idle poll, not a
 successful development result. `activity.json` retains the latest 200 safe
-phase/operation summaries; prompts, command lines, and raw output are excluded.
+phase/operation summaries. New command events include an expandable redacted command
+preview (up to 1 KiB, with a truncation marker), operation ID and exit code.
+Configured secrets, common credential/prompt arguments and heredoc bodies are
+redacted before persistence; raw stdout/stderr are not stored. Older receipts
+remain summary-only and cannot be backfilled from this history. Arbitrary embedded
+private data cannot be reliably detected, so commands should never embed sensitive
+documents or prompts directly.
 
 The poll prompt tells the Agent to pass `--poll-id` to `lumon delivery start`,
 report `implementation`, `verification`, and `handoff` with

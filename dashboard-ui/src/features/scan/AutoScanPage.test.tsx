@@ -72,6 +72,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
       durations.slice(0, 10).map(([, label]) => label),
     );
     expect(container.querySelector(".settings-panel")).toBeNull();
+    expect(container.querySelector(".page-heading")?.textContent).toBe("Auto Scan");
+    expect(container.querySelector(".page-heading p")).toBeNull();
     expect(container.querySelector("#auto-scan-description")).toBeNull();
     expect(container.querySelector("#auto-scan-hooks")).toBeNull();
     expect(container.querySelector('[role="switch"]')).toBeNull();

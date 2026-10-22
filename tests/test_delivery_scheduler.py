@@ -121,7 +121,10 @@ def test_scheduled_poll_runs_saved_instructions_and_loads_edits_on_next_poll(
                     kind="command_execution",
                     lifecycle="completed",
                     exit_code=0,
-                    command="echo secret-command",
+                    command=(
+                        "git status --short; tool --token 'hidden cli credential'; echo test-secret"
+                    ),
+                    operation_id="command-1",
                     output="secret raw output",
                 )
             )
@@ -164,6 +167,10 @@ def test_scheduled_poll_runs_saved_instructions_and_loads_edits_on_next_poll(
         assert activity[0].detail == "Jira matched MBPAS-1; starting Agent for this Story only."
         assert activity[1].detail == "Check active sprint Stories."
         assert activity[2].detail == "command execution: completed (exit 0)"
+        assert activity[2].command == "git status --short; tool --token [REDACTED]; echo [REDACTED]"
+        assert activity[2].operation_id == "command-1"
+        assert activity[2].exit_code == 0
+        assert "hidden cli credential" not in str(activity)
         assert "secret raw output" not in str(activity)
         assert "\n\n".join(instructions) not in output.out + output.err
         if status == "succeeded":

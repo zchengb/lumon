@@ -1,4 +1,4 @@
-import { Check, Clock3, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
+import { Check, Clock3, ExternalLink, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "../../app/api";
 import { useI18n, type Translator } from "../../shared/i18n";
@@ -16,8 +16,10 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
+    if (deleting !== null) return;
     let cancelled = false;
     let timer: number | undefined;
     async function load(): Promise<void> {
@@ -46,7 +48,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
     }
     void load();
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [workspaceId, selectedId, refresh, onError, t]);
+  }, [workspaceId, selectedId, refresh, onError, t, deleting]);
 
   const poll = history.polls.find((item) => item.run_id === selectedId) ?? (selectedId ? undefined : history.polls[0]);
   const run = history.runs.find((item) => item.run_id === selectedId)
@@ -55,6 +57,13 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
   const phase = current?.state === "idle" ? "discover" : current?.phase === "publish" ? "handoff" : current?.phase ?? "discover";
   const stageIndex = stages.findIndex((stage) => stage === phase);
   const live = current?.state === "running" || poll?.state === "running";
+  const hasRunning = history.runs.some((item) => item.state === "running") || history.polls.some((item) => item.state === "running");
+
+  useEffect(() => {
+    if (!hasRunning) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasRunning]);
 
   function timeLabel(timestamp: string): string {
     return new Date(timestamp).toLocaleString(locale, {
@@ -65,6 +74,21 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
   function select(runId: string | null): void {
     setActivity([]);
     setSelectedId(runId);
+  }
+
+  async function deleteHistory(item: DeliveryRun): Promise<void> {
+    if (deleting !== null || !window.confirm(t("autoDelivery.deleteConfirm", { key: item.story_key }))) return;
+    setDeleting(item.run_id);
+    onError(null);
+    try {
+      await dashboardApi.deleteDeliveryHistory(workspaceId, item.run_id);
+      setHistory((current) => ({ ...current, runs: current.runs.filter((run) => run.run_id !== item.run_id) }));
+      if (selectedId === item.run_id) select(null);
+    } catch (reason: unknown) {
+      onError(reason instanceof ApiError && reason.status !== 404 ? reason.message : t("autoDelivery.deleteFailed"));
+    } finally {
+      setDeleting(null);
+    }
   }
 
   return <>
@@ -79,7 +103,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
       {loading ? <div className="loading-inline" role="status"><LoaderCircle size={18} className="spin" />{t("autoDelivery.loading")}</div>
         : current ? <div className="delivery-progress-body">
           <div className="delivery-facts">
-            <div><span>{t("autoDelivery.story")}</span><strong>{run ? <StoryLink run={run} /> : t("autoDelivery.checking")}</strong></div>
+            <div><span>{t("autoDelivery.story")}</span><strong className="delivery-progress-story">{run ? <><StoryLink run={run} /><span className="delivery-progress-story-title">{run.story_title}</span></> : t("autoDelivery.checking")}</strong></div>
             <div><span>{t("autoScan.status")}</span><DeliveryStatus state={current.state} /></div>
             <div><span>{t("autoScan.started")}</span><strong>{timeLabel(current.started_at)}</strong></div>
             <div><span>{t("autoScan.duration")}</span><strong>{duration(current, now)}</strong></div>
@@ -88,8 +112,9 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
             {stages.map((stage, index) => {
               const complete = current.state === "completed" || index < stageIndex || (current.state === "idle" && index === 0);
               const active = index === stageIndex && current.state !== "idle";
-              return <li key={stage} className={complete ? "is-complete" : active ? `is-active ${current.state === "failed" || current.state === "blocked" ? "is-failed" : ""}` : ""} aria-current={active ? "step" : undefined}>
-                <span className="delivery-stage-marker">{complete ? <Check size={13} /> : index + 1}</span>
+              const running = active && current.state === "running";
+              return <li key={stage} className={complete ? "is-complete" : active ? `is-active ${running ? "is-running" : ""} ${current.state === "failed" || current.state === "blocked" ? "is-failed" : ""}` : ""} aria-current={active ? "step" : undefined}>
+                <span className="delivery-stage-marker">{complete ? <Check size={13} /> : running ? <LoaderCircle size={13} className="spin" aria-hidden="true" /> : index + 1}</span>
                 <span>{t(`autoDelivery.stage.${stage}`)}</span>
               </li>;
             })}
@@ -99,7 +124,19 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
             <summary>{t("autoDelivery.activity")}{live && <span className="status-pill status-warning"><Clock3 size={11} />{t("autoDelivery.live")}</span>}</summary>
             <ol className="delivery-activity-list" aria-label={t("autoDelivery.activity")}>
               {activity.length ? activity.map((event, index) => <li key={`${event.at}-${index}`}>
-                <time dateTime={event.at}>{timeLabel(event.at)}</time><span>{stageLabel(event.phase, t)}</span><p>{event.detail}</p>
+                <time dateTime={event.at}>{timeLabel(event.at)}</time><span>{stageLabel(event.phase, t)}</span>
+                <div className="delivery-event-content">
+                  <p>{event.detail}</p>
+                  {event.command ? <details className="delivery-command-details">
+                    <summary>{t("autoDelivery.commandDetails")}</summary>
+                    <pre><code>{event.command}</code></pre>
+                    <dl>
+                      {event.operation_id && <><dt>{t("autoDelivery.operationId")}</dt><dd>{event.operation_id}</dd></>}
+                      {event.exit_code != null && <><dt>{t("autoDelivery.exitCode")}</dt><dd>{event.exit_code}</dd></>}
+                    </dl>
+                    <small className="muted">{t("autoDelivery.commandPrivacy")}</small>
+                  </details> : event.detail.startsWith("command execution:") && <small className="muted">{t("autoDelivery.commandUnavailable")}</small>}
+                </div>
               </li>) : <li className="muted">{t("autoDelivery.noActivity")}</li>}
             </ol>
           </details>
@@ -110,13 +147,16 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
       <div className="panel-heading"><h2>{t("autoDelivery.history")}</h2><span className="muted">{history.runs.length}</span></div>
       <div className="table-scroll scan-history-scroll" tabIndex={0} role="region" aria-label={t("autoDelivery.history")}>
         <table className="scan-history-table delivery-history-table">
-          <thead><tr><th scope="col">{t("autoDelivery.story")}</th><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th></tr></thead>
+          <thead><tr><th scope="col">{t("autoDelivery.story")}</th><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th><th scope="col">{t("autoDelivery.actions")}</th></tr></thead>
           <tbody>{history.runs.length ? history.runs.map((item) => <tr key={item.run_id}>
-            <td><StoryLink run={item} /><span className="delivery-story-title">{item.story_title}</span>{item.branch && <small className="muted">{item.branch}</small>}</td>
+            <td className="delivery-story-cell"><div className="delivery-story-line"><StoryLink run={item} /><span className="delivery-story-title" title={item.story_title}>{item.story_title}</span></div>{item.branch && <small className="muted delivery-story-branch">{item.branch}</small>}</td>
             <td>{timeLabel(item.started_at)}</td>
             <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
             <td>{duration(item, now)}</td>
-          </tr>) : <tr><td colSpan={4} className="empty-table">{t("autoDelivery.noHistory")}</td></tr>}</tbody>
+            <td><button className="button button-secondary delivery-history-delete" type="button" aria-label={`${t("autoDelivery.delete")} ${item.story_key}`} disabled={deleting !== null || item.state === "running" || history.polls.some((poll) => poll.state === "running")} onClick={() => void deleteHistory(item)}>
+              {deleting === item.run_id ? <LoaderCircle size={14} className="spin" /> : <Trash2 size={14} />}{t("autoDelivery.delete")}
+            </button></td>
+          </tr>) : <tr><td colSpan={5} className="empty-table">{t("autoDelivery.noHistory")}</td></tr>}</tbody>
         </table>
       </div>
     </section>
@@ -152,6 +192,6 @@ function stageLabel(phase: string, t: Translator): string {
 }
 
 function duration(run: DeliveryRun | DeliveryPoll, now: number): string {
-  const seconds = run.duration_seconds ?? (run.state === "running" ? Math.max(0, Math.floor((now - Date.parse(run.started_at)) / 1000)) : null);
+  const seconds = run.state === "running" ? Math.max(0, Math.floor((now - Date.parse(run.started_at)) / 1000)) : run.duration_seconds;
   return seconds === null ? "—" : `${Math.floor(seconds / 60)}m${seconds % 60}s`;
 }

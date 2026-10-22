@@ -14,7 +14,7 @@ from os import X_OK, access
 from pathlib import Path
 from typing import Literal, cast
 
-from lumon.tools.safety import sanitize_output
+from lumon.tools.safety import sanitize_command, sanitize_output
 
 CodexEventKind = Literal[
     "session",
@@ -491,6 +491,8 @@ def _event_text(payload: Mapping[str, object], *keys: str) -> str | None:
         value = payload.get(key)
         text = _extract_text(value)
         if text:
+            if key == "command":
+                return sanitize_command(text)
             return _bounded_event_text(sanitize_output(text))
     return None
 

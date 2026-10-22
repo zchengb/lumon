@@ -6,6 +6,38 @@ import re
 from urllib.parse import urlsplit
 
 
+def sanitize_command(command: str) -> str:
+    """Keep a bounded command preview, without common credentials or prompt arguments."""
+
+    redacted = re.sub(
+        r"-----BEGIN [A-Z0-9 ]+-----.*?(?:-----END [A-Z0-9 ]+-----|$)",
+        "[REDACTED]",
+        command,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    argument = r"""(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;&]+)"""
+    redacted = re.sub(
+        r"""(?ix)((?:--|\b)[\w-]*(?:token|secret|password|passwd|api[_-]?key|"""
+        r"""credential|webhook|prompt|instructions)[\w-]*["']?\s*(?:[:=]\s*|\s+))""" + argument,
+        r"\1[REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(r"(?i)(Bearer\s+)[\w.~+/=-]+", r"\1[REDACTED]", redacted)
+    redacted = re.sub(
+        r"(?i)((?:^|\s)(?:-u|--user|-p|-d|--data(?:-raw|-binary)?|-H|--header|-c)\s+)" + argument,
+        r"\1[REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(r"(https?://)[^/\s:@]+:[^@\s/]+@", r"\1[REDACTED]@", redacted)
+    # Script bodies can contain whole prompts or private documents, not just commands.
+    redacted = re.sub(r"(?s)(<<[^\n]*\n).*", r"\1[script body omitted]", redacted)
+    redacted = sanitize_output(redacted).strip()
+    encoded = redacted.encode("utf-8")
+    return encoded[:1024].decode("utf-8", errors="ignore").rstrip() + (
+        " … [truncated]" if len(encoded) > 1024 else ""
+    )
+
+
 def safe_trace_url(url: object) -> str | None:
     """Accept credential-free Langfuse trace links, including self-hosted instances."""
 

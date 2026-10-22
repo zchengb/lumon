@@ -4,6 +4,15 @@ import { dashboardApi } from "./api";
 describe("Dashboard API", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("deletes only the selected Workspace delivery history entry", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    vi.stubGlobal("fetch", fetchMock);
+    await dashboardApi.deleteDeliveryHistory("workspace-1", "run & one");
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace-1/deliveries/run%20%26%20one", {
+      method: "DELETE", headers: { Accept: "application/json" },
+    });
+  });
+
   it("ignores only the selected occurrence in the selected Workspace", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "[]" });
     vi.stubGlobal("fetch", fetchMock);

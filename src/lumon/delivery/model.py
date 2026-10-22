@@ -8,7 +8,7 @@ from enum import StrEnum
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from lumon.tools.safety import sanitize_output
+from lumon.tools.safety import sanitize_command, sanitize_output
 
 
 class DeliveryEvent(StrEnum):
@@ -40,15 +40,22 @@ class DeliveryPollState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DeliveryActivity:
-    """One safe progress summary, never a command or its raw output."""
+    """One safe summary with an optional redacted command preview, never raw output."""
 
     at: datetime
     phase: str
     detail: str
+    command: str | None = None
+    operation_id: str | None = None
+    exit_code: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", sanitize_output(self.phase.strip())[:80])
         object.__setattr__(self, "detail", sanitize_output(self.detail.strip())[:500])
+        if self.command is not None:
+            object.__setattr__(self, "command", sanitize_command(self.command))
+        if self.operation_id is not None:
+            object.__setattr__(self, "operation_id", sanitize_output(self.operation_id)[:128])
 
 
 @dataclass(frozen=True, slots=True)

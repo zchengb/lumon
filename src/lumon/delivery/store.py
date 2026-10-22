@@ -93,6 +93,23 @@ class DeliveryRunStore:
                 continue
         return tuple(sorted(runs, key=lambda run: run.started_at, reverse=True))
 
+    def delete_history(self, workspace: Path, run_id: str) -> None:
+        """Hide a finished history entry while retaining audit and duplicate-run guards."""
+
+        run = self.load(workspace, run_id)
+        if run.state == DeliveryState.RUNNING:
+            raise PreflightError("An active Delivery run cannot be deleted from history.")
+        path = self.path_for(workspace, run_id) / "history-deleted.json"
+        _reject_symlink(path)
+        _atomic_write(path, {"deleted": True})
+
+    def history_deleted(self, workspace: Path, run_id: str) -> bool:
+        """Return the Dashboard-only soft-deletion marker; core receipts stay readable."""
+
+        path = self.path_for(workspace, run_id) / "history-deleted.json"
+        _reject_symlink(path)
+        return path.is_file()
+
     def save_poll(self, workspace: Path, poll: DeliveryPoll) -> None:
         directory = self.path_for(workspace, poll.run_id)
         directory.mkdir(parents=True, exist_ok=True)
@@ -162,15 +179,24 @@ class DeliveryRunStore:
         directory = self.path_for(workspace, run_id)
         directory.mkdir(parents=True, exist_ok=True)
         _secure_directory(directory)
-        # ponytail: one writer per run, bounded to 200 summaries; stream only if traces grow.
+        # One writer per run; account for JSON escaping as well as the entry count.
         recent = (*self.activity(workspace, run_id), activity)[-200:]
-        _atomic_write(
-            directory / "activity.json",
-            [
-                {"at": item.at.isoformat(), "phase": item.phase, "detail": item.detail}
-                for item in recent
-            ],
-        )
+        entries: list[dict[str, object]] = [
+            {
+                "at": item.at.isoformat(),
+                "phase": item.phase,
+                "detail": item.detail,
+                "command": item.command,
+                "operation_id": item.operation_id,
+                "exit_code": item.exit_code,
+            }
+            for item in recent
+        ]
+        while (
+            len(json.dumps(entries, ensure_ascii=False, indent=2).encode("utf-8")) > 1024 * 1024 - 1
+        ):
+            entries.pop(0)
+        _atomic_write(directory / "activity.json", entries)
 
     def _run_ids(self, workspace: Path) -> tuple[str, ...]:
         directory = WorkspaceLayout.from_root(workspace).control_dir / "runs"
@@ -277,10 +303,16 @@ def _activity_from_payload(payload: object, source: Path) -> DeliveryActivity:
     if not isinstance(payload, dict):
         raise PreflightError(f"Invalid Delivery activity: {source}")
     values = cast(dict[str, object], payload)
+    exit_code = values.get("exit_code")
+    if exit_code is not None and type(exit_code) is not int:
+        raise PreflightError(f"Invalid Delivery activity exit code: {source}")
     return DeliveryActivity(
         at=_timestamp(_required_string(values, "at", source)),
         phase=_required_string(values, "phase", source),
         detail=_required_string(values, "detail", source),
+        command=_optional_string(values.get("command"), source),
+        operation_id=_optional_string(values.get("operation_id"), source),
+        exit_code=exit_code,
     )
 
 
@@ -296,7 +328,7 @@ def _reject_symlink(path: Path) -> None:
         raise PreflightError("Delivery receipt must not be a symbolic link.")
 
 
-def _atomic_write(path: Path, payload: Mapping[str, object] | list[dict[str, str]]) -> None:
+def _atomic_write(path: Path, payload: Mapping[str, object] | list[dict[str, object]]) -> None:
     temporary: Path | None = None
     try:
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)

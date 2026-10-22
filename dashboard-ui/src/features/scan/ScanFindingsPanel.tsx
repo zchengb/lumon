@@ -56,7 +56,6 @@ export function ScanFindingsPanel({ runs, loading, unavailable, onIgnore }: {
     {loading ? <p className="scan-findings-empty" role="status">{t("autoScan.loadingHistory")}</p>
       : unavailable ? <p className="scan-findings-empty" role="status">{t("autoScan.issuesUnavailable")}</p>
         : <>
-          <p className="scan-findings-note">{t("autoScan.issuesDescription")}</p>
           <div className="scan-finding-filters" role="group" aria-label={t("autoScan.filterIssues")}>
             {(["all", "open", "resolved", "ignored"] as const).map((value) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
               {t(`autoScan.${value}`)} <span>{issues.filter(([, { finding }]) => matches(finding, value)).length}</span>
@@ -66,9 +65,13 @@ export function ScanFindingsPanel({ runs, loading, unavailable, onIgnore }: {
             {ignoreError && <p className="scan-findings-empty" role="alert">{ignoreError}</p>}
             {visible.length ? visible.map(([key, { finding, run, index }]) => <article className="scan-finding" key={key}>
               <header>
-                <h3>{finding.title}</h3>
-                <span className={`scan-severity scan-severity-${finding.severity.toLowerCase()}`}>{severityLabel(finding.severity)}</span>
-                <span className="status-pill status-neutral">{statusLabel(finding.issue_status)}</span>
+                <div className="scan-finding-title-line">
+                  <h3>{finding.title}</h3>
+                  <span className="scan-finding-tags">
+                    <span className={`scan-finding-tag scan-severity scan-severity-${finding.severity.toLowerCase()}`}>{severityLabel(finding.severity)}</span>
+                    <span className="scan-finding-tag status-pill status-neutral">{statusLabel(finding.issue_status)}</span>
+                  </span>
+                </div>
                 {onIgnore && !["ignored", "resolved"].includes(normalizedStatus(finding.issue_status)) && <button className="button button-secondary scan-finding-ignore" type="button" disabled={ignoring !== null} onClick={() => void ignore(key, run.run_id, index)}>
                   {ignoring === key ? t("autoScan.ignoring") : t("autoScan.ignore")}
                 </button>}

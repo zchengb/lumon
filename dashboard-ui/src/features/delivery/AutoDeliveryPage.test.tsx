@@ -15,6 +15,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows delivery execution history wit
     await act(async () => root.render(<I18nProvider><AutoDeliveryPage workspaceId="workspace-id" onError={vi.fn()} /></I18nProvider>));
     expect(history).toHaveBeenCalledWith("workspace-id");
     expect(container.querySelector("h1")?.textContent).toBe("Auto Delivery");
+    expect(container.querySelector(".page-heading")?.textContent).toBe("Auto Delivery");
+    expect(container.querySelector(".page-heading p")).toBeNull();
     expect(container.querySelector(".delivery-progress-panel")).not.toBeNull();
     expect(container.querySelector(".settings-panel")).toBeNull();
     expect(container.querySelector("#auto-delivery-hooks")).toBeNull();

@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -107,6 +107,63 @@ def test_bounded_activity_accepts_unicode_summaries(tmp_path: Path) -> None:
     assert len(store.activity(tmp_path, "poll-1")) == 200
 
 
+def test_command_details_round_trip_and_legacy_receipts(tmp_path: Path) -> None:
+    store = DeliveryRunStore()
+    now = datetime(2026, 10, 7, tzinfo=UTC)
+    store.record_activity(
+        tmp_path,
+        "poll-1",
+        DeliveryActivity(
+            now,
+            "verification",
+            "command execution: completed (exit 2)",
+            command="npm test --token 'private credential'",
+            operation_id="cmd-1",
+            exit_code=2,
+        ),
+    )
+    command = store.activity(tmp_path, "poll-1")[0]
+    assert command.command == "npm test --token [REDACTED]"
+    assert command.operation_id == "cmd-1"
+    assert command.exit_code == 2
+    receipt = store.path_for(tmp_path, "poll-1") / "activity.json"
+    receipt.write_text(json.dumps([{"at": now.isoformat(), "phase": "discover", "detail": "old"}]))
+    assert store.activity(tmp_path, "poll-1")[0].command is None
+    receipt.write_text(
+        json.dumps(
+            [
+                {
+                    "at": now.isoformat(),
+                    "phase": "discover",
+                    "detail": "bad",
+                    "exit_code": True,
+                }
+            ]
+        )
+    )
+    with pytest.raises(PreflightError):
+        store.activity(tmp_path, "poll-1")
+
+
+def test_command_history_stays_within_receipt_byte_limit(tmp_path: Path) -> None:
+    store = DeliveryRunStore()
+    now = datetime(2026, 10, 7, tzinfo=UTC)
+    for _ in range(200):
+        store.record_activity(
+            tmp_path,
+            "poll-1",
+            DeliveryActivity(
+                now,
+                "驗" * 80,
+                "驗" * 500,
+                command="\x01" * 2000,
+                operation_id="驗" * 128,
+            ),
+        )
+    assert 0 < len(store.activity(tmp_path, "poll-1")) < 200
+    assert (store.path_for(tmp_path, "poll-1") / "activity.json").stat().st_size <= 1024 * 1024
+
+
 def test_dashboard_live_history_then_recovery_is_workspace_scoped(tmp_path: Path) -> None:
     state = tmp_path / "state"
     workspace = tmp_path / "workspace"
@@ -135,7 +192,16 @@ def test_dashboard_live_history_then_recovery_is_workspace_scoped(tmp_path: Path
     store.save_poll(workspace, poll)
     store.save(workspace, run)
     store.record_activity(
-        workspace, poll.run_id, DeliveryActivity(now, "discover", "Checking Stories.")
+        workspace,
+        poll.run_id,
+        DeliveryActivity(
+            now,
+            "discover",
+            "Checking Stories.",
+            command="git status",
+            operation_id="cmd-1",
+            exit_code=0,
+        ),
     )
     foreign = replace(run, run_id="foreign", workspace_id=uuid4())
     store.save(workspace, foreign)
@@ -147,6 +213,9 @@ def test_dashboard_live_history_then_recovery_is_workspace_scoped(tmp_path: Path
         assert response.json()["polls"][0]["state"] == "running"
         events = client.get(f"/api/workspaces/{workspace_id}/deliveries/poll-1/activity")
         assert events.json()[0]["detail"] == "Checking Stories."
+        assert events.json()[0]["command"] == "git status"
+        assert events.json()[0]["operation_id"] == "cmd-1"
+        assert events.json()[0]["exit_code"] == 0
     recovered = client.get(f"/api/workspaces/{workspace_id}/deliveries").json()
     assert recovered["polls"][0]["state"] == "failed"
     assert recovered["runs"][0]["state"] == "failed"
@@ -173,3 +242,109 @@ def test_legacy_delivery_receipts_remain_readable(tmp_path: Path) -> None:
     del payload["poll_id"], payload["detail"]
     path.write_text(json.dumps(payload), encoding="utf-8")
     assert store.load(tmp_path, run.run_id) == run
+
+
+@pytest.fixture
+def history_context(tmp_path: Path) -> tuple[httpx.Client, DashboardService, Path, UUID]:
+    state = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    registry = WorkspaceRegistry(state)
+    settings = WorkspaceSettingsStore(state)
+    initializer = WorkspaceInitializer(
+        skill_installer=SkillInstaller(tmp_path / "skills"),
+        registry=registry,
+        settings_store=settings,
+    )
+    initializer.initialize(InitRequest(workspace, name="History test"))
+    workspace_id = registry.list()[0].workspace_id
+    dashboard = DashboardService(state_root=state, registry=registry, settings_store=settings)
+    return cast(httpx.Client, TestClient(create_app(dashboard))), dashboard, workspace, workspace_id
+
+
+@pytest.mark.parametrize(
+    "state", [DeliveryState.COMPLETED, DeliveryState.BLOCKED, DeliveryState.FAILED]
+)
+def test_delete_history_is_durable_and_keeps_all_operational_receipts(
+    history_context: tuple[httpx.Client, DashboardService, Path, UUID], state: DeliveryState
+) -> None:
+    client, dashboard, workspace, workspace_id = history_context
+    store = dashboard.delivery_service.run_store
+    run = replace(
+        DeliveryRun.claim("recorded", "MBPAS-1", "Saved", workspace_id=workspace_id), state=state
+    )
+    store.save(workspace, run)
+    store.record_activity(
+        workspace, run.run_id, DeliveryActivity(run.started_at, "handoff", "Done")
+    )
+    directory = store.path_for(workspace, run.run_id)
+    before = {path.name: path.read_bytes() for path in directory.iterdir()}
+    endpoint = f"/api/workspaces/{workspace_id}/deliveries/{run.run_id}"
+    for _ in range(2):
+        assert client.delete(endpoint).status_code == 204
+    assert client.get(f"/api/workspaces/{workspace_id}/deliveries").json()["runs"] == []
+    assert DeliveryRunStore().history_deleted(workspace, run.run_id)
+    assert store.list(workspace) == (run,)
+    assert store.load(workspace, run.run_id) == run
+    assert all((directory / name).read_bytes() == content for name, content in before.items())
+    assert (directory / "history-deleted.json").stat().st_mode & 0o777 == 0o600
+    assert client.get(f"{endpoint}/activity").json()[0]["detail"] == "Done"
+
+
+def test_delete_history_rejects_active_work_foreign_ownership_and_invalid_targets(
+    history_context: tuple[httpx.Client, DashboardService, Path, UUID],
+) -> None:
+    client, dashboard, workspace, workspace_id = history_context
+    store = dashboard.delivery_service.run_store
+    run = DeliveryRun.claim("recorded", "MBPAS-1", "Saved", workspace_id=workspace_id)
+    store.save(workspace, run)
+    endpoint = f"/api/workspaces/{workspace_id}/deliveries/{run.run_id}"
+    assert client.delete(endpoint).status_code == 409
+    assert not store.history_deleted(workspace, run.run_id)
+    finished = replace(run, state=DeliveryState.COMPLETED)
+    store.save(workspace, finished)
+    with delivery_lock(dashboard.registry.layout.root, workspace_id):
+        assert client.delete(endpoint).status_code == 409
+    poll = DeliveryPoll("parent", workspace_id, DeliveryPollState.RUNNING, run.started_at)
+    store.save_poll(workspace, poll)
+    store.save(workspace, replace(finished, poll_id=poll.run_id))
+    assert client.delete(endpoint).status_code == 409
+    store.save(workspace, replace(finished, workspace_id=uuid4()))
+    assert client.delete(endpoint).status_code == 409
+    assert client.delete(endpoint.replace(str(workspace_id), str(uuid4()))).status_code == 404
+    assert client.delete(endpoint.replace("recorded", "missing")).status_code == 409
+    with pytest.raises(PreflightError):
+        store.delete_history(workspace, "../outside")
+    assert not store.history_deleted(workspace, run.run_id)
+
+
+def test_delete_history_rejects_symlinks_and_preserves_row_on_write_failure(
+    history_context: tuple[httpx.Client, DashboardService, Path, UUID],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, dashboard, workspace, workspace_id = history_context
+    store = dashboard.delivery_service.run_store
+    run = replace(
+        DeliveryRun.claim("recorded", "MBPAS-1", "Saved", workspace_id=workspace_id),
+        state=DeliveryState.COMPLETED,
+    )
+    store.save(workspace, run)
+    directory = store.path_for(workspace, run.run_id)
+    marker = directory / "history-deleted.json"
+    marker.symlink_to(directory / "run.json")
+    with pytest.raises(PreflightError, match="symbolic"):
+        store.delete_history(workspace, run.run_id)
+    marker.unlink()
+
+    def fail_replace(source: object, destination: object) -> None:
+        del source, destination
+        raise OSError("test disk failure")
+
+    monkeypatch.setattr("lumon.delivery.store.os.replace", fail_replace)
+    endpoint = f"/api/workspaces/{workspace_id}/deliveries/{run.run_id}"
+    assert client.delete(endpoint).status_code == 409
+    assert not store.history_deleted(workspace, run.run_id)
+    assert (
+        client.get(f"/api/workspaces/{workspace_id}/deliveries").json()["runs"][0]["run_id"]
+        == run.run_id
+    )
+    assert store.load(workspace, run.run_id) == run

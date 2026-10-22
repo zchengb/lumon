@@ -60,6 +60,22 @@ def test_codex_parser_ignores_advisory_item_errors_but_keeps_terminal_failures()
     assert terminal.kind == "error"
 
 
+def test_command_parser_redacts_quoted_secrets_before_generic_output_sanitization() -> None:
+    event = parse_codex_line(
+        json.dumps(
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "command_execution",
+                    "command": 'API_TOKEN="private multiword credential" npm test',
+                },
+            }
+        )
+    )
+    assert event is not None
+    assert event.command == "API_TOKEN=[REDACTED] npm test"
+
+
 def test_codex_parser_keeps_terminal_failure_message() -> None:
     terminal = parse_codex_line('{"type":"turn.failed","message":"provider failed"}')
 
