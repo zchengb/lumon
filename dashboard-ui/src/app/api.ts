@@ -22,6 +22,7 @@ import type {
   WorkspaceOverview,
   WorkspaceSettings,
   ScanRun,
+  VisualEnvironmentSnapshot,
 } from "../shared/types";
 
 interface ErrorPayload {
@@ -70,6 +71,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dashboardApi = {
+  getVisualEnvironment(workspaceId: string, refresh = false): Promise<VisualEnvironmentSnapshot> {
+    return request<VisualEnvironmentSnapshot>(`/api/workspaces/${workspaceId}/environment?refresh=${refresh}`, { cache: "no-store" });
+  },
   getDeliveryHistory(workspaceId: string): Promise<DeliveryHistory> {
     return request<DeliveryHistory>(`/api/workspaces/${workspaceId}/deliveries`, { cache: "no-store" });
   },
@@ -190,6 +194,12 @@ export const dashboardApi = {
     });
   },
 
+  runFlow(workspaceId: string, flowId: string): Promise<{ flow_id: string; status: "completed" }> {
+    return request(`/api/workspaces/${workspaceId}/flows/${encodeURIComponent(flowId)}/run`, {
+      method: "POST",
+    });
+  },
+
   listCapabilities(workspaceId: string): Promise<CapabilitySummary[]> {
     return request<CapabilitySummary[]>("/api/workspaces/" + workspaceId + "/capabilities");
   },
@@ -253,6 +263,10 @@ export const dashboardApi = {
 
   startScan(workspaceId: string): Promise<ScanRun> {
     return request<ScanRun>(`/api/workspaces/${workspaceId}/scans`, { method: "POST" });
+  },
+
+  ignoreScanFinding(workspaceId: string, runId: string, findingIndex: number): Promise<ScanRun[]> {
+    return request<ScanRun[]>(`/api/workspaces/${workspaceId}/scans/${encodeURIComponent(runId)}/findings/${findingIndex}/ignore`, { method: "POST", body: JSON.stringify({ ignored: true }) });
   },
 
   testFeishu(workspaceId: string, url?: string): Promise<WebhookTestResponse> {

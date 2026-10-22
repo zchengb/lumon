@@ -14,8 +14,8 @@ from typer.testing import CliRunner
 from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.agents.agent.model import AgentResult
 from lumon.cli.app import app
-from lumon.cli.commands import flow as flow_commands
 from lumon.cli.commands.flow import poll
+from lumon.flows import service as flow_service
 from lumon.flows.catalog import FlowCatalog
 from lumon.skills.installer import SkillInstaller
 from lumon.workspace.initializer import WorkspaceInitializer
@@ -119,7 +119,7 @@ def test_flow_poll_rejects_an_overlapping_run(
     def create_blocking_runner(_config: AgentConfig | None) -> _BlockingRunner:
         return _BlockingRunner()
 
-    monkeypatch.setattr(flow_commands, "create_agent_runner", create_blocking_runner)
+    monkeypatch.setattr(flow_service, "create_agent_runner", create_blocking_runner)
     with ThreadPoolExecutor(max_workers=1) as executor:
         first_run = executor.submit(
             poll,

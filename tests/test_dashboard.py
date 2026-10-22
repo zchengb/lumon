@@ -20,7 +20,7 @@ from lumon.dashboard.routes import create_app
 from lumon.dashboard.server import DashboardServer, create_dashboard_app, select_port
 from lumon.dashboard.service import DashboardService
 from lumon.errors import AgentRuntimeError, PreflightError
-from lumon.scan.model import ScanRun, ScanState
+from lumon.scan.model import ScanFinding, ScanRun, ScanState
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.codex_models import CodexModel
@@ -1468,6 +1468,66 @@ def test_scan_reports_display_html_inline_and_download_pdf(
     assert response.headers["content-type"].startswith(media_type)
     assert response.headers["content-disposition"] == f'{disposition}; filename="{filename}"'
     assert response.content == content
+
+
+def test_dashboard_can_ignore_a_recorded_issue_and_reload_it(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    client = _client(service)
+    workspace = tmp_path / "workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize", json={"path": str(workspace), "repositories": []}
+    ).json()["workspace_id"]
+    finding = ScanFinding.from_payload({"title": "Confirmed issue", "repository": "app"}, 0)
+    assert finding is not None
+    run = replace(
+        ScanRun.start("recorded", 7),
+        state=ScanState.COMPLETED_WITH_FINDINGS,
+        findings=(finding,),
+    )
+    store = ScanRunStore()
+    store.save(workspace, run)
+    endpoint = f"/api/workspaces/{workspace_id}/scans/{run.run_id}/findings/0/ignore"
+    assert client.post(endpoint).status_code == 422
+    assert client.post(endpoint, json={"ignored": False}).status_code == 422
+    response = client.post(endpoint, json={"ignored": True})
+    assert response.status_code == 200
+    assert response.json()[0]["findings"][0]["issue_status"] == "ignored"
+    assert client.post(endpoint, json={"ignored": True}).json() == response.json()
+    assert store.load(workspace, run.run_id) == run
+    reloaded = _client(_service(tmp_path))
+    assert reloaded.get(f"/api/workspaces/{workspace_id}/scans").json() == response.json()
+    assert (
+        client.post(
+            endpoint.replace("findings/0", "findings/-1"), json={"ignored": True}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            endpoint.replace("findings/0", "findings/5"), json={"ignored": True}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(endpoint.replace("recorded", "missing"), json={"ignored": True}).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            endpoint.replace(str(workspace_id), str(uuid4())), json={"ignored": True}
+        ).status_code
+        == 404
+    )
+    other_id = client.post(
+        "/api/workspaces/initialize", json={"path": str(tmp_path / "other"), "repositories": []}
+    ).json()["workspace_id"]
+    assert (
+        client.post(
+            endpoint.replace(str(workspace_id), str(other_id)), json={"ignored": True}
+        ).status_code
+        == 409
+    )
+    assert client.get(f"/api/workspaces/{other_id}/scans").json() == []
 
 
 def test_scan_history_reconciles_abandoned_runs_without_inventing_elapsed_time(

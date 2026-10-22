@@ -17,7 +17,7 @@ import pytest
 from lumon.agents.agent.config import AgentConfig, AgentConfigStore
 from lumon.agents.agent.model import AgentResult
 from lumon.agents.agent.runner import AgentEventCallback, AgentRunner, ProgressCallback
-from lumon.errors import PreflightError
+from lumon.errors import InvalidInputError, PreflightError
 from lumon.scan.model import ScanFinding, ScanRun, ScanState
 from lumon.scan.report import ReportResult, write_report
 from lumon.scan.service import ScanService
@@ -178,6 +178,78 @@ def test_scan_run_store_round_trip_and_artifact_guard(tmp_path: Path) -> None:
 
     assert store.load(workspace, run.run_id) == run
     assert store.list(workspace) == (run,)
+
+
+def test_ignored_findings_persist_without_rewriting_evidence(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    finding = _finding()
+    run = replace(ScanRun.start("first", 7), findings=(finding,))
+    store = ScanRunStore()
+    store.save(workspace, run)
+    receipt = store.path_for(workspace, run.run_id) / "run.json"
+    before = receipt.read_bytes()
+    store.ignore_finding(workspace, run.run_id, 0)
+    store.ignore_finding(workspace, run.run_id, 0)
+    newer = replace(run, run_id="newer")
+    store.save(workspace, newer)
+
+    reloaded = ScanRunStore()
+    projected = reloaded.with_ignored_findings(workspace, reloaded.list(workspace))
+    assert all(item.findings[0].issue_status == "ignored" for item in projected)
+    assert receipt.read_bytes() == before
+    assert reloaded.load(workspace, run.run_id).findings == (finding,)
+    markers = list((workspace / "lumon/runs/scans/.ignored").glob("*.json"))
+    assert len(markers) == 1
+    assert markers[0].stat().st_mode & 0o777 == 0o600
+    assert markers[0].parent.stat().st_mode & 0o777 == 0o700
+
+    other_repo = replace(run, findings=(replace(finding, repository="other"),))
+    other_workspace = tmp_path / "other"
+    assert store.with_ignored_findings(workspace, (other_repo,)) == (other_repo,)
+    assert store.with_ignored_findings(other_workspace, (run,)) == (run,)
+
+
+def test_untracked_ignores_apply_only_to_the_selected_occurrence(tmp_path: Path) -> None:
+    finding = replace(_finding(), issue_id="untracked")
+    run = replace(ScanRun.start("untracked", 7), findings=(finding, finding))
+    store = ScanRunStore()
+    store.save(tmp_path, run)
+    store.ignore_finding(tmp_path, run.run_id, 1)
+    projected = store.with_ignored_findings(tmp_path, (run, replace(run, run_id="other")))
+    assert [item.issue_status for item in projected[0].findings] == ["open", "ignored"]
+    assert projected[1].findings == run.findings
+
+
+@pytest.mark.parametrize("index", [-1, 1, 10_000])
+def test_ignoring_an_unknown_finding_does_not_write(tmp_path: Path, index: int) -> None:
+    store = ScanRunStore()
+    run = replace(ScanRun.start("known", 7), findings=(_finding(),))
+    store.save(tmp_path, run)
+    with pytest.raises(InvalidInputError):
+        store.ignore_finding(tmp_path, run.run_id, index)
+    assert not (tmp_path / "lumon/runs/scans/.ignored").exists()
+    with pytest.raises(PreflightError):
+        store.ignore_finding(tmp_path, "../../outside", 0)
+
+
+def test_ignore_write_failure_preserves_receipt_and_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = ScanRunStore()
+    run = replace(ScanRun.start("known", 7), findings=(_finding(),))
+    store.save(tmp_path, run)
+    before = (store.path_for(tmp_path, run.run_id) / "run.json").read_bytes()
+
+    def fail_replace(source: object, target: object) -> None:
+        del source, target
+        raise OSError("test write failure")
+
+    monkeypatch.setattr("lumon.scan.store.os.replace", fail_replace)
+    with pytest.raises(PreflightError):
+        store.ignore_finding(tmp_path, run.run_id, 0)
+    assert (store.path_for(tmp_path, run.run_id) / "run.json").read_bytes() == before
+    assert store.with_ignored_findings(tmp_path, (run,)) == (run,)
+    assert list((tmp_path / "lumon/runs/scans/.ignored").iterdir()) == []
 
 
 @pytest.mark.parametrize("notification_fails", [False, True])

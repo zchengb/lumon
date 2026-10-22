@@ -12,6 +12,7 @@ from lumon.capabilities.catalog import CapabilityCatalog
 from lumon.errors import AgentRuntimeError, WorkspaceNotFoundError
 from lumon.flows.catalog import FlowCatalog
 from lumon.flows.model import FlowDefinition
+from lumon.visual import environment
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
@@ -97,6 +98,7 @@ class WorkspaceContextBuilder:
             user_message=user_message,
             channel_context=channel_context,
             scheduled_flow=scheduled_flow,
+            visual_environment=environment.get_environment().prompt_text(),
         )
 
     def build_resume_prompt(
@@ -104,12 +106,17 @@ class WorkspaceContextBuilder:
         user_message: str,
         *,
         channel_context: AgentChannelContext | None = None,
+        inspect_environment: bool = True,
     ) -> str:
         """Build a small prompt for a resumed Session."""
 
+        snapshot = (
+            environment.get_environment() if inspect_environment else environment.peek_environment()
+        )
         return self.prompt_renderer.render_resume(
             user_message=user_message,
             channel_context=channel_context,
+            visual_environment=snapshot.prompt_text() if snapshot else "(not checked)",
         )
 
     def _select_registration(self) -> WorkspaceRegistration:

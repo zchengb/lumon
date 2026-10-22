@@ -19,6 +19,15 @@ describe("Dashboard translations", () => {
     },
   );
 
+  it.each(["en", "zh-CN", "zh-TW"] as const)(
+    "keeps Auto Scan severity labels in English in %s",
+    (locale) => {
+      expect(translate(locale, "autoScan.high")).toBe("High");
+      expect(translate(locale, "autoScan.medium")).toBe("Medium");
+      expect(translate(locale, "autoScan.low")).toBe("Low");
+    },
+  );
+
   it("interpolates dynamic values without changing the translation template", () => {
     expect(translate("en", "app.workspaceReady", { name: "Demo" })).toBe(
       "Workspace “Demo” is ready.",
@@ -27,6 +36,16 @@ describe("Dashboard translations", () => {
       "建立於 2026/09/11",
     );
   });
+
+  it.each(["en", "zh-CN", "zh-TW"] as const)(
+    "keeps the Capabilities navigation and page name consistent in %s",
+    (locale) => {
+      expect(translate(locale, "app.capabilities")).toBe("Capabilities");
+      expect(translate(locale, "app.capabilities")).toBe(
+        translate(locale, "capabilities.title"),
+      );
+    },
+  );
 
   it("persists the selected language and restores it on the next mount", async () => {
     const container = document.createElement("div");

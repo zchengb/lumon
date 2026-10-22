@@ -8,9 +8,21 @@ from pathlib import Path
 import pytest
 
 from lumon.skills.installer import SkillInstaller
+from lumon.visual import environment
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.registry import WorkspaceRegistry
 from lumon.workspace.settings import WorkspaceSettingsStore
+
+
+@pytest.fixture(autouse=True)
+def isolate_visual_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Request/prompt tests must not inspect the developer's SDKs or Docker daemon."""
+
+    def snapshot(*, refresh: bool = False) -> environment.EnvironmentSnapshot:
+        del refresh
+        return environment.EnvironmentSnapshot("2026-10-22T00:00:00+00:00", ())
+
+    monkeypatch.setattr(environment, "get_environment", snapshot)
 
 
 @pytest.fixture

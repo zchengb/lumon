@@ -18,7 +18,7 @@ it("shows saved automation configuration and navigates without starting jobs", a
   /></I18nProvider>));
   expect(container.textContent).toContain("0 12 * * 1-5");
   expect(container.textContent).toContain("No schedule configured");
-  expect(container.textContent).toContain("Saved configuration");
+  expect(container.querySelector(".workspace-automation")?.textContent).toContain("Saved configuration");
   const shortcuts = container.querySelectorAll<HTMLButtonElement>(".workspace-shortcut-grid button");
   for (const [index, view] of ["agent", "flows", "capabilities", "auto-scan"].entries()) {
     await act(async () => shortcuts[index].click());
@@ -42,6 +42,10 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows saved workflow schedules and o
       settings={null} onRefresh={() => {}} refreshing={false} onNavigate={vi.fn()} onOpenWorkflow={onOpenWorkflow}
     /></I18nProvider>));
     const rows = container.querySelectorAll<HTMLButtonElement>(".automation-summary");
+    expect(container.querySelector(".workspace-details")).toBeNull();
+    expect(container.querySelector(".workspace-context dl")).toBeNull();
+    expect(container.textContent).not.toContain("1.0.0");
+    expect(container.textContent).not.toContain("workspace-id");
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain("Auto Guard");
     expect(rows[0].querySelector(".health-ok")?.textContent).toBe(translate(locale, "settings.enabled"));

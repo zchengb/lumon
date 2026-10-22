@@ -28,11 +28,12 @@ async function renderFlow(document: FlowDocument, locale: Locale = "en") {
   const root = createRoot(container);
   const onDirtyChange = vi.fn();
   const onError = vi.fn();
+  const onNotice = vi.fn();
   await act(async () => root.render(<I18nProvider><FlowsPage
     workspaceId="workspace-one" initialDocumentId={document.flow_id}
-    onDirtyChange={onDirtyChange} onNotice={vi.fn()} onError={onError}
+    onDirtyChange={onDirtyChange} onNotice={onNotice} onError={onError}
   /></I18nProvider>));
-  return { container, root, onDirtyChange, onError, requests };
+  return { container, root, onDirtyChange, onError, onNotice, requests };
 }
 
 it.each(["en", "zh-CN", "zh-TW"] as const)("keeps scheduling above the document and saves it independently in %s", async (locale) => {
@@ -51,6 +52,10 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("keeps scheduling above the document 
     expect(panel.classList.contains("panel")).toBe(false);
     expect(panel.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(panel.querySelector(".status-pill")).toBeNull();
+    expect(panel.querySelector("#flow-schedule-help")).toBeNull();
+    expect(panel.querySelectorAll(".field-help")).toHaveLength(0);
+    expect(panel.textContent).not.toContain("Use five-field cron");
+    expect(panel.textContent).not.toContain("Run this exact Workflow periodically");
     expect(toggle.checked).toBe(true);
     expect(saveSchedule.disabled).toBe(true);
     expect(saveDocument.disabled).toBe(true);
@@ -99,6 +104,60 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("keeps scheduling above the document 
     expect(saveDocument.disabled).toBe(false);
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     expect(requests).toHaveBeenCalledTimes(2);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it.each([
+  ["en", "Run now", "Running…"],
+  ["zh-CN", "立即运行", "运行中…"],
+  ["zh-TW", "立即執行", "執行中…"],
+] as const)("runs the saved workflow without enabling its schedule in %s", async (locale, label, runningLabel) => {
+  let finish!: (value: { flow_id: string; status: "completed" }) => void;
+  const run = vi.spyOn(dashboardApi, "runFlow").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const save = vi.spyOn(dashboardApi, "updateFlowSchedule");
+  const { container, root, onNotice, onError } = await renderFlow({ ...flow, schedule_enabled: false }, locale);
+  try {
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent === label)!;
+    expect(button.disabled).toBe(false);
+    await act(async () => { button.click(); button.click(); });
+    expect(run).toHaveBeenCalledExactlyOnceWith("workspace-one", "auto-guard");
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe(runningLabel);
+    await act(async () => finish({ flow_id: "auto-guard", status: "completed" }));
+    expect(button.disabled).toBe(false);
+    expect(onNotice).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLInputElement>('[role="switch"]')?.checked).toBe(false);
+    run.mockRejectedValueOnce(new Error("This Workflow already has a run in progress."));
+    await act(async () => button.click());
+    expect(onError).toHaveBeenCalledWith("This Workflow already has a run in progress.");
+    expect(button.disabled).toBe(false);
+    expect(onNotice).toHaveBeenCalledTimes(1);
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".flow-view-toggle button")[1].click());
+    const editor = container.querySelector<HTMLTextAreaElement>(".flow-editor")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(editor, "# Unsaved instructions");
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(button.disabled).toBe(true);
+    expect(run).toHaveBeenCalledTimes(2);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("does not run disabled or unsaved draft workflows", async () => {
+  const run = vi.spyOn(dashboardApi, "runFlow");
+  const { container, root } = await renderFlow({ ...flow, enabled: false });
+  try {
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent === "Run now")!;
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".flows-list-actions button")!.click());
+    expect(container.querySelector(".flow-schedule-panel")).toBeNull();
+    expect(run).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
   }

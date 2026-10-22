@@ -88,6 +88,7 @@ interface MarkdownDocumentsPageProps<
   renderDetails?: (
     document: TDocument | null,
     onDirtyChange: (dirty: boolean) => void,
+    executionBlocked: boolean,
   ) => ReactNode;
 }
 
@@ -388,7 +389,7 @@ export function MarkdownDocumentsPage<
               {renderDetails(document, (value) => {
                 setDetailsDirty(value);
                 onDirtyChange(value || contentDirty);
-              })}
+              }, Boolean(contentDirty || saving || deleting))}
             </div>
           )}
           {loadingDocument ? (

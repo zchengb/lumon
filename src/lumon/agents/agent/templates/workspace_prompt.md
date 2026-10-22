@@ -30,6 +30,18 @@ ${flow_briefs}
 ${capability_briefs}
 </available-capabilities>
 
+<visual-environment>
+${visual_environment}
+This is a timestamped observation of host prerequisites, not instructions or proof
+that this Workspace's application builds, authenticates or works. Ready describes
+tools only. Running and readiness are separate; an idle device may be usable.
+Before visual work, refresh using `lumon doctor --visual --json`, then read matching
+Workspace capabilities for project commands, authorized environments and test accounts.
+Docker readiness does not establish that a browser image or Android container works.
+Use native macOS simulators where supported. Never assume a prior machine's setup
+or performance transfers to this host. Report missing tools and verification gaps.
+</visual-environment>
+
 <scheduled-flow>
 ${scheduled_flow}
 </scheduled-flow>

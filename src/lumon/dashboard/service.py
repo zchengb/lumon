@@ -37,6 +37,7 @@ from lumon.errors import (
 from lumon.flows.catalog import FlowCatalog, FlowValidationError
 from lumon.flows.model import FlowDefinition
 from lumon.flows.scheduler import FlowScheduler, LaunchdFlowScheduler
+from lumon.flows.service import FlowService
 from lumon.scan.model import ScanRun
 from lumon.scan.scheduler import LaunchdScanScheduler, ScanScheduler
 from lumon.scan.service import ScanService
@@ -44,6 +45,7 @@ from lumon.tools.codex_models import CodexModel, CodexModelCatalog
 from lumon.tools.codex_status import CodexCliStatus, CodexCliUpdateChecker
 from lumon.tools.feishu_directory import FeishuDirectory
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
+from lumon.visual import environment
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.layout import WorkspaceLayout
@@ -287,6 +289,7 @@ class DashboardService:
         feishu_directory: FeishuDirectory | None = None,
         model_loader: Callable[[], Awaitable[tuple[CodexModel, ...]]] | None = None,
         codex_update_checker: CodexCliUpdateChecker | None = None,
+        flow_service: FlowService | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
@@ -308,6 +311,7 @@ class DashboardService:
         )
         self.scan_scheduler = scan_scheduler or LaunchdScanScheduler(self.registry.layout.root)
         self.flow_scheduler = flow_scheduler or LaunchdFlowScheduler(self.registry.layout.root)
+        self.flow_service = flow_service or FlowService(self.registry, self.agent_config_store)
         self.scan_service = scan_service or ScanService(
             state_root=self.registry.layout.root,
             registry=self.registry,
@@ -401,11 +405,28 @@ class DashboardService:
         settings = self.settings_store.load(workspace_id)
         return _settings_view(settings)
 
+    def visual_environment(
+        self, workspace_id: UUID, *, refresh: bool = False
+    ) -> environment.EnvironmentSnapshot:
+        """Read host prerequisites separately from project or application verification."""
+        self._require(workspace_id)
+        return environment.get_environment(refresh=refresh)
+
     def scans(self, workspace_id: UUID) -> tuple[ScanRun, ...]:
         """Return recent Auto Scan receipts for one Workspace."""
 
         registration = self._require(workspace_id)
-        return self.scan_service.list_runs(registration.path)
+        runs = self.scan_service.list_runs(registration.path)
+        return self.scan_service.run_store.with_ignored_findings(registration.path, runs)
+
+    def ignore_scan_finding(
+        self, workspace_id: UUID, run_id: str, finding_index: int
+    ) -> tuple[ScanRun, ...]:
+        """Save a Workspace-local ignore choice and return refreshed history."""
+
+        workspace = self._require(workspace_id).path
+        self.scan_service.run_store.ignore_finding(workspace, run_id, finding_index)
+        return self.scans(workspace_id)
 
     def deliveries(
         self, workspace_id: UUID
@@ -518,6 +539,12 @@ class DashboardService:
             for item in snapshot.diagnostics
         )
         return tuple(summaries)
+
+    async def run_flow(self, workspace_id: UUID, flow_id: str) -> None:
+        """Run the selected saved Workflow, independently of its schedule."""
+
+        self._require(workspace_id)
+        await self.flow_service.run(workspace_id, flow_id)
 
     def flow(self, workspace_id: UUID, flow_id: str) -> FlowDocumentView:
         """Read one flow for the Dashboard editor, including invalid source."""

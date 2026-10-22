@@ -110,27 +110,26 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
       <div className="panel-heading"><h2>{t("autoDelivery.history")}</h2><span className="muted">{history.runs.length}</span></div>
       <div className="table-scroll scan-history-scroll" tabIndex={0} role="region" aria-label={t("autoDelivery.history")}>
         <table className="scan-history-table delivery-history-table">
-          <thead><tr><th scope="col">{t("autoDelivery.story")}</th><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoDelivery.verification")}</th><th scope="col">{t("autoScan.duration")}</th><th scope="col">{t("autoDelivery.result")}</th></tr></thead>
+          <thead><tr><th scope="col">{t("autoDelivery.story")}</th><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th></tr></thead>
           <tbody>{history.runs.length ? history.runs.map((item) => <tr key={item.run_id}>
             <td><StoryLink run={item} /><span className="delivery-story-title">{item.story_title}</span>{item.branch && <small className="muted">{item.branch}</small>}</td>
             <td>{timeLabel(item.started_at)}</td>
-            <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button><small className="delivery-story-title muted">{stageLabel(item.phase, t)}</small></td>
-            <td>{item.verification_summary || "—"}</td><td>{duration(item, now)}</td>
-            <td>{item.pull_request_url ? <a href={item.pull_request_url} target="_blank" rel="noreferrer">PR <ExternalLink size={12} /></a> : item.detail || item.reason || "—"}</td>
-          </tr>) : <tr><td colSpan={6} className="empty-table">{t("autoDelivery.noHistory")}</td></tr>}</tbody>
+            <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
+            <td>{duration(item, now)}</td>
+          </tr>) : <tr><td colSpan={4} className="empty-table">{t("autoDelivery.noHistory")}</td></tr>}</tbody>
         </table>
       </div>
     </section>
 
     <section className="panel" aria-label={t("autoDelivery.schedulerActivity")}>
-      <div className="panel-heading"><h2>{t("autoDelivery.schedulerActivity")}</h2><span className="muted">{history.polls.length}</span></div>
+      <div className="panel-heading"><h2>{t("autoDelivery.schedulerActivity")}</h2></div>
       <div className="table-scroll scan-history-scroll" tabIndex={0} role="region" aria-label={t("autoDelivery.schedulerActivity")}>
         <table className="scan-history-table delivery-history-table">
-          <thead><tr><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoDelivery.result")}</th><th scope="col">{t("autoScan.duration")}</th></tr></thead>
+          <thead><tr><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th></tr></thead>
           <tbody>{history.polls.length ? history.polls.map((item) => <tr key={item.run_id}>
             <td>{timeLabel(item.started_at)}</td><td><button className="delivery-inspect" type="button" aria-label={`${t("autoDelivery.inspect")} ${timeLabel(item.started_at)}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
-            <td>{item.state === "idle" ? t("autoDelivery.noEligible") : item.detail || t("autoDelivery.awaitingProgress")}</td><td>{duration(item, now)}</td>
-          </tr>) : <tr><td colSpan={4} className="empty-table">{t("autoDelivery.noActivity")}</td></tr>}</tbody>
+            <td>{duration(item, now)}</td>
+          </tr>) : <tr><td colSpan={3} className="empty-table">{t("autoDelivery.noActivity")}</td></tr>}</tbody>
         </table>
       </div>
     </section>

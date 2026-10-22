@@ -291,7 +291,7 @@ export function App(): React.JSX.Element {
         </header>
         {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}
         <main className="content-area">
-          {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} onNavigate={changeView} onOpenWorkflow={openWorkflow} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
+          {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} agentSettings={agentSettings} onNavigate={changeView} onOpenWorkflow={openWorkflow} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
           {selectedId && view === "settings" && settings && <div className="page-stack">
             <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />
             <AutoDeliverySettingsPanel key={`delivery-${selectedId}`} settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />
@@ -315,7 +315,7 @@ function Notice({ type, message, onClose, closeLabel }: { type: "success" | "err
   const Icon = type === "success" ? CheckCircle2 : AlertTriangle;
   return <div className={`notice notice-${type}`} role={type === "error" ? "alert" : "status"}>
     <Icon size={16} />
-    <span>{message}</span>
+    <span>{message.trimEnd().replace(/[.。]+$/u, "")}</span>
     {onClose && <button className="notice-close" type="button" onClick={onClose} aria-label={closeLabel}><X size={15} /></button>}
   </div>;
 }

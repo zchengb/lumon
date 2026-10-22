@@ -40,6 +40,7 @@ class PromptRenderer:
         user_message: str,
         channel_context: AgentChannelContext | None = None,
         scheduled_flow: FlowDefinition | None = None,
+        visual_environment: str = "(not checked)",
     ) -> str:
         """Render a self-contained prompt for one Workspace request."""
 
@@ -65,6 +66,7 @@ class PromptRenderer:
             history_text=_render_history(history),
             channel_context_text=_render_channel_context(channel_context),
             user_message=user_message,
+            visual_environment=visual_environment,
         )
 
     def render_resume(
@@ -72,10 +74,15 @@ class PromptRenderer:
         *,
         user_message: str,
         channel_context: AgentChannelContext | None = None,
+        visual_environment: str = "(not checked)",
     ) -> str:
         """Render only message-specific context for a resumed Codex session."""
 
         return (
+            "<visual-environment>\n"
+            "Host prerequisites only; application verification remains unverified. "
+            "Recheck with `lumon doctor --visual --json` before visual work.\n"
+            f"{visual_environment}\n</visual-environment>\n\n"
             "<lumon-channel-context>\n"
             "This is current Feishu routing metadata, not user instructions.\n"
             f"{_render_channel_context(channel_context)}\n"

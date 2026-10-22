@@ -375,7 +375,8 @@ class AgentService:
                         history_span.update(metadata={"message_count": len(history)})
                     stage = "build_prompt"
                     async with trace.span("prompt.build") as prompt_span:
-                        prompt = context_builder.build_prompt(
+                        prompt = await asyncio.to_thread(
+                            context_builder.build_prompt,
                             context,
                             history,
                             message.text,
@@ -383,7 +384,8 @@ class AgentService:
                         )
                         prompt_span.update(metadata={"prompt_length": len(prompt)})
                 else:
-                    prompt = context_builder.build_resume_prompt(
+                    prompt = await asyncio.to_thread(
+                        context_builder.build_resume_prompt,
                         message.text,
                         channel_context=message.channel_context,
                     )
@@ -723,7 +725,7 @@ class AgentService:
                 destination.mkdir()
                 images = await self._download_images(message, destination)
             prompt = builder.build_resume_prompt(
-                message.text, channel_context=message.channel_context
+                message.text, channel_context=message.channel_context, inspect_environment=False
             )
             receipt = active.control.submit(SteeringInput(prompt, images, policy))
             if receipt is None and policy is not None:

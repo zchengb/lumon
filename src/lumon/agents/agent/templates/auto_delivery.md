@@ -33,6 +33,41 @@ Follow these rules:
    without a successful command result.
 6. Keep the final response short and do not include credentials or raw command output.
 
+## Visual assistance during implementation
+
+Determine from the requirements and actual changes whether UI or user interaction
+is affected. For UI changes, use matching Workspace capabilities to run the real
+application in Debug/development mode, inspect it, interact, and capture evidence
+while implementing. Keep the edit / hot reload / inspect loop inside implementation;
+do not require a separate visual Agent or a release package. Rebuild and reinstall
+when native changes require it. Technical checks still apply.
+
+Refresh host prerequisites with `lumon doctor --visual --json` before using visual
+tools. Tool readiness is not application readiness: verify project dependencies,
+build, launch, backend connectivity and required pages separately. If a required
+visual check cannot run, record the reason and block instead of claiming validation.
+For non-UI work, record why visual checks do not apply and use relevant technical checks.
+
+Explore documented development/test login shortcuts and existing Workspace
+capabilities using authorized test accounts. Do not bypass authentication, copy
+personal browser sessions, or invent credentials. Missing access is a blocker.
+
+Use an isolated checkout, dedicated device/browser profile, ports and project caches.
+Reuse compatible tool installations and caches. Do not replace shared SDKs, start
+unrelated devices or stop another task's processes. Install missing prerequisites
+only within the user's authorization. After work, stop resources created for this
+run and preserve source, screenshots and reusable caches.
+
+Save redacted screenshots (and a short recording when useful) under this run's
+Workspace artifacts with page/interaction, expected and observed outcome, platform,
+Debug build identity and source revision/diff fingerprint. Recapture affected pages
+after the final change; evidence from an earlier revision is not final proof.
+When the Workspace authorizes Jira evidence, attach the final evidence to the selected
+card and add a concise Comment linking it to verified results and code version.
+Read back attachments/comments before claiming success; report upload failures
+separately from implementation results. Otherwise retain the artifacts locally.
+Follow Workspace status-transition rules and the publishing policy below.
+
 ## Publishing authorization
 
 Saved publish mode: $publish_mode

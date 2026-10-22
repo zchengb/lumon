@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
+from fastapi import (
+    Path as PathParameter,
+)
 from fastapi.responses import FileResponse, JSONResponse
 
 from lumon import __version__
@@ -31,6 +41,7 @@ from lumon.dashboard.schemas import (
     FeishuWebhookTestRequest,
     FlowContentRequest,
     FlowDocumentResponse,
+    FlowRunResponse,
     FlowScheduleUpdate,
     FlowSummaryResponse,
     HealthResponse,
@@ -39,6 +50,7 @@ from lumon.dashboard.schemas import (
     RegisterWorkspaceRequest,
     RepositoryOverviewResponse,
     RepositoryResultResponse,
+    ScanFindingIgnoreRequest,
     ScanFindingResponse,
     ScanRunResponse,
     WebhookTestResponse,
@@ -65,6 +77,7 @@ from lumon.dashboard.service import (
 )
 from lumon.errors import InvalidInputError, LumonError, PreflightError, WorkspaceNotFoundError
 from lumon.scan.model import ScanFinding, ScanRun
+from lumon.visual.environment import EnvironmentSnapshot
 
 # Route functions are consumed by FastAPI's runtime decorators.
 # pyright cannot observe that registration and reports them as unused otherwise.
@@ -266,6 +279,13 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
             ],
         )
 
+    @router.get("/workspaces/{workspace_id}/environment", response_model=EnvironmentSnapshot)
+    def visual_environment(
+        request: Request, workspace_id: UUID, response: Response, refresh: bool = False
+    ) -> EnvironmentSnapshot:
+        response.headers["Cache-Control"] = "no-store"
+        return _service(request).visual_environment(workspace_id, refresh=refresh)
+
     @router.get(
         "/workspaces/{workspace_id}/settings",
         response_model=WorkspaceSettingsResponse,
@@ -313,6 +333,21 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     )
     def start_scan(request: Request, workspace_id: UUID) -> ScanRunResponse:
         return _scan_response(_service(request).start_scan(workspace_id))
+
+    @router.post(
+        "/workspaces/{workspace_id}/scans/{run_id}/findings/{finding_index}/ignore",
+        response_model=list[ScanRunResponse],
+    )
+    def ignore_scan_finding(
+        request: Request,
+        workspace_id: UUID,
+        run_id: str,
+        finding_index: Annotated[int, PathParameter(ge=0)],
+        payload: ScanFindingIgnoreRequest,
+    ) -> list[ScanRunResponse]:
+        del payload
+        runs = _service(request).ignore_scan_finding(workspace_id, run_id, finding_index)
+        return [_scan_response(run) for run in runs]
 
     @router.get("/workspaces/{workspace_id}/scans/{run_id}/artifacts/{kind}")
     def scan_artifact(
@@ -386,6 +421,11 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                 payload.schedule_expression,
             )
         )
+
+    @router.post("/workspaces/{workspace_id}/flows/{flow_id}/run", response_model=FlowRunResponse)
+    async def run_flow(request: Request, workspace_id: UUID, flow_id: str) -> FlowRunResponse:
+        await _service(request).run_flow(workspace_id, flow_id)
+        return FlowRunResponse(flow_id=flow_id)
 
     @router.delete("/workspaces/{workspace_id}/flows/{flow_id}", status_code=204)
     def delete_flow(request: Request, workspace_id: UUID, flow_id: str) -> None:

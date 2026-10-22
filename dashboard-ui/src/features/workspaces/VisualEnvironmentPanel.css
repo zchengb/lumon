@@ -1,0 +1,13 @@
+.visual-environment .panel-heading { gap: 12px; flex-wrap: wrap; }
+.visual-environment-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 20px; gap: 16px; }
+.visual-environment-item { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.visual-environment-label { display: flex; align-items: center; gap: 7px; font-size: 14px; }
+.visual-environment-label > svg { flex-shrink: 0; color: var(--muted); }
+.visual-environment-status { font-size: 12px; padding: 4px 9px; border-radius: 20px; background: #f0f0ed; color: #65665f; }
+.visual-environment-ready { background: #edf7f0; color: #237247; }
+.visual-environment-error { background: #fff0ed; color: #a64436; }
+.visual-environment-missing { background: #fff6df; color: #8d651b; }
+.field-help-tooltip[id^="environment-"] { white-space: pre-line; }
+.visual-environment-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+@media (max-width: 1100px) { .visual-environment-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .visual-environment-grid { grid-template-columns: 1fr; } }

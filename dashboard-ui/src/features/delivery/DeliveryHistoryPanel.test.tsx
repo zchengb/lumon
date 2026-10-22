@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { dashboardApi, ApiError } from "../../app/api";
-import { I18nProvider } from "../../shared/i18n";
+import { I18nProvider, translate } from "../../shared/i18n";
 import type { DeliveryHistory, DeliveryRun } from "../../shared/types";
 import { DeliveryHistoryPanel } from "./DeliveryHistoryPanel";
 
@@ -43,7 +43,29 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     fetch.mockResolvedValue({ runs: [completed], polls: [{ ...history.polls[0]!, state: "completed", duration_seconds: 733, finished_at: completed.finished_at }] });
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(container.textContent).toContain("12m13s");
-    expect(container.textContent).toContain("Seven version constants validated.");
+    const historyTable = container.querySelector<HTMLTableElement>(".delivery-history-table")!;
+    expect(Array.from(historyTable.querySelectorAll("thead th"), (cell) => cell.textContent)).toEqual([
+      translate(locale, "autoDelivery.story"), translate(locale, "autoScan.started"),
+      translate(locale, "autoScan.status"), translate(locale, "autoScan.duration"),
+    ]);
+    const cells = historyTable.querySelectorAll("tbody td");
+    expect(cells).toHaveLength(4);
+    expect(cells[0]?.textContent).toContain(run.story_key);
+    expect(cells[0]?.textContent).toContain(run.branch);
+    expect(cells[2]?.textContent).toBe(translate(locale, "autoDelivery.status.completed"));
+    expect(cells[2]?.querySelector("small")).toBeNull();
+    expect(cells[3]?.textContent).toBe("12m13s");
+    expect(historyTable.textContent).not.toContain("Seven version constants validated.");
+    expect(historyTable.textContent).not.toContain("Local-only change; no deployment.");
+    const schedulerTable = container.querySelectorAll<HTMLTableElement>(".delivery-history-table")[1]!;
+    expect(Array.from(schedulerTable.querySelectorAll("thead th"), (cell) => cell.textContent)).toEqual([
+      translate(locale, "autoScan.started"), translate(locale, "autoScan.status"),
+      translate(locale, "autoScan.duration"),
+    ]);
+    expect(schedulerTable.querySelectorAll("tbody td")).toHaveLength(3);
+    expect(schedulerTable.querySelector("tbody td:last-child")?.textContent).toBe("12m13s");
+    expect(schedulerTable.textContent).not.toContain("Checking Stories.");
+    expect(schedulerTable.closest("section")?.querySelector(".panel-heading .muted")).toBeNull();
     expect(container.querySelectorAll(".delivery-stages .is-complete").length).toBe(5);
     const inspect = container.querySelector<HTMLButtonElement>(".delivery-history-table .delivery-inspect")!;
     await act(async () => inspect.click());
@@ -52,7 +74,10 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     const latest = container.querySelector<HTMLButtonElement>(".panel-actions .button")!;
     await act(async () => latest.click());
     expect(container.textContent).not.toContain("AUTO_DELIVERY_IDLE");
+    expect(historyTable.querySelector(".empty-table")?.getAttribute("colspan")).toBe("4");
     expect(container.querySelectorAll(".delivery-stages .is-complete").length).toBe(1);
+    await act(async () => schedulerTable.querySelector<HTMLButtonElement>(".delivery-inspect")!.click());
+    expect(events).toHaveBeenLastCalledWith("workspace-1", "poll-1");
     expect(onError).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
@@ -73,6 +98,8 @@ it("keeps run history visible if the activity request fails and cancels refresh 
   try {
     await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={onError} /></I18nProvider>));
     expect(container.textContent).toContain("Admin portal version bump");
+    const emptyScheduler = container.querySelectorAll(".delivery-history-table")[1]!;
+    expect(emptyScheduler.querySelector(".empty-table")?.getAttribute("colspan")).toBe("3");
     expect(onError).toHaveBeenCalledWith("Activity unavailable.");
     await act(async () => root.unmount());
     await vi.advanceTimersByTimeAsync(3000);

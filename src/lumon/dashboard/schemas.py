@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -287,6 +288,12 @@ class WorkspaceSettingsUpdate(StrictModel):
     auto_scan: AutoScanUpdate | None = None
 
 
+class ScanFindingIgnoreRequest(StrictModel):
+    """Require an explicit JSON write intent for local issue triage."""
+
+    ignored: Literal[True]
+
+
 class ScanFindingResponse(StrictModel):
     """One safe finding returned in Auto Scan history."""
 
@@ -349,6 +356,13 @@ class FlowContentRequest(StrictModel):
     """Markdown content submitted for flow creation or replacement."""
 
     content: str = Field(min_length=1)
+
+
+class FlowRunResponse(StrictModel):
+    """Confirm actual completion, without exposing the Agent's raw output."""
+
+    flow_id: str
+    status: Literal["completed"] = "completed"
 
 
 class FlowScheduleUpdate(StrictModel):

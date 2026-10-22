@@ -1,12 +1,15 @@
 import { ArrowUpRight, Bot, CheckCircle2, Clock3, FolderGit2, GitBranch, HardDrive, Puzzle, RefreshCw, Rocket, ScanSearch } from "lucide-react";
 import { useI18n } from "../../shared/i18n";
-import type { View, WorkspaceSettings, WorkspaceOverview as WorkspaceOverviewData } from "../../shared/types";
+import type { AgentSettings, View, WorkspaceSettings, WorkspaceOverview as WorkspaceOverviewData } from "../../shared/types";
+import { WorkspaceMap } from "./WorkspaceMap";
+import { VisualEnvironmentPanel } from "./VisualEnvironmentPanel";
 
 interface WorkspaceOverviewProps {
   overview: WorkspaceOverviewData;
   onRefresh: () => void;
   refreshing: boolean;
   settings: WorkspaceSettings | null;
+  agentSettings?: AgentSettings | null;
   onNavigate: (view: View) => void;
   onOpenWorkflow: (flowId: string) => void;
 }
@@ -16,10 +19,11 @@ export function WorkspaceOverview({
   onRefresh,
   refreshing,
   settings,
+  agentSettings = null,
   onNavigate,
   onOpenWorkflow,
 }: WorkspaceOverviewProps): React.JSX.Element {
-  const { formatDate, t } = useI18n();
+  const { t } = useI18n();
 
   return (
     <div className="page-stack workspace-home">
@@ -38,6 +42,10 @@ export function WorkspaceOverview({
         <span><CheckCircle2 size={15} /><strong>{t("overview.initialized")}</strong></span>
         <span><GitBranch size={15} />{t("overview.id")} <code>{overview.workspace_id.slice(0, 8)}</code></span>
       </div>
+
+      <WorkspaceMap overview={overview} settings={settings} agentSettings={agentSettings} onNavigate={onNavigate} onOpenWorkflow={onOpenWorkflow} />
+
+      <VisualEnvironmentPanel key={overview.workspace_id} workspaceId={overview.workspace_id} refreshToken={overview} />
 
       <section className="workspace-shortcuts" aria-labelledby="workspace-tools-title">
         <h2 id="workspace-tools-title">{t("overview.tools")}</h2>
@@ -98,10 +106,6 @@ export function WorkspaceOverview({
               <GitBranch size={18} /><span><strong>{workflow.name}</strong><small className={workflow.enabled ? "health-ok" : "muted"}>{workflow.enabled ? t("settings.enabled") : t("settings.disabled")}</small><code>{workflow.schedule_expression}</code></span><ArrowUpRight size={14} />
             </button>
           ))}
-        </section>
-        <section className="workspace-details">
-          <h2>{t("overview.details")}</h2>
-          <dl><div><dt>{t("overview.id")}</dt><dd className="mono">{overview.workspace_id}</dd></div><div><dt>{t("overview.created")}</dt><dd>{formatDate(overview.created_at)}</dd></div><div><dt>{t("overview.initialVersion")}</dt><dd>{overview.lumon_version}</dd></div></dl>
         </section>
       </aside>
       </div>

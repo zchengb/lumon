@@ -127,6 +127,19 @@ export interface WorkflowSchedule {
   schedule_expression: string;
 }
 
+export type VisualEnvironmentStatus = "ready" | "missing" | "error" | "unsupported";
+
+export interface VisualEnvironmentSnapshot {
+  checked_at: string;
+  application_status: "unverified";
+  environments: {
+    platform: "ios" | "android" | "web" | "docker";
+    status: VisualEnvironmentStatus;
+    running: boolean | null;
+    checks: { name: string; status: VisualEnvironmentStatus }[];
+  }[];
+}
+
 export interface FeishuWebhookSettings {
   enabled: boolean;
   configured: boolean;

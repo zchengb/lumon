@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "../shared/i18n";
 import type { AgentSettings, FlowDocument, WorkspaceListItem, WorkspaceSettings } from "../shared/types";
-import { dashboardApi } from "./api";
+import { ApiError, dashboardApi } from "./api";
 import { App } from "./App";
 
 const workspaces: WorkspaceListItem[] = ["workspace-one", "workspace-two"].map((workspace_id) => ({
@@ -24,6 +24,28 @@ const settings: WorkspaceSettings = {
 };
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); window.history.replaceState(null, "", "/"); });
+
+it.each([
+  ["Unable to read source.py.  ", "Unable to read source.py"],
+  ["配置保存失败。", "配置保存失败"],
+  ["設定儲存失敗。", "設定儲存失敗"],
+  ["Version 1.4.19 is unavailable.", "Version 1.4.19 is unavailable"],
+  ["First sentence.\nLast sentence。", "First sentence.\nLast sentence"],
+  ["Already clean", "Already clean"],
+])("removes only trailing full stops from result toasts: %s", async (message, expected) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const error = new ApiError(500, message);
+  vi.spyOn(dashboardApi, "listWorkspaces").mockResolvedValue([]);
+  vi.spyOn(dashboardApi, "getBootstrap").mockRejectedValue(error);
+  vi.spyOn(dashboardApi, "getAgentSettings").mockResolvedValue(agent);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>));
+    expect(container.querySelector(".notice-error > span")?.textContent).toBe(expected);
+    expect(error.message).toBe(message);
+  } finally { await act(async () => root.unmount()); }
+});
 
 it("merges history into Agent, moves global configuration to Settings and protects both settings drafts", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -174,6 +196,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("saves automation panels independentl
     await edit("#auto-scan-lookback", "21");
     await edit("#feishu-webhook-url", "https://example.test/replacement");
     await click(".auto-delivery-settings-panel .settings-actions button");
+    expect(container.querySelector(".notice-success > span")?.textContent).not.toMatch(/[.。]$/u);
+    expect(container.querySelector(".notice-success > span")?.textContent).toBeTruthy();
     expect(save.mock.calls[0][1].auto_scan).toBeUndefined();
     expect(save.mock.calls[0][1].feishu_webhook.url).toBeUndefined();
     expect(field("#auto-scan-lookback").value).toBe("21");

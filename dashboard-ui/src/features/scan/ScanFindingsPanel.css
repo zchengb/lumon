@@ -1,0 +1,25 @@
+.scan-findings-panel .panel-heading > span { font-size: 12px; }
+.scan-findings-note { margin: 18px 24px 12px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.scan-finding-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px 18px; border-bottom: 1px solid var(--line-soft); }
+.scan-finding-filters button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; background: #fff; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.scan-finding-filters button[aria-pressed="true"] { border-color: #c8b596; color: var(--ink); background: #faf7ef; }
+.scan-finding-filters span { font-variant-numeric: tabular-nums; }
+.scan-finding { padding: 22px 24px; border-bottom: 1px solid var(--line-soft); overflow-wrap: anywhere; }
+.scan-finding:last-child { border-bottom: 0; }
+.scan-finding header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.scan-finding h3 { flex: 1; min-width: min(100%, 240px); margin: 0; font-size: 14px; font-weight: 600; line-height: 1.6; }
+.scan-finding .scan-finding-ignore { padding: 5px 10px; font-size: 12px; }
+.scan-finding-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0; color: var(--muted); font-size: 11px; }
+.scan-finding-impact { margin: 12px 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.scan-finding summary, .scan-finding-pr { color: var(--copper); cursor: pointer; font-size: 12px; }
+.scan-finding dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px 20px; padding: 16px; background: #fafaf7; border-radius: 6px; font-size: 12px; line-height: 1.7; }
+.scan-finding dt { color: var(--muted); }
+.scan-finding dd { min-width: 0; margin: 0; white-space: pre-wrap; }
+.scan-finding pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.scan-finding-pr { display: inline-block; margin-top: 12px; }
+.scan-findings-empty { padding: 24px; margin: 0; font-size: 13px; color: var(--muted); }
+@media (max-width: 600px) {
+  .scan-finding { padding: 18px 16px; }
+  .scan-finding dl { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .scan-finding dd + dt { margin-top: 10px; }
+}

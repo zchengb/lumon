@@ -4,6 +4,24 @@ import { dashboardApi } from "./api";
 describe("Dashboard API", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("ignores only the selected occurrence in the selected Workspace", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "[]" });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(dashboardApi.ignoreScanFinding("workspace-1", "scan & one", 2)).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace-1/scans/scan%20%26%20one/findings/2/ignore", {
+      method: "POST", body: JSON.stringify({ ignored: true }), headers: { Accept: "application/json", "Content-Type": "application/json" },
+    });
+  });
+
+  it("explicitly POSTs a manual run for the selected saved workflow", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '{"status":"completed","flow_id":"auto guard"}' });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(dashboardApi.runFlow("workspace-1", "auto guard")).resolves.toEqual({ status: "completed", flow_id: "auto guard" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace-1/flows/auto%20guard/run", {
+      method: "POST", headers: { Accept: "application/json" },
+    });
+  });
+
   it("requests a native Workspace folder selection", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

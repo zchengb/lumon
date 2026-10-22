@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import tempfile
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
-from lumon.errors import PreflightError
-from lumon.scan.model import ScanRun
+from lumon.errors import InvalidInputError, PreflightError
+from lumon.scan.model import ScanFinding, ScanRun
 from lumon.workspace.layout import WorkspaceLayout
 
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -74,6 +76,46 @@ class ScanRunStore:
         if not path.is_file():
             raise PreflightError("Auto Scan artifact is not available.")
         return path
+
+    def ignore_finding(self, workspace: Path, run_id: str, finding_index: int) -> None:
+        """Persist an idempotent triage choice without rewriting scan evidence."""
+
+        run = self.load(workspace, run_id)
+        if not 0 <= finding_index < len(run.findings):
+            raise InvalidInputError("Auto Scan finding does not exist in this run.")
+        path = self._ignore_path(workspace, run, finding_index, run.findings[finding_index])
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PreflightError("Unable to prepare Auto Scan issue choices.") from exc
+        _secure_directory(path.parent)
+        _atomic_write(path, {"ignored": True})
+
+    def with_ignored_findings(
+        self, workspace: Path, runs: tuple[ScanRun, ...]
+    ) -> tuple[ScanRun, ...]:
+        """Overlay Dashboard triage states; keep the stored receipts unchanged."""
+
+        visible_runs: list[ScanRun] = []
+        for run in runs:
+            findings: list[ScanFinding] = []
+            for index, finding in enumerate(run.findings):
+                if self._ignore_path(workspace, run, index, finding).is_file():
+                    finding = replace(finding, issue_status="ignored")
+                findings.append(finding)
+            visible_runs.append(replace(run, findings=tuple(findings)))
+        return tuple(visible_runs)
+
+    def _ignore_path(self, workspace: Path, run: ScanRun, index: int, finding: ScanFinding) -> Path:
+        issue_id = finding.issue_id.strip()
+        identity = json.dumps(
+            [
+                finding.repository,
+                issue_id if issue_id and issue_id != "untracked" else [run.run_id, index],
+            ]
+        )
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        return WorkspaceLayout.from_root(workspace).scan_runs_dir / ".ignored" / f"{digest}.json"
 
 
 def _atomic_write(path: Path, payload: Mapping[str, object]) -> None:

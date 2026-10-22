@@ -150,8 +150,15 @@ Available in Lumon 1.4.13, alongside multiline Auto Delivery trigger prompts.
 The Auto Delivery page reuses the earlier Dashboard's **Current progress**,
 **Delivery history**, and **Scheduler activity** layout. It refreshes every
 three seconds while open and supports inspecting a recorded Story or poll.
-History is scoped to the selected Workspace and shows Jira links, phase,
-verification, PR/result, and elapsed time such as `12m13s`.
+History is scoped to the selected Workspace and shows the Story (including its
+Jira link and branch), start time, status, and elapsed time such as `12m13s`.
+Verification, result, and the phase label beneath each history status are not
+displayed in this table; persisted receipts and the progress/activity view are
+unchanged.
+
+Scheduler activity shows only start time, status, and elapsed time, without a
+Result column or a count beside its heading. Status buttons still select a poll
+for inspection in the progress/activity view.
 
 Each scheduled poll saves an owner-only `poll.json` under `lumon/runs/<poll-id>`.
 Claimed Stories keep the existing `run.json` receipt under their own run ID and
@@ -173,6 +180,47 @@ rules to presets.
 
 ## Workspace flows
 
+### Overview system map
+
+The Overview includes a compact, paper-figure-style map with the named Workspace
+as its central entity. Capabilities connect on the left, workflow items branch
+on the right, and Agent, Auto Scan and Auto Delivery connect beneath the hub.
+The hub shows its name and repository count and opens Workspace settings. The
+results column, explanatory workflow paragraph and footer are omitted.
+The Overview sidebar keeps the Automation panel but omits the Workspace details
+section (full ID, creation date and initialization version).
+It reads the existing catalog endpoints
+on entry and every 15 seconds after the previous catalog request finishes, only
+while Overview is mounted and the browser document is visible. Hiding the tab
+pauses polling; returning to it refreshes immediately (or waits for an already
+in-flight request). Leaving Overview removes the timer and visibility listener.
+Catalog polling never starts jobs or reloads repository health and automation
+settings; those still follow the existing Overview refresh behavior. Refreshing
+Overview also reloads the catalogs. Background refreshes retain the current map;
+a failed catalog keeps its last loaded entries with an unavailable indicator
+until a later request succeeds. Enabled, disabled, invalid, loading and
+unavailable catalog states stay distinct, including a partially unavailable map.
+Workflow nodes open the matching document; other controls open their existing
+Dashboard pages without executing jobs. All registered documents remain visible,
+including unscheduled workflows, with saved schedule state shown separately.
+Each capability and workflow displays its saved `brief` as plain text, clamped
+to two lines with the full description retained in its title and accessible text.
+Blank descriptions show a localized placeholder; no summaries are invented.
+
+Connections indicate Workspace membership, not workflow-to-workflow dependencies
+or automatic triggers. Narrow screens stack the groups without diagram wires.
+Auto Scan and Auto Delivery retain their separate built-in workflows. The map
+shows saved configuration, not process health or verified capability credentials.
+
+The separate **Visual environment** panel reports passive iOS, Android, local Web
+browser and Docker prerequisites from the same inspector used by Agent prompts.
+It distinguishes tools-ready from running and keeps project verification explicit.
+Check details are question-mark popovers. **Check environment** refreshes the report
+without starting devices or installing dependencies. See
+[visual verification](visual-verification.md) for the checks and their limits.
+Switching Workspaces discards stale catalog responses. The map supports English,
+Simplified Chinese, Traditional Chinese, keyboard navigation and narrow screens.
+
 The Overview **Automation** panel also lists the selected Workspace's saved
 workflow schedules, alongside Auto Delivery and Auto Scan. Each row shows the
 workflow name, effective enabled/disabled state and cron expression in the local
@@ -184,6 +232,13 @@ Markdown panel, above Preview/Edit content, so long documents cannot hide the
 scheduling option. The switch shows the schedule state without a duplicate status
 badge. Schedule and Markdown changes retain separate Save actions and draft guards;
 editing only the schedule does not enable the Markdown Save button.
+
+**Run now** executes the selected saved Workflow without enabling or changing its
+schedule. Disabled, invalid and unsaved Workflow documents cannot be started.
+The button shows execution in progress and reports actual completion or failure;
+manual and scheduled runs share the same exclusion lock. The schedule's two
+explanatory paragraphs are no longer shown. Running a Workflow executes its saved
+instructions, including any configured external actions or notifications.
 
 Workflows without a saved schedule, deleted workflows and invalid Markdown files
 are omitted. Saved disabled schedules remain visible; a disabled workflow never
@@ -307,10 +362,26 @@ the next scan loads the saved instructions.
 
 The **Auto Scan** page is an execution/history view, with the manual scan action,
 one **Scan history** heading, finding counts by
-severity (High, Medium, Low), and elapsed time as minutes and seconds, such as
+severity (High, Medium, Low in every interface language), and elapsed time as minutes and seconds, such as
 `15m34s`. Empty findings and unfinished durations display a dash.
 HTML report links display the report directly in a new tab rather than opening
 a download dialog. PDF report links retain their download behavior.
+An **All issues** panel follows the history, independently of its pagination.
+It includes findings from every available scan receipt, keeps the latest record
+for each Repository/issue ID, and leaves untracked findings separate. All, Open
+(including in-progress, PR-open and reopened), Resolved and Ignored (including
+historical `IGNORE` states) filters
+show stored states, not live verification. Expand **View detail** for location,
+impact, trigger, root cause, code, suggestion, validation and source scan; safe
+HTTP(S) PR links remain available. Content is plain text, not executable HTML.
+An **Ignore** action, after confirmation, saves a Workspace-local triage marker
+under `lumon/runs/scans/.ignored/`. The issue remains visible in All and Ignored,
+and leaves the Open filter. The marker applies to the same Repository/issue ID
+in other receipts, including future scans; untracked findings are occurrence-local.
+Pending saves prevent double submissions; failures leave the issue unchanged and
+allow retry. Receipts, HTML/PDF reports, Jira and scan notifications are not modified
+or suppressed. This does not import the old project's separate issue registry or
+add resolve/restore actions. Loading failures are not presented as zero issues.
 The **Auto Delivery** product label remains English in every interface language.
 Its page is also execution-only: live delivery progress, Story history and scheduler
 activity remain available, without configuration forms.

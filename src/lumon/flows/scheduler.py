@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import plistlib
 import subprocess
 import sys
 import tempfile
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID
@@ -16,6 +19,33 @@ from lumon.errors import PreflightError
 from lumon.flows.catalog import FlowCatalog
 from lumon.workspace.registry import UserStateLayout
 from lumon.workspace.settings import FlowScheduleSettings, validate_schedule_expression
+
+
+@contextmanager
+def flow_lock(state_root: Path, workspace_id: UUID, flow_id: str) -> Generator[None, None, None]:
+    """Use the same exclusive lock for manual and scheduled execution."""
+
+    lock_directory = state_root / "locks"
+    lock_path = lock_directory / f"flow-{workspace_id}-{flow_id}.lock"
+    try:
+        lock_directory.mkdir(parents=True, exist_ok=True)
+        lock_directory.chmod(0o700)
+        stream = lock_path.open("a+")
+        os.fchmod(stream.fileno(), 0o600)
+    except OSError as exc:
+        raise PreflightError("Unable to prepare the Workflow lock.") from exc
+    try:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        stream.close()
+        raise PreflightError("This Workflow already has a run in progress.") from exc
+    except OSError as exc:
+        stream.close()
+        raise PreflightError("Unable to acquire the Workflow lock.") from exc
+    try:
+        yield
+    finally:
+        stream.close()
 
 
 class FlowScheduler(Protocol):

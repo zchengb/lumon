@@ -1,5 +1,5 @@
-import { Clock3, GitBranch, LoaderCircle, Save } from "lucide-react";
-import { useState } from "react";
+import { Clock3, GitBranch, LoaderCircle, Play, Save } from "lucide-react";
+import { useRef, useState } from "react";
 import { dashboardApi } from "../../app/api";
 import { useI18n } from "../../shared/i18n";
 import type { FlowDocument, FlowSummary } from "../../shared/types";
@@ -100,7 +100,7 @@ export function FlowsPage(props: FlowsPageProps): React.JSX.Element {
       starterContent={starterContent}
       api={flowApi}
       getId={(document) => document.flow_id}
-      renderDetails={(document, markDirty) => (
+      renderDetails={(document, markDirty, executionBlocked) => (
         <FlowSchedulePanel
           key={document ? `${props.workspaceId}:${document.flow_id}:${document.enabled}:${document.schedule_enabled}:${document.schedule_expression}` : "none"}
           workspaceId={props.workspaceId}
@@ -108,6 +108,7 @@ export function FlowsPage(props: FlowsPageProps): React.JSX.Element {
           onDirtyChange={markDirty}
           onNotice={props.onNotice}
           onError={props.onError}
+          executionBlocked={executionBlocked}
         />
       )}
     />
@@ -120,6 +121,7 @@ interface FlowSchedulePanelProps {
   onDirtyChange: (dirty: boolean) => void;
   onNotice: (message: string) => void;
   onError: (message: string) => void;
+  executionBlocked: boolean;
 }
 
 function FlowSchedulePanel({
@@ -128,6 +130,7 @@ function FlowSchedulePanel({
   onDirtyChange,
   onNotice,
   onError,
+  executionBlocked,
 }: FlowSchedulePanelProps): React.JSX.Element | null {
   const { t } = useI18n();
   const [enabled, setEnabled] = useState(flow?.schedule_enabled ?? false);
@@ -139,11 +142,28 @@ function FlowSchedulePanel({
     flow?.schedule_expression ?? "0 8 * * *",
   );
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const runPending = useRef(false);
 
   if (!flow || !flow.valid) return null;
   const selectedFlow = flow;
 
   const changed = enabled !== savedEnabled || scheduleExpression !== savedExpression;
+
+  async function runNow(): Promise<void> {
+    if (runPending.current || executionBlocked || !selectedFlow.enabled) return;
+    runPending.current = true;
+    setRunning(true);
+    try {
+      await dashboardApi.runFlow(workspaceId, selectedFlow.flow_id);
+      onNotice(t("flows.runCompleted"));
+    } catch (reason) {
+      onError(reason instanceof Error ? reason.message : t("flows.runFailed"));
+    } finally {
+      runPending.current = false;
+      setRunning(false);
+    }
+  }
 
   async function saveSchedule(): Promise<void> {
     setSaving(true);
@@ -170,14 +190,25 @@ function FlowSchedulePanel({
   return (
     <section className="flow-schedule-panel" aria-label={t("flows.scheduleTitle")}>
       <div className="flow-schedule-heading">
-        <h3><Clock3 size={16} />{t("flows.scheduleTitle")}</h3>
+        <div className="flow-execution-actions">
+          <h3><Clock3 size={16} />{t("flows.scheduleTitle")}</h3>
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={() => void runNow()}
+            disabled={running || saving || executionBlocked || !selectedFlow.enabled}
+          >
+            {running ? <LoaderCircle size={16} className="spin" /> : <Play size={16} />}
+            {t(running ? "flows.running" : "flows.runNow")}
+          </button>
+        </div>
         <label className={`settings-toggle ${enabled ? "is-enabled" : ""}`}>
           <span>{t("flows.scheduleToggle")}</span>
           <input
             type="checkbox"
             role="switch"
             checked={enabled}
-            disabled={!selectedFlow.enabled}
+            disabled={!selectedFlow.enabled || running}
             aria-label={t("flows.scheduleToggle")}
             onChange={(event) => {
               const nextEnabled = event.target.checked;
@@ -200,7 +231,6 @@ function FlowSchedulePanel({
             className="text-input mono"
             value={scheduleExpression}
             maxLength={128}
-            aria-describedby="flow-schedule-help"
             placeholder="0 8 * * 1-5"
             onChange={(event) => {
               const nextExpression = event.target.value;
@@ -214,15 +244,13 @@ function FlowSchedulePanel({
             className="button button-primary"
             type="button"
             onClick={() => void saveSchedule()}
-            disabled={saving || !changed || (enabled && !selectedFlow.enabled)}
+            disabled={saving || running || !changed || (enabled && !selectedFlow.enabled)}
           >
             {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
             {t("flows.scheduleSave")}
           </button>
         </div>
       </div>
-      <p className="field-help">{t("flows.scheduleDescription")}</p>
-      <p id="flow-schedule-help" className="field-help">{t("flows.scheduleHelp")}</p>
       {!selectedFlow.enabled && <p className="field-help">{t("flows.scheduleFlowDisabled")}</p>}
     </section>
   );

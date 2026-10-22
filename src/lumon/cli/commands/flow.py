@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import json
-import os
-from collections.abc import Generator
-from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -15,18 +11,13 @@ from uuid import UUID
 
 import typer
 
-from lumon.agents.agent.config import AgentConfigStore
-from lumon.agents.agent.model import AgentResult
-from lumon.agents.agent.runner import create_agent_runner
-from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
-from lumon.errors import AgentRuntimeError, LumonError, PreflightError
+from lumon.errors import LumonError, PreflightError
 from lumon.flows.catalog import FlowCatalog, FlowValidationError
-from lumon.flows.model import FlowDefinition
 from lumon.flows.scheduler import LaunchdFlowScheduler
+from lumon.flows.service import FlowService
 from lumon.tools.safety import sanitize_output
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
-from lumon.workspace.registry import UserStateLayout, WorkspaceRegistry
 from lumon.workspace.settings import FlowScheduleSettings, WorkspaceSettings, WorkspaceSettingsStore
 
 flow_app = typer.Typer(
@@ -72,9 +63,7 @@ def poll(
             _emit({"status": "flow_disabled", "flow_id": flow_id}, json_output)
             return
 
-        state_layout = UserStateLayout.from_root()
-        with _poll_lock(state_layout.root, selected_id, flow_id):
-            result = asyncio.run(_run_flow(root, selected_id, definition))
+        result = asyncio.run(FlowService().run(selected_id, flow_id))
         detail = sanitize_output((result.final_text or "").strip())[:4_000]
         _emit(
             {
@@ -88,35 +77,6 @@ def poll(
     except LumonError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc
-
-
-async def _run_flow(workspace: Path, workspace_id: UUID, flow: FlowDefinition) -> AgentResult:
-    state_layout = UserStateLayout.from_root()
-    config = AgentConfigStore(state_layout.root).load()
-    if not config.enabled:
-        raise PreflightError("The Lumon Agent is disabled.")
-    registry = WorkspaceRegistry(state_layout.root)
-    if registry.find(workspace_id) is None:
-        raise PreflightError(f"Workspace is not registered: {workspace_id}")
-
-    context_builder = WorkspaceContextBuilder(
-        replace(config, default_workspace_id=workspace_id),
-        registry,
-    )
-    context = context_builder.resolve_workspace()
-    prompt = context_builder.build_prompt(
-        context,
-        (),
-        f"Run the scheduled Workspace Flow '{flow.flow_id}' now.",
-        scheduled_flow=flow,
-    )
-    result = await create_agent_runner(config).run(workspace, prompt)
-    if result.status != "succeeded":
-        diagnostic = sanitize_output(
-            result.failure_diagnostic or "Scheduled Flow did not complete."
-        )
-        raise AgentRuntimeError(diagnostic)
-    return result
 
 
 def _workspace_identity(workspace: Path) -> tuple[Path, UUID]:
@@ -187,28 +147,3 @@ def _remove_stale_schedule(
             ),
         )
     )
-
-
-@contextmanager
-def _poll_lock(state_root: Path, workspace_id: UUID, flow_id: str) -> Generator[None, None, None]:
-    lock_directory = state_root / "locks"
-    lock_path = lock_directory / f"flow-{workspace_id}-{flow_id}.lock"
-    try:
-        lock_directory.mkdir(parents=True, exist_ok=True)
-        lock_directory.chmod(0o700)
-        stream = lock_path.open("a+")
-        os.fchmod(stream.fileno(), 0o600)
-    except OSError as exc:
-        raise PreflightError("Unable to prepare the scheduled Flow lock.") from exc
-    try:
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError as exc:
-        stream.close()
-        raise PreflightError("This Flow already has a scheduled run in progress.") from exc
-    except OSError as exc:
-        stream.close()
-        raise PreflightError("Unable to acquire the scheduled Flow lock.") from exc
-    try:
-        yield
-    finally:
-        stream.close()

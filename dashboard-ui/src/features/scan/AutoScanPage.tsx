@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "../../app/api";
 import { useI18n } from "../../shared/i18n";
 import type { ScanRun } from "../../shared/types";
+import { ScanFindingsPanel } from "./ScanFindingsPanel";
 
 interface AutoScanPageProps {
   workspaceId: string;
@@ -16,13 +17,15 @@ export function AutoScanPage({
   const { formatDate, t } = useI18n();
   const [runs, setRuns] = useState<ScanRun[]>([]);
   const [starting, setStarting] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyUnavailable, setHistoryUnavailable] = useState(false);
   const [historyPage, setHistoryPage] = useState(0);
   const pageSize = 10;
 
   useEffect(() => {
     let cancelled = false;
     setHistoryLoading(true);
+    setHistoryUnavailable(false);
     dashboardApi.listScans(workspaceId)
       .then((next) => {
         if (!cancelled) {
@@ -31,7 +34,10 @@ export function AutoScanPage({
         }
       })
       .catch((reason: unknown) => {
-        if (!cancelled) onError(reason instanceof ApiError ? reason.message : t("app.dashboardRequestFailed"));
+        if (!cancelled) {
+          setHistoryUnavailable(true);
+          onError(reason instanceof ApiError ? reason.message : t("app.dashboardRequestFailed"));
+        }
       })
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
@@ -105,6 +111,10 @@ export function AutoScanPage({
           <button className="button button-secondary" type="button" disabled={historyPage >= pageCount - 1} onClick={() => setHistoryPage((page) => page + 1)}>{t("autoScan.next")}</button>
         </div>}
       </section>
+      <ScanFindingsPanel runs={runs} loading={historyLoading} unavailable={historyUnavailable} onIgnore={async (runId, findingIndex) => {
+        const next = await dashboardApi.ignoreScanFinding(workspaceId, runId, findingIndex);
+        setRuns(next);
+      }} />
     </div>
   );
 }

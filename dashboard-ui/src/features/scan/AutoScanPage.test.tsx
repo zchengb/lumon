@@ -17,6 +17,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     [528, "8m48s"],
     [1218, "20m18s"],
     [3600, "60m0s"],
+    [7200, "120m0s"],
+    [9000, "150m0s"],
   ];
   const runs = durations.map(([seconds], index): ScanRun => ({
     run_id: `scan-${index}`,
@@ -54,6 +56,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
   }));
   runs[1] = { ...runs[1], state: "completed_with_findings", findings, html_available: true, pdf_available: true };
   runs[2] = { ...runs[2], state: "completed_with_findings", findings: findings.filter((finding) => finding.severity === "High") };
+  runs[10] = { ...runs[10], findings: [{ ...findings[0], issue_id: "old-only", title: "Finding from oldest scan" }] };
   const container = document.createElement("div");
   const root = createRoot(container);
   const listScans = vi.spyOn(dashboardApi, "listScans").mockResolvedValue(runs);
@@ -66,7 +69,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     /></I18nProvider>));
     const cells = container.querySelectorAll(".scan-history-table tbody td:nth-child(4)");
     expect(Array.from(cells, (cell) => cell.textContent)).toEqual(
-      durations.map(([, label]) => label),
+      durations.slice(0, 10).map(([, label]) => label),
     );
     expect(container.querySelector(".settings-panel")).toBeNull();
     expect(container.querySelector("#auto-scan-description")).toBeNull();
@@ -81,7 +84,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     expect(history?.querySelector(".eyebrow")).toBeNull();
     expect(history?.querySelector(".settings-description")).toBeNull();
     const findingCells = container.querySelectorAll(".scan-history-table tbody td:nth-child(3)");
-    const labels = locale === "en" ? ["High", "Medium", "Low"] : ["高", "中", "低"];
+    const labels = ["High", "Medium", "Low"];
     expect(Array.from(findingCells[1].querySelectorAll(".scan-severity"), (badge) => badge.textContent)).toEqual(
       [`${labels[0]}: 2`, `${labels[1]}: 1`, `${labels[2]}: 1`],
     );
@@ -96,10 +99,65 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     expect(links[0].target).toBe("_blank");
     expect(links[0].rel).toContain("noreferrer");
     expect(links[0].hasAttribute("download")).toBe(false);
+    const issues = container.querySelector(".scan-findings-panel");
+    expect(issues?.textContent).toContain("Finding from oldest scan");
+    expect(issues?.querySelectorAll("article")).toHaveLength(5);
+    await act(async () => container.querySelector<HTMLButtonElement>(".scan-history-pagination button:last-child")!.click());
+    expect(container.querySelectorAll(".scan-history-table tbody tr")).toHaveLength(1);
+    expect(issues?.querySelectorAll("article")).toHaveLength(5);
   } finally {
     await act(async () => root.unmount());
     listScans.mockRestore();
     vi.unstubAllGlobals();
     localStorage.removeItem("lumon.locale");
+  }
+});
+
+it("shows unavailable issues rather than an empty result when history loading fails", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const onError = vi.fn();
+  const listScans = vi.spyOn(dashboardApi, "listScans").mockRejectedValue(new Error("private response"));
+  try {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    localStorage.setItem("lumon.locale", "en");
+    await act(async () => root.render(<I18nProvider><AutoScanPage workspaceId="workspace-id" onError={onError} /></I18nProvider>));
+    const issues = container.querySelector(".scan-findings-panel");
+    expect(issues?.textContent).toContain("Issues could not be loaded");
+    expect(issues?.textContent).not.toContain("No issues match");
+    expect(container.textContent).not.toContain("private response");
+    expect(onError).toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    listScans.mockRestore();
+    vi.unstubAllGlobals();
+    localStorage.removeItem("lumon.locale");
+  }
+});
+
+it("persists an ignore choice and replaces the displayed history with the server response", async () => {
+  const finding: ScanFinding = {
+    title: "Unnecessary issue", severity: "Medium", repository: "app", impact: "Impact", trigger: "", file: "", line_range: "", code_snippet: "", suggestion: "", root_cause: "", validation: "", issue_id: "one", issue_status: "open", pr_url: null,
+  };
+  const run: ScanRun = {
+    run_id: "scan-1", state: "completed_with_findings", phase: "completed", started_at: "2026-10-22T00:00:00Z", finished_at: null, lookback_days: 7, repositories_scanned: 1, repositories_failed: 0, findings: [finding], failures: [], hook_results: [], html_available: false, pdf_available: false, duration_seconds: 10,
+  };
+  const list = vi.spyOn(dashboardApi, "listScans").mockResolvedValue([run]);
+  const ignore = vi.spyOn(dashboardApi, "ignoreScanFinding").mockResolvedValue([{ ...run, findings: [{ ...finding, issue_status: "ignored" }] }]);
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    localStorage.setItem("lumon.locale", "en");
+    await act(async () => root.render(<I18nProvider><AutoScanPage workspaceId="workspace-id" onError={vi.fn()} /></I18nProvider>));
+    await act(async () => container.querySelector<HTMLButtonElement>(".scan-finding-ignore")!.click());
+    expect(ignore).toHaveBeenCalledExactlyOnceWith("workspace-id", "scan-1", 0);
+    expect(container.querySelector(".scan-finding .status-pill")?.textContent).toBe("Ignored");
+    expect(container.querySelector(".scan-finding-ignore")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    list.mockRestore(); ignore.mockRestore(); confirm.mockRestore();
+    vi.unstubAllGlobals(); localStorage.removeItem("lumon.locale");
   }
 });
