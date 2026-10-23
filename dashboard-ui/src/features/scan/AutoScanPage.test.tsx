@@ -78,6 +78,10 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     expect(container.querySelector("#auto-scan-hooks")).toBeNull();
     expect(container.querySelector('[role="switch"]')).toBeNull();
     const history = container.querySelector(".scan-history-panel");
+    const scrollRegion = history?.querySelector(".scan-history-scroll");
+    expect(scrollRegion?.getAttribute("tabindex")).toBe("0");
+    expect(scrollRegion?.getAttribute("role")).toBe("region");
+    expect(scrollRegion?.getAttribute("aria-label")).toBe("Scan history");
     const interruptedStatus = history?.querySelector("tbody tr:first-child .status-pill");
     expect(interruptedStatus?.classList.contains("status-danger")).toBe(true);
     expect(interruptedStatus?.getAttribute("title")).toBe(interruptionReason);

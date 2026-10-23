@@ -75,7 +75,7 @@ export function SettingsPage({
   return (
     <div className="page-stack">
       <div className="page-heading">
-        <div><p className="eyebrow">{t("settings.eyebrow")}</p><h1>{t("settings.title")}</h1><p className="muted">{t("settings.subtitle")}</p></div>
+        <div><h1>{t("settings.title")}</h1></div>
         {hasChanges && <span className="unsaved-label">{t("settings.unsaved")}</span>}
       </div>
 

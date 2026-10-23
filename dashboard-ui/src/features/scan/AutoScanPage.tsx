@@ -84,7 +84,7 @@ export function AutoScanPage({
           </button>
         </div>
         {historyLoading ? <div className="loading-inline"><LoaderCircle size={18} className="spin" />{t("autoScan.loadingHistory")}</div> : (
-          <div className="table-scroll scan-history-scroll">
+          <div className="table-scroll scan-history-scroll" tabIndex={0} role="region" aria-label={t("autoScan.historyTitle")}>
             <table className="scan-history-table">
               <thead><tr><th>{t("autoScan.started")}</th><th>{t("autoScan.status")}</th><th>{t("autoScan.findings")}</th><th>{t("autoScan.duration")}</th><th>{t("autoScan.artifacts")}</th></tr></thead>
               <tbody>

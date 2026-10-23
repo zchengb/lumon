@@ -46,8 +46,10 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(container.querySelector(".delivery-facts")?.textContent).toContain("1m4s");
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(container.querySelector(".delivery-progress-story")?.textContent).toBe(`${run.story_key}${run.story_title}`);
-    expect(container.querySelector(".delivery-progress-story-title")?.textContent).toBe(run.story_title);
+    expect(container.querySelector(".delivery-progress-story")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(container.querySelector(".delivery-progress-story")?.getAttribute("title")).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(container.querySelector("a.delivery-progress-story")?.getAttribute("href")).toBe(run.jira_url);
+    expect(container.querySelector(".delivery-progress-story svg")).toBeNull();
     expect(container.querySelector(".delivery-stages [aria-current=step]")?.textContent).not.toBeNull();
     expect(container.querySelectorAll(".delivery-stages .is-complete").length).toBe(3);
     expect(container.querySelector(".delivery-activity-details")).not.toBeNull();
@@ -72,6 +74,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(container.querySelector(".delivery-facts")?.textContent).toContain("12m13s");
     const historyTable = container.querySelector<HTMLTableElement>(".delivery-history-table")!;
+    expect(historyTable.closest(".delivery-history-scroll")?.getAttribute("tabindex")).toBe("0");
     expect(Array.from(historyTable.querySelectorAll("thead th"), (cell) => cell.textContent)).toEqual([
       translate(locale, "autoDelivery.story"), translate(locale, "autoScan.started"),
       translate(locale, "autoScan.status"), translate(locale, "autoScan.duration"),
@@ -81,8 +84,14 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     expect(cells).toHaveLength(5);
     expect(cells[0]?.textContent).toContain(run.story_key);
     expect(cells[0]?.textContent).toContain(run.branch);
-    expect(cells[0]?.querySelector(".delivery-story-line")?.textContent).toBe(`${run.story_key}${run.story_title}`);
-    expect(cells[0]?.querySelector(".delivery-story-title")?.getAttribute("title")).toBe(run.story_title);
+    expect(cells[0]?.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(cells[0]?.querySelector(".delivery-story-line")?.getAttribute("title")).toBe(`[${run.story_key}] ${run.story_title}`);
+    const storyLink = cells[0]?.querySelector("a.delivery-story-line");
+    expect(storyLink?.getAttribute("href")).toBe(run.jira_url);
+    expect(storyLink?.getAttribute("target")).toBe("_blank");
+    expect(storyLink?.getAttribute("rel")).toBe("noreferrer");
+    expect(storyLink?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(storyLink?.querySelector("svg")).toBeNull();
     expect(cells[4]?.querySelector(".delivery-history-delete")?.textContent).toBe(translate(locale, "autoDelivery.delete"));
     expect(cells[2]?.textContent).toBe(translate(locale, "autoDelivery.status.completed"));
     expect(cells[2]?.querySelector("small")).toBeNull();
@@ -90,6 +99,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     expect(historyTable.textContent).not.toContain("Seven version constants validated.");
     expect(historyTable.textContent).not.toContain("Local-only change; no deployment.");
     const schedulerTable = container.querySelectorAll<HTMLTableElement>(".delivery-history-table")[1]!;
+    expect(schedulerTable.closest(".delivery-history-scroll")?.getAttribute("tabindex")).toBe("0");
     expect(Array.from(schedulerTable.querySelectorAll("thead th"), (cell) => cell.textContent)).toEqual([
       translate(locale, "autoScan.started"), translate(locale, "autoScan.status"),
       translate(locale, "autoScan.duration"),
@@ -106,7 +116,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     const latest = container.querySelector<HTMLButtonElement>(".panel-actions .button")!;
     await act(async () => latest.click());
     expect(container.textContent).not.toContain("AUTO_DELIVERY_IDLE");
-    expect(container.querySelector(".delivery-progress-story-title")).toBeNull();
+    expect(container.querySelector(".delivery-progress-story")).toBeNull();
     expect(historyTable.querySelector(".empty-table")?.getAttribute("colspan")).toBe("5");
     expect(container.querySelectorAll(".delivery-stages .is-complete").length).toBe(1);
     await act(async () => schedulerTable.querySelector<HTMLButtonElement>(".delivery-inspect")!.click());
@@ -196,7 +206,7 @@ it("prevents duplicate deletes and retains a row when deletion fails", async () 
     expect(remove).toHaveBeenCalledTimes(1);
     await act(async () => reject(new ApiError(409, "Delivery busy")));
     expect(onError).toHaveBeenLastCalledWith("Delivery busy");
-    expect(container.querySelector(".delivery-story-title")?.textContent).toBe(run.story_title);
+    expect(container.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
     expect(container.querySelector<HTMLButtonElement>(".delivery-history-delete")?.disabled).toBe(false);
   } finally {
     await act(async () => root.unmount());
@@ -207,7 +217,7 @@ it("prevents duplicate deletes and retains a row when deletion fails", async () 
 it("keeps run history visible if the activity request fails and cancels refresh on unmount", async () => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.setItem("lumon.locale", "en");
-  const fetch = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [{ ...run, poll_id: null }], polls: [] });
+  const fetch = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [{ ...run, poll_id: null, jira_url: null }], polls: [] });
   vi.spyOn(dashboardApi, "getDeliveryActivity").mockRejectedValue(new ApiError(409, "Activity unavailable."));
   const onError = vi.fn();
   const container = document.createElement("div");
@@ -215,6 +225,8 @@ it("keeps run history visible if the activity request fails and cancels refresh 
   try {
     await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={onError} /></I18nProvider>));
     expect(container.textContent).toContain("Admin portal version bump");
+    expect(container.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(container.querySelector("a.delivery-story-line, a.delivery-progress-story")).toBeNull();
     const emptyScheduler = container.querySelectorAll(".delivery-history-table")[1]!;
     expect(emptyScheduler.querySelector(".empty-table")?.getAttribute("colspan")).toBe("3");
     expect(onError).toHaveBeenCalledWith("Activity unavailable.");

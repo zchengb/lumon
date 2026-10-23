@@ -1,4 +1,4 @@
-import { Check, Clock3, ExternalLink, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Clock3, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "../../app/api";
 import { useI18n, type Translator } from "../../shared/i18n";
@@ -103,7 +103,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
       {loading ? <div className="loading-inline" role="status"><LoaderCircle size={18} className="spin" />{t("autoDelivery.loading")}</div>
         : current ? <div className="delivery-progress-body">
           <div className="delivery-facts">
-            <div><span>{t("autoDelivery.story")}</span><strong className="delivery-progress-story">{run ? <><StoryLink run={run} /><span className="delivery-progress-story-title">{run.story_title}</span></> : t("autoDelivery.checking")}</strong></div>
+            <div><span>{t("autoDelivery.story")}</span><strong>{run ? <StoryLink run={run} className="delivery-progress-story" /> : t("autoDelivery.checking")}</strong></div>
             <div><span>{t("autoScan.status")}</span><DeliveryStatus state={current.state} /></div>
             <div><span>{t("autoScan.started")}</span><strong>{timeLabel(current.started_at)}</strong></div>
             <div><span>{t("autoScan.duration")}</span><strong>{duration(current, now)}</strong></div>
@@ -145,11 +145,11 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
 
     <section className="panel" aria-label={t("autoDelivery.history")}>
       <div className="panel-heading"><h2>{t("autoDelivery.history")}</h2><span className="muted">{history.runs.length}</span></div>
-      <div className="table-scroll scan-history-scroll" tabIndex={0} role="region" aria-label={t("autoDelivery.history")}>
+      <div className="table-scroll scan-history-scroll delivery-history-scroll" tabIndex={0} role="region" aria-label={t("autoDelivery.history")}>
         <table className="scan-history-table delivery-history-table">
           <thead><tr><th scope="col">{t("autoDelivery.story")}</th><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th><th scope="col">{t("autoDelivery.actions")}</th></tr></thead>
           <tbody>{history.runs.length ? history.runs.map((item) => <tr key={item.run_id}>
-            <td className="delivery-story-cell"><div className="delivery-story-line"><StoryLink run={item} /><span className="delivery-story-title" title={item.story_title}>{item.story_title}</span></div>{item.branch && <small className="muted delivery-story-branch">{item.branch}</small>}</td>
+            <td className="delivery-story-cell"><StoryLink run={item} className="delivery-story-line" />{item.branch && <small className="muted delivery-story-branch">{item.branch}</small>}</td>
             <td>{timeLabel(item.started_at)}</td>
             <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
             <td>{duration(item, now)}</td>
@@ -163,7 +163,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
 
     <section className="panel" aria-label={t("autoDelivery.schedulerActivity")}>
       <div className="panel-heading"><h2>{t("autoDelivery.schedulerActivity")}</h2></div>
-      <div className="table-scroll scan-history-scroll" tabIndex={0} role="region" aria-label={t("autoDelivery.schedulerActivity")}>
+      <div className="table-scroll scan-history-scroll delivery-history-scroll" tabIndex={0} role="region" aria-label={t("autoDelivery.schedulerActivity")}>
         <table className="scan-history-table delivery-history-table">
           <thead><tr><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th></tr></thead>
           <tbody>{history.polls.length ? history.polls.map((item) => <tr key={item.run_id}>
@@ -176,8 +176,11 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
   </>;
 }
 
-function StoryLink({ run }: { run: DeliveryRun }): React.JSX.Element {
-  return run.jira_url ? <a href={run.jira_url} target="_blank" rel="noreferrer">{run.story_key}<ExternalLink size={12} /></a> : <span>{run.story_key}</span>;
+function StoryLink({ run, className }: {
+  run: DeliveryRun; className: string;
+}): React.JSX.Element {
+  const label = `[${run.story_key}] ${run.story_title}`;
+  return run.jira_url ? <a className={className} title={label} href={run.jira_url} target="_blank" rel="noreferrer">{label}</a> : <span className={className} title={label}>{label}</span>;
 }
 
 function DeliveryStatus({ state }: { state: DeliveryRun["state"] | DeliveryPoll["state"] }): React.JSX.Element {

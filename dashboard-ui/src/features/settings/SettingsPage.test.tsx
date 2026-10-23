@@ -28,6 +28,8 @@ it.each<{ locale: Locale; label: string }>([
   const onDirtyChange = vi.fn();
   try {
     await act(async () => root.render(<I18nProvider><SettingsPage settings={settings} onSave={onSave} onTest={onTest} onDirtyChange={onDirtyChange} /></I18nProvider>));
+    expect(container.querySelectorAll(".page-heading h1")).toHaveLength(1);
+    expect(container.querySelector(".page-heading p")).toBeNull();
     const saveButton = container.querySelector<HTMLButtonElement>(".settings-actions .button-primary")!;
     expect(saveButton.textContent).toBe(label);
     expect(saveButton.disabled).toBe(true);
