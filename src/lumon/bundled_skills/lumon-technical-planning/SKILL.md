@@ -138,6 +138,15 @@ Description：
 ### Repository Mapping
 - `<repository-name-that-will-change>`
 
+### Database Changes (when persistence changes)
+| Repository | Table / Collection | Operation | Purpose |
+| --- | --- | --- | --- |
+| `<repository>` | `<actual-or-proposed-name>` | Create / Alter / Reuse / Drop | <reason> |
+
+- Fields: type, nullability, defaults, primary/unique keys and references.
+- Indexes and constraints: supported queries, concurrency and idempotency.
+- Migration: existing-data handling, rollout compatibility, ORM impact, rollback and verification.
+
 ### Architecture / Diagrams (when applicable)
 - **Type:** UML Class Diagram / Sequence Diagram / Component Diagram / State Diagram
 - **Artifact:** `technical-plan-uml.html`; PNG: `technical-plan-uml.png`
@@ -185,6 +194,7 @@ Technical Planning 支持按需产出图表。是否画图由设计复杂度决�
 ### Design Decisions
 ### Modules and Interfaces
 ### Data, Configuration, and Contracts
+### Database Changes (when persistence changes)
 ### Implementation Steps
 ### Verification Approach
 ### Risks and Open Questions
@@ -205,6 +215,26 @@ Technical Planning 支持按需产出图表。是否画图由设计复杂度决�
   Adapter、Registry 或工具层。
 - 对未知的代码事实、数据结构或外部契约明确标记未知，不得猜测。
 - 如果涉及 UI，先确认已有页面、设计系统、截图或其他视觉参考，并写明验证范围。
+
+## Database Changes（涉及持久化变更时必填）
+
+先读取实际 migration / schema、Entity / ORM 映射及相关查询，再形成方案；代码中的
+字段类型不能替代数据库列定义。区分现有事实与拟议设计，不声称已核对未访问的目标数据库。
+
+涉及新增/修改表、字段、持久化状态、关系或历史记录时，Technical Plan 必须包含：
+
+- **变更清单**：逐项列出所属 Repository、实际或拟议表/集合名、Create / Alter / Reuse /
+  Drop 及用途；不能只写“新增审批记录”等逻辑名称，也不要为填模板而新增数据表。
+- **字段与关系**：列出变更字段的名称、类型、可空性、默认值、主键、唯一约束及关联；
+  明确物理 Foreign Key 或逻辑关联、删除/级联策略。沿用现有数据时说明如何保留历史。
+- **索引与不变量**：把新增/调整的索引、去重键及并发约束对应到实际查询和事务边界。
+- **兼容与迁移**：说明既有数据回填、新旧流程切换、部署顺序、回退的数据保留方式及
+  验证方法；覆盖 ORM cascade / orphan removal、读取与统计的影响。不得把未执行的
+  migration 写成已验证，也不为未知环境承诺无锁或零停机。
+
+按变更规模提供字段表或关键 DDL，完整可执行 SQL 不属于每份规划的强制产物。未知列定义、
+数据量或部署条件需标注证据缺口及影响；没有持久化变更时简述依据，不生成无意义的 schema。
+交付前检查 DB 变更与 API、状态机、幂等、历史和实施步骤一致，不能把这些细节全部留到开发时。
 
 ## 审批与写入规则
 
