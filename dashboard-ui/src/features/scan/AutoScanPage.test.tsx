@@ -148,6 +148,9 @@ it("refreshes issue states after an active scan, skips hidden tabs and stops on 
     ]);
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(list).toHaveBeenCalledTimes(2);
+    expect(container.querySelectorAll(".scan-finding")).toHaveLength(0);
+    expect(container.querySelector('.scan-finding-filters button[aria-pressed="true"]')?.textContent).toBe("Open 0");
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".scan-finding-filters button")[2].click());
     expect(container.querySelector(".scan-finding-tags")?.textContent).toContain("Resolved");
     expect(container.querySelector(".scan-finding dl")?.textContent).toContain("Latest issue recheck");
     expect(container.querySelector(".scan-finding-ignore")).toBeNull();
@@ -201,6 +204,8 @@ it("persists an ignore choice and replaces the displayed history with the server
     await act(async () => root.render(<I18nProvider><AutoScanPage workspaceId="workspace-id" onError={vi.fn()} /></I18nProvider>));
     await act(async () => container.querySelector<HTMLButtonElement>(".scan-finding-ignore")!.click());
     expect(ignore).toHaveBeenCalledExactlyOnceWith("workspace-id", "scan-1", 0);
+    expect(container.querySelectorAll(".scan-finding")).toHaveLength(0);
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".scan-finding-filters button")[3].click());
     expect(container.querySelector(".scan-finding .status-pill")?.textContent).toBe("Ignored");
     expect(container.querySelector(".scan-finding-ignore")).toBeNull();
   } finally {

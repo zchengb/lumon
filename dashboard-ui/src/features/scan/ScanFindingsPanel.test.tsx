@@ -47,6 +47,8 @@ it("confirms ignores, submits the exact occurrence once and shows saved status",
     await act(async () => { finish(); });
     await act(async () => root.render(render()));
     expect(container.querySelectorAll(".scan-finding-ignore")).toHaveLength(0);
+    expect(container.querySelectorAll("article")).toHaveLength(0);
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".scan-finding-filters button")[3].click());
     expect(container.querySelectorAll(".scan-finding .status-pill")[1]?.textContent).toBe("Ignored");
   } finally { await act(async () => root.unmount()); }
 });
@@ -83,7 +85,10 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows every recorded issue with deta
     expect(container.querySelector("h2")?.textContent).toBe(translate(locale, "autoScan.issuesTitle"));
     expect(container.querySelector(".scan-findings-note")).toBeNull();
     expect(container.textContent).not.toContain(translate(locale, "autoScan.issuesDescription"));
-    expect(container.querySelectorAll("article")).toHaveLength(6);
+    expect(container.querySelectorAll("article")).toHaveLength(4);
+    expect(container.querySelector('.scan-finding-filters button[aria-pressed="true"]')?.textContent).toBe(`${translate(locale, "autoScan.open")} 4`);
+    expect(container.textContent).not.toContain("Resolved finding");
+    expect(container.textContent).not.toContain("Ignored finding");
     expect(container.querySelector(".scan-severity")?.textContent).toBe("High");
     const title = container.querySelector(".scan-finding h3")!;
     const tags = title.nextElementSibling;
@@ -123,6 +128,9 @@ it("keeps the newest state per repository and ID without dropping other or untra
   const root = createRoot(container);
   try {
     await act(async () => root.render(<I18nProvider><ScanFindingsPanel runs={runs} loading={false} unavailable={false} /></I18nProvider>));
+    expect(container.querySelectorAll("article")).toHaveLength(4);
+    expect(container.textContent).not.toContain("Latest resolved issue");
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".scan-finding-filters button")[0].click());
     expect(container.querySelectorAll("article")).toHaveLength(5);
     expect(container.querySelector("article h3")?.textContent).toBe("Latest resolved issue");
     expect(container.textContent).toContain("Older unique issue");

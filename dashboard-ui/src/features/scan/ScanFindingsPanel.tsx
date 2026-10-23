@@ -11,7 +11,7 @@ export function ScanFindingsPanel({ runs, loading, unavailable, onIgnore }: {
   onIgnore?: (runId: string, findingIndex: number) => Promise<void>;
 }): React.JSX.Element {
   const { formatDate, t } = useI18n();
-  const [filter, setFilter] = useState<IssueFilter>("all");
+  const [filter, setFilter] = useState<IssueFilter>("open");
   const [ignoring, setIgnoring] = useState<string | null>(null);
   const [ignoreError, setIgnoreError] = useState<string | null>(null);
   const latest = new Map<string, { finding: ScanFinding; run: ScanRun; index: number }>();
