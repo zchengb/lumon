@@ -119,6 +119,48 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
   }
 });
 
+it("refreshes issue states after an active scan, skips hidden tabs and stops on completion", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const finding: ScanFinding = {
+    title: "Previously recorded bug", severity: "Medium", repository: "app", impact: "Impact", trigger: "", file: "app.ts", line_range: "10", code_snippet: "", suggestion: "", root_cause: "", validation: "Original evidence", issue_id: "ISSUE-1", issue_status: "open", pr_url: null,
+  };
+  const original: ScanRun = {
+    run_id: "discovery", state: "completed_with_findings", phase: "completed", started_at: "2026-10-01T00:00:00Z", finished_at: null, lookback_days: 7, repositories_scanned: 1, repositories_failed: 0, findings: [finding], failures: [], hook_results: [], html_available: false, pdf_available: false, duration_seconds: 10,
+  };
+  const active = { ...original, run_id: "recheck", state: "running" as const, findings: [] };
+  const list = vi.spyOn(dashboardApi, "listScans").mockResolvedValue([active, original]);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const onError = vi.fn();
+  try {
+    await act(async () => root.render(<I18nProvider><AutoScanPage workspaceId="workspace-id" onError={onError} /></I18nProvider>));
+    expect(list).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("hidden");
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(list).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("visible");
+    list.mockResolvedValue([
+      { ...active, state: "completed" },
+      { ...original, findings: [{ ...finding, issue_status: "resolved", validation: "Latest issue recheck: app.ts:10 prevents the original trigger; commit abc." }] },
+    ]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(container.querySelector(".scan-finding-tags")?.textContent).toContain("Resolved");
+    expect(container.querySelector(".scan-finding dl")?.textContent).toContain("Latest issue recheck");
+    expect(container.querySelector(".scan-finding-ignore")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
+  }
+});
+
 it("shows unavailable issues rather than an empty result when history loading fails", async () => {
   const container = document.createElement("div");
   const root = createRoot(container);

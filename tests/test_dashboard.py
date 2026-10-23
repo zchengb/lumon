@@ -20,7 +20,7 @@ from lumon.dashboard.routes import create_app
 from lumon.dashboard.server import DashboardServer, create_dashboard_app, select_port
 from lumon.dashboard.service import DashboardService
 from lumon.errors import AgentRuntimeError, PreflightError
-from lumon.scan.model import ScanFinding, ScanRun, ScanState
+from lumon.scan.model import IssueReviewStatus, ScanFinding, ScanIssueReview, ScanRun, ScanState
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.codex_models import CodexModel
@@ -1468,6 +1468,41 @@ def test_scan_reports_display_html_inline_and_download_pdf(
     assert response.headers["content-type"].startswith(media_type)
     assert response.headers["content-disposition"] == f'{disposition}; filename="{filename}"'
     assert response.content == content
+
+
+def test_dashboard_exposes_resolved_history_with_recheck_evidence(tmp_path: Path) -> None:
+    client = _client(_service(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize", json={"path": str(workspace), "repositories": []}
+    ).json()["workspace_id"]
+    finding = ScanFinding.from_payload({"title": "Confirmed issue", "repository": "app"}, 0)
+    assert finding is not None
+    original = replace(
+        ScanRun.start("discovery", 7), state=ScanState.COMPLETED_WITH_FINDINGS, findings=(finding,)
+    )
+    review = ScanIssueReview(
+        "app",
+        finding.issue_id,
+        IssueReviewStatus.RESOLVED,
+        "src/app.py:10 now prevents the original trigger; static review.",
+        "master",
+        "a" * 40,
+        True,
+    )
+    checked = replace(
+        ScanRun.start("recheck", 7), state=ScanState.COMPLETED, issue_reviews=(review,)
+    )
+    store = ScanRunStore()
+    store.save(workspace, original)
+    store.save(workspace, checked)
+    response = client.get(f"/api/workspaces/{workspace_id}/scans")
+    assert response.status_code == 200
+    issue = next(run for run in response.json() if run["run_id"] == "discovery")["findings"][0]
+    assert issue["issue_status"] == "resolved"
+    assert review.evidence in issue["validation"]
+    assert review.revision in issue["validation"]
+    assert store.load(workspace, original.run_id) == original
 
 
 def test_dashboard_can_ignore_a_recorded_issue_and_reload_it(tmp_path: Path) -> None:

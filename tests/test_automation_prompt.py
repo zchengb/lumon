@@ -9,6 +9,17 @@ from lumon.errors import AgentConfigError
 from lumon.workspace.settings import DeliveryPublishMode
 
 
+def test_scan_requires_explicit_evidence_for_every_historical_issue() -> None:
+    prompt = render_automation_prompt("auto_scan.md", lookback_days="7", result_path="result.json")
+    assert "Recheck EVERY listed issue" in prompt
+    assert "before the lookback" in prompt
+    assert "issue_reviews" in prompt
+    assert "original trigger" in prompt
+    assert "all affected paths" in prompt
+    assert "Do not claim tests or runtime verification" in prompt
+    assert "never implicitly resolved" in prompt
+
+
 def test_delivery_document_preserves_literal_hook_text_and_lifecycle() -> None:
     instructions = "Check approved Stories.\n\nKeep $variables and {braces} literal."
     prompt = render_automation_prompt(

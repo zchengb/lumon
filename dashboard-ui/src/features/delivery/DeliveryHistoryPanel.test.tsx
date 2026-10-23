@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { dashboardApi, ApiError } from "../../app/api";
 import { I18nProvider, translate } from "../../shared/i18n";
-import type { DeliveryHistory, DeliveryRun } from "../../shared/types";
+import type { DeliveryHistory, DeliveryPoll, DeliveryRun } from "../../shared/types";
 import { DeliveryHistoryPanel } from "./DeliveryHistoryPanel";
 
 const run: DeliveryRun = {
@@ -53,6 +53,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     expect(container.querySelector(".delivery-stages [aria-current=step]")?.textContent).not.toBeNull();
     expect(container.querySelectorAll(".delivery-stages .is-complete").length).toBe(3);
     expect(container.querySelector(".delivery-activity-details")).not.toBeNull();
+    expect(container.querySelector(".delivery-summary")).toBeNull();
+    expect(container.querySelector(".delivery-progress-panel")?.textContent).not.toContain(run.detail);
     expect(container.querySelector("script")).toBeNull();
     const commandDetails = container.querySelector<HTMLDetailsElement>(".delivery-command-details")!;
     expect(commandDetails.open).toBe(false);
@@ -70,6 +72,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(container.textContent).toContain("12m13s");
     expect(container.querySelector(".delivery-stages .is-running")).toBeNull();
+    expect(container.querySelector(".delivery-progress-panel")?.textContent).not.toContain(completed.detail);
+    expect(container.querySelector(".delivery-progress-panel .delivery-activity-details")).not.toBeNull();
     expect(vi.getTimerCount()).toBe(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(container.querySelector(".delivery-facts")?.textContent).toContain("12m13s");
@@ -113,14 +117,16 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     await act(async () => inspect.click());
     expect(events).toHaveBeenLastCalledWith("workspace-1", "story-1");
     fetch.mockResolvedValue({ runs: [], polls: [{ ...history.polls[0]!, state: "idle", phase: "implementation", detail: "AUTO_DELIVERY_IDLE", duration_seconds: 40 }] });
-    const latest = container.querySelector<HTMLButtonElement>(".panel-actions .button")!;
-    await act(async () => latest.click());
+    const refresh = container.querySelector<HTMLButtonElement>(".panel-actions .button")!;
+    await act(async () => refresh.click());
     expect(container.textContent).not.toContain("AUTO_DELIVERY_IDLE");
     expect(container.querySelector(".delivery-progress-story")).toBeNull();
     expect(historyTable.querySelector(".empty-table")?.getAttribute("colspan")).toBe("5");
-    expect(container.querySelectorAll(".delivery-stages .is-complete").length).toBe(1);
+    expect(container.querySelector(".delivery-stages")).toBeNull();
     await act(async () => schedulerTable.querySelector<HTMLButtonElement>(".delivery-inspect")!.click());
     expect(events).toHaveBeenLastCalledWith("workspace-1", "poll-1");
+    expect(container.querySelector(".delivery-progress-panel .delivery-facts")).toBeNull();
+    expect(schedulerTable.closest("section")?.querySelector(".delivery-inspection")).not.toBeNull();
     expect(onError).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
@@ -128,6 +134,76 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     container.remove();
     vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
     localStorage.removeItem("lumon.locale");
+  }
+});
+
+it("prioritizes the newest running Story and keeps history inspections out of Current progress", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-07T08:10:00Z"));
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.setItem("lumon.locale", "en");
+  const older = { ...run, run_id: "older", story_key: "MBPAS-OLD", story_title: "Historical delivery", state: "completed" as const };
+  const newest = { ...run, run_id: "newest", story_key: "MBPAS-NEW", story_title: "Newer finished delivery", state: "completed" as const, started_at: "2026-10-07T08:09:00Z", duration_seconds: 30 };
+  const active = { ...run, run_id: "active", story_key: "MBPAS-LIVE", story_title: "Actual running delivery", started_at: "2026-10-07T08:08:00Z" };
+  const poll: DeliveryPoll = { run_id: "poll-new", state: "idle", phase: "discover", started_at: "2026-10-07T08:09:59Z", finished_at: "2026-10-07T08:10:00Z", detail: "No eligible Stories", duration_seconds: 1 };
+  const fetch = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [older, newest, active, { ...active, run_id: "active-older", started_at: "2026-10-07T08:07:00Z" }], polls: [poll] });
+  const events = vi.spyOn(dashboardApi, "getDeliveryActivity").mockImplementation(async (_workspace, id) => [{ at: run.started_at, phase: "verification", detail: `Activity for ${id}` }]);
+  const container = document.createElement("div"); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={vi.fn()} /></I18nProvider>));
+    const progress = container.querySelector(".delivery-progress-panel")!;
+    expect(progress.textContent).toContain("Actual running delivery");
+    expect(progress.textContent).not.toContain("No eligible Stories");
+    expect(progress.textContent).toContain("Activity for active");
+    expect(events).toHaveBeenCalledExactlyOnceWith("workspace-1", "active");
+    expect(progress.querySelectorAll(".delivery-stages .is-running")).toHaveLength(1);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Inspect run MBPAS-OLD"]')!.click());
+    expect(progress.textContent).toContain("Actual running delivery");
+    expect(progress.textContent).not.toContain("Activity for older");
+    expect(container.querySelector(".delivery-inspection")?.textContent).toContain("Historical delivery");
+    expect(container.querySelector(".delivery-inspection")?.textContent).toContain("Activity for older");
+    const scheduler = container.querySelectorAll(".delivery-history-table")[1]!.closest("section")!;
+    await act(async () => scheduler.querySelector<HTMLButtonElement>(".delivery-inspect")!.click());
+    expect(progress.textContent).toContain("Actual running delivery");
+    expect(progress.textContent).not.toContain("Activity for poll-new");
+    expect(scheduler.querySelector(".delivery-inspection")?.textContent).toContain("Activity for poll-new");
+    await act(async () => scheduler.querySelector<HTMLButtonElement>(".delivery-inspection button")!.click());
+    expect(container.querySelector(".delivery-inspection")).toBeNull();
+    fetch.mockResolvedValue({ runs: [older, newest], polls: [poll] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(progress.textContent).toContain("Newer finished delivery");
+    expect(progress.textContent).not.toContain("Actual running delivery");
+    expect(progress.querySelector(".is-running")).toBeNull();
+    expect(progress.querySelectorAll(".delivery-stages .is-complete")).toHaveLength(5);
+    fetch.mockResolvedValue({ runs: [older, newest, active], polls: [poll] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(progress.textContent).toContain("Actual running delivery");
+    expect(progress.querySelectorAll(".delivery-stages .is-running")).toHaveLength(1);
+  } finally {
+    await act(async () => root.unmount()); await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
+  }
+});
+
+it.each(["idle", "running", "failed"] as const)("never shows a scheduler-only %s check in Current progress", async (state) => {
+  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.setItem("lumon.locale", "en");
+  vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [], polls: [{ run_id: "poll-only", state, phase: "discover", started_at: run.started_at, finished_at: null, detail: "Scheduler-only evidence", duration_seconds: 2 }] });
+  const events = vi.spyOn(dashboardApi, "getDeliveryActivity").mockResolvedValue([{ at: run.started_at, phase: "discover", detail: "Scheduler-only evidence" }]);
+  const container = document.createElement("div"); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={vi.fn()} /></I18nProvider>));
+    const progress = container.querySelector(".delivery-progress-panel")!;
+    expect(progress.querySelector(".delivery-stages, .delivery-facts")).toBeNull();
+    expect(progress.textContent).toContain("No delivery runs yet");
+    expect(events).not.toHaveBeenCalled();
+    const scheduler = container.querySelectorAll(".delivery-history-table")[1]!.closest("section")!;
+    await act(async () => scheduler.querySelector<HTMLButtonElement>(".delivery-inspect")!.click());
+    expect(scheduler.querySelector(".delivery-inspection")?.textContent).toContain("Scheduler-only evidence");
+    expect(progress.textContent).not.toContain("Scheduler-only evidence");
+    expect(progress.querySelector(".delivery-stages")).toBeNull();
+  } finally {
+    await act(async () => root.unmount()); await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
   }
 });
 

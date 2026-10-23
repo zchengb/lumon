@@ -22,6 +22,80 @@ class ScanState(StrEnum):
     FAILED = "failed"
 
 
+class IssueReviewStatus(StrEnum):
+    """Evidence-backed outcomes of a historical issue recheck."""
+
+    OPEN = "open"
+    RESOLVED = "resolved"
+    UNVERIFIED = "unverified"
+
+
+@dataclass(frozen=True, slots=True)
+class ScanIssueReview:
+    """A recheck receipt, separate from the original discovery evidence."""
+
+    repository: str
+    issue_id: str
+    status: IssueReviewStatus
+    evidence: str
+    branch: str = ""
+    revision: str = ""
+    fresh: bool = False
+
+    @classmethod
+    def from_payload(cls, payload: object) -> ScanIssueReview | None:
+        """Fail closed when an Agent cannot identify the reviewed code or evidence."""
+
+        if not isinstance(payload, dict):
+            return None
+        fields = cast(dict[str, object], payload)
+        if not all(
+            isinstance(fields.get(key, ""), str)
+            for key in ("repository", "issue_id", "evidence", "branch", "revision")
+        ):
+            return None
+        repository = _text(fields.get("repository"), limit=300)
+        issue_id = _text(fields.get("issue_id"), limit=100)
+        if not repository or not issue_id or issue_id == "untracked":
+            return None
+        try:
+            status = IssueReviewStatus(str(fields.get("status")))
+        except ValueError:
+            status = IssueReviewStatus.UNVERIFIED
+        evidence = _text(fields.get("evidence"), limit=8_000)
+        branch = _text(fields.get("branch"), limit=300)
+        revision = _text(fields.get("revision"), limit=64)
+        fresh = fields.get("fresh") is True
+        identified_code = bool(
+            branch and re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", revision)
+        )
+        if status != IssueReviewStatus.UNVERIFIED and not (evidence and identified_code and fresh):
+            status = IssueReviewStatus.UNVERIFIED
+            evidence = "Recheck lacks fresh branch, commit or detailed evidence. " + evidence
+        return cls(
+            repository=repository,
+            issue_id=issue_id,
+            status=status,
+            evidence=evidence or "Issue was not verified.",
+            branch=branch,
+            revision=revision,
+            fresh=fresh,
+        )
+
+    def as_payload(self) -> dict[str, object]:
+        """Return a bounded receipt that can be persisted with a scan."""
+
+        return {
+            "repository": self.repository,
+            "issue_id": self.issue_id,
+            "status": self.status.value,
+            "evidence": self.evidence,
+            "branch": self.branch,
+            "revision": self.revision,
+            "fresh": self.fresh,
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class ScanFinding:
     """One evidence-backed finding from the review-only Agent flow."""
@@ -113,6 +187,7 @@ class ScanRun:
     hook_results: tuple[str, ...] = ()
     html_path: str | None = None
     pdf_path: str | None = None
+    issue_reviews: tuple[ScanIssueReview, ...] = ()
 
     @classmethod
     def start(cls, run_id: str, lookback_days: int) -> ScanRun:
@@ -160,6 +235,7 @@ class ScanRun:
             "hook_results": list(self.hook_results),
             "html_path": self.html_path,
             "pdf_path": self.pdf_path,
+            "issue_reviews": [review.as_payload() for review in self.issue_reviews],
         }
 
     @classmethod
@@ -176,6 +252,13 @@ class ScanRun:
             finding
             for index, item in enumerate(finding_items, start=1)
             if (finding := ScanFinding.from_payload(item, index)) is not None
+        )
+        raw_reviews = values.get("issue_reviews", [])
+        review_items = cast(list[object], raw_reviews) if isinstance(raw_reviews, list) else []
+        reviews = tuple(
+            review
+            for item in review_items
+            if (review := ScanIssueReview.from_payload(item)) is not None
         )
         raw_failures = values.get("failures", [])
         failure_items = cast(list[object], raw_failures) if isinstance(raw_failures, list) else []
@@ -197,6 +280,7 @@ class ScanRun:
             hook_results=hooks,
             html_path=_optional_text(values.get("html_path")),
             pdf_path=_optional_text(values.get("pdf_path")),
+            issue_reviews=reviews,
         )
 
 

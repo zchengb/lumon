@@ -43,6 +43,24 @@ export function AutoScanPage({
     return () => { cancelled = true; };
   }, [onError, t, workspaceId]);
 
+  const hasRunningScan = runs.some((run) => run.state === "running");
+  useEffect(() => {
+    if (!hasRunningScan) return;
+    let cancelled = false;
+    let inFlight = false;
+    const timer = window.setInterval(() => {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      dashboardApi.listScans(workspaceId)
+        .then((next) => { if (!cancelled) setRuns(next); })
+        .catch((reason: unknown) => {
+          if (!cancelled) onError(reason instanceof ApiError ? reason.message : t("app.dashboardRequestFailed"));
+        })
+        .finally(() => { inFlight = false; });
+    }, 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [hasRunningScan, onError, t, workspaceId]);
+
   const pageCount = Math.ceil(runs.length / pageSize);
   const visibleRuns = runs.slice(historyPage * pageSize, (historyPage + 1) * pageSize);
   const stateLabels: Record<string, string> = {

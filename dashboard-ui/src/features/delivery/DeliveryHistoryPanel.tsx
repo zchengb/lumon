@@ -11,7 +11,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
 }): React.JSX.Element {
   const { locale, t } = useI18n();
   const [history, setHistory] = useState<DeliveryHistory>({ runs: [], polls: [] });
-  const [activity, setActivity] = useState<DeliveryActivity[]>([]);
+  const [activities, setActivities] = useState<Record<string, DeliveryActivity[]>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -28,14 +28,14 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
         if (cancelled) return;
         setHistory(next);
         setNow(Date.now());
-        const poll = next.polls.find((item) => item.run_id === selectedId) ?? (selectedId ? undefined : next.polls[0]);
-        const run = next.runs.find((item) => item.run_id === selectedId)
-          ?? (!selectedId && !poll ? next.runs[0] : undefined);
-        const linked = poll ? next.runs.filter((item) => item.poll_id === poll.run_id) : [];
-        const ids = poll ? [poll.run_id, ...linked.map((item) => item.run_id)] : run ? [run.run_id] : [];
-        const events = await Promise.all(ids.map((id) => dashboardApi.getDeliveryActivity(workspaceId, id)));
+        const run = latestDeliveryRun(next.runs);
+        const inspected = [...next.runs, ...next.polls].find((item) => item.run_id === selectedId);
+        const ids = [...new Set([run?.run_id, inspected?.run_id].filter((id): id is string => Boolean(id)))];
+        const events = await Promise.all(ids.map(async (id) => [
+          id, (await dashboardApi.getDeliveryActivity(workspaceId, id)).sort((a, b) => a.at.localeCompare(b.at)).slice(-200),
+        ] as const));
         if (cancelled) return;
-        setActivity(events.flat().sort((a, b) => a.at.localeCompare(b.at)).slice(-200));
+        setActivities(Object.fromEntries(events));
         setNow(Date.now());
       } catch (reason: unknown) {
         if (!cancelled) onError(reason instanceof ApiError ? reason.message : t("app.dashboardRequestFailed"));
@@ -50,13 +50,12 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [workspaceId, selectedId, refresh, onError, t, deleting]);
 
-  const poll = history.polls.find((item) => item.run_id === selectedId) ?? (selectedId ? undefined : history.polls[0]);
-  const run = history.runs.find((item) => item.run_id === selectedId)
-    ?? (poll ? history.runs.find((item) => item.poll_id === poll.run_id) : !selectedId ? history.runs[0] : undefined);
-  const current = run ?? poll;
-  const phase = current?.state === "idle" ? "discover" : current?.phase === "publish" ? "handoff" : current?.phase ?? "discover";
+  const current = latestDeliveryRun(history.runs);
+  const inspectedRun = history.runs.find((item) => item.run_id === selectedId);
+  const inspectedPoll = history.polls.find((item) => item.run_id === selectedId);
+  const phase = current?.phase === "publish" ? "handoff" : current?.phase ?? "discover";
   const stageIndex = stages.findIndex((stage) => stage === phase);
-  const live = current?.state === "running" || poll?.state === "running";
+  const live = current?.state === "running";
   const hasRunning = history.runs.some((item) => item.state === "running") || history.polls.some((item) => item.state === "running");
 
   useEffect(() => {
@@ -72,7 +71,6 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
   }
 
   function select(runId: string | null): void {
-    setActivity([]);
     setSelectedId(runId);
   }
 
@@ -96,22 +94,21 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
       <div className="panel-heading">
         <h2>{t("autoDelivery.progress")}</h2>
         <div className="panel-actions">
-          {selectedId && <button className="button button-secondary" type="button" onClick={() => select(null)}>{t("autoDelivery.latest")}</button>}
           <button className="button button-secondary" type="button" aria-label={t("overview.refresh")} onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={15} />{t("overview.refresh")}</button>
         </div>
       </div>
       {loading ? <div className="loading-inline" role="status"><LoaderCircle size={18} className="spin" />{t("autoDelivery.loading")}</div>
         : current ? <div className="delivery-progress-body">
           <div className="delivery-facts">
-            <div><span>{t("autoDelivery.story")}</span><strong>{run ? <StoryLink run={run} className="delivery-progress-story" /> : t("autoDelivery.checking")}</strong></div>
+            <div><span>{t("autoDelivery.story")}</span><strong><StoryLink run={current} className="delivery-progress-story" /></strong></div>
             <div><span>{t("autoScan.status")}</span><DeliveryStatus state={current.state} /></div>
             <div><span>{t("autoScan.started")}</span><strong>{timeLabel(current.started_at)}</strong></div>
             <div><span>{t("autoScan.duration")}</span><strong>{duration(current, now)}</strong></div>
           </div>
           <ol className="delivery-stages" aria-label={t("autoDelivery.stages")}>
             {stages.map((stage, index) => {
-              const complete = current.state === "completed" || index < stageIndex || (current.state === "idle" && index === 0);
-              const active = index === stageIndex && current.state !== "idle";
+              const complete = current.state === "completed" || index < stageIndex;
+              const active = index === stageIndex && current.state !== "completed";
               const running = active && current.state === "running";
               return <li key={stage} className={complete ? "is-complete" : active ? `is-active ${running ? "is-running" : ""} ${current.state === "failed" || current.state === "blocked" ? "is-failed" : ""}` : ""} aria-current={active ? "step" : undefined}>
                 <span className="delivery-stage-marker">{complete ? <Check size={13} /> : running ? <LoaderCircle size={13} className="spin" aria-hidden="true" /> : index + 1}</span>
@@ -119,27 +116,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
               </li>;
             })}
           </ol>
-          <p className="delivery-summary" role="status">{current.state === "idle" ? t("autoDelivery.noEligible") : current.detail || (run && run.reason) || t("autoDelivery.awaitingProgress")}</p>
-          <details className="delivery-activity-details">
-            <summary>{t("autoDelivery.activity")}{live && <span className="status-pill status-warning"><Clock3 size={11} />{t("autoDelivery.live")}</span>}</summary>
-            <ol className="delivery-activity-list" aria-label={t("autoDelivery.activity")}>
-              {activity.length ? activity.map((event, index) => <li key={`${event.at}-${index}`}>
-                <time dateTime={event.at}>{timeLabel(event.at)}</time><span>{stageLabel(event.phase, t)}</span>
-                <div className="delivery-event-content">
-                  <p>{event.detail}</p>
-                  {event.command ? <details className="delivery-command-details">
-                    <summary>{t("autoDelivery.commandDetails")}</summary>
-                    <pre><code>{event.command}</code></pre>
-                    <dl>
-                      {event.operation_id && <><dt>{t("autoDelivery.operationId")}</dt><dd>{event.operation_id}</dd></>}
-                      {event.exit_code != null && <><dt>{t("autoDelivery.exitCode")}</dt><dd>{event.exit_code}</dd></>}
-                    </dl>
-                    <small className="muted">{t("autoDelivery.commandPrivacy")}</small>
-                  </details> : event.detail.startsWith("command execution:") && <small className="muted">{t("autoDelivery.commandUnavailable")}</small>}
-                </div>
-              </li>) : <li className="muted">{t("autoDelivery.noActivity")}</li>}
-            </ol>
-          </details>
+          <DeliveryActivityDetails activity={activities[current.run_id] ?? []} live={live} timeLabel={timeLabel} />
         </div> : <p className="delivery-empty">{t("autoDelivery.noProgress")}</p>}
     </section>
 
@@ -159,6 +136,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
           </tr>) : <tr><td colSpan={5} className="empty-table">{t("autoDelivery.noHistory")}</td></tr>}</tbody>
         </table>
       </div>
+      {inspectedRun && <DeliveryInspection run={inspectedRun} activity={activities[inspectedRun.run_id] ?? []} timeLabel={timeLabel} onClose={() => select(null)} />}
     </section>
 
     <section className="panel" aria-label={t("autoDelivery.schedulerActivity")}>
@@ -172,8 +150,56 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
           </tr>) : <tr><td colSpan={3} className="empty-table">{t("autoDelivery.noActivity")}</td></tr>}</tbody>
         </table>
       </div>
+      {inspectedPoll && <DeliveryInspection run={inspectedPoll} activity={activities[inspectedPoll.run_id] ?? []} timeLabel={timeLabel} onClose={() => select(null)} />}
     </section>
   </>;
+}
+
+function latestDeliveryRun(runs: DeliveryRun[]): DeliveryRun | undefined {
+  const latest = [...runs].sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+  return latest.find((run) => run.state === "running") ?? latest[0];
+}
+
+function DeliveryInspection({ run, activity, timeLabel, onClose }: {
+  run: DeliveryRun | DeliveryPoll; activity: DeliveryActivity[];
+  timeLabel: (timestamp: string) => string; onClose: () => void;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  return <div className="delivery-inspection">
+    <div className="panel-heading">
+      <strong>{"story_key" in run ? <StoryLink run={run} className="delivery-progress-story" /> : timeLabel(run.started_at)}</strong>
+      <button className="button button-secondary" type="button" onClick={onClose}>{t("app.close")}</button>
+    </div>
+    <div className="delivery-progress-body">
+      <DeliveryActivityDetails activity={activity} live={run.state === "running"} timeLabel={timeLabel} />
+    </div>
+  </div>;
+}
+
+function DeliveryActivityDetails({ activity, live, timeLabel }: {
+  activity: DeliveryActivity[]; live: boolean; timeLabel: (timestamp: string) => string;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  return <details className="delivery-activity-details">
+    <summary>{t("autoDelivery.activity")}{live && <span className="status-pill status-warning"><Clock3 size={11} />{t("autoDelivery.live")}</span>}</summary>
+    <ol className="delivery-activity-list" aria-label={t("autoDelivery.activity")}>
+      {activity.length ? activity.map((event, index) => <li key={`${event.at}-${index}`}>
+        <time dateTime={event.at}>{timeLabel(event.at)}</time><span>{stageLabel(event.phase, t)}</span>
+        <div className="delivery-event-content">
+          <p>{event.detail}</p>
+          {event.command ? <details className="delivery-command-details">
+            <summary>{t("autoDelivery.commandDetails")}</summary>
+            <pre><code>{event.command}</code></pre>
+            <dl>
+              {event.operation_id && <><dt>{t("autoDelivery.operationId")}</dt><dd>{event.operation_id}</dd></>}
+              {event.exit_code != null && <><dt>{t("autoDelivery.exitCode")}</dt><dd>{event.exit_code}</dd></>}
+            </dl>
+            <small className="muted">{t("autoDelivery.commandPrivacy")}</small>
+          </details> : event.detail.startsWith("command execution:") && <small className="muted">{t("autoDelivery.commandUnavailable")}</small>}
+        </div>
+      </li>) : <li className="muted">{t("autoDelivery.noActivity")}</li>}
+    </ol>
+  </details>;
 }
 
 function StoryLink({ run, className }: {

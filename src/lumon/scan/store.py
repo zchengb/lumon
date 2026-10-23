@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from lumon.errors import InvalidInputError, PreflightError
+from lumon.scan.issues import with_issue_reviews
 from lumon.scan.model import ScanFinding, ScanRun
 from lumon.workspace.layout import WorkspaceLayout
 
@@ -94,8 +95,9 @@ class ScanRunStore:
     def with_ignored_findings(
         self, workspace: Path, runs: tuple[ScanRun, ...]
     ) -> tuple[ScanRun, ...]:
-        """Overlay Dashboard triage states; keep the stored receipts unchanged."""
+        """Overlay recheck and triage states; keep the stored receipts unchanged."""
 
+        runs = with_issue_reviews(runs)
         visible_runs: list[ScanRun] = []
         for run in runs:
             findings: list[ScanFinding] = []
