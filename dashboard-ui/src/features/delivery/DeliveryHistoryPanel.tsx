@@ -130,7 +130,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
         <table className="scan-history-table delivery-history-table">
           <thead><tr><th scope="col">{t("autoDelivery.story")}</th><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th><th scope="col">{t("autoDelivery.actions")}</th></tr></thead>
           <tbody>{history.runs.length ? history.runs.map((item) => <tr key={item.run_id}>
-            <td className="delivery-story-cell"><StoryLink run={item} className="delivery-story-line" />{item.branch && <small className="muted delivery-story-branch">{item.branch}</small>}</td>
+            <td className="delivery-story-cell"><StoryLink run={item} className="delivery-story-line" /><small className="muted delivery-story-metadata">{item.story_key}</small></td>
             <td>{timeLabel(item.started_at)}</td>
             <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
             <td>{duration(item, now)}</td>

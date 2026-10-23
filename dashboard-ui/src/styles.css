@@ -1407,7 +1407,7 @@ code {
 .delivery-history-table .delivery-story-cell { min-width: 320px; max-width: 560px; }
 .delivery-history-scroll .delivery-story-cell { max-width: 0; }
 .delivery-history-table .delivery-story-line { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.delivery-story-branch { display: block; margin-top: 6px; }
+.delivery-story-metadata { display: block; margin-top: 6px; }
 .delivery-history-delete { white-space: nowrap; }
 .delivery-inspect { display: inline-flex; padding: 0; border: 0; background: transparent; cursor: pointer; font: inherit; }
 .delivery-inspection { border-top: 1px solid var(--line-soft); }

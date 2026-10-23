@@ -114,7 +114,8 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     const cells = historyTable.querySelectorAll("tbody td");
     expect(cells).toHaveLength(5);
     expect(cells[0]?.textContent).toContain(run.story_key);
-    expect(cells[0]?.textContent).toContain(run.branch);
+    expect(cells[0]?.querySelector(".delivery-story-metadata")?.textContent).toBe(run.story_key);
+    expect(cells[0]?.textContent).not.toContain(run.branch);
     expect(cells[0]?.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
     expect(cells[0]?.querySelector(".delivery-story-line")?.getAttribute("title")).toBe(`[${run.story_key}] ${run.story_title}`);
     const storyLink = cells[0]?.querySelector("a.delivery-story-line");
@@ -320,7 +321,7 @@ it("prevents duplicate deletes and retains a row when deletion fails", async () 
 it("keeps run history visible if the activity request fails and cancels refresh on unmount", async () => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.setItem("lumon.locale", "en");
-  const fetch = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [{ ...run, poll_id: null, jira_url: null }], polls: [] });
+  const fetch = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [{ ...run, poll_id: null, jira_url: null, branch: null }], polls: [] });
   vi.spyOn(dashboardApi, "getDeliveryActivity").mockRejectedValue(new ApiError(409, "Activity unavailable."));
   const onError = vi.fn();
   const container = document.createElement("div");
@@ -330,6 +331,7 @@ it("keeps run history visible if the activity request fails and cancels refresh 
     expect(container.textContent).toContain("Admin portal version bump");
     expect(container.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
     expect(container.querySelector("a.delivery-story-line, a.delivery-progress-story")).toBeNull();
+    expect(container.querySelector(".delivery-story-metadata")?.textContent).toBe(run.story_key);
     const emptyScheduler = container.querySelectorAll(".delivery-history-table")[1]!;
     expect(emptyScheduler.querySelector(".empty-table")?.getAttribute("colspan")).toBe("3");
     expect(onError).toHaveBeenCalledWith("Activity unavailable.");
