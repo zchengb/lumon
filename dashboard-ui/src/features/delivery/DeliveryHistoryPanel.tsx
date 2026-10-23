@@ -1,8 +1,9 @@
-import { Check, Clock3, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Clock3, LoaderCircle, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "../../app/api";
 import { useI18n, type Translator } from "../../shared/i18n";
 import type { DeliveryActivity, DeliveryHistory, DeliveryPoll, DeliveryRun } from "../../shared/types";
+import { DeliveryRework, deliveryReworks } from "./DeliveryRework";
 
 const stages = ["discover", "claim", "implementation", "verification", "handoff"] as const;
 
@@ -55,6 +56,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
   const inspectedPoll = history.polls.find((item) => item.run_id === selectedId);
   const phase = current?.phase === "publish" ? "handoff" : current?.phase ?? "discover";
   const stageIndex = stages.findIndex((stage) => stage === phase);
+  const reworks = deliveryReworks(current ? activities[current.run_id] ?? [] : []);
   const live = current?.state === "running";
   const hasRunning = history.runs.some((item) => item.state === "running") || history.polls.some((item) => item.state === "running");
 
@@ -110,12 +112,14 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
               const complete = current.state === "completed" || index < stageIndex;
               const active = index === stageIndex && current.state !== "completed";
               const running = active && current.state === "running";
-              return <li key={stage} className={complete ? "is-complete" : active ? `is-active ${running ? "is-running" : ""} ${current.state === "failed" || current.state === "blocked" ? "is-failed" : ""}` : ""} aria-current={active ? "step" : undefined}>
-                <span className="delivery-stage-marker">{complete ? <Check size={13} /> : running ? <LoaderCircle size={13} className="spin" aria-hidden="true" /> : index + 1}</span>
+              const returned = stage === "verification" && phase === "implementation" && reworks.length > 0 && live;
+              return <li key={stage} className={complete ? "is-complete" : active ? `is-active ${running ? "is-running" : ""} ${current.state === "failed" || current.state === "blocked" ? "is-failed" : ""}` : returned ? "is-returned" : ""} aria-current={active ? "step" : undefined}>
+                <span className="delivery-stage-marker">{complete ? <Check size={13} /> : running ? <LoaderCircle size={13} className="spin" aria-hidden="true" /> : returned ? <RotateCcw size={13} aria-hidden="true" /> : index + 1}</span>
                 <span>{t(`autoDelivery.stage.${stage}`)}</span>
               </li>;
             })}
           </ol>
+          <DeliveryRework run={current} reworks={reworks} timeLabel={timeLabel} />
           <DeliveryActivityDetails activity={activities[current.run_id] ?? []} live={live} timeLabel={timeLabel} />
         </div> : <p className="delivery-empty">{t("autoDelivery.noProgress")}</p>}
     </section>
@@ -171,6 +175,7 @@ function DeliveryInspection({ run, activity, timeLabel, onClose }: {
       <button className="button button-secondary" type="button" onClick={onClose}>{t("app.close")}</button>
     </div>
     <div className="delivery-progress-body">
+      {"story_key" in run && <DeliveryRework run={run} reworks={deliveryReworks(activity)} timeLabel={timeLabel} />}
       <DeliveryActivityDetails activity={activity} live={run.state === "running"} timeLabel={timeLabel} />
     </div>
   </div>;

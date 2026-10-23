@@ -1370,6 +1370,22 @@ code {
   to { background-position: -100% 0; }
 }
 .delivery-stages .is-failed { border-color: #a43d36; }
+.delivery-stages .is-returned { border-color: var(--copper); border-top-style: dashed; color: #805b17; }
+.delivery-stages .is-returned .delivery-stage-marker { background: #fff4d9; }
+.delivery-rework { border: 1px solid var(--line); border-left: 3px solid var(--copper); border-radius: 8px; padding: 16px; background: var(--line-soft); font-size: 12px; }
+.delivery-rework-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.delivery-rework-heading strong { font-weight: 600; }
+.delivery-rework-path { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; list-style: none; padding: 0; margin: 14px 0; }
+.delivery-rework-path li { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.delivery-rework-path .is-returned, .delivery-rework-path .is-current { color: #805b17; }
+.delivery-rework-path .is-current { font-weight: 600; }
+.delivery-rework-path .is-complete { color: #207149; }
+.delivery-rework-path .is-stopped { color: #a43d36; }
+.delivery-rework-history summary { cursor: pointer; color: var(--muted); }
+.delivery-rework-history ol { max-height: 220px; overflow: auto; padding-left: 20px; margin-bottom: 0; }
+.delivery-rework-history li + li { margin-top: 12px; }
+.delivery-rework-history time { color: var(--muted); }
+.delivery-rework-history p { margin: 4px 0 0; line-height: 1.6; overflow-wrap: anywhere; }
 .delivery-activity-details { margin-top: 20px; border-top: 1px solid var(--line-soft); padding-top: 16px; }
 .delivery-activity-details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .delivery-activity-details summary .status-pill { margin-left: 10px; }

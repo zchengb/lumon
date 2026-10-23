@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { dashboardApi, ApiError } from "../../app/api";
 import { I18nProvider, translate } from "../../shared/i18n";
-import type { DeliveryHistory, DeliveryPoll, DeliveryRun } from "../../shared/types";
+import type { DeliveryActivity, DeliveryHistory, DeliveryPoll, DeliveryRun } from "../../shared/types";
 import { DeliveryHistoryPanel } from "./DeliveryHistoryPanel";
 
 const run: DeliveryRun = {
@@ -14,6 +14,33 @@ const run: DeliveryRun = {
   verification_summary: null, detail: "Checking the version constants.", reason: null,
   poll_id: "poll-1", duration_seconds: null,
 };
+
+it("follows a verification/development loop live without restarting the run", async () => {
+  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  const returned: DeliveryActivity = { at: "2026-10-07T08:02:00Z", phase: "implementation", detail: "Fixing the verification finding." };
+  const activity: DeliveryActivity[] = [{ ...returned, at: run.started_at, phase: "verification" }, returned];
+  const history = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [{ ...run, phase: "implementation" }], polls: [] });
+  vi.spyOn(dashboardApi, "getDeliveryActivity").mockResolvedValue(activity);
+  const container = document.createElement("div"); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={vi.fn()} /></I18nProvider>));
+    expect(container.querySelector(".delivery-stages .is-returned")?.textContent).toBe("Verify");
+    expect(container.querySelector(".delivery-stages [aria-current=step]")?.textContent).toBe("Develop");
+    expect(container.querySelector(".delivery-rework")?.textContent).toContain("Recorded rework cycles: 1");
+    history.mockResolvedValue({ runs: [run], polls: [] });
+    activity.push({ ...returned, at: "2026-10-07T08:03:00Z", phase: "verification" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(container.querySelector(".delivery-stages .is-returned")).toBeNull();
+    expect(container.querySelector(".delivery-rework [role=status]")?.textContent).toBe("Verifying again · round 2");
+    await act(async () => container.querySelector<HTMLButtonElement>(".delivery-history-table .delivery-inspect")!.click());
+    expect(container.querySelector(".delivery-inspection .delivery-rework")?.textContent).toContain("Recorded rework cycles: 1");
+    expect(history).toHaveBeenCalledWith("workspace-1");
+  } finally {
+    await act(async () => root.unmount());
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
+  }
+});
 
 it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects history in %s", async (locale) => {
   vi.useFakeTimers();
