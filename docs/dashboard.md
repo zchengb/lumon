@@ -322,7 +322,58 @@ Search uses `twg jira workitem query` with full JSON output, not an Agent
 interpretation of a CLI summary or the removed `twg api` command. Existing
 receipts in any state are excluded in the server-side JQL before requesting one
 candidate, preserving the configured filter precedence and ordering. Failed or
-blocked cards require an explicit human retry. The stored Workspace JQL is unchanged.
+blocked/stopped cards are not blindly retried. They can be continued explicitly
+using Dashboard **Continue**, `lumon delivery resume`, or a post-terminal Jira
+status transition back into the configured entry conditions. The stored JQL is unchanged.
+
+### Continue and stop a Delivery
+
+Continue keeps the same logical run ID and isolated worktrees. It archives the
+previous receipt as `attempt-N.json`, increments the attempt, refreshes Workspace
+instructions/capabilities, and compares saved HEAD/diff fingerprints before reusing
+verification. Source changes invalidate the saved verification summary. Old receipts
+without a saved Agent session start a new session with the checkpoint; otherwise
+the original Codex session is resumed. Only an explicit missing-session preflight
+error (before any execution events) falls back to a fresh session and checkpoint;
+other errors stop safely, never authorizing repeated external effects. Activity is still bounded; attempt
+receipts and checkpoints are durable separately from its 200-entry window.
+
+The Dashboard's **Stop** requests cancellation from the owning worker. **Stopping**
+remains visible until the Agent and its process-group children have exited; only
+then is the receipt marked **Stopped**. Already completed external actions are not
+rolled back. Executions started by an older Lumon version cannot acknowledge this
+protocol, so they do not offer a misleading Stop button. Only one execution can
+hold the Workspace lock; stale attempt numbers and duplicate starts are rejected.
+Shutting down the Dashboard also interrupts continuations owned by that Dashboard.
+
+Without Dashboard, use the current receipt's attempt number:
+
+```sh
+lumon delivery resume --workspace /path/to/workspace --run-id delivery-KEY-123 --attempt 1
+lumon delivery stop --workspace /path/to/workspace --run-id delivery-KEY-123 --attempt 2
+```
+
+Jira re-entry is checked during the existing schedule, without a Codex turn.
+It requires Failed/Blocked/Stopped, a complete status changelog with a newer
+non-app-account status transition after that attempt finished, and a current
+match to the full saved JQL (including any Flag/sprint gates). The JQL must contain
+an explicit `status = ...` or `status in (...)` entry gate; status-less queries
+remain manual-resume-only. Merely editing a card, keeping it in Ready for Dev,
+or reusing an old transition does not resume it. Completed deliveries are never
+automatically reopened. Incomplete/denied history fails closed. A legacy receipt
+without a terminal timestamp requires manual continuation.
+The consumed changelog ID is retained, so that event cannot start another attempt.
+Jira cannot distinguish a UI drag from an API write using the same human account;
+the execution prompt therefore forbids the Agent from moving a card back to entry
+conditions to authorize its own retry. Fully daemonized/reparented or remote jobs
+need explicit capability cleanup; Stop does not undo external effects.
+
+The packaged execution prompt now allows only ONE final successful Jira result
+comment per logical Delivery, not one per attempt. Blocked, failed, stopped and
+rework outcomes are kept locally. The Agent reconciles the stable run marker and
+saved comment ID before creating/updating, embeds final media, and reads back the
+result. This is an Agent workflow contract, not a security sandbox preventing raw
+Jira writes; an ambiguous write must be reconciled rather than blindly retried.
 
 An empty check records an idle poll and makes no Delivery changes. Incomplete,
 denied, invalid or timed-out searches record failure, never idle, and never fall

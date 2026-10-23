@@ -4,17 +4,87 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
-from lumon.tools.codex import CodexRequest, CodexTool, parse_codex_line
+from lumon.tools.codex import CodexErrorCode, CodexRequest, CodexTool, parse_codex_line
 from lumon.tools.safety import sanitize_output
 
 
 def test_codex_tool_defaults_to_twelve_hour_timeout() -> None:
     assert CodexTool(binary="codex").timeout_seconds == 12 * 60 * 60
+
+
+@pytest.mark.parametrize("detached", [False, True])
+def test_cancellation_stops_codex_and_its_child_commands(tmp_path: Path, detached: bool) -> None:
+    fake = tmp_path / "codex-child"
+    heartbeat = tmp_path / "heartbeat"
+    child = (
+        "import time; from pathlib import Path; "
+        f"p=Path({str(heartbeat)!r}); "
+        'exec("while True:\\n p.write_text(str(time.time()))\\n time.sleep(0.02)")'
+    )
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import subprocess,sys,time,os\n"
+        "from pathlib import Path\n"
+        "sys.stdin.read()\n"
+        f"Path({str(tmp_path / 'owner-pid')!r}).write_text(str(os.getpid()))\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}], start_new_session={detached!r})\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o700)
+
+    async def exercise() -> None:
+        task = asyncio.create_task(
+            CodexTool(binary=str(fake)).execute(CodexRequest(tmp_path, "test"))
+        )
+        for _ in range(100):
+            if heartbeat.exists():
+                break
+            await asyncio.sleep(0.01)
+        assert heartbeat.exists()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        before = heartbeat.read_text()
+        await asyncio.sleep(0.1)
+        assert heartbeat.read_text() == before
+        with pytest.raises(ProcessLookupError):
+            os.kill(int((tmp_path / "owner-pid").read_text()), 0)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("started", [False, True])
+def test_missing_native_session_is_not_an_error_after_execution(
+    tmp_path: Path, started: bool
+) -> None:
+    session = "00000000-0000-0000-0000-000000000001"
+    fake = tmp_path / "missing-session"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json,sys\n"
+        "sys.stdin.read()\n"
+        f"started = {started!r}\n"
+        "if started: print(json.dumps({'type': 'thread.started', 'thread_id': 'existing'}))\n"
+        f"print('Error: No rollout found for thread id {session}', file=sys.stderr)\n"
+        "sys.exit(1)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o700)
+    result = asyncio.run(
+        CodexTool(binary=str(fake)).execute(
+            CodexRequest(tmp_path, "continue", resume_session_id=session)
+        )
+    )
+    assert result.error_code == (
+        CodexErrorCode.EXECUTION_FAILED if started else CodexErrorCode.SESSION_UNAVAILABLE
+    )
 
 
 def test_codex_jsonl_parser_is_provider_specific_but_not_agent_specific() -> None:

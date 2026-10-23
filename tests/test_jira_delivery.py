@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -226,3 +227,88 @@ def test_missing_configuration_or_binary_is_reported_safely(tmp_path: Path) -> N
         with pytest.raises(PreflightError) as error:
             asyncio.run(trigger.find_candidate(site, jql, excluded_keys=frozenset()))
         assert "secret-value" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("new", True),
+        ("old", False),
+        ("unrelated", False),
+        ("app", False),
+        ("ineligible", False),
+        ("same-status", False),
+        ("next-page", True),
+        ("consumed", False),
+    ],
+)
+def test_jira_reentry_requires_new_status_event_and_all_current_gates(
+    tmp_path: Path, mode: str, expected: bool
+) -> None:
+    fake = tmp_path / "twg-reentry"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json,sys\n"
+        f"mode = {mode!r}\n"
+        "if sys.argv[3] == 'get':\n"
+        "    reply = {'data': [{'key': 'TEST-1', 'status': {'id': '10036'}}]}\n"
+        "elif sys.argv[3] == 'query':\n"
+        "    jql = sys.argv[sys.argv.index('--jql')+1]\n"
+        "    expected = '(project = TEST AND status = 10036 AND Flagged = Impediment)'\n"
+        "    assert jql == expected + ' AND key = TEST-1'\n"
+        "    issues = [] if mode == 'ineligible' else [{'key': 'TEST-1', 'summary': 'Test'}]\n"
+        "    reply = {'data': {'issues': issues}}\n"
+        "else:\n"
+        "    created = '2026-10-23T11:00:00+0800' if mode == 'old' "
+        "else '2026-10-23T13:00:00+0800'\n"
+        "    item = {'field': 'summary' if mode == 'unrelated' else 'status', "
+        "'from': '10036' if mode == 'same-status' else '10269', 'to': '10036'}\n"
+        "    author = {'accountType': 'app' if mode == 'app' else 'atlassian'}\n"
+        "    entry = {'id': '1', 'created': created, 'items': [item], 'author': author}\n"
+        "    more = mode == 'next-page' and '--after' not in sys.argv\n"
+        "    info = {'hasNextPage': more, 'nextCursor': '100' if more else None}\n"
+        "    reply = {'data': [] if more else [entry], 'pageInfo': info}\n"
+        "print(json.dumps(reply))\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o700)
+    trigger = JiraDeliveryTrigger(str(fake), environment={})
+    result = asyncio.run(
+        trigger.reentered(
+            "test.atlassian.net",
+            "project = TEST AND status = 10036 AND Flagged = Impediment ORDER BY Rank ASC",
+            "TEST-1",
+            finished_at=datetime(2026, 10, 23, 4, tzinfo=UTC),
+            consumed_event_id="1" if mode == "consumed" else None,
+        )
+    )
+    assert (result is not None) == expected
+    if result is not None:
+        assert result.reentry_id == "1"
+
+
+def test_partial_jira_reentry_history_fails_closed(tmp_path: Path) -> None:
+    fake = tmp_path / "partial-twg"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json,sys\n"
+        "if sys.argv[3] == 'query':\n"
+        "    print(json.dumps({'data': {'issues': [{'key': 'TEST-1', 'summary': 'Test'}]}}))\n"
+        "elif sys.argv[3] == 'get':\n"
+        "    print(json.dumps({'data': [{'key': 'TEST-1','status': {'id': '10036'}}]}))\n"
+        "else:\n"
+        "    print(json.dumps({'data': [], 'pageInfo': "
+        "{'hasNextPage': True, 'nextCursor': None}}))\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o700)
+    trigger = JiraDeliveryTrigger(str(fake), environment={})
+    with pytest.raises(PreflightError, match="not resumed"):
+        asyncio.run(
+            trigger.reentered(
+                "test.atlassian.net",
+                "project = TEST AND status = 10036",
+                "TEST-1",
+                finished_at=datetime(2026, 10, 23, tzinfo=UTC),
+            )
+        )

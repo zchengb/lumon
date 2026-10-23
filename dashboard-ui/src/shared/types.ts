@@ -36,7 +36,11 @@ export interface DeliveryRun {
   run_id: string;
   story_key: string;
   story_title: string;
-  state: "running" | "completed" | "failed" | "blocked";
+  state: "running" | "completed" | "failed" | "blocked" | "stopped";
+  attempt?: number;
+  attempt_started_at?: string | null;
+  checkpoint?: string | null;
+  stopping?: boolean | null;
   phase: string;
   started_at: string;
   finished_at: string | null;
@@ -53,7 +57,7 @@ export interface DeliveryRun {
 
 export interface DeliveryPoll {
   run_id: string;
-  state: "running" | "idle" | "completed" | "failed";
+  state: "running" | "idle" | "completed" | "failed" | "stopped";
   phase: string;
   started_at: string;
   finished_at: string | null;

@@ -209,6 +209,14 @@ class DeliveryRunResponse(StrictModel):
     reason: str | None
     poll_id: str | None
     duration_seconds: int | None
+    attempt: int = 1
+    attempt_started_at: datetime | None = None
+    checkpoint: str | None = None
+    stopping: bool | None = None
+
+
+class DeliveryControlRequest(StrictModel):
+    attempt: int = Field(ge=1)
 
 
 class DeliveryPollResponse(StrictModel):

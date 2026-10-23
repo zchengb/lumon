@@ -65,8 +65,79 @@ class DeliveryRunStore:
             "verification_summary": run.verification_summary,
             "detail": run.detail,
             "poll_id": run.poll_id,
+            "attempt": run.attempt,
+            "attempt_started_at": run.attempt_started_at.isoformat()
+            if run.attempt_started_at
+            else None,
+            "agent_session_id": run.agent_session_id,
+            "checkpoint": run.checkpoint,
+            "worktree_snapshot": run.worktree_snapshot,
+            "result_comment_id": run.result_comment_id,
+            "jira_reentry_id": run.jira_reentry_id,
         }
         _atomic_write(directory / "run.json", payload)
+
+    def archive_attempt(self, workspace: Path, run: DeliveryRun) -> None:
+        """Retain the exact previous receipt; never replace an attempt's audit trail."""
+
+        directory = self.path_for(workspace, run.run_id)
+        target = directory / f"attempt-{run.attempt}.json"
+        _reject_symlink(target)
+        source = directory / "run.json"
+        _reject_symlink(source)
+        try:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            if target.exists():
+                if json.loads(target.read_text(encoding="utf-8")) != payload:
+                    raise PreflightError("This Delivery attempt has a different archived receipt.")
+                return  # Recover a crash after archiving but before activating the next attempt.
+        except (OSError, ValueError) as exc:
+            raise PreflightError("Unable to archive the previous Delivery attempt.") from exc
+        _atomic_write(target, payload)
+
+    def restore_history(self, workspace: Path, run_id: str) -> None:
+        path = self.path_for(workspace, run_id) / "history-deleted.json"
+        _reject_symlink(path)
+        path.unlink(missing_ok=True)
+
+    def set_control(self, workspace: Path, poll_id: str, *, stopping: bool) -> None:
+        directory = self.path_for(workspace, poll_id)
+        _atomic_write(directory / "control.json", {"stopping": stopping})
+
+    def save_session(self, workspace: Path, poll_id: str, session_id: str) -> None:
+        UUID(session_id)
+        directory = self.path_for(workspace, poll_id)
+        _atomic_write(directory / "session.json", {"agent_session_id": session_id})
+
+    def load_session(self, workspace: Path, poll_id: str) -> str | None:
+        path = self.path_for(workspace, poll_id) / "session.json"
+        _reject_symlink(path)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            session_id = payload["agent_session_id"]
+            return str(UUID(session_id))
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise PreflightError("Unable to read Delivery Agent session.") from exc
+
+    def stop_requested(self, workspace: Path, poll_id: str) -> bool | None:
+        """None identifies legacy executions that cannot acknowledge a stop request."""
+
+        path = self.path_for(workspace, poll_id) / "control.json"
+        _reject_symlink(path)
+        if not path.exists():
+            return None
+        try:
+            payload: object = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid execution control receipt.")
+            stopping = cast(dict[str, object], payload).get("stopping")
+            if not isinstance(stopping, bool):
+                raise ValueError("Invalid execution control receipt.")
+            return stopping
+        except (OSError, ValueError) as exc:
+            raise PreflightError("Unable to read Delivery execution control.") from exc
 
     def load(self, workspace: Path, run_id: str) -> DeliveryRun:
         """Read one persisted run."""
@@ -91,7 +162,9 @@ class DeliveryRunStore:
                 runs.append(self.load(workspace, run_id))
             except PreflightError:
                 continue
-        return tuple(sorted(runs, key=lambda run: run.started_at, reverse=True))
+        return tuple(
+            sorted(runs, key=lambda run: run.attempt_started_at or run.started_at, reverse=True)
+        )
 
     def delete_history(self, workspace: Path, run_id: str) -> None:
         """Hide a finished history entry while retaining audit and duplicate-run guards."""
@@ -268,9 +341,22 @@ def _run_from_payload(payload: object, source: Path) -> DeliveryRun:
             verification_summary=_optional_string(values.get("verification_summary"), source),
             detail=_optional_string(values.get("detail"), source),
             poll_id=_optional_string(values.get("poll_id"), source),
+            attempt=_attempt(values.get("attempt", 1)),
+            attempt_started_at=_optional_datetime(values.get("attempt_started_at"), source),
+            agent_session_id=_optional_string(values.get("agent_session_id"), source),
+            checkpoint=_optional_string(values.get("checkpoint"), source),
+            worktree_snapshot=_optional_string(values.get("worktree_snapshot"), source),
+            result_comment_id=_optional_string(values.get("result_comment_id"), source),
+            jira_reentry_id=_optional_string(values.get("jira_reentry_id"), source),
         )
     except (TypeError, ValueError) as exc:
         raise PreflightError(f"Invalid Delivery run receipt: {source}") from exc
+
+
+def _attempt(value: object) -> int:
+    if type(value) is not int or value < 1:
+        raise ValueError("Invalid Delivery attempt.")
+    return value
 
 
 def _required_string(payload: dict[str, object], key: str, source: Path) -> str:

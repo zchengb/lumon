@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,19 @@ from lumon.workspace.settings import (
 
 
 def _candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def not_reentered(
+        self: JiraDeliveryTrigger,
+        jira_site: str,
+        trigger_jql: str,
+        key: str,
+        *,
+        finished_at: datetime,
+        consumed_event_id: str | None = None,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(JiraDeliveryTrigger, "reentered", not_reentered)
+
     async def find(
         self: JiraDeliveryTrigger,
         jira_site: str,

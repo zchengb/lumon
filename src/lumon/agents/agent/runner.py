@@ -246,6 +246,8 @@ def _progress_from_event(event: CodexEvent) -> AgentProgress | None:
 
 
 def _agent_event_from_codex_event(event: CodexEvent) -> AgentEvent | None:
+    if event.kind == "session":
+        return AgentEvent(kind="session", agent_session_id=event.agent_session_id)
     if event.kind == "progress":
         kind = "progress"
     elif event.kind == "command_execution":
@@ -269,6 +271,8 @@ def _agent_event_from_codex_event(event: CodexEvent) -> AgentEvent | None:
 
 
 def _map_error_code(error_code: CodexErrorCode | None) -> AgentErrorCode:
+    if error_code == CodexErrorCode.SESSION_UNAVAILABLE:
+        return AgentErrorCode.SESSION_UNAVAILABLE
     if error_code == CodexErrorCode.TIMEOUT:
         return AgentErrorCode.TIMEOUT
     if error_code == CodexErrorCode.CLI_NOT_FOUND:

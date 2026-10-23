@@ -71,6 +71,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dashboardApi = {
+  controlDelivery(workspaceId: string, runId: string, action: "resume" | "stop", attempt: number): Promise<{ accepted: boolean }> {
+    return request(`/api/workspaces/${workspaceId}/deliveries/${encodeURIComponent(runId)}/${action}`, { method: "POST", body: JSON.stringify({ attempt }) });
+  },
   getVisualEnvironment(workspaceId: string, refresh = false): Promise<VisualEnvironmentSnapshot> {
     return request<VisualEnvironmentSnapshot>(`/api/workspaces/${workspaceId}/environment?refresh=${refresh}`, { cache: "no-store" });
   },

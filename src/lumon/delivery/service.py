@@ -69,6 +69,7 @@ class DeliveryService:
             poll = self.run_store.load_poll(workspace, run.poll_id)
             if poll.workspace_id != workspace_id or poll.state != DeliveryPollState.RUNNING:
                 raise PreflightError("Delivery poll is not active for this Workspace.")
+            run = replace(run, agent_session_id=self.run_store.load_session(workspace, run.poll_id))
         self.run_store.save(workspace, run)
         self.run_store.record_activity(
             workspace, run.run_id, DeliveryActivity(self.now(), "claim", "Story claimed.")
@@ -80,8 +81,8 @@ class DeliveryService:
     ) -> DeliveryRun:
         """Record an explicit development phase without sending extra notifications."""
 
-        if run.state != DeliveryState.RUNNING:
-            raise PreflightError("A finished Delivery run cannot receive progress updates.")
+        run = self._active_receipt(workspace, run)
+        self._require_not_stopping(workspace, run)
         if phase not in {"claim", "implementation", "verification", "handoff", "publish"}:
             raise PreflightError("Unknown Delivery progress phase.")
         updated = replace(run, phase=phase, detail=detail)
@@ -129,7 +130,8 @@ class DeliveryService:
     ) -> tuple[DeliveryRun, DeliveryNotification]:
         """Persist a successful development result and emit ``delivery.dev_done``."""
 
-        _require_running(run)
+        run = self._active_receipt(workspace, run)
+        self._require_not_stopping(workspace, run)
         if phase == "publish":
             _require_direct_publish_branch(
                 workspace,
@@ -156,6 +158,25 @@ class DeliveryService:
         )
         return updated, self.notify(workspace, workspace_id, updated, DeliveryEvent.DEV_DONE)
 
+    def _require_not_stopping(self, workspace: Path, run: DeliveryRun) -> None:
+        if run.poll_id and self.run_store.stop_requested(workspace, run.poll_id):
+            raise PreflightError(
+                "Delivery stop was requested; no further progress/completion is allowed."
+            )
+
+    def _active_receipt(self, workspace: Path, run: DeliveryRun) -> DeliveryRun:
+        receipt = self.run_store.path_for(workspace, run.run_id) / "run.json"
+        # Standalone service clients historically finish an unpersisted, non-poll run.
+        current = (
+            run
+            if run.poll_id is None and not receipt.exists()
+            else self.run_store.load(workspace, run.run_id)
+        )
+        if current.attempt != run.attempt or current.poll_id != run.poll_id:
+            raise PreflightError("Delivery attempt changed; reload the current receipt.")
+        _require_running(current)
+        return current
+
     def fail(
         self,
         workspace: Path,
@@ -167,7 +188,7 @@ class DeliveryService:
     ) -> tuple[DeliveryRun, DeliveryNotification]:
         """Persist an unexpected failure and emit ``delivery.failed``."""
 
-        _require_running(run)
+        run = self._active_receipt(workspace, run)
         updated = run.with_result(
             DeliveryResult(DeliveryState.FAILED, phase, reason),
             now=self.now(),
@@ -189,7 +210,7 @@ class DeliveryService:
     ) -> tuple[DeliveryRun, DeliveryNotification]:
         """Persist a known prerequisite/verification block and notify the user."""
 
-        _require_running(run)
+        run = self._active_receipt(workspace, run)
         updated = run.with_result(
             DeliveryResult(DeliveryState.BLOCKED, phase, reason),
             now=self.now(),

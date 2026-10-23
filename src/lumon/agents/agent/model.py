@@ -35,6 +35,7 @@ class AgentErrorCode(StrEnum):
     EXECUTION_FAILED = "execution_failed"
     EMPTY_RESULT = "empty_result"
     INTERRUPTED = "interrupted"
+    SESSION_UNAVAILABLE = "session_unavailable"
 
 
 class ProgressPhase(StrEnum):
@@ -56,7 +57,7 @@ class AgentProgress:
     notify_requested: bool = True
 
 
-AgentEventKind = Literal["progress", "command_execution", "file_change"]
+AgentEventKind = Literal["progress", "command_execution", "file_change", "session"]
 AgentEventLifecycle = Literal["started", "completed", "observed"]
 
 
@@ -73,6 +74,7 @@ class AgentEvent:
     output: str | None = None
     status: str | None = None
     exit_code: int | None = None
+    agent_session_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

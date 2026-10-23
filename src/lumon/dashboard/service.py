@@ -24,7 +24,15 @@ from lumon.dashboard.chat_history import (
     ChatKind,
 )
 from lumon.dashboard.folder_picker import FolderPicker
-from lumon.delivery.model import DeliveryActivity, DeliveryPoll, DeliveryPollState, DeliveryRun
+from lumon.delivery.control import request_stop
+from lumon.delivery.execution import DeliveryTasks
+from lumon.delivery.model import (
+    DeliveryActivity,
+    DeliveryPoll,
+    DeliveryPollState,
+    DeliveryRun,
+    DeliveryState,
+)
 from lumon.delivery.scheduler import DeliveryScheduler, LaunchdDeliveryScheduler, delivery_lock
 from lumon.delivery.service import DeliveryService
 from lumon.errors import (
@@ -319,6 +327,7 @@ class DashboardService:
             agent_config_store=self.agent_config_store,
         )
         self.delivery_service = DeliveryService(settings_store=self.settings_store)
+        self.delivery_tasks = DeliveryTasks(self.registry.layout.root)
 
     def list_workspaces(self) -> tuple[WorkspaceListItem, ...]:
         """Return registered Workspaces without scanning unregistered directories."""
@@ -448,6 +457,27 @@ class DashboardService:
                 poll for poll in store.list_polls(workspace) if poll.workspace_id == workspace_id
             )
             return runs[:50], polls[:50]
+
+    async def resume_delivery(self, workspace_id: UUID, run_id: str, *, attempt: int) -> None:
+        await self.delivery_tasks.launch(
+            self._require(workspace_id).path, workspace_id, run_id, attempt=attempt
+        )
+
+    def stop_delivery(self, workspace_id: UUID, run_id: str, *, attempt: int) -> None:
+        request_stop(
+            self.delivery_service.run_store,
+            self._require(workspace_id).path,
+            workspace_id,
+            run_id,
+            attempt=attempt,
+        )
+
+    def delivery_stopping(self, workspace_id: UUID, run: DeliveryRun) -> bool | None:
+        if not run.poll_id or run.state != DeliveryState.RUNNING:
+            return None
+        return self.delivery_service.run_store.stop_requested(
+            self._require(workspace_id).path, run.poll_id
+        )
 
     def delete_delivery_history(self, workspace_id: UUID, run_id: str) -> None:
         """Soft-delete one finished Story history entry, never an active delivery."""

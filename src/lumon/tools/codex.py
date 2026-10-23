@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -38,6 +40,7 @@ class CodexErrorCode(StrEnum):
     CLI_NOT_FOUND = "cli_not_found"
     START_FAILED = "start_failed"
     EXECUTION_FAILED = "execution_failed"
+    SESSION_UNAVAILABLE = "session_unavailable"
 
 
 # Codex JSONL events can include large tool outputs; keep the line buffer
@@ -211,6 +214,7 @@ class CodexTool:
         on_event: CodexEventCallback | None,
     ) -> CodexExecutionResult:
         process: asyncio.subprocess.Process | None = None
+        stderr_task: asyncio.Task[bytes] | None = None
         agent_session_id: str | None = None
         try:
             process = await asyncio.create_subprocess_exec(
@@ -225,6 +229,7 @@ class CodexTool:
                 cwd=request.workspace,
                 env=self.environment,
                 limit=_CODEX_STREAM_LIMIT_BYTES,
+                start_new_session=True,
             )
             assert process.stdin is not None
             assert process.stdout is not None
@@ -267,7 +272,14 @@ class CodexTool:
                 return CodexExecutionResult(
                     status="failed",
                     events=tuple(events),
-                    error_code=CodexErrorCode.EXECUTION_FAILED,
+                    error_code=(
+                        CodexErrorCode.SESSION_UNAVAILABLE
+                        if request.resume_session_id
+                        and process.returncode != 0
+                        and all(event.kind == "error" for event in events)
+                        and _missing_session(failure_diagnostic, request.resume_session_id)
+                        else CodexErrorCode.EXECUTION_FAILED
+                    ),
                     return_code=process.returncode,
                     agent_session_id=agent_session_id,
                     failure_diagnostic=failure_diagnostic,
@@ -280,10 +292,54 @@ class CodexTool:
                 agent_session_id=agent_session_id,
             )
         except asyncio.CancelledError:
-            if process is not None and process.returncode is None:
-                process.kill()
-                await process.wait()
+            if process is not None:
+                await _terminate_execution(process)
             raise
+        finally:
+            if process is not None and process.returncode is None:
+                await _terminate_execution(process)
+            if stderr_task is not None:
+                stderr_task.cancel()
+                await asyncio.gather(stderr_task, return_exceptions=True)
+
+
+async def _terminate_execution(process: asyncio.subprocess.Process) -> None:
+    try:
+        _kill_descendant_tools(process.pid)
+    finally:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            elif process.returncode is None:
+                process.kill()
+        except ProcessLookupError:
+            pass
+        await process.wait()
+
+
+def _kill_descendant_tools(owner_pid: int) -> None:
+    if os.name == "posix":
+        # Tool shells may create their own groups; include descendants before killing Codex.
+        # shortcut: reparented daemons need explicit capability cleanup, not parent-tree tracking.
+        snapshot = subprocess.run(
+            ["ps", "-axo", "pid=,ppid="],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        children: dict[int, list[int]] = {}
+        for row in snapshot.stdout.splitlines():
+            pid, parent = (int(column) for column in row.split())
+            children.setdefault(parent, []).append(pid)
+        owned = [owner_pid]
+        for parent in owned:
+            owned.extend(children.get(parent, ()))
+        for pid in reversed(owned[1:]):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 def resolve_codex_binary() -> str:
@@ -294,6 +350,21 @@ def resolve_codex_binary() -> str:
         return located
     local = Path.home() / ".local" / "bin" / "codex"
     return str(local)
+
+
+def _missing_session(diagnostic: str | None, session_id: str) -> bool:
+    if diagnostic is None:
+        return False
+    identity = re.escape(session_id)
+    return (
+        re.fullmatch(
+            rf"(?:error:\s*)?(?:no rollout found for thread id\s+{identity}|"
+            rf"(?:session|thread)\s+{identity}\s+(?:was )?not found)\.?",
+            diagnostic.strip(),
+            re.I,
+        )
+        is not None
+    )
 
 
 def _diagnostic_from_stderr(raw: bytes) -> str | None:

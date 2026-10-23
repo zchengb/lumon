@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, cast
 from uuid import UUID
@@ -34,6 +36,7 @@ from lumon.dashboard.schemas import (
     CapabilitySummaryResponse,
     CodexCliStatusResponse,
     DeliveryActivityResponse,
+    DeliveryControlRequest,
     DeliveryHistoryResponse,
     DeliveryPollResponse,
     DeliveryRunResponse,
@@ -87,8 +90,17 @@ from lumon.visual.environment import EnvironmentSnapshot
 def create_app(service: DashboardService | None = None) -> FastAPI:
     """Create a fresh FastAPI application with an isolated Dashboard service."""
 
-    app = FastAPI(title="Lumon Dashboard", version=__version__)
-    app.state.dashboard_service = service or DashboardService()
+    dashboard_service = service or DashboardService()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+        try:
+            yield
+        finally:
+            await dashboard_service.delivery_tasks.close()
+
+    app = FastAPI(title="Lumon Dashboard", version=__version__, lifespan=lifespan)
+    app.state.dashboard_service = dashboard_service
     router = APIRouter(prefix="/api")
 
     @router.get("/health", response_model=HealthResponse)
@@ -300,11 +312,30 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
         response.headers["Cache-Control"] = "no-store"
         runs, polls = _service(request).deliveries(workspace_id)
         return DeliveryHistoryResponse(
-            runs=[DeliveryRunResponse.model_validate(run, from_attributes=True) for run in runs],
+            runs=[
+                DeliveryRunResponse.model_validate(run, from_attributes=True).model_copy(
+                    update={"stopping": _service(request).delivery_stopping(workspace_id, run)}
+                )
+                for run in runs
+            ],
             polls=[
                 DeliveryPollResponse.model_validate(poll, from_attributes=True) for poll in polls
             ],
         )
+
+    @router.post("/workspaces/{workspace_id}/deliveries/{run_id}/resume", status_code=202)
+    async def resume_delivery(
+        request: Request, workspace_id: UUID, run_id: str, command: DeliveryControlRequest
+    ) -> dict[str, bool]:
+        await _service(request).resume_delivery(workspace_id, run_id, attempt=command.attempt)
+        return {"accepted": True}
+
+    @router.post("/workspaces/{workspace_id}/deliveries/{run_id}/stop", status_code=202)
+    def stop_delivery(
+        request: Request, workspace_id: UUID, run_id: str, command: DeliveryControlRequest
+    ) -> dict[str, bool]:
+        _service(request).stop_delivery(workspace_id, run_id, attempt=command.attempt)
+        return {"accepted": True}
 
     @router.delete("/workspaces/{workspace_id}/deliveries/{run_id}", status_code=204)
     def delete_delivery_history(request: Request, workspace_id: UUID, run_id: str) -> None:

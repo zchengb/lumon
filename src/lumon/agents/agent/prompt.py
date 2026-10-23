@@ -92,7 +92,8 @@ class PromptRenderer:
 
 
 def render_automation_prompt(
-    template_name: Literal["auto_scan.md", "auto_delivery.md"], **variables: str
+    template_name: Literal["auto_scan.md", "auto_delivery.md", "auto_delivery_resume.md"],
+    **variables: str,
 ) -> str:
     """Render built-in automation rules separately from Workspace hook configuration."""
 

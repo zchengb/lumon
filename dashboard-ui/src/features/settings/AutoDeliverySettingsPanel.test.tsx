@@ -50,9 +50,9 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("saves a multiline trigger prompt and
     expect(helpButtons).toHaveLength(4);
     const jqlHelp = document.querySelector("#auto-delivery-jql-help")!.textContent!;
     const jqlUsage = {
-      en: ["Jira Query Language (JQL)", "scheduled check", "configured Jira site", "delivery records", "at most one match", "no Agent run", "ORDER BY"],
-      "zh-CN": ["Jira 查询语言（JQL）", "每次定时检查", "已配置的 Jira 站点", "交付记录", "最多一张", "不启动 Agent", "ORDER BY"],
-      "zh-TW": ["Jira 查詢語言（JQL）", "每次排程檢查", "已設定的 Jira 站點", "交付紀錄", "最多一張", "不啟動 Agent", "ORDER BY"],
+      en: ["Jira Query Language (JQL)", "scheduled check", "configured Jira site", "Existing receipts", "at most one card", "no Agent run", "ORDER BY", "newer move", "status =", "Completed"],
+      "zh-CN": ["Jira 查询语言（JQL）", "每次定时检查", "已配置的 Jira 站点", "交付记录", "最多启动一张", "不启动 Agent", "ORDER BY", "重新移入", "status =", "Completed"],
+      "zh-TW": ["Jira 查詢語言（JQL）", "每次排程檢查", "已設定的 Jira 站點", "交付紀錄", "最多啟動一張", "不啟動 Agent", "ORDER BY", "重新移入", "status =", "Completed"],
     };
     for (const explanation of jqlUsage[locale]) expect(jqlHelp).toContain(explanation);
     for (const button of helpButtons) {

@@ -23,7 +23,7 @@ export function DeliveryRework({ run, reworks, timeLabel }: {
   const running = run.state === "running";
   const fixing = run.phase === "implementation";
   const verified = run.state === "completed" || ["handoff", "publish"].includes(run.phase);
-  const stopped = run.state === "failed" || run.state === "blocked";
+  const stopped = run.state === "failed" || run.state === "blocked" || run.state === "stopped";
   let developTone = "";
   let verifyTone = "";
   if (!fixing) developTone = "is-complete";

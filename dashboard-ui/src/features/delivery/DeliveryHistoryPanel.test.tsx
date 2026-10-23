@@ -15,6 +15,57 @@ const run: DeliveryRun = {
   poll_id: "poll-1", duration_seconds: null,
 };
 
+it("continues a blocked delivery once, then requests a real stop and waits for acknowledgement", async () => {
+  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  const history = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [{ ...run, state: "blocked", attempt: 1 }], polls: [] });
+  vi.spyOn(dashboardApi, "getDeliveryActivity").mockResolvedValue([]);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const control = vi.spyOn(dashboardApi, "controlDelivery").mockResolvedValue({ accepted: true });
+  const container = document.createElement("div"); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={vi.fn()} /></I18nProvider>));
+    const button = () => Array.from(container.querySelectorAll<HTMLButtonElement>(".delivery-progress-panel button")).find((item) => /Continue|Stop/.test(item.textContent ?? ""))!;
+    expect(button().textContent).toContain("Continue");
+    history.mockResolvedValue({ runs: [{ ...run, attempt: 2, attempt_started_at: new Date().toISOString(), stopping: false }], polls: [] });
+    await act(async () => button().click());
+    expect(control).toHaveBeenCalledExactlyOnceWith("workspace-1", run.run_id, "resume", 1);
+    expect(container.textContent).toContain("Attempt 2");
+    expect(button().textContent).toContain("Stop");
+    history.mockResolvedValue({ runs: [{ ...run, attempt: 2, stopping: true }], polls: [] });
+    await act(async () => button().click());
+    expect(control).toHaveBeenLastCalledWith("workspace-1", run.run_id, "stop", 2);
+    expect(button().textContent).toContain("Stopping…");
+    expect(button().disabled).toBe(true);
+    expect(container.querySelector(".delivery-facts")?.textContent).toContain("Running");
+    history.mockResolvedValue({ runs: [{ ...run, state: "stopped", attempt: 2, stopping: null }], polls: [] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(container.querySelector(".delivery-facts")?.textContent).toContain("Stopped");
+    expect(button().textContent).toContain("Continue");
+  } finally {
+    await act(async () => root.unmount());
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
+  }
+});
+
+it("does not offer stop for a legacy execution or resume for a completed delivery", async () => {
+  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  const history = vi.spyOn(dashboardApi, "getDeliveryHistory").mockResolvedValue({ runs: [run], polls: [] });
+  vi.spyOn(dashboardApi, "getDeliveryActivity").mockResolvedValue([]);
+  const container = document.createElement("div"); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={vi.fn()} /></I18nProvider>));
+    expect(Array.from(container.querySelectorAll("button")).some((item) => item.textContent === "Stop")).toBe(false);
+    history.mockResolvedValue({ runs: [{ ...run, state: "completed" }], polls: [] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(Array.from(container.querySelectorAll("button")).some((item) => item.textContent === "Continue")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
+  }
+});
+
 it("follows a verification/development loop live without restarting the run", async () => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.setItem("lumon.locale", "en");
@@ -205,6 +256,11 @@ it("prioritizes the newest running Story and keeps history inspections out of Cu
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(progress.textContent).toContain("Actual running delivery");
     expect(progress.querySelectorAll(".delivery-stages .is-running")).toHaveLength(1);
+    fetch.mockResolvedValue({ runs: [{ ...older, attempt: 2, attempt_started_at: "2026-10-07T08:11:00Z" }, newest], polls: [poll] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(progress.textContent).toContain("Historical delivery");
+    expect(progress.textContent).toContain("Attempt 2");
+    expect(progress.textContent).not.toContain("Newer finished delivery");
   } finally {
     await act(async () => root.unmount()); await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(0);

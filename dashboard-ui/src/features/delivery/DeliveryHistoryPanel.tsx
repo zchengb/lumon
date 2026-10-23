@@ -1,4 +1,4 @@
-import { Check, Clock3, LoaderCircle, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Check, Clock3, LoaderCircle, RefreshCw, RotateCcw, Trash2, Play, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "../../app/api";
 import { useI18n, type Translator } from "../../shared/i18n";
@@ -18,9 +18,10 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [controlling, setControlling] = useState<string | null>(null);
 
   useEffect(() => {
-    if (deleting !== null) return;
+    if (deleting !== null || controlling !== null) return;
     let cancelled = false;
     let timer: number | undefined;
     async function load(): Promise<void> {
@@ -49,7 +50,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
     }
     void load();
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [workspaceId, selectedId, refresh, onError, t, deleting]);
+  }, [workspaceId, selectedId, refresh, onError, t, deleting, controlling]);
 
   const current = latestDeliveryRun(history.runs);
   const inspectedRun = history.runs.find((item) => item.run_id === selectedId);
@@ -76,6 +77,29 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
     setSelectedId(runId);
   }
 
+  async function control(item: DeliveryRun, action: "resume" | "stop"): Promise<void> {
+    if (controlling !== null || !window.confirm(t(`autoDelivery.${action}Confirm`, { key: item.story_key }))) return;
+    setControlling(item.run_id);
+    onError(null);
+    try {
+      await dashboardApi.controlDelivery(workspaceId, item.run_id, action, item.attempt ?? 1);
+      setRefresh((value) => value + 1);
+    } catch (reason: unknown) {
+      onError(reason instanceof ApiError ? reason.message : t("app.dashboardRequestFailed"));
+    } finally {
+      setControlling(null);
+    }
+  }
+
+  function controlButton(item: DeliveryRun): React.JSX.Element | null {
+    const action = item.state === "running" ? "stop" : "resume";
+    if (item.state === "completed" || (action === "stop" && item.stopping == null)) return null;
+    return <button className="button button-secondary" type="button" disabled={controlling !== null || deleting !== null || Boolean(item.stopping) || (action === "resume" && hasRunning)} onClick={() => void control(item, action)}>
+      {controlling === item.run_id || item.stopping ? <LoaderCircle size={14} className="spin" /> : action === "stop" ? <Square size={14} /> : <Play size={14} />}
+      {t(item.stopping ? "autoDelivery.stopping" : `autoDelivery.${action}`)}
+    </button>;
+  }
+
   async function deleteHistory(item: DeliveryRun): Promise<void> {
     if (deleting !== null || !window.confirm(t("autoDelivery.deleteConfirm", { key: item.story_key }))) return;
     setDeleting(item.run_id);
@@ -96,6 +120,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
       <div className="panel-heading">
         <h2>{t("autoDelivery.progress")}</h2>
         <div className="panel-actions">
+          {current && controlButton(current)}
           <button className="button button-secondary" type="button" aria-label={t("overview.refresh")} onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={15} />{t("overview.refresh")}</button>
         </div>
       </div>
@@ -105,7 +130,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
             <div><span>{t("autoDelivery.story")}</span><strong><StoryLink run={current} className="delivery-progress-story" /></strong></div>
             <div><span>{t("autoScan.status")}</span><DeliveryStatus state={current.state} /></div>
             <div><span>{t("autoScan.started")}</span><strong>{timeLabel(current.started_at)}</strong></div>
-            <div><span>{t("autoScan.duration")}</span><strong>{duration(current, now)}</strong></div>
+            <div><span>{t("autoDelivery.attempt", { count: current.attempt ?? 1 })}</span><strong>{duration(current, now)}</strong></div>
           </div>
           <ol className="delivery-stages" aria-label={t("autoDelivery.stages")}>
             {stages.map((stage, index) => {
@@ -134,9 +159,9 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
             <td>{timeLabel(item.started_at)}</td>
             <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
             <td>{duration(item, now)}</td>
-            <td><button className="button button-secondary delivery-history-delete" type="button" aria-label={`${t("autoDelivery.delete")} ${item.story_key}`} disabled={deleting !== null || item.state === "running" || history.polls.some((poll) => poll.state === "running")} onClick={() => void deleteHistory(item)}>
+            <td><div className="panel-actions">{controlButton(item)}<button className="button button-secondary delivery-history-delete" type="button" aria-label={`${t("autoDelivery.delete")} ${item.story_key}`} disabled={deleting !== null || controlling !== null || item.state === "running" || history.polls.some((poll) => poll.state === "running")} onClick={() => void deleteHistory(item)}>
               {deleting === item.run_id ? <LoaderCircle size={14} className="spin" /> : <Trash2 size={14} />}{t("autoDelivery.delete")}
-            </button></td>
+            </button></div></td>
           </tr>) : <tr><td colSpan={5} className="empty-table">{t("autoDelivery.noHistory")}</td></tr>}</tbody>
         </table>
       </div>
@@ -160,7 +185,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
 }
 
 function latestDeliveryRun(runs: DeliveryRun[]): DeliveryRun | undefined {
-  const latest = [...runs].sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+  const latest = [...runs].sort((a, b) => Date.parse(b.attempt_started_at ?? b.started_at) - Date.parse(a.attempt_started_at ?? a.started_at));
   return latest.find((run) => run.state === "running") ?? latest[0];
 }
 
@@ -226,6 +251,7 @@ function stageLabel(phase: string, t: Translator): string {
 }
 
 function duration(run: DeliveryRun | DeliveryPoll, now: number): string {
-  const seconds = run.state === "running" ? Math.max(0, Math.floor((now - Date.parse(run.started_at)) / 1000)) : run.duration_seconds;
+  const startedAt = "attempt_started_at" in run ? run.attempt_started_at ?? run.started_at : run.started_at;
+  const seconds = run.state === "running" ? Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000)) : run.duration_seconds;
   return seconds === null ? "—" : `${Math.floor(seconds / 60)}m${seconds % 60}s`;
 }

@@ -5,36 +5,28 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
 
 import typer
 
-from lumon.agents.agent.config import AgentConfigStore
-from lumon.agents.agent.model import AgentEvent, AgentProgress, AgentResult
-from lumon.agents.agent.prompt import render_automation_prompt
+from lumon.agents.agent.model import AgentResult
 from lumon.agents.agent.runner import create_agent_runner
-from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
+from lumon.delivery.control import request_stop, save_checkpoint
+from lumon.delivery.execution import resume_delivery, run_poll
 from lumon.delivery.model import (
-    DeliveryActivity,
     DeliveryEvent,
-    DeliveryPoll,
-    DeliveryPollState,
     DeliveryRun,
-    DeliveryState,
 )
 from lumon.delivery.scheduler import delivery_lock
 from lumon.delivery.service import DeliveryNotification, DeliveryService
-from lumon.errors import AgentRuntimeError, LumonError, PreflightError
+from lumon.errors import LumonError, PreflightError
 from lumon.observability import redact_text
-from lumon.tools.jira_delivery import JiraDeliveryCandidate, JiraDeliveryTrigger
 from lumon.tools.safety import sanitize_output
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
-from lumon.workspace.registry import UserStateLayout, WorkspaceRegistry
+from lumon.workspace.registry import UserStateLayout
 from lumon.workspace.settings import AutoDeliverySettings, WorkspaceSettingsStore
 
 delivery_app = typer.Typer(
@@ -235,201 +227,69 @@ def poll(
             },
             json_output,
         )
+    except asyncio.CancelledError:
+        _emit_poll({"status": "stopped", "detail": "Agent stopped; work preserved."}, json_output)
     except LumonError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=exc.exit_code) from exc
 
 
-async def _run_poll(
-    workspace: Path,
-    workspace_id: UUID,
-    settings: AutoDeliverySettings,
-) -> AgentResult:
-    state_layout = UserStateLayout.from_root()
-    service = DeliveryService(settings_store=WorkspaceSettingsStore(state_layout.root))
-    service.recover_interrupted_polls(workspace, workspace_id)
-    poll = DeliveryPoll(uuid4().hex, workspace_id, DeliveryPollState.RUNNING, datetime.now(UTC))
-    service.run_store.save_poll(workspace, poll)
+@delivery_app.command("resume")
+def resume(
+    run_id: Annotated[str, typer.Option("--run-id")],
+    attempt: Annotated[int, typer.Option("--attempt", min=1)],
+    workspace: Annotated[Path, typer.Option("--workspace")] = Path("."),
+) -> None:
+    """Continue one failed/blocked/stopped receipt without discarding its work."""
     try:
-        result = await _execute_poll(workspace, workspace_id, settings, poll, service)
-        claimed = tuple(
-            run for run in service.run_store.list(workspace) if run.poll_id == poll.run_id
+        root, workspace_id = _workspace_identity(workspace)
+        asyncio.run(resume_delivery(root, workspace_id, run_id, attempt=attempt))
+    except asyncio.CancelledError:
+        typer.echo("Delivery stopped; work and checkpoint preserved.")
+    except LumonError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@delivery_app.command("stop")
+def stop(
+    run_id: Annotated[str, typer.Option("--run-id")],
+    attempt: Annotated[int, typer.Option("--attempt", min=1)],
+    workspace: Annotated[Path, typer.Option("--workspace")] = Path("."),
+) -> None:
+    """Request interruption; Stopped is acknowledged only after the Agent exits."""
+    try:
+        root, workspace_id = _workspace_identity(workspace)
+        request_stop(DeliveryService().run_store, root, workspace_id, run_id, attempt=attempt)
+        typer.echo("Stop requested; waiting for the owning worker to stop.")
+    except LumonError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
+@delivery_app.command("checkpoint")
+def checkpoint(
+    run_id: Annotated[str, typer.Option("--run-id")],
+    detail: Annotated[str, typer.Option("--detail")],
+    result_comment_id: Annotated[str | None, typer.Option("--result-comment-id")] = None,
+    workspace: Annotated[Path, typer.Option("--workspace")] = Path("."),
+) -> None:
+    """Save a safe handoff and source fingerprint, optionally the one Jira result comment ID."""
+    try:
+        root, _ = _workspace_identity(workspace)
+        save_checkpoint(
+            DeliveryService().run_store, root, run_id, detail=detail, comment_id=result_comment_id
         )
-        if any(run.state == DeliveryState.RUNNING for run in claimed):
-            raise AgentRuntimeError(
-                "Agent finished without recording the Story's terminal outcome."
-            )
-        unsuccessful = next((run for run in claimed if run.state != DeliveryState.COMPLETED), None)
-        if unsuccessful is not None:
-            raise AgentRuntimeError(
-                f"Story {unsuccessful.story_key} {unsuccessful.state}: "
-                f"{unsuccessful.detail or unsuccessful.reason or 'Delivery did not complete.'}"
-            )
-        idle = (result.final_text or "").strip() == "AUTO_DELIVERY_IDLE" and not claimed
-        if not idle and not claimed:
-            summary = redact_text(result.final_text or "")[:300]
-            raise AgentRuntimeError(
-                "Agent finished without an idle result or a claimed Story receipt. " + summary
-            )
-        service.run_store.save_poll(
-            workspace,
-            replace(
-                service.run_store.load_poll(workspace, poll.run_id),
-                state=DeliveryPollState.IDLE if idle else DeliveryPollState.COMPLETED,
-                finished_at=datetime.now(UTC),
-                detail=(
-                    "No new eligible Story." if idle else redact_text(result.final_text or "")[:500]
-                ),
-            ),
-        )
-        return result
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        _fail_poll(workspace, poll, service, "Auto Delivery was interrupted before completion.")
-        raise
-    except Exception as exc:
-        detail = redact_text(str(exc))[:500] or "Unexpected Auto Delivery failure."
-        _fail_poll(workspace, poll, service, detail)
-        if isinstance(exc, LumonError):
-            raise
-        raise AgentRuntimeError(detail) from exc
+        typer.echo("Delivery checkpoint saved.")
+    except (LumonError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=exc.exit_code if isinstance(exc, LumonError) else 2) from exc
 
 
-def _fail_poll(workspace: Path, poll: DeliveryPoll, service: DeliveryService, detail: str) -> None:
-    service.run_store.save_poll(
-        workspace,
-        replace(
-            service.run_store.load_poll(workspace, poll.run_id),
-            state=DeliveryPollState.FAILED,
-            finished_at=datetime.now(UTC),
-            detail=detail,
-        ),
-    )
-    for run in service.run_store.list(workspace):
-        if run.poll_id == poll.run_id and run.state == DeliveryState.RUNNING:
-            service.fail(workspace, poll.workspace_id, run, detail, phase=run.phase)
-
-
-async def _execute_poll(
-    workspace: Path,
-    workspace_id: UUID,
-    settings: AutoDeliverySettings,
-    poll: DeliveryPoll,
-    service: DeliveryService,
+async def _run_poll(
+    workspace: Path, workspace_id: UUID, settings: AutoDeliverySettings
 ) -> AgentResult:
-    excluded_keys = frozenset(
-        run.story_key.upper()
-        for run in service.run_store.list(workspace)
-        if run.workspace_id in (None, workspace_id)
-    )
-    candidate = await JiraDeliveryTrigger().find_candidate(
-        settings.jira_site, settings.trigger_jql, excluded_keys=excluded_keys
-    )
-    if (
-        candidate is not None
-        and service.settings_store.load(workspace_id).auto_delivery != settings
-    ):
-        raise PreflightError(
-            "Auto Delivery settings changed during detection; Codex was not started."
-        )
-    detection_detail = (
-        f"Jira matched {candidate.key}; starting Agent for this Story only."
-        if candidate
-        else "No new eligible Story; Codex was not started."
-    )
-    service.run_store.record_activity(
-        workspace, poll.run_id, DeliveryActivity(datetime.now(UTC), "discover", detection_detail)
-    )
-    if candidate is None:
-        return AgentResult(status="succeeded", final_text="AUTO_DELIVERY_IDLE")
-
-    state_layout = UserStateLayout.from_root()
-    config = AgentConfigStore(state_layout.root).load()
-    if not config.enabled:
-        raise PreflightError("The Lumon Agent is disabled.")
-    registry = WorkspaceRegistry(state_layout.root)
-    if registry.find(workspace_id) is None:
-        raise PreflightError(f"Workspace is not registered: {workspace_id}")
-    context_builder = WorkspaceContextBuilder(
-        replace(config, default_workspace_id=workspace_id),
-        registry,
-    )
-    context = context_builder.resolve_workspace()
-    prompt = context_builder.build_prompt(
-        context,
-        (),
-        _scheduled_poll_prompt(settings, poll.run_id, candidate),
-    )
-    secrets = (
-        config.feishu_app_secret,
-        config.observability.secret_key,
-        config.observability.public_key,
-    )
-
-    async def observe_progress(progress: AgentProgress) -> None:
-        # Story stages come from explicit receipts, not generic Agent tool execution.
-        phase = "discover"
-        detail = redact_text(progress.message, secrets)[:500]
-        service.run_store.save_poll(workspace, replace(poll, phase=phase, detail=detail))
-        service.run_store.record_activity(
-            workspace, poll.run_id, DeliveryActivity(datetime.now(UTC), phase, detail)
-        )
-
-    async def observe_event(event: AgentEvent) -> None:
-        if event.kind == "progress":
-            return  # Only the validated, bounded progress callback records Agent text.
-        detail = f"{event.kind.replace('_', ' ')}: {event.lifecycle}"
-        if event.exit_code is not None:
-            detail += f" (exit {event.exit_code})"
-        current = service.run_store.load_poll(workspace, poll.run_id)
-        service.run_store.record_activity(
-            workspace,
-            poll.run_id,
-            DeliveryActivity(
-                datetime.now(UTC),
-                current.phase,
-                detail,
-                command=redact_text(event.command, secrets) if event.command else None,
-                operation_id=redact_text(event.operation_id, secrets)
-                if event.operation_id
-                else None,
-                exit_code=event.exit_code,
-            ),
-        )
-
-    result = await create_agent_runner(config).run(
-        workspace, prompt, on_progress=observe_progress, on_event=observe_event
-    )
-    if result.status != "succeeded":
-        diagnostic = redact_text(
-            result.failure_diagnostic or "Agent poll did not complete.", secrets
-        )
-        raise AgentRuntimeError(diagnostic)
-    if any(
-        run.story_key != candidate.key
-        for run in service.run_store.list(workspace)
-        if run.poll_id == poll.run_id
-    ):
-        raise AgentRuntimeError("Agent claimed a Story other than the selected Jira candidate.")
-    return replace(result, final_text=redact_text(result.final_text or "", secrets))
-
-
-def _scheduled_poll_prompt(
-    settings: AutoDeliverySettings, poll_id: str, candidate: JiraDeliveryCandidate
-) -> str:
-    return render_automation_prompt(
-        "auto_delivery.md",
-        instructions="\n\n".join(settings.trigger_hooks),
-        poll_id=poll_id,
-        candidate=json.dumps(
-            {"key": candidate.key, "title": candidate.title, "url": candidate.url}
-        ),
-        jira_site=settings.jira_site,
-        trigger_jql=json.dumps(settings.trigger_jql),
-        publish_mode=settings.publish_mode,
-        target_branch=json.dumps(settings.target_branch)
-        if settings.target_branch
-        else "each Repository's registered branch",
-    )
+    return await run_poll(workspace, workspace_id, settings, runner_factory=create_agent_runner)
 
 
 def _parse_workspace_id(value: str) -> UUID:

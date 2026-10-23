@@ -63,7 +63,7 @@ Workspace artifacts with page/interaction, expected and observed outcome, platfo
 Debug build identity and source revision/diff fingerprint. Recapture affected pages
 after the final change; evidence from an earlier revision is not final proof.
 When the Workspace authorizes Jira evidence, attach the final evidence to the selected
-card and add a concise Comment linking it to verified results and code version.
+card and follow the single final result comment policy below.
 Read back attachments/comments before claiming success; report upload failures
 separately from implementation results. Otherwise retain the artifacts locally.
 Follow Workspace status-transition rules and the publishing policy below.
@@ -102,3 +102,37 @@ isolated worktree/source branch instead. Keep worktree details in the handoff.
 Local mode ends in handoff; published modes end in publish. Missing authentication,
 tools or publication verification must produce fail/block, never claimed success.
 Lifecycle commands send the normal Feishu notifications; do not send extras.
+
+## Durable checkpoint and ONE final Jira result comment
+
+These rules override older Workspace text asking for a comment on every run or on
+Blocked/Failed outcomes. A logical Delivery may have several attempts; they are NOT
+separate deliveries. Never comment on start, progress, rework, blocked, failed or
+stopped outcomes. Save those details locally using progress/checkpoint and the
+terminal receipt. Jira status transitions must not add an automatic comment.
+
+After each useful milestone and before blocking/failing, save a concise, safe handoff
+with `lumon delivery checkpoint --run-id <story-run-id> --detail <handoff>`: completed
+steps, worktree/artifact paths, verified source identity, remaining work and any
+already-performed external actions. No credentials, raw logs or personal data.
+
+Only after implementation, required verification, configured publication and Jira
+status read-back have all succeeded, maintain ONE concise result comment for this
+logical Delivery. First read the receipt's result_comment_id and existing Jira
+comments. Reuse/update the existing result comment for this run (including an older
+blocked-result comment); never replace a human discussion or Technical Plan.
+Use the stable marker `Lumon Delivery: delivery-<Story-key>` to reconcile ambiguous
+network outcomes. If a write times out, read/reconcile before any retry; do NOT
+blindly create another comment. If identity is ambiguous, block reporting locally.
+
+Keep the comment to: delivered behavior, concise verification, published revision,
+and explicit coverage limits (Mock vs real service, platform, no production deployment).
+For UI work embed one short workflow video and 1-3 final key screenshots IN the
+comment, not just filenames/attachment links. Use matching Jira capabilities and
+native rich-content/browser upload support; read back rendered media before claiming
+it is embedded. Never publish obsolete/intermediate evidence as the final result.
+After a confirmed create/update, immediately save its numeric ID with
+`lumon delivery checkpoint --run-id <story-run-id> --detail <handoff>
+--result-comment-id <id>`. Only then call `complete`. If media/comment write-back
+fails, preserve the checkpoint and block the missing handoff; do not redo successful
+implementation or publication on continuation. No additional result comments.

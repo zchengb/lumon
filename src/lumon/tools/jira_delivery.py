@@ -6,6 +6,7 @@ import asyncio
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -20,6 +21,7 @@ class JiraDeliveryCandidate:
     key: str
     title: str
     url: str
+    reentry_id: str | None = None
 
 
 class _Issue(BaseModel):
@@ -39,6 +41,48 @@ class _Response(BaseModel):
     model_config = ConfigDict(strict=True)
 
     data: _Page
+    errors: list[object] = Field(default_factory=list[object], max_length=0)
+
+
+class _Status(BaseModel):
+    id: str
+
+
+class _CurrentIssue(BaseModel):
+    key: str
+    status: _Status
+
+
+class _CurrentResponse(BaseModel):
+    data: list[_CurrentIssue] = Field(min_length=1, max_length=1)
+    errors: list[object] = Field(default_factory=list[object], max_length=0)
+
+
+class _Change(BaseModel):
+    field: str
+    to: str | None = None
+    from_id: str | None = Field(default=None, alias="from")
+
+
+class _Author(BaseModel):
+    accountType: str
+
+
+class _History(BaseModel):
+    id: str
+    created: datetime
+    items: list[_Change]
+    author: _Author | None = None
+
+
+class _PageInfo(BaseModel):
+    hasNextPage: bool
+    nextCursor: str | None = None
+
+
+class _HistoryResponse(BaseModel):
+    data: list[_History]
+    pageInfo: _PageInfo
     errors: list[object] = Field(default_factory=list[object], max_length=0)
 
 
@@ -114,18 +158,103 @@ class JiraDeliveryTrigger:
         return JiraDeliveryCandidate(issue.key, issue.summary, f"https://{site}/browse/{issue.key}")
 
     async def _search(self, site: str, jql: str) -> _Page:
+        payload = await self._read(
+            "query", "--jql", jql, "--fields", "summary", "--first", "1", site=site
+        )
+        return _Response.model_validate_json(payload).data
+
+    async def reentered(
+        self,
+        jira_site: str,
+        trigger_jql: str,
+        key: str,
+        *,
+        finished_at: datetime,
+        consumed_event_id: str | None = None,
+    ) -> JiraDeliveryCandidate | None:
+        """Require a complete, newer status transition AND a current match to all entry gates."""
+
+        site = validate_delivery_jira_site(jira_site)
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*-[1-9][0-9]*", key):
+            raise PreflightError("Invalid Delivery Jira key.")
+        clause = _exclude_claimed(validate_delivery_jql(trigger_jql), frozenset())
+        predicate = re.sub(r"'[^'\\]*(?:\\.[^'\\]*)*'|\"[^\"\\]*(?:\\.[^\"\\]*)*\"", "?", clause)
+        if re.search(r"\bstatus\s*(?:=|in\s*\()", predicate, re.I) is None:
+            return None  # No explicit entry state: a move to Block must not authorize a retry.
+        # Nest the predicate without ORDER BY; a key-specific query needs no sorting.
+        tokens = re.finditer(
+            r"'[^'\\]*(?:\\.[^'\\]*)*'|\"[^\"\\]*(?:\\.[^\"\\]*)*\"|\border\s+by\b", clause, re.I
+        )
+        order = next(
+            (token.start() for token in tokens if token.group()[0] not in "'\""), len(clause)
+        )
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                match = await self._search(site, f"({clause[:order].strip()}) AND key = {key}")
+                if not match.issues:
+                    return None
+                if match.issues[0].key != key:
+                    raise ValueError("Jira returned a different resume candidate.")
+                current = _CurrentResponse.model_validate_json(
+                    await self._read("get", key, "--fields", "status", site=site)
+                ).data[0]
+                if current.key != key:
+                    raise ValueError("Jira returned a different workitem.")
+                latest = await self._latest_status_change(site, key)
+                if latest is None or latest.created <= finished_at:
+                    return None
+                if latest.id == consumed_event_id:
+                    return None
+                if latest.author is None or latest.author.accountType != "atlassian":
+                    return None
+                if not any(
+                    item.field == "status"
+                    and item.to == current.status.id
+                    and item.to != item.from_id
+                    for item in latest.items
+                ):
+                    return None
+                issue = match.issues[0]
+                return JiraDeliveryCandidate(
+                    key, issue.summary, f"https://{site}/browse/{key}", latest.id
+                )
+        except (OSError, TimeoutError, ValueError) as exc:
+            raise PreflightError(
+                "Unable to verify Jira re-entry; Delivery was not resumed."
+            ) from exc
+
+    async def _latest_status_change(self, site: str, key: str) -> _History | None:
+        cursor: str | None = None
+        latest: _History | None = None
+        for _ in range(20):
+            arguments = ("--after", cursor) if cursor else ()
+            page = _HistoryResponse.model_validate_json(
+                await self._read(
+                    "changelog", "query", "--issue-id", key, "--first", "100", *arguments, site=site
+                )
+            )
+            for history in page.data:
+                if history.created.utcoffset() is None:
+                    raise ValueError("Jira changelog timestamp has no timezone.")
+                if any(item.field == "status" for item in history.items) and (
+                    latest is None or history.created > latest.created
+                ):
+                    latest = history
+            if not page.pageInfo.hasNextPage:
+                return latest
+            next_cursor = page.pageInfo.nextCursor
+            if not next_cursor or next_cursor == cursor:
+                raise ValueError("Incomplete Jira status history.")
+            cursor = next_cursor
+        raise ValueError("Jira status history exceeds the detection limit.")
+
+    async def _read(self, *arguments: str, site: str) -> bytes:
         # TWG strips pagination metadata; server-side receipt exclusion needs only one result.
         process = await asyncio.create_subprocess_exec(
             self.binary,
             "jira",
             "workitem",
-            "query",
-            "--jql",
-            jql,
-            "--fields",
-            "summary",
-            "--first",
-            "1",
+            *arguments,
             "--site",
             site,
             "--output",
@@ -150,8 +279,7 @@ class JiraDeliveryTrigger:
                     "Jira detection failed. Check TWG access and the trigger JQL; "
                     "Codex was not started."
                 )
-            response = _Response.model_validate_json(payload)
-            return response.data
+            return bytes(payload)
         finally:
             if process.returncode is None:
                 try:

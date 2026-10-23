@@ -27,6 +27,7 @@ class DeliveryState(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     BLOCKED = "blocked"
+    STOPPED = "stopped"
 
 
 class DeliveryPollState(StrEnum):
@@ -36,6 +37,7 @@ class DeliveryPollState(StrEnum):
     IDLE = "idle"
     COMPLETED = "completed"
     FAILED = "failed"
+    STOPPED = "stopped"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,8 +113,24 @@ class DeliveryRun:
     verification_summary: str | None = None
     detail: str | None = None
     poll_id: str | None = None
+    attempt: int = 1
+    attempt_started_at: datetime | None = None
+    agent_session_id: str | None = None
+    checkpoint: str | None = None
+    worktree_snapshot: str | None = None
+    result_comment_id: str | None = None
+    jira_reentry_id: str | None = None
 
     def __post_init__(self) -> None:
+        self._sanitize()
+        if self.attempt < 1:
+            raise ValueError("Delivery attempt must be positive.")
+        if self.agent_session_id is not None:
+            UUID(self.agent_session_id)
+        if self.result_comment_id is not None and not self.result_comment_id.isdecimal():
+            raise ValueError("Jira result comment ID must be numeric.")
+
+    def _sanitize(self) -> None:
         """Keep external text safe before it reaches Cards or receipts."""
 
         for field_name in (
@@ -126,6 +144,7 @@ class DeliveryRun:
             "reason",
             "verification_summary",
             "detail",
+            "checkpoint",
         ):
             value = getattr(self, field_name)
             if isinstance(value, str):
@@ -189,6 +208,7 @@ class DeliveryRun:
             DeliveryState.COMPLETED,
             DeliveryState.FAILED,
             DeliveryState.BLOCKED,
+            DeliveryState.STOPPED,
         }
         return replace(
             self,
@@ -215,4 +235,5 @@ class DeliveryRun:
 
         if self.finished_at is None:
             return None
-        return max(0, int((self.finished_at - self.started_at).total_seconds()))
+        started = self.attempt_started_at or self.started_at
+        return max(0, int((self.finished_at - started).total_seconds()))
