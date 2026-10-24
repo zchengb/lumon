@@ -22,9 +22,15 @@ from lumon.dashboard.routes import create_app
 from lumon.dashboard.service import DashboardService
 from lumon.delivery.control import prepare_resume, request_stop, save_checkpoint, worktree_snapshot
 from lumon.delivery.execution import DeliveryTasks, resume_delivery, run_poll
-from lumon.delivery.model import DeliveryPoll, DeliveryPollState, DeliveryRun, DeliveryState
+from lumon.delivery.model import (
+    DeliveryEvent,
+    DeliveryPoll,
+    DeliveryPollState,
+    DeliveryRun,
+    DeliveryState,
+)
 from lumon.delivery.scheduler import delivery_lock
-from lumon.delivery.service import DeliveryService
+from lumon.delivery.service import DeliveryNotification, DeliveryService
 from lumon.errors import PreflightError
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.jira_delivery import JiraDeliveryCandidate, JiraDeliveryTrigger
@@ -62,6 +68,25 @@ def blocked(workspace: Path, workspace_id: UUID, service: DeliveryService) -> De
     run = DeliveryRun.claim("delivery-TEST-1", "TEST-1", "Test", workspace_id=workspace_id)
     service.start(workspace, workspace_id, run)
     return service.block(workspace, workspace_id, run, "Need access", phase="verification")[0]
+
+
+@pytest.fixture
+def lifecycle_notifications(monkeypatch: pytest.MonkeyPatch) -> list[tuple[DeliveryEvent, int]]:
+    events: list[tuple[DeliveryEvent, int]] = []
+    original = DeliveryService.notify
+
+    def observe(
+        self: DeliveryService,
+        workspace: Path,
+        workspace_id: UUID,
+        run: DeliveryRun,
+        event: DeliveryEvent | str,
+    ) -> DeliveryNotification:
+        events.append((DeliveryEvent(event), run.attempt))
+        return original(self, workspace, workspace_id, run, event)
+
+    monkeypatch.setattr(DeliveryService, "notify", observe)
+    return events
 
 
 def test_resume_preserves_attempt_checkpoint_and_rejects_stale_actions(
@@ -234,6 +259,7 @@ def test_dashboard_task_resumes_session_and_acknowledges_stop_only_after_cancell
 
 def test_resume_success_and_duplicate_effect_instructions(
     lab: tuple[Path, Path, UUID, DeliveryService],
+    lifecycle_notifications: list[tuple[DeliveryEvent, int]],
 ) -> None:
     state, workspace, workspace_id, service = lab
     run = blocked(workspace, workspace_id, service)
@@ -274,10 +300,17 @@ def test_resume_success_and_duplicate_effect_instructions(
         service.run_store.load_poll(workspace, finished.poll_id).state
         == DeliveryPollState.COMPLETED
     )
+    assert lifecycle_notifications == [
+        (DeliveryEvent.STARTED, 1),
+        (DeliveryEvent.BLOCKED, 1),
+        (DeliveryEvent.STARTED, 2),
+        (DeliveryEvent.DEV_DONE, 2),
+    ]
 
 
 def test_missing_session_falls_back_to_checkpoint_not_fresh_delivery(
     lab: tuple[Path, Path, UUID, DeliveryService],
+    lifecycle_notifications: list[tuple[DeliveryEvent, int]],
 ) -> None:
     state, workspace, workspace_id, service = lab
     run = replace(
@@ -324,6 +357,7 @@ def test_missing_session_falls_back_to_checkpoint_not_fresh_delivery(
     )
     assert sessions == [run.agent_session_id, None]
     assert service.run_store.load(workspace, run.run_id).attempt == 2
+    assert lifecycle_notifications.count((DeliveryEvent.STARTED, 2)) == 1
 
 
 def test_session_before_claim_survives_progress_and_stop_blocks_late_completion(
@@ -432,7 +466,9 @@ def test_http_resume_stop_scope_and_stale_attempt_guards(
 
 
 def test_jira_reentry_resumes_once_and_completed_receipt_stays_excluded(
-    lab: tuple[Path, Path, UUID, DeliveryService], monkeypatch: pytest.MonkeyPatch
+    lab: tuple[Path, Path, UUID, DeliveryService],
+    monkeypatch: pytest.MonkeyPatch,
+    lifecycle_notifications: list[tuple[DeliveryEvent, int]],
 ) -> None:
     state, workspace, workspace_id, service = lab
     run = blocked(workspace, workspace_id, service)
@@ -491,6 +527,12 @@ def test_jira_reentry_resumes_once_and_completed_receipt_stays_excluded(
         run_poll(workspace, workspace_id, settings, state_root=state, runner_factory=factory)
     )
     assert result.final_text == "AUTO_DELIVERY_IDLE" and matches == [run.story_key]
+    assert lifecycle_notifications == [
+        (DeliveryEvent.STARTED, 1),
+        (DeliveryEvent.BLOCKED, 1),
+        (DeliveryEvent.STARTED, 2),
+        (DeliveryEvent.DEV_DONE, 2),
+    ]
 
 
 def test_detection_has_one_total_time_budget_before_starting_agent(

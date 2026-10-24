@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -130,6 +131,85 @@ def test_delivery_service_sends_once_and_records_receipt(tmp_path: Path) -> None
     assert (tmp_path / "workspace" / "lumon" / "runs" / "run-1" / "notifications.json").is_file()
 
 
+@pytest.mark.parametrize("event", tuple(DeliveryEvent))
+def test_delivery_notifications_are_deduplicated_per_attempt(
+    tmp_path: Path, event: DeliveryEvent
+) -> None:
+    workspace_id = uuid4()
+    settings = WorkspaceSettingsStore(tmp_path / "state")
+    settings.save(
+        WorkspaceSettings(
+            workspace_id,
+            feishu_webhook=FeishuWebhookSettings(
+                enabled=True, url="https://open.feishu.cn/open-apis/bot/v2/hook/test-token"
+            ),
+        )
+    )
+    requests: list[Request] = []
+
+    def opener(request: Request, timeout: float) -> _Response:
+        del timeout
+        requests.append(request)
+        return _Response()
+
+    sender = FeishuWebhookSender(opener=opener)
+    workspace = tmp_path / "workspace"
+    run = _run()
+    for attempt in (1, 2):
+        service = DeliveryService(settings_store=settings, webhook_sender=sender)
+        current = replace(run, attempt=attempt)
+        assert service.notify(workspace, workspace_id, current, event).sent
+        assert service.notify(workspace, workspace_id, current, event).skipped
+    assert len(requests) == 2
+
+
+def test_legacy_notification_receipt_only_deduplicates_first_attempt(tmp_path: Path) -> None:
+    workspace_id = uuid4()
+    settings = WorkspaceSettingsStore(tmp_path / "state")
+    settings.save(
+        WorkspaceSettings(
+            workspace_id,
+            feishu_webhook=FeishuWebhookSettings(
+                enabled=True, url="https://open.feishu.cn/open-apis/bot/v2/hook/test-token"
+            ),
+        )
+    )
+    requests: list[Request] = []
+
+    def opener(request: Request, timeout: float) -> _Response:
+        del timeout
+        requests.append(request)
+        return _Response()
+
+    service = DeliveryService(
+        settings_store=settings, webhook_sender=FeishuWebhookSender(opener=opener)
+    )
+    workspace, run = tmp_path / "workspace", _run()
+    service.run_store.save(workspace, run)
+    receipt = service.run_store.path_for(workspace, run.run_id) / "notifications.json"
+    legacy = {DeliveryEvent.BLOCKED.value: {"detail": "sent", "sent_at": "2026-09-19T08:00:00Z"}}
+    receipt.write_text(json.dumps(legacy))
+    assert service.notify(workspace, workspace_id, run, DeliveryEvent.BLOCKED).skipped
+    resumed = replace(run, attempt=2)
+    assert service.notify(workspace, workspace_id, resumed, DeliveryEvent.BLOCKED).sent
+    assert service.notify(workspace, workspace_id, resumed, DeliveryEvent.BLOCKED).skipped
+    assert len(requests) == 1
+    assert (
+        json.loads(receipt.read_text())[DeliveryEvent.BLOCKED.value]
+        == legacy[DeliveryEvent.BLOCKED.value]
+    )
+
+
+def test_resumed_delivery_card_identifies_attempt_and_preserved_work() -> None:
+    run = replace(_run(), attempt=2)
+    card = json.dumps(build_delivery_card(DeliveryEvent.STARTED, run), ensure_ascii=False)
+    assert "Lumon · Delivery Resumed" in card
+    assert "**Attempt:**  2" in card
+    assert "existing work" in card
+    assert "claimed the Story" not in card
+    assert "**Attempt:**  2" in json.dumps(build_delivery_card(DeliveryEvent.BLOCKED, run))
+
+
 def test_delivery_start_requires_workspace_permission(tmp_path: Path) -> None:
     workspace_id = uuid4()
     settings = WorkspaceSettingsStore(tmp_path / "state")
@@ -140,7 +220,8 @@ def test_delivery_start_requires_workspace_permission(tmp_path: Path) -> None:
         service.start(tmp_path / "workspace", workspace_id, _run())
 
 
-def test_webhook_failure_does_not_change_delivery_state(tmp_path: Path) -> None:
+@pytest.mark.parametrize("attempt", [1, 2])
+def test_webhook_failure_does_not_change_delivery_state(tmp_path: Path, attempt: int) -> None:
     workspace_id = uuid4()
     settings = WorkspaceSettingsStore(tmp_path / "state")
     settings.save(
@@ -162,7 +243,7 @@ def test_webhook_failure_does_not_change_delivery_state(tmp_path: Path) -> None:
         settings_store=settings,
         webhook_sender=FeishuWebhookSender(opener=opener),
     )
-    run = _run()
+    run = replace(_run(), attempt=attempt)
     service.run_store.save(tmp_path / "workspace", run)
     notification = service.notify(tmp_path / "workspace", workspace_id, run, DeliveryEvent.STARTED)
 

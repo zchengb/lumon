@@ -25,6 +25,9 @@ def build_delivery_card(event: DeliveryEvent | str, run: DeliveryRun) -> dict[st
     """Build a Feishu Interactive Card 2.0 payload without side effects."""
 
     event = DeliveryEvent(event)
+    title = _EVENT_TITLES[event]
+    if event is DeliveryEvent.STARTED and run.attempt > 1:
+        title = "Lumon · Delivery Resumed"
     subtitle = " · ".join(part for part in (run.story_key.strip(), run.story_title.strip()) if part)
     elements = [{"tag": "markdown", "content": _overview(run)}, {"tag": "hr"}]
     elements.append({"tag": "markdown", "content": _event_detail(event, run)})
@@ -44,7 +47,7 @@ def build_delivery_card(event: DeliveryEvent | str, run: DeliveryRun) -> dict[st
         "card": {
             "schema": "2.0",
             "header": {
-                "title": {"tag": "plain_text", "content": _EVENT_TITLES[event]},
+                "title": {"tag": "plain_text", "content": title},
                 "subtitle": {"tag": "plain_text", "content": subtitle or "Delivery"},
                 "template": _EVENT_TEMPLATES[event],
             },
@@ -63,6 +66,8 @@ def _overview(run: DeliveryRun) -> str:
         f"**Status:**  {_status_label(run.state)}",
         f"**Phase:**  `{run.phase}`",
     ]
+    if run.attempt > 1:
+        lines.append(f"**Attempt:**  {run.attempt}")
     if run.repository:
         lines.append(f"**Repository:**  `{run.repository}`")
     if run.branch:
@@ -74,6 +79,11 @@ def _overview(run: DeliveryRun) -> str:
 
 def _event_detail(event: DeliveryEvent, run: DeliveryRun) -> str:
     if event is DeliveryEvent.STARTED:
+        if run.attempt > 1:
+            return (
+                "**What happens next**\n"
+                "Lumon is continuing existing work and rechecking context and evidence."
+            )
         return (
             "**What happens next**\n"
             "Lumon has claimed the Story and is preparing the environment, "

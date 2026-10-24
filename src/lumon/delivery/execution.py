@@ -19,6 +19,7 @@ from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.delivery.control import acknowledge_stop, prepare_resume, require_owned, save_checkpoint
 from lumon.delivery.model import (
     DeliveryActivity,
+    DeliveryEvent,
     DeliveryPoll,
     DeliveryPollState,
     DeliveryRun,
@@ -260,6 +261,8 @@ async def _execute_poll(
     )
     if candidate is None:
         return AgentResult(status="succeeded", final_text="AUTO_DELIVERY_IDLE")
+    if resume_run is not None:
+        service.notify(workspace, workspace_id, resume_run, DeliveryEvent.STARTED)
 
     state_layout = UserStateLayout.from_root(state_root)
     config = AgentConfigStore(state_layout.root).load()

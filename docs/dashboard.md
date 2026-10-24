@@ -346,6 +346,13 @@ protocol, so they do not offer a misleading Stop button. Only one execution can
 hold the Workspace lock; stale attempt numbers and duplicate starts are rejected.
 Shutting down the Dashboard also interrupts continuations owned by that Dashboard.
 
+Feishu lifecycle notifications are deduplicated by delivery, attempt and event.
+Continuation sends **Delivery Resumed**, and subsequent outcome notifications
+include the attempt number. Repeating a successful notification within the same
+attempt does not send another message. Legacy unscoped notification receipts count
+only for attempt 1 and remain intact. This does not change the single final
+successful Jira result comment policy below.
+
 Without Dashboard, use the current receipt's attempt number:
 
 ```sh

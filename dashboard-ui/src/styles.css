@@ -1353,7 +1353,7 @@ code {
 .delivery-progress-body { padding: 24px; }
 .delivery-facts { display: grid; grid-template-columns: 1.4fr 1fr 1.3fr .6fr; gap: 20px; }
 .delivery-facts > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 13px; }
-.delivery-facts > div > span { color: var(--muted); font-size: 11px; }
+.delivery-facts > div > span:not(.status-pill) { color: var(--muted); font-size: 11px; }
 .delivery-facts strong { font-weight: 500; font-variant-numeric: tabular-nums; }
 .delivery-progress-story { overflow-wrap: anywhere; line-height: 1.6; font-weight: 400; }
 .delivery-stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 28px 0 22px; padding: 0; list-style: none; }

@@ -231,7 +231,7 @@ class DeliveryService:
         """Send one event without allowing notification failure to alter run state."""
 
         event = DeliveryEvent(event)
-        if self.run_store.notification_sent(workspace, run.run_id, event):
+        if self.run_store.notification_sent(workspace, run.run_id, event, attempt=run.attempt):
             return DeliveryNotification(event, sent=False, skipped=True, detail="Already sent.")
         settings = self.settings_store.load(workspace_id).feishu_webhook
         if not settings.enabled:
@@ -248,7 +248,9 @@ class DeliveryService:
             result = self.webhook_sender.send_card(settings.url, card)
         except (FeishuWebhookError, LumonError) as exc:
             return DeliveryNotification(event, sent=False, skipped=False, detail=str(exc))
-        self.run_store.record_notification(workspace, run.run_id, event, result.detail, self.now())
+        self.run_store.record_notification(
+            workspace, run.run_id, event, result.detail, self.now(), attempt=run.attempt
+        )
         return DeliveryNotification(event, sent=True, skipped=False, detail=result.detail)
 
 

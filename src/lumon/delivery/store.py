@@ -281,11 +281,13 @@ class DeliveryRunStore:
             if path.is_dir() and not path.is_symlink() and _RUN_ID.fullmatch(path.name)
         )
 
-    def notification_sent(self, workspace: Path, run_id: str, event: DeliveryEvent) -> bool:
-        """Return whether one lifecycle event was already sent."""
+    def notification_sent(
+        self, workspace: Path, run_id: str, event: DeliveryEvent, *, attempt: int
+    ) -> bool:
+        """Legacy unscoped receipts belong to the first attempt only."""
 
         payload = self._load_notifications(workspace, run_id)
-        return event.value in payload
+        return f"{attempt}:{event.value}" in payload or (attempt == 1 and event.value in payload)
 
     def record_notification(
         self,
@@ -294,6 +296,8 @@ class DeliveryRunStore:
         event: DeliveryEvent,
         detail: str,
         sent_at: datetime,
+        *,
+        attempt: int,
     ) -> None:
         """Record a safe successful notification receipt."""
 
@@ -301,7 +305,7 @@ class DeliveryRunStore:
         directory.mkdir(parents=True, exist_ok=True)
         _secure_directory(directory)
         payload = self._load_notifications(workspace, run_id)
-        payload[event.value] = {"sent_at": sent_at.isoformat(), "detail": detail}
+        payload[f"{attempt}:{event.value}"] = {"sent_at": sent_at.isoformat(), "detail": detail}
         _atomic_write(directory / "notifications.json", payload)
 
     def _load_notifications(self, workspace: Path, run_id: str) -> dict[str, object]:

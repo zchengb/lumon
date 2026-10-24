@@ -159,7 +159,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
             <td>{timeLabel(item.started_at)}</td>
             <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
             <td>{duration(item, now)}</td>
-            <td><div className="panel-actions">{controlButton(item)}<button className="button button-secondary delivery-history-delete" type="button" aria-label={`${t("autoDelivery.delete")} ${item.story_key}`} disabled={deleting !== null || controlling !== null || item.state === "running" || history.polls.some((poll) => poll.state === "running")} onClick={() => void deleteHistory(item)}>
+            <td><div className="panel-actions">{item.state !== "running" && controlButton(item)}<button className="button button-secondary delivery-history-delete" type="button" aria-label={`${t("autoDelivery.delete")} ${item.story_key}`} disabled={deleting !== null || controlling !== null || item.state === "running" || history.polls.some((poll) => poll.state === "running")} onClick={() => void deleteHistory(item)}>
               {deleting === item.run_id ? <LoaderCircle size={14} className="spin" /> : <Trash2 size={14} />}{t("autoDelivery.delete")}
             </button></div></td>
           </tr>) : <tr><td colSpan={5} className="empty-table">{t("autoDelivery.noHistory")}</td></tr>}</tbody>

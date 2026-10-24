@@ -26,22 +26,27 @@ it("continues a blocked delivery once, then requests a real stop and waits for a
   try {
     await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={vi.fn()} /></I18nProvider>));
     const button = () => Array.from(container.querySelectorAll<HTMLButtonElement>(".delivery-progress-panel button")).find((item) => /Continue|Stop/.test(item.textContent ?? ""))!;
+    const historyActions = () => Array.from(container.querySelectorAll(".delivery-history-table tbody tr:first-child td:last-child button"), (item) => item.textContent);
     expect(button().textContent).toContain("Continue");
+    expect(historyActions()).toEqual(["Continue", "Delete"]);
     history.mockResolvedValue({ runs: [{ ...run, attempt: 2, attempt_started_at: new Date().toISOString(), stopping: false }], polls: [] });
     await act(async () => button().click());
     expect(control).toHaveBeenCalledExactlyOnceWith("workspace-1", run.run_id, "resume", 1);
     expect(container.textContent).toContain("Attempt 2");
     expect(button().textContent).toContain("Stop");
+    expect(historyActions()).toEqual(["Delete"]);
     history.mockResolvedValue({ runs: [{ ...run, attempt: 2, stopping: true }], polls: [] });
     await act(async () => button().click());
     expect(control).toHaveBeenLastCalledWith("workspace-1", run.run_id, "stop", 2);
     expect(button().textContent).toContain("Stopping…");
+    expect(historyActions()).toEqual(["Delete"]);
     expect(button().disabled).toBe(true);
     expect(container.querySelector(".delivery-facts")?.textContent).toContain("Running");
     history.mockResolvedValue({ runs: [{ ...run, state: "stopped", attempt: 2, stopping: null }], polls: [] });
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(container.querySelector(".delivery-facts")?.textContent).toContain("Stopped");
     expect(button().textContent).toContain("Continue");
+    expect(historyActions()).toEqual(["Continue", "Delete"]);
   } finally {
     await act(async () => root.unmount());
     vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
