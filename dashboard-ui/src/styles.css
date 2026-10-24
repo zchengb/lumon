@@ -1357,6 +1357,7 @@ code {
 .delivery-facts strong { font-weight: 500; font-variant-numeric: tabular-nums; }
 .delivery-progress-story { overflow-wrap: anywhere; line-height: 1.6; font-weight: 400; }
 .delivery-stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 28px 0 22px; padding: 0; list-style: none; }
+.scan-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .delivery-stages li { display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 4px solid var(--line); color: var(--muted); font-size: 12px; }
 .delivery-stage-marker { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; background: #f1f1ec; font-size: 11px; }
 .delivery-stages .is-complete { border-color: #89b69b; color: #207149; }
@@ -1370,6 +1371,7 @@ code {
   to { background-position: -100% 0; }
 }
 .delivery-stages .is-failed { border-color: #a43d36; }
+.scan-stages .is-failed .delivery-stage-marker { color: #a43d36; background: #f7e9e8; }
 .delivery-stages .is-returned { border-color: var(--copper); border-top-style: dashed; color: #805b17; }
 .delivery-stages .is-returned .delivery-stage-marker { background: #fff4d9; }
 .delivery-rework { border: 1px solid var(--line); border-left: 3px solid var(--copper); border-radius: 8px; padding: 16px; background: var(--line-soft); font-size: 12px; }

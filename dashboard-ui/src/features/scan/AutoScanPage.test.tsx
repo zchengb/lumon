@@ -119,7 +119,7 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
   }
 });
 
-it("refreshes issue states after an active scan, skips hidden tabs and stops on completion", async () => {
+it("refreshes active scans, skips hidden tabs and backs off after completion", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.setItem("lumon.locale", "en");
@@ -156,11 +156,74 @@ it("refreshes issue states after an active scan, skips hidden tabs and stops on 
     expect(container.querySelector(".scan-finding-ignore")).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
     expect(list).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(list).toHaveBeenCalledTimes(3);
     expect(onError).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     expect(vi.getTimerCount()).toBe(0);
     vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
+  }
+});
+
+it("discovers a newly requested scan while the start request is still pending", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const list = vi.spyOn(dashboardApi, "listScans").mockResolvedValue([]);
+  let finish!: (run: ScanRun) => void;
+  const start = vi.spyOn(dashboardApi, "startScan").mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const active: ScanRun = {
+    run_id: "new", state: "running", phase: "review", started_at: new Date().toISOString(),
+    finished_at: null, lookback_days: 7, repositories_scanned: 0, repositories_failed: 0,
+    findings: [], failures: [], hook_results: [], html_available: false, pdf_available: false,
+    duration_seconds: null,
+  };
+  try {
+    await act(async () => root.render(<I18nProvider><AutoScanPage workspaceId="workspace-id" onError={vi.fn()} /></I18nProvider>));
+    await act(async () => container.querySelector<HTMLButtonElement>(".scan-history-panel .panel-heading button")!.click());
+    expect(start).toHaveBeenCalledTimes(1);
+    list.mockResolvedValue([active]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(container.querySelector(".scan-progress-panel .is-running")).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>(".scan-history-panel .panel-heading button")!.disabled).toBe(true);
+    await act(async () => finish({ ...active, state: "completed", phase: "completed", duration_seconds: 4 }));
+    expect(container.querySelector(".scan-progress-duration")?.textContent).toBe("0m4s");
+    expect(container.querySelector(".scan-progress-panel .is-running")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear();
+  }
+});
+
+it("prioritizes a running scan over newer history and refreshes without starting another scan", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  const active: ScanRun = {
+    run_id: "active", state: "running", phase: "report", started_at: "2026-10-24T00:00:00Z",
+    finished_at: null, lookback_days: 7, repositories_scanned: 1, repositories_failed: 0,
+    findings: [], failures: [], hook_results: [], html_available: false, pdf_available: false, duration_seconds: null,
+  };
+  const list = vi.spyOn(dashboardApi, "listScans").mockResolvedValue([
+    { ...active, run_id: "newer", state: "completed", phase: "completed", started_at: "2026-10-25T00:00:00Z", duration_seconds: 10 }, active,
+  ]);
+  const start = vi.spyOn(dashboardApi, "startScan");
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><AutoScanPage workspaceId="workspace-id" onError={vi.fn()} /></I18nProvider>));
+    expect(container.querySelector(".scan-progress-panel [aria-current=step]")?.textContent).toContain("Generate reports");
+    await act(async () => container.querySelector<HTMLButtonElement>(".scan-progress-panel button")!.click());
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(start).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear();
   }
 });
 

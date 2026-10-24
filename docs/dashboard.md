@@ -435,10 +435,25 @@ there are findings. Existing hook IDs remain supported through Workspace
 capabilities. New Workspaces default to empty hooks (`trigger_hooks = []`), with
 no preset completion prompt. Empty hooks keep scans report-only; users opt in by
 configuring instructions separately for each Workspace.
+An optional [concise Jira Bug template](auto-scan-jira-template.md) provides the
+approved three-section Traditional Chinese layout and a traceability footer.
+It is selected in the Workspace completion prompt; upgrading Lumon does not
+overwrite saved prompts or enable Jira globally. Reused cards retain their content.
 Editing this prompt does not reload the scheduled job or interrupt an active scan;
 the next scan loads the saved instructions.
 
 The **Auto Scan** page is an execution/history view, with the manual scan action,
+and a **Current progress** panel that prioritizes a running scan, otherwise the
+latest scan. It uses the same animated stage bars as Auto Delivery, following
+the stored Review, Reports and Finalize phases without estimating a percentage
+or claiming per-repository progress. The elapsed timer updates every second
+while running and freezes on completion; partial and failed scans retain their
+warning/error state. Finalize includes configured completion hooks when present.
+Visible pages poll every three seconds during a scan or pending manual start,
+and every fifteen seconds when idle to discover scheduled/external starts;
+hidden/unmounted pages do not poll. Refresh reloads history without starting a
+scan, and Run scan now is disabled while a scan is already running.
+The history retains
 one **Scan history** heading, finding counts by
 severity (High, Medium, Low in every interface language), and elapsed time as minutes and seconds, such as
 `15m34s`. Empty findings and unfinished durations display a dash.

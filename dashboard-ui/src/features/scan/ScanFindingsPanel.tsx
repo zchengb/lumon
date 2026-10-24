@@ -69,7 +69,7 @@ export function ScanFindingsPanel({ runs, loading, unavailable, onIgnore }: {
                   <h3>{finding.title}</h3>
                   <span className="scan-finding-tags">
                     <span className={`scan-finding-tag scan-severity scan-severity-${finding.severity.toLowerCase()}`}>{severityLabel(finding.severity)}</span>
-                    <span className="scan-finding-tag status-pill status-neutral">{statusLabel(finding.issue_status)}</span>
+                    <span className={`scan-finding-tag status-pill ${normalizedStatus(finding.issue_status) === "resolved" ? "status-ready" : "status-neutral"}`}>{statusLabel(finding.issue_status)}</span>
                   </span>
                 </div>
                 {onIgnore && !["ignored", "resolved"].includes(normalizedStatus(finding.issue_status)) && <button className="button button-secondary scan-finding-ignore" type="button" disabled={ignoring !== null} onClick={() => void ignore(key, run.run_id, index)}>
