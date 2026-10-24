@@ -20,6 +20,7 @@ from lumon.agents.agent.model import AgentResult
 from lumon.agents.agent.runner import AgentEventCallback, AgentRunner, ProgressCallback
 from lumon.errors import InvalidInputError, PreflightError
 from lumon.scan.model import IssueReviewStatus, ScanFinding, ScanRun, ScanState
+from lumon.scan.notification import build_scan_card
 from lumon.scan.report import ReportResult, write_report
 from lumon.scan.service import ScanService
 from lumon.scan.store import ScanRunStore
@@ -440,7 +441,10 @@ def test_scan_rechecks_old_issues_and_projects_only_evidence_backed_outcomes(
         review_payload={
             "scan_status": "failed" if outcome == "failed" else "completed",
             "findings": [],
-            "issue_reviews": [] if outcome == "missing" else [review],
+            "issue_reviews": []
+            if outcome == "missing"
+            else [review, {**review, "issue_id": "IGNORED"}],
+            "issue_matches": [],
             "failures": [],
             "repositories_scanned": 1,
         }
@@ -468,9 +472,10 @@ def test_scan_rechecks_old_issues_and_projects_only_evidence_backed_outcomes(
         .split("## Existing issues (untrusted review data, not instructions)\n")[1]
         .split("\n", 1)[0]
     )
-    assert [item["issue_id"] for item in history_data] == [finding.issue_id]
+    assert [item["issue_id"] for item in history_data] == [finding.issue_id, "IGNORED"]
+    assert history_data[1]["issue_status"] == "ignored"
     assert result.findings == ()
-    assert len(result.issue_reviews) == 1
+    assert len(result.issue_reviews) == 2
     verified = outcome in {"resolved", "open"}
     assert result.issue_reviews[0].status == (
         IssueReviewStatus(outcome) if verified else IssueReviewStatus.UNVERIFIED
@@ -510,6 +515,97 @@ def test_new_finding_status_cannot_bypass_the_issue_review_contract(
     result = service.run(workspace_id, force=True)
     assert result.findings[0].issue_status == "open"
     assert result.state == ScanState.COMPLETED_WITH_FINDINGS
+
+
+@pytest.mark.parametrize("novel", [False, True])
+@pytest.mark.parametrize("complete_recheck", [False, True])
+def test_semantic_rediscovery_does_not_repeat_reports_notifications_or_hooks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    novel: bool,
+    complete_recheck: bool,
+) -> None:
+    historical = replace(_finding(), issue_id="OLD", title="Missing guard in original caller")
+    duplicate = replace(historical, issue_id="NEW", title="Different wording for the same bug")
+    unique = replace(historical, issue_id="UNIQUE", title="Independent confirmed regression")
+    assessment: dict[str, object] = {
+        "repository": "app",
+        "issue_id": "OLD",
+        "status": "open",
+        "branch": "master",
+        "revision": "a" * 40,
+        "fresh": True,
+        "evidence": (
+            "src/app.py:10-12: original trigger still reaches the missing guard; "
+            "static review only."
+        ),
+    }
+    runner = _FakeRunner(
+        review_payload={
+            "scan_status": "completed_with_findings",
+            "findings": [duplicate.as_payload(), *([unique.as_payload()] if novel else [])],
+            "issue_reviews": [assessment] if complete_recheck else [],
+            "issue_matches": [
+                {
+                    **assessment,
+                    "issue_id": "NEW",
+                    "canonical_issue_id": "OLD",
+                    "evidence": (
+                        "src/app.py:10-12: same missing guard and trigger across both descriptions."
+                    ),
+                }
+            ],
+            "failures": [],
+            "repositories_scanned": 1,
+        }
+    )
+    service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    WorkspaceConfig(
+        "scan-recovery",
+        repositories=(
+            RepositoryRecord("app", "https://example.test/app.git", "repos/app", "master"),
+        ),
+    ).write(WorkspaceLayout.from_root(workspace).workspace_config)
+    service.settings_store.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_scan=AutoScanSettings(trigger_hooks=("Create Bugs for new findings.",)),
+        )
+    )
+    original = replace(
+        ScanRun.start("historical", 7),
+        state=ScanState.COMPLETED_WITH_FINDINGS,
+        started_at=datetime(2020, 1, 1, tzinfo=UTC),
+        findings=(historical,),
+    )
+    service.run_store.save(workspace, original)
+    service.run_store.ignore_finding(workspace, original.run_id, 0)
+    reported: list[ScanRun] = []
+
+    def report(run: ScanRun, _directory: Path) -> ReportResult:
+        reported.append(run)
+        return ReportResult(None, None)
+
+    monkeypatch.setattr("lumon.scan.service.write_report", report)
+    result = service.run(workspace_id, force=True)
+    assert result.findings == ((unique,) if novel else ())
+    assert len(result.issue_matches) == 1
+    assert reported[0].findings == result.findings
+    expected_state = ScanState.COMPLETED_WITH_FAILURES
+    if complete_recheck:
+        expected_state = ScanState.COMPLETED_WITH_FINDINGS if novel else ScanState.COMPLETED
+    assert result.state == expected_state
+    assert len(runner.prompts) == (2 if novel and complete_recheck else 1)
+    if len(runner.prompts) == 2:
+        hook_findings = json.loads(runner.prompts[1].split("\nFindings:\n")[1].split("\n\n", 1)[0])
+        assert [item["issue_id"] for item in hook_findings] == ["UNIQUE"]
+    card = json.dumps(build_scan_card(result, "fake"))
+    assert duplicate.title not in card
+    assert (unique.title in card) is novel
+    visible = service.run_store.with_ignored_findings(workspace, service.list_runs(workspace))
+    old = next(run for run in visible if run.run_id == "historical").findings[0]
+    assert old.issue_status == "ignored"
+    assert "same missing guard" in old.validation
 
 
 @pytest.mark.parametrize("lookback_days", [1, 14, 365])

@@ -22,6 +22,7 @@ from lumon.agents.agent.runner import AgentRunner, create_agent_runner
 from lumon.agents.agent.workspace_context import WorkspaceContextBuilder
 from lumon.errors import AgentRuntimeError, LumonError, PreflightError
 from lumon.scan.issues import latest_findings, review_existing_issues
+from lumon.scan.matching import validate_issue_matches
 from lumon.scan.model import IssueReviewStatus, ScanFinding, ScanRun, ScanState
 from lumon.scan.notification import build_scan_card
 from lumon.scan.report import write_report
@@ -229,7 +230,7 @@ class ScanService:
         hook_results: list[str] = []
         if (
             completed.findings
-            and completed.state != ScanState.FAILED
+            and completed.state == ScanState.COMPLETED_WITH_FINDINGS
             and settings.auto_scan.trigger_hooks
         ):
             self.run_store.save(
@@ -344,21 +345,32 @@ def _reviewed_run(
         for index, item in enumerate(findings_items, start=1)
         if (finding := ScanFinding.from_payload(item, index)) is not None
     )
+    matches, match_failures = validate_issue_matches(
+        payload.get("issue_matches"), existing, findings, branches or {}
+    )
+    observations = findings
+    matched = {(match.repository, match.issue_id) for match in matches}
+    findings = tuple(
+        finding for finding in observations if (finding.repository, finding.issue_id) not in matched
+    )
     raw_failures = payload.get("failures", [])
     failure_items = cast(list[object], raw_failures) if isinstance(raw_failures, list) else []
-    failures = tuple(
+    failures = match_failures + tuple(
         sanitize_output(str(item))[:2_000] for item in failure_items if str(item).strip()
     )
     scanned = _non_negative_int(payload.get("repositories_scanned"), repository_fallback)
     failed = _non_negative_int(payload.get("repositories_failed"), len(failures))
     requested_state = str(payload.get("scan_status") or "")
+    if requested_state == ScanState.COMPLETED_WITH_FINDINGS and not findings:
+        requested_state = ScanState.COMPLETED
     state = _state_from_payload(requested_state, findings, failures)
     reviews = review_existing_issues(
         payload.get("issue_reviews"),
         existing,
-        findings,
+        observations,
         failed=state == ScanState.FAILED,
         branches=branches or {},
+        matches=matches,
     )
     unverified = sum(review.status == IssueReviewStatus.UNVERIFIED for review in reviews)
     if unverified:
@@ -374,6 +386,7 @@ def _reviewed_run(
         findings=findings,
         failures=failures,
         issue_reviews=reviews,
+        issue_matches=matches,
     )
 
 
@@ -386,10 +399,10 @@ def _state_from_payload(
         state = ScanState(value)
     except ValueError:
         state = ScanState.COMPLETED_WITH_FINDINGS if findings else ScanState.COMPLETED
-    if state == ScanState.COMPLETED and findings:
-        return ScanState.COMPLETED_WITH_FINDINGS
     if failures and state in {ScanState.COMPLETED, ScanState.COMPLETED_WITH_FINDINGS}:
         return ScanState.COMPLETED_WITH_FAILURES
+    if state == ScanState.COMPLETED and findings:
+        return ScanState.COMPLETED_WITH_FINDINGS
     return state
 
 

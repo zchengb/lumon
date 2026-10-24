@@ -97,6 +97,59 @@ class ScanIssueReview:
 
 
 @dataclass(frozen=True, slots=True)
+class ScanIssueMatch:
+    """An Agent's evidence-backed semantic association, not a text similarity rule."""
+
+    repository: str
+    issue_id: str
+    canonical_issue_id: str
+    evidence: str
+    branch: str
+    revision: str
+    fresh: bool = True
+
+    @classmethod
+    def from_payload(cls, payload: object) -> ScanIssueMatch | None:
+        """Reuse the recheck evidence gate before accepting an identity decision."""
+
+        if not isinstance(payload, dict):
+            return None
+        fields = cast(dict[str, object], payload)
+        target = fields.get("canonical_issue_id")
+        if (
+            not isinstance(target, str)
+            or not target.strip()
+            or len(target.strip()) > 100
+            or target.strip() == "untracked"
+        ):
+            return None
+        assessment = ScanIssueReview.from_payload({**fields, "status": "open"})
+        if assessment is None or assessment.status == IssueReviewStatus.UNVERIFIED:
+            return None
+        return cls(
+            repository=assessment.repository,
+            issue_id=assessment.issue_id,
+            canonical_issue_id=_text(target, limit=100),
+            evidence=assessment.evidence,
+            branch=assessment.branch,
+            revision=assessment.revision,
+        )
+
+    def as_payload(self) -> dict[str, object]:
+        """Keep the Agent's identity decision independently of discovery evidence."""
+
+        return {
+            "repository": self.repository,
+            "issue_id": self.issue_id,
+            "canonical_issue_id": self.canonical_issue_id,
+            "evidence": self.evidence,
+            "branch": self.branch,
+            "revision": self.revision,
+            "fresh": self.fresh,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ScanFinding:
     """One evidence-backed finding from the review-only Agent flow."""
 
@@ -188,6 +241,7 @@ class ScanRun:
     html_path: str | None = None
     pdf_path: str | None = None
     issue_reviews: tuple[ScanIssueReview, ...] = ()
+    issue_matches: tuple[ScanIssueMatch, ...] = ()
 
     @classmethod
     def start(cls, run_id: str, lookback_days: int) -> ScanRun:
@@ -236,6 +290,7 @@ class ScanRun:
             "html_path": self.html_path,
             "pdf_path": self.pdf_path,
             "issue_reviews": [review.as_payload() for review in self.issue_reviews],
+            "issue_matches": [match.as_payload() for match in self.issue_matches],
         }
 
     @classmethod
@@ -260,6 +315,13 @@ class ScanRun:
             for item in review_items
             if (review := ScanIssueReview.from_payload(item)) is not None
         )
+        raw_matches = values.get("issue_matches", [])
+        match_items = cast(list[object], raw_matches) if isinstance(raw_matches, list) else []
+        matches = tuple(
+            match
+            for item in match_items
+            if (match := ScanIssueMatch.from_payload(item)) is not None
+        )
         raw_failures = values.get("failures", [])
         failure_items = cast(list[object], raw_failures) if isinstance(raw_failures, list) else []
         raw_hooks = values.get("hook_results", [])
@@ -281,6 +343,7 @@ class ScanRun:
             html_path=_optional_text(values.get("html_path")),
             pdf_path=_optional_text(values.get("pdf_path")),
             issue_reviews=reviews,
+            issue_matches=matches,
         )
 
 

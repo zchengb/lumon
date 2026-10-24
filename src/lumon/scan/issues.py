@@ -6,7 +6,15 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import cast
 
-from lumon.scan.model import IssueReviewStatus, ScanFinding, ScanIssueReview, ScanRun, ScanState
+from lumon.scan.matching import IssueKey, canonical_issue, issue_aliases
+from lumon.scan.model import (
+    IssueReviewStatus,
+    ScanFinding,
+    ScanIssueMatch,
+    ScanIssueReview,
+    ScanRun,
+    ScanState,
+)
 
 
 def latest_findings(runs: tuple[ScanRun, ...]) -> tuple[ScanFinding, ...]:
@@ -20,10 +28,7 @@ def latest_findings(runs: tuple[ScanRun, ...]) -> tuple[ScanFinding, ...]:
             latest.setdefault((finding.repository, finding.issue_id), finding)
     # shortcut: legacy untracked occurrences stay unchanged until they have stable issue IDs.
     return tuple(
-        finding
-        for finding in latest.values()
-        if finding.issue_id.strip() not in {"", "untracked"}
-        and finding.issue_status.strip().lower() not in {"ignored", "ignore"}
+        finding for finding in latest.values() if finding.issue_id.strip() not in {"", "untracked"}
     )
 
 
@@ -34,6 +39,7 @@ def review_existing_issues(
     *,
     failed: bool,
     branches: Mapping[str, str],
+    matches: tuple[ScanIssueMatch, ...] = (),
 ) -> tuple[ScanIssueReview, ...]:
     """Require exactly one explicit assessment per known issue; absence is not a fix."""
 
@@ -42,7 +48,10 @@ def review_existing_issues(
     for item in items:
         if (review := ScanIssueReview.from_payload(item)) is not None:
             grouped.setdefault((review.repository, review.issue_id), []).append(review)
-    discovered = {(finding.repository, finding.issue_id) for finding in findings}
+    aliases = issue_aliases(matches)
+    discovered = {
+        canonical_issue((finding.repository, finding.issue_id), aliases) for finding in findings
+    }
     reviews: list[ScanIssueReview] = []
     for finding in existing:
         key = (finding.repository, finding.issue_id)
@@ -68,33 +77,89 @@ def review_existing_issues(
                 status=IssueReviewStatus.UNVERIFIED,
                 evidence="Recheck did not inspect the repository's configured branch.",
             )
-        if review.status == IssueReviewStatus.RESOLVED and key in discovered:
+        if (
+            review.status == IssueReviewStatus.RESOLVED
+            and canonical_issue(key, aliases) in discovered
+        ):
             review = replace(
                 review,
                 status=IssueReviewStatus.UNVERIFIED,
                 evidence="Issue is also reported as an active finding; resolution rejected.",
             )
         reviews.append(review)
-    return tuple(reviews)
+    return _consistent_reviews(tuple(reviews), aliases)
+
+
+def _consistent_reviews(
+    reviews: tuple[ScanIssueReview, ...], aliases: Mapping[IssueKey, IssueKey]
+) -> tuple[ScanIssueReview, ...]:
+    incomplete = {
+        canonical_issue((review.repository, review.issue_id), aliases)
+        for review in reviews
+        if review.status != IssueReviewStatus.RESOLVED
+    }
+    return tuple(
+        replace(
+            review,
+            status=IssueReviewStatus.UNVERIFIED,
+            evidence=(
+                "An equivalent issue has an open or unverified assessment; resolution rejected."
+            ),
+        )
+        if review.status == IssueReviewStatus.RESOLVED
+        and canonical_issue((review.repository, review.issue_id), aliases) in incomplete
+        else review
+        for review in reviews
+    )
 
 
 def with_issue_reviews(runs: tuple[ScanRun, ...]) -> tuple[ScanRun, ...]:
     """Project latest verified status and detailed check evidence onto issue history."""
 
-    states: dict[tuple[str, str], str] = {}
-    notes: dict[tuple[str, str], str] = {}
-    for run in sorted(runs, key=lambda item: item.started_at):
-        if run.state in {ScanState.RUNNING, ScanState.FAILED}:
-            continue
+    settled = tuple(
+        run
+        for run in sorted(runs, key=lambda item: item.started_at)
+        if run.state not in {ScanState.RUNNING, ScanState.FAILED}
+    )
+    matches = tuple(match for run in settled for match in run.issue_matches)
+    aliases = issue_aliases(matches)
+    states, notes = _review_states(settled, aliases)
+    for run in settled:
+        for finding in run.findings:
+            if finding.issue_status.strip().lower() in {"ignored", "ignore"}:
+                states[canonical_issue((finding.repository, finding.issue_id), aliases)] = "ignored"
+    for match in matches:
+        key = canonical_issue((match.repository, match.issue_id), aliases)
+        notes[key] = (
+            f"{notes.get(key, '')}\nSemantic identity: {match.issue_id} -> "
+            f"{key[1]}\n{match.evidence}"
+        )
+    return tuple(
+        replace(
+            run,
+            findings=tuple(
+                _project_finding(finding, states, notes, aliases) for finding in run.findings
+            ),
+        )
+        for run in runs
+    )
+
+
+def _review_states(
+    runs: tuple[ScanRun, ...], aliases: Mapping[IssueKey, IssueKey]
+) -> tuple[dict[IssueKey, str], dict[IssueKey, str]]:
+    states: dict[IssueKey, str] = {}
+    notes: dict[IssueKey, str] = {}
+    for run in runs:
         for finding in run.findings:
             if finding.issue_id.strip() in {"", "untracked"}:
                 continue
-            key = (finding.repository, finding.issue_id)
+            key = canonical_issue((finding.repository, finding.issue_id), aliases)
             state = finding.issue_status.strip().lower()
             states[key] = "reopened" if states.get(key) == "resolved" and state == "open" else state
             notes.pop(key, None)
         for review in run.issue_reviews:
-            key = (review.repository, review.issue_id)
+            key = canonical_issue((review.repository, review.issue_id), aliases)
             if key not in states:
                 continue
             if review.status == IssueReviewStatus.RESOLVED:
@@ -106,25 +171,21 @@ def with_issue_reviews(runs: tuple[ScanRun, ...]) -> tuple[ScanRun, ...]:
                 f"Outcome: {review.status.value}\nBranch: {review.branch or 'unverified'}\n"
                 f"Commit: {review.revision or 'unverified'}\n{review.evidence}"
             )
-    return tuple(
-        replace(
-            run,
-            findings=tuple(_project_finding(finding, states, notes) for finding in run.findings),
-        )
-        for run in runs
-    )
+    return states, notes
 
 
 def _project_finding(
     finding: ScanFinding,
-    states: dict[tuple[str, str], str],
-    notes: dict[tuple[str, str], str],
+    states: dict[IssueKey, str],
+    notes: dict[IssueKey, str],
+    aliases: Mapping[IssueKey, IssueKey],
 ) -> ScanFinding:
     if finding.issue_id.strip() in {"", "untracked"}:
         return finding
-    key = (finding.repository, finding.issue_id)
+    key = canonical_issue((finding.repository, finding.issue_id), aliases)
     return replace(
         finding,
+        issue_id=key[1],
         issue_status=states.get(key, finding.issue_status),
         validation=f"{finding.validation}\n\n{notes[key]}" if key in notes else finding.validation,
     )

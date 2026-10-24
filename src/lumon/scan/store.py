@@ -97,7 +97,6 @@ class ScanRunStore:
     ) -> tuple[ScanRun, ...]:
         """Overlay recheck and triage states; keep the stored receipts unchanged."""
 
-        runs = with_issue_reviews(runs)
         visible_runs: list[ScanRun] = []
         for run in runs:
             findings: list[ScanFinding] = []
@@ -106,7 +105,7 @@ class ScanRunStore:
                     finding = replace(finding, issue_status="ignored")
                 findings.append(finding)
             visible_runs.append(replace(run, findings=tuple(findings)))
-        return tuple(visible_runs)
+        return with_issue_reviews(tuple(visible_runs))
 
     def _ignore_path(self, workspace: Path, run: ScanRun, index: int, finding: ScanFinding) -> Path:
         issue_id = finding.issue_id.strip()

@@ -449,16 +449,30 @@ It includes findings from every available scan receipt, keeps the latest record
 for each Repository/issue ID, and leaves untracked findings separate. All, Open
 (including in-progress, PR-open and reopened), Resolved and Ignored (including
 historical `IGNORE` states) filters
-show stored states, not live verification. Expand **View detail** for location,
+show the latest recorded recheck or triage state, not live runtime verification.
+Expand **View detail** for location,
 impact, trigger, root cause, code, suggestion, validation and source scan; safe
 HTTP(S) PR links remain available. Content is plain text, not executable HTML.
 An **Ignore** action, after confirmation, saves a Workspace-local triage marker
 under `lumon/runs/scans/.ignored/`. The issue remains visible in All and Ignored,
 and leaves the Open filter. The marker applies to the same Repository/issue ID
 in other receipts, including future scans; untracked findings are occurrence-local.
+The scan Agent compares new candidates and all history semantically using root
+cause, trigger and affected code paths, including differently worded historical
+duplicates. IDs are storage references, not semantic similarity rules. Validated
+same-repository associations are retained in `issue_matches`; history displays one
+canonical issue, inheriting any member's manual ignore choice. Only unmatched new
+findings contribute to new report counts, notifications and completion hooks.
+Historical receipts, reports, notifications and Jira records remain unchanged.
+Each scan also requires a fresh configured-branch assessment for every known issue,
+including ignored/resolved issues and issues outside the discovery lookback.
+Evidence-backed fixes update history to Resolved; recurrence reopens resolved
+issues, while ignored triage remains ignored. Missing, stale, wrong-branch or
+contradictory assessments remain unverified and make the scan incomplete; they
+never imply a fix. Incomplete scans do not execute completion hooks. These gates
+validate evidence structure and consistency, not the factual truth of Agent reasoning.
 Pending saves prevent double submissions; failures leave the issue unchanged and
-allow retry. Receipts, HTML/PDF reports, Jira and scan notifications are not modified
-or suppressed. This does not import the old project's separate issue registry or
+allow retry. This does not import the old project's separate issue registry or
 add resolve/restore actions. Loading failures are not presented as zero issues.
 The **Auto Delivery** product label remains English in every interface language.
 Its page is also execution-only: live delivery progress, Story history and scheduler
