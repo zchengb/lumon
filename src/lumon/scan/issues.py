@@ -41,7 +41,7 @@ def review_existing_issues(
     branches: Mapping[str, str],
     matches: tuple[ScanIssueMatch, ...] = (),
 ) -> tuple[ScanIssueReview, ...]:
-    """Require exactly one explicit assessment per known issue; absence is not a fix."""
+    """Require evidence for non-ignored issues; ignored identities remain matchable."""
 
     items = cast(list[object], payload) if isinstance(payload, list) else []
     grouped: dict[tuple[str, str], list[ScanIssueReview]] = {}
@@ -49,12 +49,19 @@ def review_existing_issues(
         if (review := ScanIssueReview.from_payload(item)) is not None:
             grouped.setdefault((review.repository, review.issue_id), []).append(review)
     aliases = issue_aliases(matches)
+    ignored = {
+        canonical_issue((finding.repository, finding.issue_id), aliases)
+        for finding in existing
+        if finding.issue_status.strip().lower() in {"ignored", "ignore"}
+    }
     discovered = {
         canonical_issue((finding.repository, finding.issue_id), aliases) for finding in findings
     }
     reviews: list[ScanIssueReview] = []
     for finding in existing:
         key = (finding.repository, finding.issue_id)
+        if canonical_issue(key, aliases) in ignored:
+            continue
         candidates = grouped.get(key, [])
         if failed or len(candidates) != 1:
             reason = "Scan failed." if failed else "Missing or duplicate issue recheck."

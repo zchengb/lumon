@@ -69,7 +69,35 @@ it.each([
     expect(container.querySelectorAll(".is-complete")).toHaveLength(completed);
     expect(container.querySelector(".is-running, .spin")).toBeNull();
     expect(container.querySelector(`.status-pill.${tone}`)?.getAttribute("title")).toBe("Review incomplete");
+    const details = container.querySelector<HTMLDetailsElement>(".scan-failure-details");
+    expect(details?.open).toBe(true);
+    expect(details?.querySelector("li")?.textContent).toBe("Review incomplete");
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it.each(["en", "zh-CN", "zh-TW"] as const)("shows all recorded reasons safely and handles missing details in %s", async (locale) => {
+  localStorage.setItem("lumon.locale", locale);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const reasons = ["app: repository review timed out\nRetry was not attempted", "PDF report: <script>alert('test')</script>"];
+  async function render(run: ScanRun): Promise<void> {
+    await act(async () => root.render(<I18nProvider><ScanProgressPanel run={run} loading={false} unavailable={false} onRefresh={vi.fn()} /></I18nProvider>));
+  }
+  try {
+    await render({ ...active, state: "completed_with_failures", phase: "completed", failures: reasons });
+    expect(container.querySelector(".scan-failure-details summary")?.textContent).toBe(translate(locale, "autoScan.failureDetails"));
+    expect(Array.from(container.querySelectorAll(".scan-failure-details li"), (item) => item.textContent)).toEqual(reasons);
+    expect(container.querySelector("script")).toBeNull();
+    await render({ ...active, state: "failed", failures: [" "] });
+    expect(container.querySelector(".scan-failure-details p")?.textContent).toBe(translate(locale, "autoScan.failureReasonUnavailable"));
+    await render({ ...active, state: "completed", phase: "completed" });
+    expect(container.querySelector(".scan-failure-details")).toBeNull();
+    await render(active);
+    expect(container.querySelector(".scan-failure-details")).toBeNull();
   } finally {
     await act(async () => root.unmount());
   }

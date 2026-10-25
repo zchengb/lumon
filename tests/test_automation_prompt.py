@@ -9,9 +9,11 @@ from lumon.errors import AgentConfigError
 from lumon.workspace.settings import DeliveryPublishMode
 
 
-def test_scan_requires_explicit_evidence_for_every_historical_issue() -> None:
+def test_scan_requires_evidence_for_non_ignored_history_and_matches_ignored_candidates() -> None:
     prompt = render_automation_prompt("auto_scan.md", lookback_days="7", result_path="result.json")
-    assert "Recheck EVERY listed issue" in prompt
+    assert "Recheck EVERY non-ignored listed issue" in prompt
+    assert "Do not recheck ignored issues" in prompt
+    assert "without an issue_reviews entry" in prompt
     assert "before the lookback" in prompt
     assert "issue_reviews" in prompt
     assert "original trigger" in prompt

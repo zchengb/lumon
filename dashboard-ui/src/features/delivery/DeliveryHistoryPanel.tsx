@@ -155,7 +155,7 @@ export function DeliveryHistoryPanel({ workspaceId, onError }: {
         <table className="scan-history-table delivery-history-table">
           <thead><tr><th scope="col">{t("autoDelivery.story")}</th><th scope="col">{t("autoScan.started")}</th><th scope="col">{t("autoScan.status")}</th><th scope="col">{t("autoScan.duration")}</th><th scope="col">{t("autoDelivery.actions")}</th></tr></thead>
           <tbody>{history.runs.length ? history.runs.map((item) => <tr key={item.run_id}>
-            <td className="delivery-story-cell"><StoryLink run={item} className="delivery-story-line" /><small className="muted delivery-story-metadata">{item.story_key}</small></td>
+            <td className="delivery-story-cell"><StoryLink run={item} className="delivery-story-line" showKey={false} /><small className="muted delivery-story-metadata">{item.story_key}</small></td>
             <td>{timeLabel(item.started_at)}</td>
             <td><button type="button" className="delivery-inspect" aria-label={`${t("autoDelivery.inspect")} ${item.story_key}`} onClick={() => select(item.run_id)}><DeliveryStatus state={item.state} /></button></td>
             <td>{duration(item, now)}</td>
@@ -232,10 +232,10 @@ function DeliveryActivityDetails({ activity, live, timeLabel }: {
   </details>;
 }
 
-function StoryLink({ run, className }: {
-  run: DeliveryRun; className: string;
+function StoryLink({ run, className, showKey = true }: {
+  run: DeliveryRun; className: string; showKey?: boolean;
 }): React.JSX.Element {
-  const label = `[${run.story_key}] ${run.story_title}`;
+  const label = showKey ? `[${run.story_key}] ${run.story_title}` : run.story_title;
   return run.jira_url ? <a className={className} title={label} href={run.jira_url} target="_blank" rel="noreferrer">{label}</a> : <span className={className} title={label}>{label}</span>;
 }
 

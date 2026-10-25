@@ -85,6 +85,12 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     const interruptedStatus = history?.querySelector("tbody tr:first-child .status-pill");
     expect(interruptedStatus?.classList.contains("status-danger")).toBe(true);
     expect(interruptedStatus?.getAttribute("title")).toBe(interruptionReason);
+    const failureDetails = history?.querySelector<HTMLDetailsElement>(".scan-failure-details");
+    expect(history?.querySelectorAll(".scan-failure-row")).toHaveLength(1);
+    expect(failureDetails?.querySelector("li")?.textContent).toBe(interruptionReason);
+    expect(failureDetails?.open).toBe(false);
+    await act(async () => failureDetails?.querySelector("summary")?.click());
+    expect(failureDetails?.open).toBe(true);
     expect(history?.querySelectorAll("h2")).toHaveLength(1);
     expect(history?.querySelector("h2")?.textContent).toBe("Scan history");
     expect(history?.querySelector(".eyebrow")).toBeNull();
@@ -152,7 +158,7 @@ it("refreshes active scans, skips hidden tabs and backs off after completion", a
     expect(container.querySelector('.scan-finding-filters button[aria-pressed="true"]')?.textContent).toBe("Open 0");
     await act(async () => container.querySelectorAll<HTMLButtonElement>(".scan-finding-filters button")[2].click());
     expect(container.querySelector(".scan-finding-tags")?.textContent).toContain("Resolved");
-    expect(container.querySelector(".scan-finding dl")?.textContent).toContain("Latest issue recheck");
+    expect(container.querySelector(".scan-finding dl")?.textContent).not.toContain("Latest issue recheck");
     expect(container.querySelector(".scan-finding-ignore")).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
     expect(list).toHaveBeenCalledTimes(2);

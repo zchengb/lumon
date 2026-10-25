@@ -154,10 +154,11 @@ Running elapsed times tick locally every second without extra API requests.
 Only a running Story's active stage shows a sweeping line and spinner; terminal
 states stay static and retain their recorded duration. Reduced-motion preferences
 disable both animations. The sweep indicates activity, not a completion percentage.
-History is scoped to the selected Workspace and shows the Story (including its
-Jira link and branch), start time, status, and elapsed time such as `12m13s`.
-The Jira key and task title share one line; long titles truncate with their full
-text available on hover, while the branch remains below. A final Actions column
+History is scoped to the selected Workspace and shows the Story with its Jira
+link, start time, status, and elapsed time such as `12m13s`.
+Titles omit the Jira-key prefix and truncate with their full text available on
+hover. The Jira key appears in the metadata row below instead of the branch.
+Table cells are vertically centered. A final Actions column
 offers confirmed deletion of finished history entries. Active work cannot be
 deleted. Deletion is Workspace-scoped and soft: `history-deleted.json` hides the
 row from Dashboard history across reloads, but retains receipts, notifications,
@@ -453,6 +454,9 @@ Visible pages poll every three seconds during a scan or pending manual start,
 and every fifteen seconds when idle to discover scheduled/external starts;
 hidden/unmounted pages do not poll. Refresh reloads history without starting a
 scan, and Run scan now is disabled while a scan is already running.
+Recorded failure reasons appear expanded below Current progress and can be
+expanded separately for each affected history entry. Failed or incomplete scans
+without recorded reasons show an explicit unavailable-reason message.
 The history retains
 one **Scan history** heading, finding counts by
 severity (High, Medium, Low in every interface language), and elapsed time as minutes and seconds, such as
@@ -466,21 +470,25 @@ for each Repository/issue ID, and leaves untracked findings separate. All, Open
 historical `IGNORE` states) filters
 show the latest recorded recheck or triage state, not live runtime verification.
 Expand **View detail** for location,
-impact, trigger, root cause, code, suggestion, validation and source scan; safe
+impact, trigger, root cause, code, suggestion and source scan; safe
 HTTP(S) PR links remain available. Content is plain text, not executable HTML.
 An **Ignore** action, after confirmation, saves a Workspace-local triage marker
 under `lumon/runs/scans/.ignored/`. The issue remains visible in All and Ignored,
 and leaves the Open filter. The marker applies to the same Repository/issue ID
 in other receipts, including future scans; untracked findings are occurrence-local.
-The scan Agent compares new candidates and all history semantically using root
-cause, trigger and affected code paths, including differently worded historical
-duplicates. IDs are storage references, not semantic similarity rules. Validated
+The scan Agent compares new candidates with all history semantically using root
+cause, trigger and affected code paths, including ignored identities. It also
+compares non-ignored historical issues for differently worded duplicates.
+IDs are storage references, not semantic similarity rules. Validated
 same-repository associations are retained in `issue_matches`; history displays one
 canonical issue, inheriting any member's manual ignore choice. Only unmatched new
 findings contribute to new report counts, notifications and completion hooks.
 Historical receipts, reports, notifications and Jira records remain unchanged.
-Each scan also requires a fresh configured-branch assessment for every known issue,
-including ignored/resolved issues and issues outside the discovery lookback.
+Each scan also requires a fresh configured-branch assessment for every non-ignored
+known issue, including resolved issues and issues outside the discovery lookback.
+Ignored issues are identity references only: they do not require repair rechecks,
+and missing or unsolicited assessments for them do not make a scan incomplete.
+An equivalent new candidate stays ignored and is excluded from new-finding hooks.
 Evidence-backed fixes update history to Resolved; recurrence reopens resolved
 issues, while ignored triage remains ignored. Missing, stale, wrong-branch or
 contradictory assessments remain unverified and make the scan incomplete; they

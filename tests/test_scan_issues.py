@@ -186,7 +186,7 @@ def test_unfinished_or_failed_receipts_do_not_change_history(
     assert store.with_ignored_findings(tmp_path, runs)[0].findings[0].issue_status == "open"
 
 
-def test_old_deduplicated_resolved_and_ignored_issues_are_reviewed() -> None:
+def test_old_resolved_and_ignored_history_remains_available_for_matching() -> None:
     oldest = _run(
         0,
         findings=(
@@ -199,6 +199,39 @@ def test_old_deduplicated_resolved_and_ignored_issues_are_reviewed() -> None:
     known = latest_findings((oldest, newer))
     assert [item.title for item in known] == ["Newest evidence", "Original bug", "Original bug"]
     assert {item.issue_id for item in known} == {"ISSUE-1", "SECOND", "IGNORED"}
+
+
+@pytest.mark.parametrize("status", ["ignored", " IGNORE "])
+@pytest.mark.parametrize("payload", [None, [_review(status="unverified")], [_review()]])
+def test_ignored_issues_do_not_require_or_accept_repair_assessments(
+    status: str, payload: object
+) -> None:
+    reviews = review_existing_issues(
+        payload,
+        (_finding(issue_status=status), _finding(issue_id="ACTIVE")),
+        (),
+        failed=False,
+        branches={"app": "master"},
+    )
+    assert len(reviews) == 1
+    assert reviews[0].issue_id == "ACTIVE"
+    assert reviews[0].status == IssueReviewStatus.UNVERIFIED
+
+
+@pytest.mark.parametrize("ignored_id", ["ISSUE-1", "SECOND"])
+def test_a_semantic_group_inheriting_ignore_does_not_require_rechecks(ignored_id: str) -> None:
+    existing = tuple(
+        _finding(issue_id=issue_id, issue_status="ignored" if issue_id == ignored_id else "open")
+        for issue_id in ("ISSUE-1", "SECOND")
+    )
+    matches, failures = validate_issue_matches([_match()], existing, (), {"app": "master"})
+    assert not failures
+    assert (
+        review_existing_issues(
+            [], existing, (), failed=False, branches={"app": "master"}, matches=matches
+        )
+        == ()
+    )
 
 
 def test_old_receipts_and_untracked_occurrences_remain_compatible(tmp_path: Path) -> None:

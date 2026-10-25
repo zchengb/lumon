@@ -98,7 +98,9 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows every recorded issue with deta
     const detail = container.querySelector("details");
     expect(detail?.open).toBe(false);
     await act(async () => { detail!.open = true; detail!.dispatchEvent(new Event("toggle")); });
-    for (const value of [finding.impact, finding.trigger, finding.root_cause, finding.code_snippet, finding.suggestion, finding.validation, "src/payment.ts:12-18", "latest"]) {
+    expect(detail?.textContent).not.toContain(finding.validation);
+    expect(detail?.textContent).not.toContain(translate(locale, "autoScan.validation"));
+    for (const value of [finding.impact, finding.trigger, finding.root_cause, finding.code_snippet, finding.suggestion, "src/payment.ts:12-18", "latest"]) {
       expect(detail?.textContent).toContain(value);
     }
     expect(detail?.querySelector("script")).toBeNull();

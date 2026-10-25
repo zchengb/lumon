@@ -87,7 +87,6 @@ export function ScanFindingsPanel({ runs, loading, unavailable, onIgnore }: {
                   <dt>{t("autoScan.rootCause")}</dt><dd>{finding.root_cause || t("autoScan.notRecorded")}</dd>
                   <dt>{t("autoScan.code")}</dt><dd><pre><code>{finding.code_snippet || t("autoScan.notRecorded")}</code></pre></dd>
                   <dt>{t("autoScan.suggestion")}</dt><dd>{finding.suggestion || t("autoScan.notRecorded")}</dd>
-                  <dt>{t("autoScan.validation")}</dt><dd>{finding.validation || t("autoScan.notRecorded")}</dd>
                   <dt>{t("autoScan.sourceScan")}</dt><dd><code>{run.run_id}</code></dd>
                 </dl>
               </details>

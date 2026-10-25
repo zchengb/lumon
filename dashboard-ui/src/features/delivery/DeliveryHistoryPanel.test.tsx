@@ -172,13 +172,13 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("refreshes live progress and inspects
     expect(cells[0]?.textContent).toContain(run.story_key);
     expect(cells[0]?.querySelector(".delivery-story-metadata")?.textContent).toBe(run.story_key);
     expect(cells[0]?.textContent).not.toContain(run.branch);
-    expect(cells[0]?.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
-    expect(cells[0]?.querySelector(".delivery-story-line")?.getAttribute("title")).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(cells[0]?.querySelector(".delivery-story-line")?.textContent).toBe(run.story_title);
+    expect(cells[0]?.querySelector(".delivery-story-line")?.getAttribute("title")).toBe(run.story_title);
     const storyLink = cells[0]?.querySelector("a.delivery-story-line");
     expect(storyLink?.getAttribute("href")).toBe(run.jira_url);
     expect(storyLink?.getAttribute("target")).toBe("_blank");
     expect(storyLink?.getAttribute("rel")).toBe("noreferrer");
-    expect(storyLink?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(storyLink?.textContent).toBe(run.story_title);
     expect(storyLink?.querySelector("svg")).toBeNull();
     expect(cells[4]?.querySelector(".delivery-history-delete")?.textContent).toBe(translate(locale, "autoDelivery.delete"));
     expect(cells[2]?.textContent).toBe(translate(locale, "autoDelivery.status.completed"));
@@ -371,7 +371,7 @@ it("prevents duplicate deletes and retains a row when deletion fails", async () 
     expect(remove).toHaveBeenCalledTimes(1);
     await act(async () => reject(new ApiError(409, "Delivery busy")));
     expect(onError).toHaveBeenLastCalledWith("Delivery busy");
-    expect(container.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(container.querySelector(".delivery-story-line")?.textContent).toBe(run.story_title);
     expect(container.querySelector<HTMLButtonElement>(".delivery-history-delete")?.disabled).toBe(false);
   } finally {
     await act(async () => root.unmount());
@@ -390,7 +390,7 @@ it("keeps run history visible if the activity request fails and cancels refresh 
   try {
     await act(async () => root.render(<I18nProvider><DeliveryHistoryPanel workspaceId="workspace-1" onError={onError} /></I18nProvider>));
     expect(container.textContent).toContain("Admin portal version bump");
-    expect(container.querySelector(".delivery-story-line")?.textContent).toBe(`[${run.story_key}] ${run.story_title}`);
+    expect(container.querySelector(".delivery-story-line")?.textContent).toBe(run.story_title);
     expect(container.querySelector("a.delivery-story-line, a.delivery-progress-story")).toBeNull();
     expect(container.querySelector(".delivery-story-metadata")?.textContent).toBe(run.story_key);
     const emptyScheduler = container.querySelectorAll(".delivery-history-table")[1]!;

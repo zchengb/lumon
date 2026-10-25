@@ -475,7 +475,7 @@ def test_scan_rechecks_old_issues_and_projects_only_evidence_backed_outcomes(
     assert [item["issue_id"] for item in history_data] == [finding.issue_id, "IGNORED"]
     assert history_data[1]["issue_status"] == "ignored"
     assert result.findings == ()
-    assert len(result.issue_reviews) == 2
+    assert len(result.issue_reviews) == 1
     verified = outcome in {"resolved", "open"}
     assert result.issue_reviews[0].status == (
         IssueReviewStatus(outcome) if verified else IssueReviewStatus.UNVERIFIED
@@ -519,11 +519,13 @@ def test_new_finding_status_cannot_bypass_the_issue_review_contract(
 
 @pytest.mark.parametrize("novel", [False, True])
 @pytest.mark.parametrize("complete_recheck", [False, True])
+@pytest.mark.parametrize("ignored", [False, True])
 def test_semantic_rediscovery_does_not_repeat_reports_notifications_or_hooks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     novel: bool,
     complete_recheck: bool,
+    ignored: bool,
 ) -> None:
     historical = replace(_finding(), issue_id="OLD", title="Missing guard in original caller")
     duplicate = replace(historical, issue_id="NEW", title="Different wording for the same bug")
@@ -579,7 +581,8 @@ def test_semantic_rediscovery_does_not_repeat_reports_notifications_or_hooks(
         findings=(historical,),
     )
     service.run_store.save(workspace, original)
-    service.run_store.ignore_finding(workspace, original.run_id, 0)
+    if ignored:
+        service.run_store.ignore_finding(workspace, original.run_id, 0)
     reported: list[ScanRun] = []
 
     def report(run: ScanRun, _directory: Path) -> ReportResult:
@@ -592,10 +595,13 @@ def test_semantic_rediscovery_does_not_repeat_reports_notifications_or_hooks(
     assert len(result.issue_matches) == 1
     assert reported[0].findings == result.findings
     expected_state = ScanState.COMPLETED_WITH_FAILURES
-    if complete_recheck:
+    if complete_recheck or ignored:
         expected_state = ScanState.COMPLETED_WITH_FINDINGS if novel else ScanState.COMPLETED
     assert result.state == expected_state
-    assert len(runner.prompts) == (2 if novel and complete_recheck else 1)
+    assert len(runner.prompts) == (2 if novel and (complete_recheck or ignored) else 1)
+    if ignored:
+        assert result.issue_reviews == ()
+        assert result.failures == ()
     if len(runner.prompts) == 2:
         hook_findings = json.loads(runner.prompts[1].split("\nFindings:\n")[1].split("\n\n", 1)[0])
         assert [item["issue_id"] for item in hook_findings] == ["UNIQUE"]
@@ -604,7 +610,7 @@ def test_semantic_rediscovery_does_not_repeat_reports_notifications_or_hooks(
     assert (unique.title in card) is novel
     visible = service.run_store.with_ignored_findings(workspace, service.list_runs(workspace))
     old = next(run for run in visible if run.run_id == "historical").findings[0]
-    assert old.issue_status == "ignored"
+    assert old.issue_status == ("ignored" if ignored else "open")
     assert "same missing guard" in old.validation
 
 

@@ -2,6 +2,7 @@ import { AlertCircle, Check, Clock3, LoaderCircle, RefreshCw } from "lucide-reac
 import { useEffect, useState } from "react";
 import { useI18n } from "../../shared/i18n";
 import type { ScanRun } from "../../shared/types";
+import { ScanFailureDetails } from "./ScanFailureDetails";
 
 const stages = ["review", "report", "hooks"] as const;
 
@@ -62,6 +63,7 @@ export function ScanProgressPanel({ run, loading, unavailable, onRefresh }: {
             </li>;
           })}
         </ol>
+        <ScanFailureDetails key={run.run_id} run={run} expanded />
       </div> : <p className="delivery-empty">{t("autoScan.noHistory")}</p>}
   </section>;
 }
