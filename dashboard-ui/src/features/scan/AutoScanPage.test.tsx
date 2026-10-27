@@ -85,12 +85,9 @@ it.each(["en", "zh-CN", "zh-TW"] as const)("shows compact scan history with seve
     const interruptedStatus = history?.querySelector("tbody tr:first-child .status-pill");
     expect(interruptedStatus?.classList.contains("status-danger")).toBe(true);
     expect(interruptedStatus?.getAttribute("title")).toBe(interruptionReason);
-    const failureDetails = history?.querySelector<HTMLDetailsElement>(".scan-failure-details");
-    expect(history?.querySelectorAll(".scan-failure-row")).toHaveLength(1);
-    expect(failureDetails?.querySelector("li")?.textContent).toBe(interruptionReason);
-    expect(failureDetails?.open).toBe(false);
-    await act(async () => failureDetails?.querySelector("summary")?.click());
-    expect(failureDetails?.open).toBe(true);
+    expect(history?.querySelector("details")).toBeNull();
+    expect(history?.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(container.querySelector(".scan-progress-panel .scan-failure-details")?.textContent).toContain(interruptionReason);
     expect(history?.querySelectorAll("h2")).toHaveLength(1);
     expect(history?.querySelector("h2")?.textContent).toBe("Scan history");
     expect(history?.querySelector(".eyebrow")).toBeNull();

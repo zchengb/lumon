@@ -39,53 +39,64 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-it.each(["en", "zh-CN", "zh-TW"] as const)("shows saved catalogs, states and navigation without executing anything (%s)", async (locale) => {
+it.each(["en", "zh-CN", "zh-TW"] as const)("shows saved states and opens details before navigation (%s)", async (locale) => {
   localStorage.setItem("lumon.locale", locale);
   const container = document.createElement("div");
   const root = createRoot(container);
   const onNavigate = vi.fn();
   const onOpenWorkflow = vi.fn();
   const run = vi.spyOn(dashboardApi, "runFlow");
+  const click = async (selector: string) => {
+    const button = container.querySelector<HTMLButtonElement>(selector);
+    expect(button).not.toBeNull();
+    await act(async () => button!.click());
+  };
   try {
     await act(async () => root.render(<I18nProvider><WorkspaceMap overview={overview} settings={settings} agentSettings={agent} onNavigate={onNavigate} onOpenWorkflow={onOpenWorkflow} /></I18nProvider>));
     expect(container.querySelector(".workspace-map-hub strong")?.textContent).toBe(overview.name);
-    expect(container.querySelector(".workspace-map-hub code")).toBeNull();
     expect(container.querySelector(".workspace-map-hub small")?.textContent).toBe(`${overview.repositories.length} ${translate(locale, "overview.repositories")}`);
-    expect(container.querySelector(".workspace-map-outputs")).toBeNull();
-    expect(container.querySelector("figcaption")).toBeNull();
-    expect(container.querySelector(".workspace-map-workflows > p:not(.workspace-map-count)")).toBeNull();
     expect(container.querySelector("h2")?.textContent).toBe(translate(locale, "map.title"));
-    expect(container.querySelector(".workspace-map-heading")?.textContent).toBe(translate(locale, "map.title"));
-    expect(container.querySelector(".workspace-map-count")?.textContent).toBe(translate(locale, "map.available", { enabled: 1, total: 3 }));
-    expect(container.querySelectorAll(".workspace-map-catalog li")).toHaveLength(3);
-    expect(container.querySelector(".workspace-map-catalog .workspace-map-description")?.textContent).toBe(capabilities[0].brief);
-    expect(container.querySelectorAll(".workspace-map-catalog .workspace-map-description")[2]?.textContent).toBe(translate(locale, "map.noDescription"));
-    expect(container.querySelector(".map-state-invalid")?.textContent).toBe(translate(locale, "map.invalid"));
-    expect(container.querySelector(".workspace-map-catalog .map-state-disabled")?.textContent).toBe(translate(locale, "settings.disabled"));
-    expect(container.querySelector(".workspace-map-agent")?.textContent).toContain("example-model · high");
-    expect(container.querySelector(".workspace-map-agent")?.textContent).toContain(translate(locale, "map.notDefault"));
-    expect(container.querySelectorAll(".workspace-map-node")[1].textContent).toContain("0 12 * * 1-5");
+    expect(container.querySelector(".workspace-map-count")?.textContent).toBe(translate(locale, "map.count", { enabled: 1, total: 3 }));
+    const capabilityRows = container.querySelectorAll(".workspace-map-catalog li");
+    expect(capabilityRows).toHaveLength(3);
+    expect(capabilityRows[1].textContent).toContain(translate(locale, "settings.disabled"));
+    expect(capabilityRows[2].textContent).toContain(translate(locale, "map.invalid"));
+    expect(container.querySelector(".workspace-map-catalog")?.textContent).not.toContain(capabilities[0].brief);
+    expect(container.querySelectorAll(".workspace-map-node")[1].textContent).toContain(translate(locale, "map.weekdaysAt", { time: "12:00" }));
     expect(container.querySelectorAll(".workspace-map-node")[2].textContent).toContain(translate(locale, "settings.disabled"));
-    expect(container.querySelector(".workspace-map-flow-list code")?.textContent).toBe(`${translate(locale, "map.schedulePaused")} · 0 9 * * 1`);
-    expect(container.querySelector(".workspace-map-flow-list .workspace-map-description")?.textContent).toBe(flows[0].brief);
-    expect(container.querySelectorAll(".workspace-map-flow-list .workspace-map-description")[1]?.textContent).toBe(translate(locale, "map.noDescription"));
-    await act(async () => container.querySelector<HTMLButtonElement>(".workspace-map-hub")!.click());
+    expect(container.querySelector(".workspace-map-flow-list small")?.textContent).toContain(translate(locale, "map.schedulePaused"));
+
+    await click(".workspace-map-hub");
+    expect(container.querySelector("dialog h3")?.textContent).toBe(overview.name);
+    await click(".workspace-map-dialog-action");
     expect(onNavigate).toHaveBeenLastCalledWith("settings");
     for (const [index, view] of ["agent", "auto-scan", "auto-delivery"].entries()) {
-      await act(async () => container.querySelectorAll<HTMLButtonElement>(".workspace-map-node")[index].click());
+      await click(`.workspace-map-node:nth-child(${index + 1})`);
+      if (index === 0) expect(container.querySelector("dialog")?.textContent).toContain(translate(locale, "map.notDefault"));
+      await click(".workspace-map-dialog-action");
       expect(onNavigate).toHaveBeenLastCalledWith(view);
     }
-    await act(async () => container.querySelector<HTMLButtonElement>(".workspace-map-context button")!.click());
+    await click(".workspace-map-context .workspace-map-panel-title button");
     expect(onNavigate).toHaveBeenLastCalledWith("capabilities");
-    await act(async () => container.querySelector<HTMLButtonElement>(".workspace-map-workflow-heading button")!.click());
+    await click(".workspace-map-workflows .workspace-map-panel-title button");
     expect(onNavigate).toHaveBeenLastCalledWith("flows");
-    await act(async () => container.querySelector<HTMLButtonElement>(".workspace-map-flow-list button")!.click());
+    await click(".workspace-map-catalog button");
+    expect(container.querySelector("dialog p")?.textContent).toBe(capabilities[0].brief);
+    await click(".workspace-map-dialog-action");
+    expect(onNavigate).toHaveBeenLastCalledWith("capabilities");
+    await click(".workspace-map-flow-list button");
+    expect(container.querySelector("dialog p")?.textContent).toBe(flows[0].brief);
+    await click(".workspace-map-dialog-action");
     expect(onOpenWorkflow).toHaveBeenCalledWith("review");
+    const filters = container.querySelectorAll<HTMLButtonElement>(".workspace-map-filters button");
+    await act(async () => filters[2].click());
+    expect(filters[2].getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".workspace-map-body")?.getAttribute("data-focus")).toBe("workflows");
     expect(run).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); }
 });
 
-it.each(["capability", "workflow"] as const)("renders %s descriptions as saved plain text, with full text retained for long briefs", async (catalog) => {
+it.each(["capability", "workflow"] as const)("keeps %s descriptions out of the map and renders them as plain text in details", async (catalog) => {
   const brief = "<img src=x onerror=alert(1)> **Not rendered as Markdown** " + "Long-description".repeat(30);
   if (catalog === "capability") {
     vi.mocked(dashboardApi.listCapabilities).mockResolvedValue([{ ...capabilities[0], brief: `  ${brief}  ` }, { ...capabilities[1], brief: " \n " }]);
@@ -96,13 +107,35 @@ it.each(["capability", "workflow"] as const)("renders %s descriptions as saved p
   const root = createRoot(container);
   try {
     await act(async () => root.render(<I18nProvider><WorkspaceMap overview={overview} settings={settings} agentSettings={agent} onNavigate={vi.fn()} onOpenWorkflow={vi.fn()} /></I18nProvider>));
-    const list = container.querySelector(catalog === "capability" ? ".workspace-map-catalog" : ".workspace-map-flow-list");
-    const description = list?.querySelector(".workspace-map-description");
+    const rows = container.querySelectorAll<HTMLButtonElement>(catalog === "capability" ? ".workspace-map-catalog button" : ".workspace-map-flow-list button");
+    expect(container.textContent).not.toContain(brief);
+    await act(async () => rows[0].click());
+    const description = container.querySelector("dialog p");
     expect(description?.textContent).toBe(brief);
     expect(description?.querySelector("img")).toBeNull();
     expect(description?.querySelector("strong")).toBeNull();
-    expect(description?.parentElement?.getAttribute("title")).toBe(brief);
-    expect(list?.querySelectorAll(".workspace-map-description")[1]?.textContent).toBe("No description provided");
+    await act(async () => container.querySelector("dialog")!.dispatchEvent(new Event("cancel", { cancelable: true })));
+    expect(container.querySelector("dialog")).toBeNull();
+    await act(async () => rows[1].click());
+    expect(container.querySelector("dialog p")?.textContent).toBe("No description provided");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("renders recognized schedules in the local language and keeps other cron expressions intact", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const withSchedules = (delivery: string, scan: string) => ({ ...settings,
+    auto_delivery: { ...settings.auto_delivery, schedule_expression: delivery },
+    auto_scan: { ...settings.auto_scan, schedule_expression: scan },
+  });
+  const render = (delivery: string, scan: string) => <I18nProvider><WorkspaceMap overview={overview} settings={withSchedules(delivery, scan)} agentSettings={agent} onNavigate={vi.fn()} onOpenWorkflow={vi.fn()} /></I18nProvider>;
+  try {
+    await act(async () => root.render(render("*/5 * * * *", "0 10 * * 1-5")));
+    expect(container.querySelectorAll(".workspace-map-node")[2].textContent).toContain("Every 5 minutes");
+    expect(container.querySelectorAll(".workspace-map-node")[1].textContent).toContain("Weekdays · 10:00");
+    await act(async () => root.render(render("*/1 * * * *", "*/7 * * * *")));
+    expect(container.querySelectorAll(".workspace-map-node")[2].textContent).toContain("Every minute");
+    expect(container.querySelectorAll(".workspace-map-node")[1].textContent).toContain("*/7 * * * *");
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -166,6 +199,21 @@ async function mountPollingMap() {
   return { container, root };
 }
 
+it("refreshes an open detail and closes it if the catalog item is removed", async () => {
+  const { container, root } = await mountPollingMap();
+  try {
+    await act(async () => container.querySelector<HTMLButtonElement>(".workspace-map-catalog button")!.click());
+    expect(container.querySelector("dialog p")?.textContent).toBe("Read test data.");
+    vi.mocked(dashboardApi.listCapabilities).mockResolvedValue([{ ...capabilities[0], brief: "Updated guidance.", enabled: false }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(container.querySelector("dialog p")?.textContent).toBe("Updated guidance.");
+    expect(container.querySelector("dialog")?.textContent).toContain("Disabled");
+    vi.mocked(dashboardApi.listCapabilities).mockResolvedValue([]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(container.querySelector("dialog")).toBeNull();
+  } finally { await act(async () => root.unmount()); }
+});
+
 it("polls changed capability and workflow catalogs without starting jobs", async () => {
   const run = vi.spyOn(dashboardApi, "runFlow");
   const { container, root } = await mountPollingMap();
@@ -179,7 +227,7 @@ it("polls changed capability and workflow catalogs without starting jobs", async
     expect(dashboardApi.listFlows).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("New capability");
     expect(container.textContent).toContain("New workflow");
-    expect(container.textContent).toContain("0 enabled / 1 registered");
+    expect(container.textContent).toContain("0 / 1 enabled");
     expect(container.textContent).not.toContain("Read-only database");
     expect(container.textContent).not.toContain("Paused workflow");
     expect(run).not.toHaveBeenCalled();

@@ -1357,7 +1357,6 @@ code {
 .scan-failure-details p { margin: 10px 0 0; }
 .scan-failure-details.is-failed { border-color: #e9c2c2; background: #fff7f7; }
 .scan-failure-details.is-failed summary { color: #ae3d35; }
-.scan-history-table .scan-failure-row td { padding-top: 0; }
 
 .delivery-progress-panel .panel-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .delivery-progress-body { padding: 24px; }

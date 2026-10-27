@@ -1,10 +1,9 @@
 import { FileText, LoaderCircle, Play } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError, dashboardApi } from "../../app/api";
 import { useI18n } from "../../shared/i18n";
 import type { ScanRun } from "../../shared/types";
 import { ScanFindingsPanel } from "./ScanFindingsPanel";
-import { ScanFailureDetails } from "./ScanFailureDetails";
 import { ScanProgressPanel, ScanStatus } from "./ScanProgressPanel";
 
 interface AutoScanPageProps {
@@ -112,7 +111,7 @@ export function AutoScanPage({
             <table className="scan-history-table">
               <thead><tr><th>{t("autoScan.started")}</th><th>{t("autoScan.status")}</th><th>{t("autoScan.findings")}</th><th>{t("autoScan.duration")}</th><th>{t("autoScan.artifacts")}</th></tr></thead>
               <tbody>
-                {runs.length ? visibleRuns.map((run) => <Fragment key={run.run_id}><tr>
+                {runs.length ? visibleRuns.map((run) => <tr key={run.run_id}>
                   <td><span className="mono">{formatDate(run.started_at)}</span></td>
                   <td><ScanStatus run={run} /></td>
                   <td><SeverityBreakdown findings={run.findings} /></td>
@@ -122,11 +121,7 @@ export function AutoScanPage({
                     {run.pdf_available && <a href={`/api/workspaces/${workspaceId}/scans/${encodeURIComponent(run.run_id)}/artifacts/pdf`} target="_blank" rel="noreferrer"><FileText size={14} />PDF</a>}
                     {!run.html_available && !run.pdf_available && "—"}
                   </td>
-                </tr>
-                  {(run.failures.length > 0 || run.state === "failed" || run.state === "completed_with_failures") && <tr className="scan-failure-row">
-                    <td colSpan={5}><ScanFailureDetails run={run} /></td>
-                  </tr>}
-                </Fragment>) : <tr><td colSpan={5} className="empty-table">{t("autoScan.noHistory")}</td></tr>}
+                </tr>) : <tr><td colSpan={5} className="empty-table">{t("autoScan.noHistory")}</td></tr>}
               </tbody>
             </table>
           </div>

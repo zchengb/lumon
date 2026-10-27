@@ -200,11 +200,12 @@ rules to presets.
 
 ### Overview system map
 
-The Overview includes a compact, paper-figure-style map with the named Workspace
-as its central entity. Capabilities connect on the left, workflow items branch
-on the right, and Agent, Auto Scan and Auto Delivery connect beneath the hub.
-The hub shows its name and repository count and opens Workspace settings. The
-results column, explanatory workflow paragraph and footer are omitted.
+The Overview map places the named Workspace at the center, with Capabilities on
+the left, Workflows on the right, and Agent, Auto Scan and Auto Delivery below.
+The hub shows the Workspace name and repository count. Filters highlight each
+group without hiding the others. Selecting a node opens its details, with an
+action to navigate to the related settings or workflow; selecting either catalog
+heading opens that catalog. These actions do not start jobs.
 The Overview sidebar keeps the Automation panel but omits the Workspace details
 section (full ID, creation date and initialization version).
 It reads the existing catalog endpoints
@@ -218,12 +219,12 @@ Overview also reloads the catalogs. Background refreshes retain the current map;
 a failed catalog keeps its last loaded entries with an unavailable indicator
 until a later request succeeds. Enabled, disabled, invalid, loading and
 unavailable catalog states stay distinct, including a partially unavailable map.
-Workflow nodes open the matching document; other controls open their existing
-Dashboard pages without executing jobs. All registered documents remain visible,
-including unscheduled workflows, with saved schedule state shown separately.
-Each capability and workflow displays its saved `brief` as plain text, clamped
-to two lines with the full description retained in its title and accessible text.
-Blank descriptions show a localized placeholder; no summaries are invented.
+All registered documents remain visible, including unscheduled workflows, with
+saved schedule state shown separately. Capability and workflow descriptions are
+shown as plain text in their details rather than in each map row. Blank
+descriptions show a localized placeholder; no summaries are invented. Common
+weekday and minute-interval schedules are shown in local-language form; other
+cron expressions remain unchanged, and details retain the saved expression.
 
 Connections indicate Workspace membership, not workflow-to-workflow dependencies
 or automatic triggers. Narrow screens stack the groups without diagram wires.
@@ -454,8 +455,8 @@ Visible pages poll every three seconds during a scan or pending manual start,
 and every fifteen seconds when idle to discover scheduled/external starts;
 hidden/unmounted pages do not poll. Refresh reloads history without starting a
 scan, and Run scan now is disabled while a scan is already running.
-Recorded failure reasons appear expanded below Current progress and can be
-expanded separately for each affected history entry. Failed or incomplete scans
+Recorded failure reasons appear expanded below Current progress, while scan
+history retains one row per run. Failed or incomplete scans
 without recorded reasons show an explicit unavailable-reason message.
 The history retains
 one **Scan history** heading, finding counts by
