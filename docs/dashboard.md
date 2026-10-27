@@ -87,6 +87,24 @@ Codex or guarantee account access to every listed model. A saved model that is
 absent from the catalog, or a failed catalog request, never overwrites the
 current selection. Model discovery errors leave the rest of Settings usable.
 
+The **MCP servers** panel lists effective Codex MCP configuration in the selected
+Workspace. It can add HTTP or stdio servers, and enable, disable or remove
+servers owned exclusively by the Codex user configuration. Other configuration
+layers are read-only. User-level changes affect all Workspaces that use that
+configuration and apply to newly started Codex processes. Changes use the current
+configuration version to avoid overwriting concurrent edits; an unconfirmed write
+requires checking the refreshed state. Credentials are not shown or accepted in
+URLs; an HTTP bearer token can be referenced by environment variable name.
+OAuth login remains a Codex CLI action (`codex mcp login <server-name>`).
+
+The panel queries the Codex CLI and app-server without starting an Agent turn.
+**Check tools** requests a server's catalog on demand. A configured server or
+readable catalog is not proof of a live connection, and different Agent or
+scheduled processes may have different environment variables and credentials.
+The panel shows a concise, localized description for recognized official
+implementations; on discovery, a server's own advertised description takes
+precedence. Servers without either description are shown without invented text.
+
 The Agent provider field also checks `GET /api/agent/codex-status` for **Codex CLI** updates.
 When an update is available, it shows the installed version and **Update available**
 badge inline with **codex** inside the provider field, leaving the model picker

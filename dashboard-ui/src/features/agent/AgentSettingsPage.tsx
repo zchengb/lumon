@@ -11,8 +11,10 @@ import { buildAgentSectionUpdate, type AgentSettingsDraft, type AgentSettingsSec
 import { AgentModelPicker } from "./AgentModelPicker";
 import { CodexCliNotice } from "./CodexCliNotice";
 import { HelpTooltip } from "../shared/HelpTooltip";
+import { McpPanel } from "./McpPanel";
 
 interface AgentSettingsPageProps {
+  workspaceId?: string;
   settings: AgentSettings;
   workspaces: WorkspaceListItem[];
   onSave: (update: AgentSettingsUpdate) => Promise<boolean>;
@@ -20,6 +22,7 @@ interface AgentSettingsPageProps {
 }
 
 export function AgentSettingsPage({
+  workspaceId,
   settings,
   workspaces,
   onSave,
@@ -211,6 +214,8 @@ export function AgentSettingsPage({
           </div>
         </div>
       </section>
+
+      {workspaceId && <McpPanel workspaceId={workspaceId} />}
 
       <section className="panel agent-settings-panel" aria-labelledby="agent-langfuse-title" aria-busy={saving === "langfuse"}>
         <div className="panel-heading">

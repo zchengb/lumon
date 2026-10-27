@@ -296,7 +296,7 @@ export function App(): React.JSX.Element {
             <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />
             <AutoDeliverySettingsPanel key={`delivery-${selectedId}`} settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />
             <AutoScanSettingsPanel key={`scan-${selectedId}`} settings={settings} onSave={saveSettings} onDirtyChange={setAutoScanDirty} />
-            {agentSettings && <AgentSettingsPage key={selectedId} settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
+            {agentSettings && <AgentSettingsPage key={selectedId} workspaceId={selectedId ?? undefined} settings={agentSettings} workspaces={workspaces} onSave={saveAgentSettings} onDirtyChange={setAgentSettingsDirty} />}
           </div>}
           {selectedId && view === "agent" && <ChatHistoryPage key={selectedId} workspaceId={selectedId} />}
           {selectedId && view === "auto-delivery" && <AutoDeliveryPage key={selectedId} workspaceId={selectedId} onError={setError} />}

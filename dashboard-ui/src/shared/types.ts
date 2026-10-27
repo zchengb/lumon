@@ -330,3 +330,37 @@ export interface WebhookTestResponse {
   success: boolean;
   detail: string;
 }
+
+export interface McpServer {
+  name: string;
+  enabled: boolean;
+  transport: "stdio" | "http" | "unknown";
+  auth_status: string;
+  source: "user" | "project" | "other";
+  manageable: boolean;
+  description_kind: "figma" | "codex_app" | "computer_use" | "cua_repl" | "node_repl" | null;
+}
+
+export interface McpInventory {
+  servers: McpServer[];
+  user_version: string | null;
+}
+
+export interface McpDiscovery {
+  auth_status: string;
+  runtime_status: string | null;
+  tools: string[];
+  failed: boolean;
+  total_tools: number;
+  description: string | null;
+}
+
+export interface McpCreate {
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  bearer_token_env_var?: string;
+  expected_version: string | null;
+}

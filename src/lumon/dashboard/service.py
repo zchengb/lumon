@@ -49,6 +49,7 @@ from lumon.flows.service import FlowService
 from lumon.scan.model import ScanRun
 from lumon.scan.scheduler import LaunchdScanScheduler, ScanScheduler
 from lumon.scan.service import ScanService
+from lumon.tools.codex_mcp import CodexMcpManager, McpDiscovery, McpInventory, McpNewServer
 from lumon.tools.codex_models import CodexModel, CodexModelCatalog
 from lumon.tools.codex_status import CodexCliStatus, CodexCliUpdateChecker
 from lumon.tools.feishu_directory import FeishuDirectory
@@ -297,6 +298,7 @@ class DashboardService:
         feishu_directory: FeishuDirectory | None = None,
         model_loader: Callable[[], Awaitable[tuple[CodexModel, ...]]] | None = None,
         codex_update_checker: CodexCliUpdateChecker | None = None,
+        mcp_manager: CodexMcpManager | None = None,
         flow_service: FlowService | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
@@ -307,6 +309,7 @@ class DashboardService:
         self.feishu_directory = feishu_directory or FeishuDirectory()
         self._model_loader = model_loader or CodexModelCatalog().list_models
         self._codex_update_checker = codex_update_checker or CodexCliUpdateChecker()
+        self._mcp_manager = mcp_manager or CodexMcpManager()
         self.initializer = initializer or WorkspaceInitializer(
             registry=self.registry,
             settings_store=self.settings_store,
@@ -880,6 +883,29 @@ class DashboardService:
         """Check for CLI updates without changing settings, executables, or schedules."""
 
         return await self._codex_update_checker.check(refresh=refresh)
+
+    async def mcp_servers(self, workspace_id: UUID) -> McpInventory:
+        return await self._mcp_manager.list_servers(self._require(workspace_id).path)
+
+    async def discover_mcp(self, workspace_id: UUID, name: str) -> McpDiscovery:
+        return await self._mcp_manager.discover(self._require(workspace_id).path, name)
+
+    async def add_mcp(self, workspace_id: UUID, server: McpNewServer, version: str | None) -> None:
+        await self._mcp_manager.add(
+            self._require(workspace_id).path, server, expected_version=version
+        )
+
+    async def set_mcp_enabled(
+        self, workspace_id: UUID, name: str, enabled: bool, version: str | None
+    ) -> None:
+        await self._mcp_manager.set_enabled(
+            self._require(workspace_id).path, name, enabled, expected_version=version
+        )
+
+    async def remove_mcp(self, workspace_id: UUID, name: str, version: str | None) -> None:
+        await self._mcp_manager.remove(
+            self._require(workspace_id).path, name, expected_version=version
+        )
 
     def update_agent_settings(self, update: AgentSettingsUpdate) -> AgentSettingsView:
         """Validate and persist global Agent settings."""

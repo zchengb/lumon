@@ -82,6 +82,49 @@ class CodexCliStatusResponse(StrictModel):
     latest_version: str | None
 
 
+class McpServerResponse(StrictModel):
+    name: str
+    enabled: bool
+    transport: Literal["stdio", "http", "unknown"]
+    auth_status: str
+    source: Literal["user", "project", "other"]
+    manageable: bool
+    description_kind: Literal["figma", "codex_app", "computer_use", "cua_repl", "node_repl"] | None
+
+
+class McpInventoryResponse(StrictModel):
+    servers: list[McpServerResponse]
+    user_version: str | None
+
+
+class McpDiscoveryResponse(StrictModel):
+    auth_status: str
+    runtime_status: str | None
+    tools: list[str]
+    failed: bool
+    total_tools: int
+    description: str | None
+
+
+class McpCreateRequest(StrictModel):
+    name: str = Field(min_length=1, max_length=64)
+    transport: Literal["stdio", "http"]
+    command: str | None = Field(default=None, max_length=4096)
+    args: list[str] = Field(default_factory=list, max_length=64)
+    url: str | None = Field(default=None, max_length=4096)
+    bearer_token_env_var: str | None = Field(default=None, max_length=128)
+    expected_version: str | None = Field(default=None, max_length=256)
+
+
+class McpUpdateRequest(StrictModel):
+    enabled: bool
+    expected_version: str | None = Field(default=None, max_length=256)
+
+
+class McpRemoveRequest(StrictModel):
+    expected_version: str | None = Field(default=None, max_length=256)
+
+
 class AgentObservabilityUpdate(StrictModel):
     """Langfuse settings with optional credential replacements."""
 

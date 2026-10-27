@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, cast
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import (
@@ -50,6 +51,12 @@ from lumon.dashboard.schemas import (
     HealthResponse,
     InitializeWorkspaceRequest,
     InitializeWorkspaceResponse,
+    McpCreateRequest,
+    McpDiscoveryResponse,
+    McpInventoryResponse,
+    McpRemoveRequest,
+    McpServerResponse,
+    McpUpdateRequest,
     RegisterWorkspaceRequest,
     RepositoryOverviewResponse,
     RepositoryResultResponse,
@@ -80,6 +87,7 @@ from lumon.dashboard.service import (
 )
 from lumon.errors import InvalidInputError, LumonError, PreflightError, WorkspaceNotFoundError
 from lumon.scan.model import ScanFinding, ScanRun
+from lumon.tools.codex_mcp import McpNewServer
 from lumon.visual.environment import EnvironmentSnapshot
 
 # Route functions are consumed by FastAPI's runtime decorators.
@@ -176,6 +184,67 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     @router.get("/workspaces", response_model=list[WorkspaceResponse])
     def list_workspaces(request: Request) -> list[WorkspaceResponse]:
         return [_workspace_response(item) for item in _service(request).list_workspaces()]
+
+    @router.get("/workspaces/{workspace_id}/mcp", response_model=McpInventoryResponse)
+    async def mcp_inventory(
+        request: Request, response: Response, workspace_id: UUID
+    ) -> McpInventoryResponse:
+        response.headers["Cache-Control"] = "no-store"
+        inventory = await _service(request).mcp_servers(workspace_id)
+        return McpInventoryResponse(
+            servers=[
+                McpServerResponse.model_validate(server, from_attributes=True)
+                for server in inventory.servers
+            ],
+            user_version=inventory.user_version,
+        )
+
+    @router.post("/workspaces/{workspace_id}/mcp", status_code=204)
+    async def add_mcp(request: Request, workspace_id: UUID, payload: McpCreateRequest) -> Response:
+        _require_local_origin(request)
+        server = McpNewServer(
+            payload.name,
+            payload.transport,
+            payload.command,
+            tuple(payload.args),
+            payload.url,
+            payload.bearer_token_env_var,
+        )
+        await _service(request).add_mcp(workspace_id, server, payload.expected_version)
+        return Response(status_code=204)
+
+    @router.post(
+        "/workspaces/{workspace_id}/mcp/{name}/discover", response_model=McpDiscoveryResponse
+    )
+    async def discover_mcp(request: Request, workspace_id: UUID, name: str) -> McpDiscoveryResponse:
+        _require_local_origin(request)
+        result = await _service(request).discover_mcp(workspace_id, name)
+        return McpDiscoveryResponse(
+            auth_status=result.auth_status,
+            runtime_status=result.runtime_status,
+            tools=list(result.tools),
+            failed=result.failed,
+            total_tools=result.total_tools,
+            description=result.description,
+        )
+
+    @router.put("/workspaces/{workspace_id}/mcp/{name}", status_code=204)
+    async def update_mcp(
+        request: Request, workspace_id: UUID, name: str, payload: McpUpdateRequest
+    ) -> Response:
+        _require_local_origin(request)
+        await _service(request).set_mcp_enabled(
+            workspace_id, name, payload.enabled, payload.expected_version
+        )
+        return Response(status_code=204)
+
+    @router.post("/workspaces/{workspace_id}/mcp/{name}/remove", status_code=204)
+    async def remove_mcp(
+        request: Request, workspace_id: UUID, name: str, payload: McpRemoveRequest
+    ) -> Response:
+        _require_local_origin(request)
+        await _service(request).remove_mcp(workspace_id, name, payload.expected_version)
+        return Response(status_code=204)
 
     @router.get("/workspaces/{workspace_id}/conversations", response_model=ChatInteractionPage)
     def chat_conversations(
@@ -777,6 +846,26 @@ def _agent_settings_response(settings: AgentSettingsView) -> AgentSettingsRespon
             secret_key_masked=observability.secret_key_masked,
         ),
     )
+
+
+def _require_local_origin(request: Request) -> None:
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+    try:
+        parsed = urlsplit(origin)
+        valid = (
+            parsed.scheme == request.url.scheme == "http"
+            and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            and parsed.hostname == request.url.hostname
+            and parsed.port == request.url.port
+            and not parsed.username
+            and not parsed.password
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise HTTPException(status_code=403, detail="Invalid request origin")
 
 
 def _error_response(error: LumonError, status_code: int) -> JSONResponse:

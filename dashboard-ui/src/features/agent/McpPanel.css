@@ -1,0 +1,30 @@
+.mcp-panel .field-label-heading { display: flex; align-items: center; gap: 9px; }
+.mcp-panel .field-label-heading > svg { color: #8b79a7; }
+.mcp-heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.mcp-count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mcp-list { display: grid; padding: 6px 20px; margin: 0; list-style: none; }
+.mcp-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; padding: 13px 0; }
+.mcp-row + .mcp-row { border-top: 1px solid var(--line); }
+.mcp-row-main { display: grid; flex: 1; gap: 5px; min-width: 0; }
+.mcp-row-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.mcp-row-main strong { overflow-wrap: anywhere; font-size: 13px; }
+.mcp-row-main small { color: var(--muted); font-size: 11px; }
+.mcp-row-main .mcp-description { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.mcp-state { border-radius: 20px; padding: 3px 8px; color: #6b6e68; background: #f1f2ef; font-size: 11px; white-space: nowrap; }
+.mcp-state.is-enabled { color: #237247; background: #edf7f0; }
+.mcp-row-actions { display: flex; align-items: center; gap: 10px; }
+.mcp-row-actions .button { min-height: 32px; }
+.mcp-row-actions .settings-toggle input:disabled + .settings-switch { opacity: 0.4; cursor: not-allowed; }
+.mcp-remove { padding-inline: 9px; }
+.mcp-discovery { flex-basis: 100%; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.mcp-add-area { padding: 15px 20px 20px; border-top: 1px solid var(--line); }
+.mcp-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.mcp-form label { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; }
+.mcp-form-wide { grid-column: 1 / -1; }
+.mcp-form-actions { display: flex; gap: 10px; }
+.mcp-error { color: #a64436; }
+@media (max-width: 600px) {
+  .mcp-panel .panel-heading, .mcp-row { align-items: flex-start; flex-wrap: wrap; }
+  .mcp-form { grid-template-columns: 1fr; }
+  .mcp-form-wide { grid-column: auto; }
+}

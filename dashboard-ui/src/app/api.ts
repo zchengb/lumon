@@ -15,6 +15,9 @@ import type {
   FlowSummary,
   InitializeWorkspaceRequest,
   InitializeWorkspaceResponse,
+  McpCreate,
+  McpDiscovery,
+  McpInventory,
   SettingsUpdate,
   WebhookTestResponse,
   WorkspaceFolderSelection,
@@ -71,6 +74,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dashboardApi = {
+  listMcp(workspaceId: string): Promise<McpInventory> {
+    return request(`/api/workspaces/${workspaceId}/mcp`, { cache: "no-store" });
+  },
+  addMcp(workspaceId: string, payload: McpCreate): Promise<void> {
+    return request(`/api/workspaces/${workspaceId}/mcp`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  discoverMcp(workspaceId: string, name: string): Promise<McpDiscovery> {
+    return request(`/api/workspaces/${workspaceId}/mcp/${encodeURIComponent(name)}/discover`, { method: "POST" });
+  },
+  setMcpEnabled(workspaceId: string, name: string, enabled: boolean, expectedVersion: string | null): Promise<void> {
+    return request(`/api/workspaces/${workspaceId}/mcp/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify({ enabled, expected_version: expectedVersion }) });
+  },
+  removeMcp(workspaceId: string, name: string, expectedVersion: string | null): Promise<void> {
+    return request(`/api/workspaces/${workspaceId}/mcp/${encodeURIComponent(name)}/remove`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) });
+  },
   controlDelivery(workspaceId: string, runId: string, action: "resume" | "stop", attempt: number): Promise<{ accepted: boolean }> {
     return request(`/api/workspaces/${workspaceId}/deliveries/${encodeURIComponent(runId)}/${action}`, { method: "POST", body: JSON.stringify({ attempt }) });
   },

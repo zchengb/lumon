@@ -23,6 +23,13 @@ from lumon.errors import AgentRuntimeError, PreflightError
 from lumon.scan.model import IssueReviewStatus, ScanFinding, ScanIssueReview, ScanRun, ScanState
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
+from lumon.tools.codex_mcp import (
+    CodexMcpManager,
+    McpDiscovery,
+    McpInventory,
+    McpNewServer,
+    McpServer,
+)
 from lumon.tools.codex_models import CodexModel
 from lumon.tools.codex_status import CodexCliUpdateChecker
 from lumon.tools.feishu_directory import FeishuDirectory, FeishuDisplayNames
@@ -167,6 +174,7 @@ def _service(
     flow_scheduler: _RecordingFlowScheduler | None = None,
     model_loader: Callable[[], Awaitable[tuple[CodexModel, ...]]] | None = None,
     codex_update_checker: CodexCliUpdateChecker | None = None,
+    mcp_manager: CodexMcpManager | None = None,
 ) -> DashboardService:
     state_root = tmp_path / "user-state"
     registry = WorkspaceRegistry(state_root)
@@ -187,6 +195,7 @@ def _service(
         flow_scheduler=flow_scheduler or _RecordingFlowScheduler(),
         model_loader=model_loader,
         codex_update_checker=codex_update_checker,
+        mcp_manager=mcp_manager,
     )
 
 
@@ -196,6 +205,83 @@ def _client(service: DashboardService) -> httpx.Client:
 
 def _static_client(service: DashboardService, static_dir: Path) -> httpx.Client:
     return TestClient(create_dashboard_app(service, static_dir=static_dir))
+
+
+def test_mcp_api_is_scoped_and_rejects_foreign_origins(tmp_path: Path) -> None:
+    class FakeManager(CodexMcpManager):
+        def __init__(self) -> None:
+            self.calls: list[tuple[object, ...]] = []
+
+        async def list_servers(self, workspace: Path) -> McpInventory:
+            self.calls.append(("list", workspace))
+            return McpInventory((McpServer("figma", True, "http", "unknown", "user", True),), "v1")
+
+        async def discover(self, workspace: Path, name: str) -> McpDiscovery:
+            self.calls.append(("discover", workspace, name))
+            return McpDiscovery("oAuth", None, ("read_design",), False, 1)
+
+        async def add(
+            self, workspace: Path, server: McpNewServer, *, expected_version: str | None
+        ) -> None:
+            self.calls.append(("add", workspace, server.name, expected_version))
+
+        async def set_enabled(
+            self, workspace: Path, name: str, enabled: bool, *, expected_version: str | None
+        ) -> None:
+            self.calls.append(("set", workspace, name, enabled, expected_version))
+
+        async def remove(self, workspace: Path, name: str, *, expected_version: str | None) -> None:
+            self.calls.append(("remove", workspace, name, expected_version))
+
+    manager = FakeManager()
+    service = _service(tmp_path, mcp_manager=manager)
+    client = _client(service)
+    client.base_url = httpx.URL("http://127.0.0.1:15778")
+    workspace = tmp_path / "mcp-workspace"
+    workspace_id = client.post(
+        "/api/workspaces/initialize", json={"path": str(workspace), "repositories": []}
+    ).json()["workspace_id"]
+    url = f"/api/workspaces/{workspace_id}/mcp"
+    response = client.get(url)
+    assert response.status_code == 200
+    assert response.json()["servers"][0]["name"] == "figma"
+    assert response.headers["cache-control"] == "no-store"
+    assert (
+        client.post(f"{url}/figma/discover", headers={"Origin": "https://evil.example"}).status_code
+        == 403
+    )
+    assert (
+        client.put(
+            f"{url}/figma",
+            headers={"Origin": "https://evil.example"},
+            json={"enabled": False, "expected_version": "v1"},
+        ).status_code
+        == 403
+    )
+    assert not any(call[0] in {"discover", "set"} for call in manager.calls)
+    assert client.post(
+        f"{url}/figma/discover", headers={"Origin": "http://127.0.0.1:15778"}
+    ).json()["tools"] == ["read_design"]
+    assert (
+        client.put(f"{url}/figma", json={"enabled": False, "expected_version": "v1"}).status_code
+        == 204
+    )
+    assert ("set", workspace, "figma", False, "v1") in manager.calls
+    assert (
+        client.post(
+            url,
+            json={
+                "name": "docs",
+                "transport": "http",
+                "url": "https://example.com/mcp",
+                "expected_version": "v1",
+            },
+        ).status_code
+        == 204
+    )
+    assert ("add", workspace, "docs", "v1") in manager.calls
+    assert client.post(f"{url}/figma/remove", json={"expected_version": "v1"}).status_code == 204
+    assert ("remove", workspace, "figma", "v1") in manager.calls
 
 
 def test_empty_registry_exposes_onboarding_state(tmp_path: Path) -> None:
