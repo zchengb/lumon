@@ -20,6 +20,8 @@ def test_scan_requires_evidence_for_non_ignored_history_and_matches_ignored_cand
     assert "all affected paths" in prompt
     assert "Do not claim tests or runtime verification" in prompt
     assert "never implicitly resolved" in prompt
+    assert "Agent decides which candidates are genuinely new" in prompt
+    assert "duplicate candidate need not also appear in findings" in " ".join(prompt.split())
 
 
 def test_delivery_document_preserves_literal_hook_text_and_lifecycle() -> None:

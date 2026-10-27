@@ -57,6 +57,12 @@ def review_existing_issues(
     discovered = {
         canonical_issue((finding.repository, finding.issue_id), aliases) for finding in findings
     }
+    known = {(finding.repository, finding.issue_id) for finding in existing}
+    for match in matches:
+        source = (match.repository, match.issue_id)
+        target = (match.repository, match.canonical_issue_id)
+        if source not in known or source == target:
+            discovered.add(canonical_issue(source, aliases))
     reviews: list[ScanIssueReview] = []
     for finding in existing:
         key = (finding.repository, finding.issue_id)

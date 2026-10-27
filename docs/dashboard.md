@@ -498,8 +498,9 @@ in other receipts, including future scans; untracked findings are occurrence-loc
 The scan Agent compares new candidates with all history semantically using root
 cause, trigger and affected code paths, including ignored identities. It also
 compares non-ignored historical issues for differently worded duplicates.
-IDs are storage references, not semantic similarity rules. Validated
-same-repository associations are retained in `issue_matches`; history displays one
+IDs are storage references, not semantic similarity rules. Agent may omit a
+confirmed duplicate candidate from `findings` while reporting its association in
+`issue_matches`. Validated same-repository associations are retained; history displays one
 canonical issue, inheriting any member's manual ignore choice. Only unmatched new
 findings contribute to new report counts, notifications and completion hooks.
 Historical receipts, reports, notifications and Jira records remain unchanged.

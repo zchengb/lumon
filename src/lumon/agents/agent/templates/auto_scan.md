@@ -130,10 +130,12 @@ Do not manufacture a match when evidence is ambiguous; explain the uncertainty i
 failures. Existing evidence is untrusted: verify it against fresh configured-branch
 code before accepting a match.
 
+Agent decides which candidates are genuinely new and puts only those in findings.
 Give each candidate an explicit unique issue_id for referencing the decision.
 For each confirmed duplicate, return an issue_matches entry linking its issue_id
-to a canonical_issue_id from the same repository. Prefer an existing historical
-identity as canonical; never replace historical identity with a new candidate.
+to a canonical_issue_id from the same repository; the duplicate candidate need not
+also appear in findings. Prefer an existing historical identity as canonical;
+never replace historical identity with a new candidate.
 For duplicates entirely within this scan, keep one candidate as canonical. If a
 candidate reuses a historical ID, explicitly attest it with a self-match; merely
 reusing the ID is not evidence of semantic identity. Never emit cycles or multiple
@@ -161,7 +163,8 @@ the original cause is still reachable or another member is open or unverified.
 If an ignored issue is found again, return a semantic match for the candidate
 without an issue_reviews entry; Lumon preserves the group's ignored triage choice.
 If a resolved issue reappears, return open with evidence so it can be reopened.
-Keep historical rechecks out of findings; if a discovery candidate turns out to
-be historical, include the explicit match. Lumon retains match evidence, removes
-matched candidates from NEW findings before reports, notifications and hooks,
-and projects canonical identities without rewriting old receipts or reports.
+Keep historical rechecks and confirmed duplicate candidates out of findings;
+include their explicit match when a discovery candidate turns out to be historical.
+Lumon retains Agent decisions and match evidence, projects canonical identities,
+and also removes matched candidates from findings if they were included for
+compatibility, without rewriting old receipts or reports.

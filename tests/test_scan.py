@@ -614,6 +614,77 @@ def test_semantic_rediscovery_does_not_repeat_reports_notifications_or_hooks(
     assert "same missing guard" in old.validation
 
 
+@pytest.mark.parametrize("source_id", ["OLD", "NEW-CANDIDATE"])
+@pytest.mark.parametrize("ignored", [False, True])
+def test_agent_filtered_duplicates_allow_new_findings_and_preserve_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_id: str,
+    ignored: bool,
+) -> None:
+    historical = replace(_finding(), issue_id="OLD", issue_status="resolved")
+    unique = replace(_finding(), issue_id="UNIQUE", title="Independent regression")
+    evidence: dict[str, object] = {
+        "repository": "app",
+        "issue_id": "OLD",
+        "status": "open",
+        "branch": "master",
+        "revision": "a" * 40,
+        "fresh": True,
+        "evidence": "The original trigger still reaches the defect; static review only.",
+    }
+    runner = _FakeRunner(
+        review_payload={
+            "scan_status": "completed_with_findings",
+            "findings": [unique.as_payload()],
+            "issue_reviews": [] if ignored else [evidence],
+            "issue_matches": [{**evidence, "issue_id": source_id, "canonical_issue_id": "OLD"}],
+            "failures": [],
+        }
+    )
+    service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    WorkspaceConfig(
+        "scan-recovery",
+        repositories=(
+            RepositoryRecord("app", "https://example.test/app.git", "repos/app", "master"),
+        ),
+    ).write(WorkspaceLayout.from_root(workspace).workspace_config)
+    service.settings_store.save(
+        WorkspaceSettings(
+            workspace_id,
+            auto_scan=AutoScanSettings(trigger_hooks=("Create Bugs for new findings.",)),
+        )
+    )
+    original = replace(
+        ScanRun.start("historical", 7),
+        state=ScanState.COMPLETED_WITH_FINDINGS,
+        started_at=datetime(2020, 1, 1, tzinfo=UTC),
+        findings=(historical,),
+    )
+    service.run_store.save(workspace, original)
+    if ignored:
+        service.run_store.ignore_finding(workspace, original.run_id, 0)
+
+    def no_report(_run: ScanRun, _directory: Path) -> ReportResult:
+        return ReportResult(None, None)
+
+    monkeypatch.setattr("lumon.scan.service.write_report", no_report)
+
+    result = service.run(workspace_id, force=True)
+
+    assert result.state == ScanState.COMPLETED_WITH_FINDINGS
+    assert result.failures == ()
+    assert result.findings == (unique,)
+    assert len(result.issue_matches) == 1
+    assert len(runner.prompts) == 2
+    hook_findings = json.loads(runner.prompts[1].split("\nFindings:\n")[1].split("\n\n", 1)[0])
+    assert [item["issue_id"] for item in hook_findings] == ["UNIQUE"]
+    visible = service.run_store.with_ignored_findings(workspace, service.list_runs(workspace))
+    old = next(run for run in visible if run.run_id == original.run_id).findings[0]
+    assert old.issue_status == ("ignored" if ignored else "reopened")
+    assert service.run_store.load(workspace, original.run_id) == original
+
+
 @pytest.mark.parametrize("lookback_days", [1, 14, 365])
 def test_review_window_comes_from_settings_not_legacy_description(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lookback_days: int

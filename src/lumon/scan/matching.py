@@ -81,11 +81,11 @@ def _valid_match(
 ) -> bool:
     source = (match.repository, match.issue_id)
     target = (match.repository, match.canonical_issue_id)
-    if source not in known | observed or target not in known | observed:
+    if target not in known | observed:
         return False
     if source in known and target not in known:
         return False
-    if source == target and source not in known & observed:
+    if source == target and source not in known:
         return False
     return match.branch == branches.get(match.repository)
 

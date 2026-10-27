@@ -313,7 +313,6 @@ def _match(**changes: object) -> dict[str, object]:
         {"evidence": ""},
         {"evidence": True},
         {"canonical_issue_id": "x" * 101},
-        {"issue_id": "UNKNOWN"},
     ],
 )
 def test_invalid_semantic_decisions_never_suppress_findings(changes: dict[str, object]) -> None:
@@ -361,6 +360,33 @@ def test_identity_is_decided_by_agent_not_titles_files_or_ids() -> None:
     )
     assert len(self_match) == 1
     assert not failures
+
+
+@pytest.mark.parametrize("source_id", ["ISSUE-1", "NEW-CANDIDATE"])
+def test_agent_can_report_a_duplicate_without_repeating_it_as_a_new_finding(
+    source_id: str,
+) -> None:
+    old = _finding()
+    matches, failures = validate_issue_matches(
+        [_match(issue_id=source_id)], (old,), (), {"app": "master"}
+    )
+    assert not failures
+    assert len(matches) == 1
+    assert matches[0].issue_id == source_id
+
+    reviews = review_existing_issues(
+        [_review()], (old,), (), failed=False, branches={"app": "master"}, matches=matches
+    )
+    assert reviews[0].status == IssueReviewStatus.UNVERIFIED
+
+
+def test_unknown_self_match_cannot_suppress_a_new_finding() -> None:
+    candidate = _finding(issue_id="NEW")
+    matches, failures = validate_issue_matches(
+        [_match(issue_id="NEW", canonical_issue_id="NEW")], (), (candidate,), {"app": "master"}
+    )
+    assert matches == ()
+    assert failures
 
 
 @pytest.mark.parametrize("ignored_index", [None, 0, 1])
