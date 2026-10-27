@@ -9,7 +9,7 @@ import { VisualEnvironmentPanel } from "./VisualEnvironmentPanel";
 const snapshot: VisualEnvironmentSnapshot = {
   checked_at: "2026-10-22T01:00:00Z", application_status: "unverified",
   environments: [
-    { platform: "ios", status: "ready", running: false, checks: [{ name: "ios_runtime", status: "ready" }] },
+    { platform: "ios", status: "ready", running: true, checks: [{ name: "ios_runtime", status: "ready" }] },
     { platform: "android", status: "missing", running: null, checks: [{ name: "android_avd", status: "missing" }] },
     { platform: "web", status: "ready", running: null, checks: [{ name: "browser", status: "ready" }] },
     { platform: "docker", status: "error", running: false, checks: [{ name: "docker_engine", status: "error" }] },
@@ -24,15 +24,20 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-it.each(["en", "zh-CN", "zh-TW"] as const)("separates prerequisites, running state and application proof (%s)", async (locale) => {
+it.each(["en", "zh-CN", "zh-TW"] as const)("shows tool readiness without runtime or footer details (%s)", async (locale) => {
   localStorage.setItem("lumon.locale", locale);
   const element = document.createElement("div");
   const root = createRoot(element);
   try {
     await act(async () => root.render(<I18nProvider><VisualEnvironmentPanel workspaceId="one" refreshToken={refreshToken} /></I18nProvider>));
     expect(element.querySelectorAll(".visual-environment-item")).toHaveLength(4);
-    expect(element.textContent).toContain(translate(locale, "environment.applicationUnverified"));
-    expect(element.querySelector(".visual-environment-item")?.textContent).toContain(translate(locale, "environment.idle"));
+    expect(Array.from(element.querySelectorAll(".visual-environment-status"), (item) => item.textContent)).toEqual([
+      translate(locale, "environment.ready"), translate(locale, "environment.missing"),
+      translate(locale, "environment.ready"), translate(locale, "environment.error"),
+    ]);
+    expect(element.querySelectorAll(".visual-environment-item small")).toHaveLength(0);
+    expect(element.querySelector(".visual-environment-footer")).toBeNull();
+    expect(element.querySelector("time")).toBeNull();
     expect(dashboardApi.getVisualEnvironment).toHaveBeenCalledWith("one", false);
     expect(document.querySelectorAll('[role="tooltip"]:not([hidden])')).toHaveLength(0);
     const androidHelp = element.querySelector<HTMLButtonElement>('[aria-controls="environment-android-help"]')!;

@@ -233,7 +233,7 @@ shows saved configuration, not process health or verified capability credentials
 
 The separate **Visual environment** panel reports passive iOS, Android, local Web
 browser and Docker prerequisites from the same inspector used by Agent prompts.
-It distinguishes tools-ready from running and keeps project verification explicit.
+It shows tool readiness without displaying runtime status or a verification footer.
 Check details are question-mark popovers. **Check environment** refreshes the report
 without starting devices or installing dependencies. See
 [visual verification](visual-verification.md) for the checks and their limits.

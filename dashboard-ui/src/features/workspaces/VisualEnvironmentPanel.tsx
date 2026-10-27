@@ -17,7 +17,7 @@ const checkNames: Record<string, string> = {
 export function VisualEnvironmentPanel({ workspaceId, refreshToken }: {
   workspaceId: string; refreshToken: object;
 }): React.JSX.Element {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [revision, setRevision] = useState(0);
   const [snapshot, setSnapshot] = useState<VisualEnvironmentSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,7 @@ export function VisualEnvironmentPanel({ workspaceId, refreshToken }: {
     </div>
     {loading && <p className="empty-inline" role="status">{t("environment.loading")}</p>}
     {failed && <p className="empty-inline" role="status">{t("environment.failed")}</p>}
-    {snapshot && <>
+    {snapshot && (
       <div className="visual-environment-grid">
         {snapshot.environments.map((item) => {
           const Icon = item.platform === "docker" ? Container : item.platform === "web" ? Monitor : Smartphone;
@@ -58,14 +58,9 @@ export function VisualEnvironmentPanel({ workspaceId, refreshToken }: {
               <HelpTooltip helpId={`environment-${item.platform}-help`} label={platformNames[item.platform]} help={help} />
             </div>
             <span className={`visual-environment-status visual-environment-${item.status}`}>{t(`environment.${item.status}`)}</span>
-            {item.running !== null && <small className="muted">{t(item.running ? "environment.running" : "environment.idle")}</small>}
           </div>;
         })}
       </div>
-      <div className="visual-environment-footer">
-        <span>{t("environment.applicationUnverified")}</span>
-        <time dateTime={snapshot.checked_at}>{new Date(snapshot.checked_at).toLocaleString(locale, { dateStyle: "medium", timeStyle: "medium" })}</time>
-      </div>
-    </>}
+    )}
   </section>;
 }
