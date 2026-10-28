@@ -22,7 +22,7 @@ from lumon.errors import InvalidInputError, PreflightError
 from lumon.scan.model import IssueReviewStatus, ScanFinding, ScanRun, ScanState
 from lumon.scan.notification import build_scan_card
 from lumon.scan.report import ReportResult, write_report
-from lumon.scan.service import ScanService
+from lumon.scan.service import ScanRepositories, ScanService
 from lumon.scan.store import ScanRunStore
 from lumon.skills.installer import SkillInstaller
 from lumon.tools.feishu_webhook import FeishuWebhookError, FeishuWebhookSender
@@ -32,6 +32,7 @@ from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.model import InitRequest, RepositoryRecord
 from lumon.workspace.registry import WorkspaceRegistry
+from lumon.workspace.repository_worktree import PreparedWorktree
 from lumon.workspace.settings import (
     AutoScanSettings,
     FeishuWebhookSettings,
@@ -393,6 +394,22 @@ def test_scan_service_keeps_review_provider_neutral_and_runs_completion_hook(
     assert f"Scan run ID: {result.run_id}" in runner.prompts[1]
 
 
+def test_repository_receipt_does_not_follow_a_symlink(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    store = ScanRunStore()
+    run = ScanRun.start("receipt-test", 7)
+    store.save(workspace, run)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("preserve", encoding="utf-8")
+    receipt = store.path_for(workspace, run.run_id) / "repository-baselines.json"
+    receipt.symlink_to(outside)
+
+    store.save_repository_baselines(workspace, run.run_id, {"repositories": []})
+
+    assert outside.read_text(encoding="utf-8") == "preserve"
+    assert json.loads(receipt.read_text(encoding="utf-8")) == {"repositories": []}
+
+
 def _scan_service(
     tmp_path: Path, runner: AgentRunner | None = None
 ) -> tuple[ScanService, Path, UUID]:
@@ -414,12 +431,289 @@ def _scan_service(
             feishu_app_secret="test-secret",
         )
     )
-    service = ScanService(state_root=state_root, registry=registry, runner=runner)
+
+    def prepare(
+        root: Path, records: tuple[RepositoryRecord, ...], task: str, _since: datetime
+    ) -> ScanRepositories:
+        snapshots = tuple(
+            (
+                record,
+                PreparedWorktree(
+                    repository=record.name,
+                    branch=record.branch,
+                    remote_revision="a" * 40,
+                    revision="a" * 40,
+                    path=str(root / "lumon" / "worktrees" / "_reads" / task / record.name),
+                    fetched_at="2026-01-01T00:00:00+00:00",
+                    reused=False,
+                    dirty=False,
+                    contains_remote=True,
+                    history_covered=True,
+                ),
+            )
+            for record in records
+        )
+        return ScanRepositories(snapshots, ())
+
+    def verify(_root: Path, _record: RepositoryRecord, _task: str, _item: PreparedWorktree) -> bool:
+        return True
+
+    service = ScanService(
+        state_root=state_root,
+        registry=registry,
+        runner=runner,
+        prepare_repositories=prepare,
+        verify_repository=verify,
+    )
     return service, workspace, workspace_id
 
 
+def test_scan_prepares_only_enabled_repositories(tmp_path: Path) -> None:
+    service, workspace, workspace_id = _scan_service(tmp_path)
+    WorkspaceConfig(
+        "scan-recovery",
+        (
+            RepositoryRecord("included", "https://example.test/included", "repos/included", "main"),
+            RepositoryRecord(
+                "excluded",
+                "https://example.test/excluded",
+                "repos/excluded",
+                "main",
+                auto_scan=False,
+            ),
+        ),
+    ).write(workspace / "lumon" / "workspace.toml")
+    observed: list[str] = []
+
+    def prepare(
+        _root: Path, records: tuple[RepositoryRecord, ...], _task: str, _since: datetime
+    ) -> ScanRepositories:
+        observed.extend(record.name for record in records)
+        raise PreflightError("test stops before Agent execution")
+
+    service.prepare_repositories = prepare
+    with pytest.raises(PreflightError, match="test stops"):
+        service.run(workspace_id, force=True)
+    assert observed == ["included"]
+
+
+def test_scan_does_not_recheck_excluded_repository_history(tmp_path: Path) -> None:
+    class CaptureRunner(_FakeRunner):
+        async def run(self, workspace: Path, prompt: str, **kwargs: object) -> AgentResult:
+            del workspace, kwargs
+            self.prompts.append(prompt)
+            return AgentResult(status="failed")
+
+    runner = CaptureRunner()
+    service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    WorkspaceConfig(
+        "scan-recovery",
+        (
+            RepositoryRecord("included", "https://example.test/included", "repos/included", "main"),
+            RepositoryRecord(
+                "excluded",
+                "https://example.test/excluded",
+                "repos/excluded",
+                "main",
+                auto_scan=False,
+            ),
+        ),
+    ).write(workspace / "lumon" / "workspace.toml")
+    prior = replace(
+        ScanRun.start("prior", 7),
+        state=ScanState.COMPLETED_WITH_FINDINGS,
+        findings=(replace(_finding(), repository="excluded", title="Excluded history marker"),),
+    )
+    service.run_store.save(workspace, prior)
+    service.run(workspace_id, force=True)
+    assert len(runner.prompts) == 1
+    assert "Excluded history marker" not in runner.prompts[0]
+
+
+def _local_repository(tmp_path: Path, workspace: Path) -> tuple[Path, RepositoryRecord]:
+    source = tmp_path / "upstream"
+    remote = tmp_path / "remote.git"
+    source.mkdir()
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], check=True, capture_output=True, text=True)
+
+    git("init", "-q", "-b", "main", str(source))
+    git("-C", str(source), "config", "user.name", "Lumon Test")
+    git("-C", str(source), "config", "user.email", "test@example.invalid")
+    (source / "file.txt").write_text("old\n", encoding="utf-8")
+    git("-C", str(source), "add", "file.txt")
+    git("-C", str(source), "commit", "-qm", "initial")
+    git("clone", "-q", "--bare", str(source), str(remote))
+    git("clone", "-q", remote.as_uri(), str(workspace / "repos" / "app"))
+    git("-C", str(source), "remote", "add", "origin", remote.as_uri())
+    (source / "file.txt").write_text("new remote\n", encoding="utf-8")
+    git("-C", str(source), "add", "file.txt")
+    git("-C", str(source), "commit", "-qm", "advance")
+    git("-C", str(source), "push", "-q", "origin", "main")
+    return source, RepositoryRecord("app", remote.as_uri(), "repos/app", "main")
+
+
+def test_scan_fetches_pinned_worktree_and_preserves_existing_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _FakeRunner(has_findings=False)
+    fake_service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    _source, record = _local_repository(tmp_path, workspace)
+    WorkspaceConfig("scan-recovery", (record,)).write(workspace / "lumon" / "workspace.toml")
+    checkout_file = workspace / record.path / "file.txt"
+    checkout_file.write_text("keep my edit\n", encoding="utf-8")
+    service = ScanService(state_root=fake_service.state_root, runner=cast(AgentRunner, runner))
+
+    def report(_run: ScanRun, directory: Path) -> ReportResult:
+        receipt = json.loads((directory / "repository-baselines.json").read_text())
+        snapshot = receipt["repositories"][0]
+        assert (Path(snapshot["path"]) / "file.txt").read_text() == "new remote\n"
+        assert snapshot["remote_revision"] == snapshot["revision"]
+        assert snapshot["remote_revision"] in runner.prompts[0]
+        return ReportResult(None, None)
+
+    monkeypatch.setattr("lumon.scan.service.write_report", report)
+    result = service.run(workspace_id, force=True)
+
+    receipt_path = (
+        service.run_store.path_for(workspace, result.run_id) / "repository-baselines.json"
+    )
+    receipt = json.loads(receipt_path.read_text())
+    assert result.state == ScanState.COMPLETED
+    assert receipt["cleanup"] == {"app": "removed"}
+    assert not Path(receipt["repositories"][0]["path"]).exists()
+    assert checkout_file.read_text() == "keep my edit\n"
+
+
+def test_scan_never_accepts_findings_from_an_unavailable_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    good = _finding()
+    bad = replace(good, issue_id="BAD", repository="missing")
+    runner = _FakeRunner(
+        review_payload={
+            "scan_status": "completed_with_findings",
+            "findings": [good.as_payload(), bad.as_payload()],
+            "repositories_scanned": 2,
+            "repositories_failed": 0,
+            "failures": [],
+        }
+    )
+    fake_service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    _source, record = _local_repository(tmp_path, workspace)
+    missing = RepositoryRecord("missing", record.url, "repos/missing", "main")
+    config = WorkspaceConfig("scan-recovery", (record, missing))
+    config.write(workspace / "lumon" / "workspace.toml")
+    service = ScanService(state_root=fake_service.state_root, runner=cast(AgentRunner, runner))
+
+    def no_report(_run: ScanRun, _directory: Path) -> ReportResult:
+        return ReportResult(None, None)
+
+    monkeypatch.setattr("lumon.scan.service.write_report", no_report)
+
+    result = service.run(workspace_id, force=True)
+
+    assert result.state == ScanState.COMPLETED_WITH_FAILURES
+    assert result.repositories_scanned == 1 and result.repositories_failed == 1
+    assert [finding.repository for finding in result.findings] == ["app"]
+    assert any("missing" in failure for failure in result.failures)
+
+
+def test_scan_rejects_and_preserves_a_worktree_changed_during_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _FakeRunner(has_findings=False)
+    fake_service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    _source, record = _local_repository(tmp_path, workspace)
+    WorkspaceConfig("scan-recovery", (record,)).write(workspace / "lumon" / "workspace.toml")
+    service = ScanService(state_root=fake_service.state_root, runner=cast(AgentRunner, runner))
+    original_run = runner.run
+
+    async def changed_run(root: Path, prompt: str) -> AgentResult:
+        sources = prompt.split("## Prepared repository snapshots\n", 1)[1].split("\n", 1)[0]
+        snapshot_path = Path(json.loads(sources)["repositories"][0]["path"])
+        (snapshot_path / "file.txt").write_text("unexpected edit\n", encoding="utf-8")
+        return await original_run(root, prompt)
+
+    monkeypatch.setattr(runner, "run", changed_run)
+    result = service.run(workspace_id, force=True)
+
+    receipt = json.loads(
+        (
+            service.run_store.path_for(workspace, result.run_id) / "repository-baselines.json"
+        ).read_text()
+    )
+    assert result.state == ScanState.FAILED
+    assert any("worktree changed" in failure for failure in result.failures)
+    assert receipt["cleanup"] == {"app": "preserved"}
+    assert (
+        Path(receipt["repositories"][0]["path"]) / "file.txt"
+    ).read_text() == "unexpected edit\n"
+
+
+def test_scan_reports_incomplete_when_agent_omits_prepared_repositories(tmp_path: Path) -> None:
+    runner = _FakeRunner(
+        review_payload={"scan_status": "completed", "findings": [], "repositories_scanned": 0}
+    )
+    service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    record = RepositoryRecord("app", "https://example.test/app.git", "repos/app", "main")
+    WorkspaceConfig("scan-recovery", (record,)).write(workspace / "lumon" / "workspace.toml")
+
+    result = service.run(workspace_id, force=True)
+
+    assert result.state == ScanState.COMPLETED_WITH_FAILURES
+    assert result.repositories_scanned == 0 and result.repositories_failed == 1
+
+
+def test_scan_reports_shallow_history_as_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _FakeRunner(has_findings=False)
+    fake_service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    _source, record = _local_repository(tmp_path, workspace)
+    checkout = workspace / record.path
+    checkout.rename(checkout.with_name("app-original"))
+    subprocess.run(
+        ["git", "clone", "-q", "--depth=1", record.url, str(checkout)],
+        check=True,
+        capture_output=True,
+    )
+    WorkspaceConfig("scan-recovery", (record,)).write(workspace / "lumon" / "workspace.toml")
+    service = ScanService(state_root=fake_service.state_root, runner=cast(AgentRunner, runner))
+    monkeypatch.setattr("lumon.workspace.repository_worktree._HISTORY_DEEPEN_STEPS", ())
+
+    def no_report(_run: ScanRun, _directory: Path) -> ReportResult:
+        return ReportResult(None, None)
+
+    monkeypatch.setattr("lumon.scan.service.write_report", no_report)
+    result = service.run(workspace_id, force=True)
+
+    receipt = json.loads(
+        (
+            service.run_store.path_for(workspace, result.run_id) / "repository-baselines.json"
+        ).read_text()
+    )
+    assert result.state == ScanState.COMPLETED_WITH_FAILURES
+    assert any("shallow history" in failure for failure in result.failures)
+    assert receipt["repositories"][0]["history_covered"] is False
+
+
+def test_scan_does_not_start_agent_when_all_repositories_are_unavailable(tmp_path: Path) -> None:
+    runner = _FakeRunner(has_findings=False)
+    fake_service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
+    record = RepositoryRecord("missing", "https://example.test/repo.git", "repos/missing", "main")
+    WorkspaceConfig("scan-recovery", (record,)).write(workspace / "lumon" / "workspace.toml")
+    service = ScanService(state_root=fake_service.state_root, runner=cast(AgentRunner, runner))
+
+    result = service.run(workspace_id, force=True)
+
+    assert result.state == ScanState.FAILED
+    assert result.repositories_failed == 1 and not runner.prompts
+
+
 @pytest.mark.parametrize(
-    "outcome", ["resolved", "open", "missing", "stale", "wrong-branch", "failed"]
+    "outcome", ["resolved", "open", "missing", "stale", "wrong-branch", "wrong-revision", "failed"]
 )
 def test_scan_rechecks_old_issues_and_projects_only_evidence_backed_outcomes(
     tmp_path: Path,
@@ -431,7 +725,7 @@ def test_scan_rechecks_old_issues_and_projects_only_evidence_backed_outcomes(
         "issue_id": finding.issue_id,
         "status": "open" if outcome == "open" else "resolved",
         "branch": "feature" if outcome == "wrong-branch" else "master",
-        "revision": "a" * 40,
+        "revision": ("b" if outcome == "wrong-revision" else "a") * 40,
         "fresh": outcome != "stale",
         "evidence": (
             "src/app.py:10-12 and both callers inspected at the fetched commit; static review only."
@@ -640,6 +934,7 @@ def test_agent_filtered_duplicates_allow_new_findings_and_preserve_history(
             "issue_reviews": [] if ignored else [evidence],
             "issue_matches": [{**evidence, "issue_id": source_id, "canonical_issue_id": "OLD"}],
             "failures": [],
+            "repositories_scanned": 1,
         }
     )
     service, workspace, workspace_id = _scan_service(tmp_path, cast(AgentRunner, runner))
@@ -714,7 +1009,7 @@ def test_review_window_comes_from_settings_not_legacy_description(
     assert f"changes in the last {lookback_days} days" in runner.prompts[0]
     assert legacy_description not in runner.prompts[0]
     assert "changes in the last 7 days" not in runner.prompts[0]
-    assert "Fetch the configured remote branch" in runner.prompts[0]
+    assert "prepared an isolated worktree" in runner.prompts[0]
     assert "Write all generated scan content in English" in runner.prompts[0]
     assert service.settings_store.load(workspace_id).auto_scan.workflow_description == (
         legacy_description

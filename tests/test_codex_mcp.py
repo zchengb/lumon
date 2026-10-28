@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
@@ -37,9 +37,14 @@ class FakeRpc(CodexRpc):
         }
 
     async def start(
-        self, binary: str, workspace: Path, environment: Mapping[str, str] | None
+        self,
+        binary: str,
+        workspace: Path,
+        environment: Mapping[str, str] | None,
+        *,
+        config: Sequence[str] = (),
     ) -> None:
-        del binary, workspace, environment
+        del binary, workspace, environment, config
 
     async def send(self, payload: dict[str, object]) -> None:
         del payload

@@ -58,8 +58,12 @@ from lumon.dashboard.schemas import (
     McpServerResponse,
     McpUpdateRequest,
     RegisterWorkspaceRequest,
+    RemoteRepositoriesRequest,
+    RemoteRepositoryInput,
     RepositoryOverviewResponse,
     RepositoryResultResponse,
+    RepositoryScopesRequest,
+    RepositorySearchRequest,
     ScanFindingIgnoreRequest,
     ScanFindingResponse,
     ScanRunResponse,
@@ -88,6 +92,11 @@ from lumon.dashboard.service import (
 from lumon.errors import InvalidInputError, LumonError, PreflightError, WorkspaceNotFoundError
 from lumon.scan.model import ScanFinding, ScanRun
 from lumon.tools.codex_mcp import McpNewServer
+from lumon.tools.github_repositories import (
+    GithubRepository,
+    authenticated_hosts,
+    search_repositories,
+)
 from lumon.visual.environment import EnvironmentSnapshot
 
 # Route functions are consumed by FastAPI's runtime decorators.
@@ -123,6 +132,27 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
             workspace_count=len(workspaces),
             has_workspaces=bool(workspaces),
         )
+
+    @router.get("/repository-sources", response_model=list[str])
+    def repository_sources(request: Request) -> list[str]:
+        _require_local_origin(request)
+        return list(authenticated_hosts())
+
+    @router.post("/repository-sources/search", response_model=list[RemoteRepositoryInput])
+    def search_repository_sources(
+        request: Request, payload: RepositorySearchRequest
+    ) -> list[RemoteRepositoryInput]:
+        _require_local_origin(request)
+        return [
+            RemoteRepositoryInput(
+                name=item.name,
+                full_name=item.full_name,
+                clone_url=item.clone_url,
+                branch=item.branch,
+                mcp_server=item.mcp_server,
+            )
+            for item in search_repositories(payload.host, payload.query)
+        ]
 
     @router.get("/agent/settings", response_model=AgentSettingsResponse)
     def agent_settings(request: Request) -> AgentSettingsResponse:
@@ -307,10 +337,12 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
     def initialize_workspace(
         request: Request, payload: InitializeWorkspaceRequest
     ) -> InitializeWorkspaceResponse:
+        _require_local_origin(request)
         result, registration = _service(request).initialize_workspace(
             _path(payload.path),
             payload.name,
             tuple(payload.repositories),
+            tuple(GithubRepository(**item.model_dump()) for item in payload.remote_repositories),
         )
         return InitializeWorkspaceResponse(
             status=result.status,
@@ -346,9 +378,15 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                     branch=item.branch,
                     health=item.health,
                     detail=item.detail,
+                    remote_only=item.remote_only,
+                    mcp_server=item.mcp_server,
+                    remote_name=item.remote_name,
+                    auto_scan=item.auto_scan,
+                    auto_delivery=item.auto_delivery,
                 )
                 for item in overview.repositories
             ],
+            repositories_version=overview.repositories_version,
             workflow_schedules=[
                 WorkflowScheduleResponse(
                     flow_id=item.flow_id,
@@ -359,6 +397,30 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                 for item in overview.workflow_schedules
             ],
         )
+
+    @router.post("/workspaces/{workspace_id}/repositories", status_code=204)
+    def add_remote_repositories(
+        request: Request, workspace_id: UUID, payload: RemoteRepositoriesRequest
+    ) -> Response:
+        _require_local_origin(request)
+        _service(request).add_remote_repositories(
+            workspace_id,
+            payload.expected_version,
+            tuple(GithubRepository(**item.model_dump()) for item in payload.repositories),
+        )
+        return Response(status_code=204)
+
+    @router.put("/workspaces/{workspace_id}/repositories/scope", status_code=204)
+    def update_repository_scopes(
+        request: Request, workspace_id: UUID, payload: RepositoryScopesRequest
+    ) -> Response:
+        _require_local_origin(request)
+        _service(request).update_repository_scopes(
+            workspace_id,
+            payload.expected_version,
+            tuple((item.name, item.auto_scan, item.auto_delivery) for item in payload.repositories),
+        )
+        return Response(status_code=204)
 
     @router.get("/workspaces/{workspace_id}/environment", response_model=EnvironmentSnapshot)
     def visual_environment(

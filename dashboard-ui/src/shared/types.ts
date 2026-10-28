@@ -115,6 +115,11 @@ export interface RepositoryOverview {
   branch: string;
   health: "ready" | "unhealthy";
   detail: string;
+  remote_only?: boolean;
+  mcp_server?: string | null;
+  remote_name?: string | null;
+  auto_scan?: boolean;
+  auto_delivery?: boolean;
 }
 
 export interface WorkspaceOverview {
@@ -124,6 +129,7 @@ export interface WorkspaceOverview {
   created_at: string;
   lumon_version: string;
   repositories: RepositoryOverview[];
+  repositories_version?: string;
   workflow_schedules: WorkflowSchedule[];
 }
 
@@ -313,6 +319,17 @@ export interface InitializeWorkspaceRequest {
   path: string;
   name?: string;
   repositories: string[];
+  remote_repositories?: RemoteRepository[];
+}
+
+export interface RemoteRepository {
+  name: string;
+  full_name: string;
+  clone_url: string;
+  branch: string;
+  mcp_server: string;
+  auto_scan: boolean;
+  auto_delivery: boolean;
 }
 
 export interface InitializeWorkspaceResponse {

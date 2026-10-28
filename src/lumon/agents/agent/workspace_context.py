@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
 
 from lumon.agents.agent.config import AgentConfig
 from lumon.agents.agent.model import AgentChannelContext, Message, WorkspaceContext
@@ -16,6 +18,7 @@ from lumon.visual import environment
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
+from lumon.workspace.model import RepositoryRecord
 from lumon.workspace.registry import WorkspaceRegistration, WorkspaceRegistry
 
 
@@ -34,7 +37,9 @@ class WorkspaceContextBuilder:
         self.soul_loader = soul_loader or SoulLoader()
         self.prompt_renderer = prompt_renderer or PromptRenderer()
 
-    def resolve_workspace(self) -> WorkspaceContext:
+    def resolve_workspace(
+        self, *, automation: Literal["scan", "delivery"] | None = None
+    ) -> WorkspaceContext:
         """Resolve the configured or unique Workspace and validate its identity."""
 
         registration = self._select_registration()
@@ -63,10 +68,12 @@ class WorkspaceContextBuilder:
         agents_text = _read_agents(layout.agents_instructions)
         flow_snapshot = FlowCatalog(layout.root).discover()
         capability_snapshot = CapabilityCatalog(layout.root).discover()
-        repositories = tuple(
-            f"{record.name} ({record.path}, branch {record.branch})"
-            for record in workspace_config.repositories
-        )
+        records = workspace_config.repositories
+        if automation == "scan":
+            records = tuple(record for record in records if record.auto_scan)
+        elif automation == "delivery":
+            records = tuple(record for record in records if record.auto_delivery)
+        repositories = tuple(_repository_context(record) for record in records)
         return WorkspaceContext(
             workspace_id=manifest.workspace_id,
             name=manifest.name,
@@ -107,6 +114,7 @@ class WorkspaceContextBuilder:
         *,
         channel_context: AgentChannelContext | None = None,
         inspect_environment: bool = True,
+        repositories: tuple[str, ...] | None = None,
     ) -> str:
         """Build a small prompt for a resumed Session."""
 
@@ -117,6 +125,8 @@ class WorkspaceContextBuilder:
             user_message=user_message,
             channel_context=channel_context,
             visual_environment=snapshot.prompt_text() if snapshot else "(not checked)",
+            include_repository_guidance=inspect_environment,
+            repositories=repositories,
         )
 
     def _select_registration(self) -> WorkspaceRegistration:
@@ -139,6 +149,14 @@ class WorkspaceContextBuilder:
                 "Agent has multiple Workspaces but no default_workspace_id is configured."
             )
         return next(iter(registrations))
+
+
+def _repository_context(record: RepositoryRecord) -> str:
+    text = f"{record.name} ({record.path}, branch {record.branch})"
+    if record.mcp_server:
+        remote = urlsplit(record.url).path.strip("/").removesuffix(".git")
+        text += f"; MCP: {record.mcp_server}; remote: {remote}"
+    return text
 
 
 def _read_agents(path: Path) -> str:

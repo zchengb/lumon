@@ -11,6 +11,7 @@ from pathlib import Path
 
 from lumon.errors import InvalidInputError, PreflightError, RepositoryError
 from lumon.workspace.model import RepositoryRecord, RepositoryResult, RepositorySpec
+from lumon.workspace.settings import validate_delivery_target_branch
 
 GitRunner = Callable[..., subprocess.CompletedProcess[str]]
 _REMOTE_HEAD_PATTERN = re.compile(r"^ref: refs/heads/(?P<branch>[^\s]+)\s+HEAD$")
@@ -58,6 +59,31 @@ class RepositoryProvisioner:
 
             if destination.is_symlink():
                 raise PreflightError(f"Repository destination must not be a symlink: {destination}")
+            if specification.mcp_server is not None:
+                assert specification.branch is not None
+                if destination.exists():
+                    self._reuse_existing(specification, destination, dry_run=False)
+                record = RepositoryRecord(
+                    name=specification.name,
+                    url=specification.clone_url,
+                    path=str(Path("repos") / specification.name),
+                    branch=specification.branch,
+                    mcp_server=specification.mcp_server,
+                    auto_scan=specification.auto_scan,
+                    auto_delivery=specification.auto_delivery,
+                )
+                preparations.append(
+                    RepositoryPreparation(
+                        record=record,
+                        result=RepositoryResult(
+                            specification.name,
+                            destination,
+                            "will_register" if dry_run else "registered",
+                            specification.branch,
+                        ),
+                    )
+                )
+                continue
             if destination.exists():
                 preparations.append(
                     self._reuse_existing(specification, destination, dry_run=dry_run)
@@ -121,11 +147,19 @@ class RepositoryProvisioner:
                 raise InvalidInputError(f"Duplicate Repository name: {specification.name}")
             names.add(specification.name)
             validate_clone_url(specification.clone_url)
+            if specification.mcp_server is not None:
+                if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", specification.mcp_server) is None:
+                    raise InvalidInputError("Invalid Repository MCP source.")
+                if not specification.branch:
+                    raise InvalidInputError("A remote Repository must specify its branch.")
+                validate_delivery_target_branch(specification.branch)
 
     def inspect(self, workspace: Path, record: RepositoryRecord) -> tuple[bool, str]:
         """Verify one persisted Repository without changing its working tree."""
 
         path = workspace / record.path
+        if record.mcp_server is not None and not path.exists() and not path.is_symlink():
+            return True, "Remote Repository registered; local checkout not prepared."
         if path.is_symlink() or not path.is_dir():
             return False, f"missing Repository directory: {path}"
         try:

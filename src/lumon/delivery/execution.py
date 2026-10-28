@@ -31,6 +31,7 @@ from lumon.delivery.store import DeliveryRunStore
 from lumon.errors import AgentRuntimeError, LumonError, PreflightError
 from lumon.observability import redact_text
 from lumon.tools.jira_delivery import JiraDeliveryCandidate, JiraDeliveryTrigger
+from lumon.workspace.config import load_workspace_config
 from lumon.workspace.registry import UserStateLayout, WorkspaceRegistry
 from lumon.workspace.settings import AutoDeliverySettings, WorkspaceSettingsStore
 
@@ -275,7 +276,12 @@ async def _execute_poll(
         replace(config, default_workspace_id=workspace_id),
         registry,
     )
-    context = context_builder.resolve_workspace()
+    context = context_builder.resolve_workspace(automation="delivery")
+    if (
+        not context.repositories
+        and load_workspace_config(context.workspace_config_path).repositories
+    ):
+        raise PreflightError("No Repositories are enabled for Auto Delivery.")
     prompt = context_builder.build_prompt(
         context,
         (),

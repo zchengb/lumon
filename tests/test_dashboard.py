@@ -752,6 +752,67 @@ def test_initialize_and_read_workspace_overview(tmp_path: Path) -> None:
     assert overview.json()["workflow_schedules"] == []
 
 
+def test_remote_repository_registration_and_scope_are_safe(tmp_path: Path) -> None:
+    from lumon.tools.github_mcp_proxy import github_server_name
+
+    service = _service(tmp_path)
+    client = _client(service)
+    workspace = tmp_path / "remote-workspace"
+    repository = {
+        "name": "app",
+        "full_name": "org/app",
+        "clone_url": "https://github.com/org/app.git",
+        "branch": "main",
+        "mcp_server": github_server_name("github.com"),
+        "auto_scan": True,
+        "auto_delivery": False,
+    }
+    created = client.post(
+        "/api/workspaces/initialize",
+        json={
+            "path": str(workspace),
+            "remote_repositories": [repository],
+        },
+    )
+    assert created.status_code == 201
+    workspace_id = created.json()["workspace_id"]
+    assert not (workspace / "repos" / "app").exists()
+    overview = client.get(f"/api/workspaces/{workspace_id}/overview").json()
+    assert overview["repositories"][0]["remote_only"] is True
+    assert overview["repositories"][0]["auto_delivery"] is False
+    version = overview["repositories_version"]
+    scope = {
+        "expected_version": version,
+        "repositories": [
+            {"name": "app", "auto_scan": False, "auto_delivery": True},
+        ],
+    }
+    assert (
+        client.put(f"/api/workspaces/{workspace_id}/repositories/scope", json=scope).status_code
+        == 204
+    )
+    assert (
+        client.put(f"/api/workspaces/{workspace_id}/repositories/scope", json=scope).status_code
+        == 409
+    )
+    updated = client.get(f"/api/workspaces/{workspace_id}/overview").json()
+    assert updated["repositories"][0]["auto_scan"] is False
+    assert updated["repositories"][0]["auto_delivery"] is True
+    assert updated["repositories"][0]["mcp_server"] == repository["mcp_server"]
+    config_path = workspace / "lumon" / "workspace.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + "# Custom comment\n", encoding="utf-8"
+    )
+    before = config_path.read_bytes()
+    current = client.get(f"/api/workspaces/{workspace_id}/overview").json()
+    scope["expected_version"] = current["repositories_version"]
+    assert (
+        client.put(f"/api/workspaces/{workspace_id}/repositories/scope", json=scope).status_code
+        == 409
+    )
+    assert config_path.read_bytes() == before
+
+
 def test_overview_lists_only_saved_workflow_schedules_without_changing_jobs(
     tmp_path: Path,
 ) -> None:

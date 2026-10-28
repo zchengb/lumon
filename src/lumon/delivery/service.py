@@ -268,12 +268,14 @@ def _require_direct_publish_branch(
 ) -> None:
     if settings.publish_mode != DeliveryPublishMode.DIRECT:
         return
+    config = load_workspace_config(WorkspaceLayout.from_root(workspace).workspace_config)
+    registered = next((item for item in config.repositories if item.name == repository), None)
+    if registered is None:
+        raise PreflightError("Specify a registered Repository for direct publication.")
+    if not registered.auto_delivery:
+        raise PreflightError("Repository is outside the Auto Delivery scope.")
     target_branch = settings.target_branch
     if not target_branch:
-        config = load_workspace_config(WorkspaceLayout.from_root(workspace).workspace_config)
-        registered = next((item for item in config.repositories if item.name == repository), None)
-        if registered is None:
-            raise PreflightError("Specify a registered Repository for direct publication.")
         target_branch = registered.branch
     if branch != target_branch:
         raise PreflightError(

@@ -75,11 +75,38 @@ class PromptRenderer:
         user_message: str,
         channel_context: AgentChannelContext | None = None,
         visual_environment: str = "(not checked)",
+        include_repository_guidance: bool = True,
+        repositories: tuple[str, ...] | None = None,
     ) -> str:
         """Render only message-specific context for a resumed Codex session."""
 
+        repository_freshness = (
+            "<repository-freshness>\n"
+            "For current code questions, use the registered Repository's MCP server "
+            "to resolve the configured branch and read consistently at its latest commit. "
+            "Search with an explicit repo:owner/name scope. For local execution, edits, "
+            "or repositories without MCP, use `lumon workspace prepare-repository "
+            "<name> --workspace . --task <task-key> --mode read --json` on demand; "
+            "use a new task key for each read snapshot and `--mode work` for edits. "
+            "For continued edits reuse the task key and "
+            "preserve its existing worktree. "
+            "A failed fetch or a worktree that does not contain the fetched revision is "
+            "not fresh; never discard or reset local changes. For Git history pass "
+            "`--history-days <N>` and report incomplete coverage when `history_covered` "
+            "is false. Explicit requests to inspect "
+            "local changes take precedence.\n</repository-freshness>\n\n"
+            if include_repository_guidance
+            else ""
+        )
+        repository_list = ""
+        if include_repository_guidance and repositories is not None:
+            repository_list = (
+                "Current registered repositories:\n"
+                + ("\n".join(f"- {item}" for item in repositories) or "(none registered)")
+                + "\n\n"
+            )
         return (
-            "<visual-environment>\n"
+            repository_list + repository_freshness + "<visual-environment>\n"
             "Host prerequisites only; application verification remains unverified. "
             "Recheck with `lumon doctor --visual --json` before visual work.\n"
             f"{visual_environment}\n</visual-environment>\n\n"

@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Literal
 
 InitStatus = Literal["initialized", "already_initialized", "updated", "dry_run"]
-RepositoryResultStatus = Literal["cloned", "reused", "will_clone", "will_reuse"]
+RepositoryResultStatus = Literal[
+    "cloned", "reused", "registered", "will_clone", "will_reuse", "will_register"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +18,10 @@ class RepositorySpec:
 
     name: str
     clone_url: str
+    branch: str | None = None
+    mcp_server: str | None = None
+    auto_scan: bool = True
+    auto_delivery: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +32,9 @@ class RepositoryRecord:
     url: str
     path: str
     branch: str
+    mcp_server: str | None = None
+    auto_scan: bool = True
+    auto_delivery: bool = True
 
 
 @dataclass(frozen=True, slots=True)

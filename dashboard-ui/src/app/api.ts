@@ -15,6 +15,7 @@ import type {
   FlowSummary,
   InitializeWorkspaceRequest,
   InitializeWorkspaceResponse,
+  RemoteRepository,
   McpCreate,
   McpDiscovery,
   McpInventory,
@@ -74,6 +75,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dashboardApi = {
+  repositorySources(): Promise<string[]> {
+    return request("/api/repository-sources", { cache: "no-store" });
+  },
+  searchRepositories(host: string, query: string): Promise<RemoteRepository[]> {
+    return request("/api/repository-sources/search", {
+      method: "POST", body: JSON.stringify({ host, query }),
+    });
+  },
+  addRepositories(workspaceId: string, expectedVersion: string, repositories: RemoteRepository[]): Promise<void> {
+    return request(`/api/workspaces/${workspaceId}/repositories`, {
+      method: "POST", body: JSON.stringify({ expected_version: expectedVersion, repositories }),
+    });
+  },
+  updateRepositoryScopes(workspaceId: string, version: string, repositories: { name: string; auto_scan: boolean; auto_delivery: boolean }[]): Promise<void> {
+    return request(`/api/workspaces/${workspaceId}/repositories/scope`, {
+      method: "PUT", body: JSON.stringify({ expected_version: version, repositories }),
+    });
+  },
   listMcp(workspaceId: string): Promise<McpInventory> {
     return request(`/api/workspaces/${workspaceId}/mcp`, { cache: "no-store" });
   },

@@ -77,6 +77,16 @@ This saved policy supersedes older hook text about local-only handoff, commits,
 branches or PRs. It never authorizes changes outside this Story, bypassing checks,
 force pushes, automatic PR merging, releases or deployments.
 
+For each relevant Repository, run `lumon workspace prepare-repository <name>
+--workspace . --task <Story-key> --mode delivery --json` before reading or editing
+its code. Use the returned worktree and record its fetched revision in the checkpoint.
+Only use Repositories listed for Auto Delivery in the Workspace context. If the Story
+requires a Repository outside this scope, block and ask for the scope to be updated.
+It uses the saved target/base override when set; otherwise it uses the registered
+Repository branch. If its returned branch differs from this poll's publishing policy,
+block rather than work against a changed policy.
+If fetching fails or an existing worktree does not contain that revision, preserve
+its changes and block until the divergence is safely resolved. Never reset it.
 Always work in an isolated worktree on lumon/delivery-<Story-key>, preserving the
 registered Repository's checkout and unrelated edits. If no target override is
 set, use that Repository's registered branch; do not guess main or master.

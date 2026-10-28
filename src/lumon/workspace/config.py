@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +26,12 @@ class WorkspaceConfig:
         """Write a deterministic TOML representation to ``path``."""
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(_render(self), encoding="utf-8")
+        path.write_text(self.as_toml(), encoding="utf-8")
+
+    def as_toml(self) -> str:
+        """Return the deterministic Workspace representation."""
+
+        return _render(self)
 
 
 def load_workspace_config(path: Path) -> WorkspaceConfig:
@@ -72,6 +78,9 @@ def _parse_repository(value: dict[str, object], source: Path, index: int) -> Rep
     url = value.get("url")
     path = value.get("path")
     branch = value.get("branch")
+    mcp_server = value.get("mcp_server")
+    auto_scan = value.get("auto_scan", True)
+    auto_delivery = value.get("auto_delivery", True)
     if not all(isinstance(item, str) and item.strip() for item in (name, url, path, branch)):
         raise PreflightError(f"Invalid Repository fields at index {index}: {source}")
 
@@ -89,12 +98,21 @@ def _parse_repository(value: dict[str, object], source: Path, index: int) -> Rep
     expected_path = Path("repos") / name
     if relative_path.is_absolute() or relative_path != expected_path:
         raise PreflightError(f"Repository path must be repos/{name}: {source}")
+    if mcp_server is not None and (
+        not isinstance(mcp_server, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", mcp_server) is None
+    ):
+        raise PreflightError(f"Invalid Repository MCP source at index {index}: {source}")
+    if not isinstance(auto_scan, bool) or not isinstance(auto_delivery, bool):
+        raise PreflightError(f"Invalid Repository automation scope at index {index}: {source}")
 
     return RepositoryRecord(
         name=name,
         url=url,
         path=path,
         branch=branch,
+        mcp_server=mcp_server,
+        auto_scan=auto_scan,
+        auto_delivery=auto_delivery,
     )
 
 
@@ -114,6 +132,12 @@ def _render(config: WorkspaceConfig) -> str:
                 f"branch = {_toml_string(repository.branch)}",
             ]
         )
+        if repository.mcp_server is not None:
+            lines.append(f"mcp_server = {_toml_string(repository.mcp_server)}")
+        if not repository.auto_scan:
+            lines.append("auto_scan = false")
+        if not repository.auto_delivery:
+            lines.append("auto_delivery = false")
     return "\n".join(lines) + "\n"
 
 

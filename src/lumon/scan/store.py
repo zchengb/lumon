@@ -37,6 +37,17 @@ class ScanRunStore:
         _secure_directory(directory)
         _atomic_write(directory / "run.json", run.as_payload())
 
+    def save_repository_baselines(
+        self, workspace: Path, run_id: str, payload: Mapping[str, object]
+    ) -> None:
+        """Atomically persist non-sensitive Repository preparation evidence."""
+
+        directory = self.path_for(workspace, run_id)
+        expected_parent = workspace.resolve() / "lumon" / "runs" / "scans"
+        if directory.is_symlink() or directory.resolve().parent != expected_parent:
+            raise PreflightError("Auto Scan receipt directory is outside this Workspace.")
+        _atomic_write(directory / "repository-baselines.json", payload)
+
     def load(self, workspace: Path, run_id: str) -> ScanRun:
         """Read one scan receipt."""
 

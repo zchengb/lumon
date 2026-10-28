@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import os
-from collections.abc import Awaitable, Callable
+import re
+import tempfile
+from collections.abc import Awaitable, Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from lumon.agents.agent.config import (
@@ -54,12 +60,14 @@ from lumon.tools.codex_models import CodexModel, CodexModelCatalog
 from lumon.tools.codex_status import CodexCliStatus, CodexCliUpdateChecker
 from lumon.tools.feishu_directory import FeishuDirectory
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
+from lumon.tools.github_mcp_proxy import github_server_name
+from lumon.tools.github_repositories import GithubRepository
 from lumon.visual import environment
-from lumon.workspace.config import load_workspace_config
+from lumon.workspace.config import WorkspaceConfig, load_workspace_config
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
-from lumon.workspace.model import InitRequest, InitResult
+from lumon.workspace.model import InitRequest, InitResult, RepositorySpec
 from lumon.workspace.registry import WorkspaceRegistration, WorkspaceRegistry
 from lumon.workspace.repositories import RepositoryProvisioner, spec_from_url
 from lumon.workspace.settings import (
@@ -82,6 +90,73 @@ WorkspaceHealth = Literal["ready", "missing", "invalid"]
 RepositoryHealth = Literal["ready", "unhealthy"]
 
 
+def _remote_repository_spec(item: GithubRepository) -> RepositorySpec:
+    try:
+        parsed = urlsplit(item.clone_url)
+        host = parsed.hostname or ""
+        port = parsed.port
+        server = github_server_name(host)
+    except ValueError:
+        raise InvalidInputError("Invalid GitHub MCP Repository source.") from None
+    if (
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or port is not None
+        or parsed.query
+        or parsed.fragment
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", item.full_name)
+        or parsed.path.removeprefix("/").removesuffix(".git") != item.full_name
+        or item.full_name.split("/")[-1] != item.name
+        or item.mcp_server != server
+    ):
+        raise InvalidInputError("Invalid GitHub MCP Repository source.")
+    return RepositorySpec(
+        item.name, item.clone_url, item.branch, item.mcp_server, item.auto_scan, item.auto_delivery
+    )
+
+
+@contextmanager
+def _repository_config_lock(path: Path) -> Generator[None]:
+    try:
+        descriptor = os.open(
+            path.parent / ".repository-settings.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
+        )
+        with os.fdopen(descriptor, "a+") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            yield
+    except OSError as exc:
+        raise PreflightError("Unable to update Repository scope.") from exc
+
+
+def _read_repository_config(path: Path, expected_version: str) -> tuple[bytes, WorkspaceConfig]:
+    if path.is_symlink():
+        raise PreflightError("Repository configuration must not be a symlink.")
+    original = path.read_bytes()
+    config = load_workspace_config(path)
+    if hashlib.sha256(original).hexdigest() != expected_version:
+        raise PreflightError("Repository settings changed. Refresh and try again.")
+    if config.as_toml().encode() != original:
+        raise PreflightError(
+            "Repository configuration has custom formatting; changes were preserved."
+        )
+    return original, config
+
+
+def _write_repository_config(path: Path, original: bytes, config: WorkspaceConfig) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".repositories-", dir=path.parent)
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        config.write(temporary)
+        os.chmod(temporary, path.stat().st_mode & 0o777)
+        if path.is_symlink() or path.read_bytes() != original:
+            raise PreflightError("Repository settings changed. Refresh and try again.")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 @dataclass(frozen=True, slots=True)
 class WorkspaceListItem:
     """A registry entry plus the current filesystem health of its Workspace."""
@@ -100,6 +175,11 @@ class RepositoryOverview:
     branch: str
     health: RepositoryHealth
     detail: str
+    remote_only: bool = False
+    mcp_server: str | None = None
+    remote_name: str | None = None
+    auto_scan: bool = True
+    auto_delivery: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +202,7 @@ class WorkspaceOverview:
     created_at: str
     lumon_version: str
     repositories: tuple[RepositoryOverview, ...]
+    repositories_version: str = ""
     workflow_schedules: tuple[WorkflowScheduleView, ...] = ()
 
 
@@ -364,10 +445,13 @@ class DashboardService:
         path: Path,
         name: str | None,
         repository_urls: tuple[str, ...],
+        remote_repositories: tuple[GithubRepository, ...] = (),
     ) -> tuple[InitResult, WorkspaceRegistration]:
         """Initialize through the CLI domain flow and return the new registry entry."""
 
-        specifications = tuple(spec_from_url(url) for url in repository_urls)
+        specifications = tuple(spec_from_url(url) for url in repository_urls) + tuple(
+            _remote_repository_spec(item) for item in remote_repositories
+        )
         result = self.initializer.initialize(
             InitRequest(path, name=name, repositories=specifications)
         )
@@ -378,6 +462,47 @@ class DashboardService:
             )
         self._set_default_for_sole_workspace()
         return result, registration
+
+    def add_remote_repositories(
+        self, workspace_id: UUID, expected_version: str, repositories: tuple[GithubRepository, ...]
+    ) -> None:
+        registration = self._require(workspace_id)
+        if not repositories:
+            raise InvalidInputError("Select at least one Repository.")
+        specs = tuple(_remote_repository_spec(item) for item in repositories)
+        path = WorkspaceLayout.from_root(registration.path).workspace_config
+        with _repository_config_lock(path):
+            original, config = _read_repository_config(path, expected_version)
+            preparations = self.repository_provisioner.prepare(
+                registration.path, specs, config.repositories
+            )
+            additions = {item.record.name: item.record for item in preparations if item.record}
+            merged = [additions.pop(item.name, item) for item in config.repositories]
+            merged.extend(additions.values())
+            _write_repository_config(path, original, replace(config, repositories=tuple(merged)))
+
+    def update_repository_scopes(
+        self,
+        workspace_id: UUID,
+        expected_version: str,
+        scopes: tuple[tuple[str, bool, bool], ...],
+    ) -> None:
+        path = WorkspaceLayout.from_root(self._require(workspace_id).path).workspace_config
+        with _repository_config_lock(path):
+            original, config = _read_repository_config(path, expected_version)
+            by_name = {name: (scan, delivery) for name, scan, delivery in scopes}
+            if len(by_name) != len(scopes) or set(by_name) != {r.name for r in config.repositories}:
+                raise InvalidInputError("Repository scope does not match this Workspace.")
+            updated = replace(
+                config,
+                repositories=tuple(
+                    replace(
+                        item, auto_scan=by_name[item.name][0], auto_delivery=by_name[item.name][1]
+                    )
+                    for item in config.repositories
+                ),
+            )
+            _write_repository_config(path, original, updated)
 
     def overview(self, workspace_id: UUID) -> WorkspaceOverview:
         """Read identity, Repository health and saved schedules without changing jobs."""
@@ -396,6 +521,13 @@ class DashboardService:
                     branch=record.branch,
                     health="ready" if ok else "unhealthy",
                     detail=detail,
+                    remote_only=bool(
+                        record.mcp_server and not (layout.root / record.path).exists()
+                    ),
+                    mcp_server=record.mcp_server,
+                    remote_name=urlsplit(record.url).path.strip("/").removesuffix(".git"),
+                    auto_scan=record.auto_scan,
+                    auto_delivery=record.auto_delivery,
                 )
             )
         return WorkspaceOverview(
@@ -405,6 +537,7 @@ class DashboardService:
             created_at=manifest.created_at,
             lumon_version=manifest.lumon_version,
             repositories=tuple(repositories),
+            repositories_version=hashlib.sha256(layout.workspace_config.read_bytes()).hexdigest(),
             workflow_schedules=_workflow_schedules(
                 layout.root, self.settings_store.load(workspace_id).flow_schedules
             ),

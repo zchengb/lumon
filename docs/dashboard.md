@@ -52,6 +52,23 @@ The manifest identifies the Workspace. The Workspace TOML records Repository
 metadata. User-level settings, including the Feishu Webhook URL, stay in the
 corresponding profile and are not copied into the Workspace.
 
+During onboarding, a GitHub CLI login can be used to search the official GitHub MCP
+and select Repositories and branches. Each selection can independently participate
+in Auto Scan and Auto Delivery. Manual Git URLs remain available for other hosts.
+MCP-backed Repositories are registered without cloning; a checkout is created only
+when a task needs a worktree. The Overview's Repository manager can connect existing
+repositories and update automation scope without deleting checkouts or local changes.
+Repository settings use an optimistic version check. Non-standard manually formatted
+Workspace TOML is left untouched rather than rewritten by the manager.
+
+Agent code questions prefer the selected GitHub MCP and the configured branch's
+current commit. The MCP proxy exposes read tools only for selected Repositories, and
+uses the existing `gh` login without saving its token. Local Git commands inherit a
+GitHub credential helper only for the selected hosts; global Git settings are not
+changed. Auto Scan and Auto Delivery still fetch and use isolated worktrees. Scope
+is enforced at MCP reads, scan preparation, and Lumon's Delivery worktree command;
+an unrestricted Agent shell is not an operating-system security boundary.
+
 Manage registrations from the CLI:
 
 ```text
@@ -417,6 +434,13 @@ repeat a backlog scan. The saved publishing policy supersedes older hook wording
 about local-only handoff/commits/PRs, but never broadens work beyond this Story.
 Development stays in isolated `lumon/delivery-<Story-key>` worktrees, including
 direct mode, without changing registered checkouts or unrelated edits.
+For each relevant Repository, the Agent prepares the configured remote branch with
+`lumon workspace prepare-repository <name> --task <Story-key> --mode delivery --json`.
+The result records the fetched commit and worktree, using the saved target/base
+override when set or the Repository branch otherwise. Existing task worktrees are
+never reset; if they do not contain the fetched commit, the Agent must resolve the
+divergence safely or block. This is an Agent instruction, not a sandbox that prevents
+an Agent from invoking other Git commands.
 Published modes require validation, scoped commits, remote read-back and, for PR
 mode, a verified PR link. Direct mode never force pushes; a moved/rejected target
 must block. No mode authorizes auto-merge, releases or deployment. Missing tools
@@ -506,6 +530,15 @@ findings contribute to new report counts, notifications and completion hooks.
 Historical receipts, reports, notifications and Jira records remain unchanged.
 Each scan also requires a fresh configured-branch assessment for every non-ignored
 known issue, including resolved issues and issues outside the discovery lookback.
+Before the review, Lumon fetches each configured branch in parallel and prepares
+isolated read-only-intended worktrees at the fetched commits. The run records these
+baselines in `repository-baselines.json`. An unavailable Repository is excluded
+from review and reported; if all are unavailable, no review Agent is started.
+For shallow clones, Lumon deepens history in bounded increments when necessary for
+the scan window. If the window still reaches a shallow boundary, the result is
+incomplete rather than silently reporting full coverage.
+Historical freshness claims for another commit are rejected. Clean scan worktrees
+are removed afterward; modified or unsafe ones are preserved and recorded.
 Ignored issues are identity references only: they do not require repair rechecks,
 and missing or unsolicited assessments for them do not make a scan incomplete.
 An equivalent new candidate stays ignored and is excluded from new-finding hooks.
@@ -520,6 +553,21 @@ add resolve/restore actions. Loading failures are not presented as zero issues.
 The **Auto Delivery** product label remains English in every interface language.
 Its page is also execution-only: live delivery progress, Story history and scheduler
 activity remain available, without configuration forms.
+
+## Repository freshness for Agent work
+
+Feishu Agent and scheduled Flows can prepare only the Repositories their current
+task needs with `lumon workspace prepare-repository <name> --task <task-key>
+--mode read --json`; use `--mode work` for changes. This fetches the registered
+branch without updating the canonical checkout and returns a pinned revision and
+worktree path. Fetch failure never falls back to a stale checkout. Reusing an
+existing worktree preserves its files and reports whether it contains the latest
+fetched revision. The commit is current at fetch time; a remote can move again
+while the task is running. Existing local-change inspection remains available
+when explicitly requested. Normal chat and steering do not fetch all Repositories.
+For history questions, `--history-days <N>` requests bounded deepening and reports
+whether that window was covered; it does not automatically fetch submodules.
+The Agent must invoke this command; no MCP server is required.
 
 ## Built-in automation workflows
 

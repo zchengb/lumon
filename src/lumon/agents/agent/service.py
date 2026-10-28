@@ -388,6 +388,7 @@ class AgentService:
                         context_builder.build_resume_prompt,
                         message.text,
                         channel_context=message.channel_context,
+                        repositories=context.repositories,
                     )
                 trace.update(
                     input_text=prompt,

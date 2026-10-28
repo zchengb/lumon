@@ -161,12 +161,46 @@ class WorkspaceFolderSelectionResponse(StrictModel):
     cancelled: bool
 
 
+class RemoteRepositoryInput(StrictModel):
+    name: str = Field(min_length=1, max_length=128)
+    full_name: str = Field(min_length=3, max_length=256)
+    clone_url: str = Field(min_length=1, max_length=1024)
+    branch: str = Field(min_length=1, max_length=256)
+    mcp_server: str = Field(min_length=1, max_length=64)
+    auto_scan: bool = True
+    auto_delivery: bool = True
+
+
+class RepositorySearchRequest(StrictModel):
+    host: str = Field(min_length=1, max_length=253)
+    query: str = Field(min_length=1, max_length=256)
+
+
+class RemoteRepositoriesRequest(StrictModel):
+    expected_version: str = Field(pattern=r"^[0-9a-f]{64}$")
+    repositories: list[RemoteRepositoryInput] = Field(min_length=1, max_length=200)
+
+
+class RepositoryScopeInput(StrictModel):
+    name: str
+    auto_scan: bool
+    auto_delivery: bool
+
+
+class RepositoryScopesRequest(StrictModel):
+    expected_version: str = Field(pattern=r"^[0-9a-f]{64}$")
+    repositories: list[RepositoryScopeInput] = Field(max_length=200)
+
+
 class InitializeWorkspaceRequest(StrictModel):
     """Request to create a Workspace through the existing initializer."""
 
     path: str = Field(min_length=1)
     name: str | None = None
     repositories: list[str] = Field(default_factory=list)
+    remote_repositories: list[RemoteRepositoryInput] = Field(
+        default_factory=list[RemoteRepositoryInput], max_length=200
+    )
 
 
 class WorkspaceResponse(StrictModel):
@@ -188,6 +222,11 @@ class RepositoryOverviewResponse(StrictModel):
     branch: str
     health: str
     detail: str
+    remote_only: bool = False
+    mcp_server: str | None = None
+    remote_name: str | None = None
+    auto_scan: bool = True
+    auto_delivery: bool = True
 
 
 class WorkflowScheduleResponse(StrictModel):
@@ -208,6 +247,7 @@ class WorkspaceOverviewResponse(StrictModel):
     created_at: str
     lumon_version: str
     repositories: list[RepositoryOverviewResponse]
+    repositories_version: str = ""
     workflow_schedules: list[WorkflowScheduleResponse] = Field(
         default_factory=list[WorkflowScheduleResponse]
     )

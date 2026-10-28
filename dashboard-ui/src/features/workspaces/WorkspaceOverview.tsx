@@ -3,6 +3,7 @@ import { useI18n } from "../../shared/i18n";
 import type { AgentSettings, View, WorkspaceSettings, WorkspaceOverview as WorkspaceOverviewData } from "../../shared/types";
 import { WorkspaceMap } from "./WorkspaceMap";
 import { VisualEnvironmentPanel } from "./VisualEnvironmentPanel";
+import { RepositoryManager } from "./RepositoryManager";
 
 interface WorkspaceOverviewProps {
   overview: WorkspaceOverviewData;
@@ -81,13 +82,14 @@ export function WorkspaceOverview({
                 <div className="repository-meta">
                   <span><GitBranch size={14} />{repository.branch}</span>
                   <span className={repository.health === "ready" ? "health-ok" : "health-bad"}>
-                    {repository.health === "ready" ? t("overview.healthNormal") : t("overview.healthAbnormal")}
+                    {repository.remote_only ? t("repository.remoteOnly") : repository.health === "ready" ? t("overview.healthNormal") : t("overview.healthAbnormal")}
                   </span>
                 </div>
               </div>
             ))}
           </div>
         )}
+        <RepositoryManager overview={overview} onRefresh={onRefresh} />
       </section>
       <aside className="workspace-context">
         <section className="panel workspace-automation">

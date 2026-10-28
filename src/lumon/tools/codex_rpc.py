@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import signal
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -29,11 +29,17 @@ class CodexRpc:
         self._sequence = 0
 
     async def start(
-        self, binary: str, workspace: Path, environment: Mapping[str, str] | None
+        self,
+        binary: str,
+        workspace: Path,
+        environment: Mapping[str, str] | None,
+        *,
+        config: Sequence[str] = (),
     ) -> None:
         self.process = await asyncio.create_subprocess_exec(
             binary,
             "app-server",
+            *(part for item in config for part in ("--config", item)),
             "--listen",
             "stdio://",
             cwd=workspace,

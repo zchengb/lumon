@@ -17,6 +17,7 @@ from lumon.tools.codex import (
     parse_codex_line,
 )
 from lumon.tools.codex_rpc import CodexRpc, CodexRpcError
+from lumon.tools.github_mcp_proxy import workspace_git_environment, workspace_mcp_config
 from lumon.tools.steering import SteeringControl, SteeringInput, SteeringRequest
 from lumon.version import __version__
 
@@ -67,7 +68,14 @@ class _Execution:
         self.callback_failed = False
 
     async def run(self) -> CodexExecutionResult:
-        await self.rpc.start(self.tool.binary, self.request.workspace, self.tool.environment)
+        config = workspace_mcp_config(self.request.workspace)
+        environment = workspace_git_environment(self.request.workspace, self.tool.environment)
+        if config:
+            await self.rpc.start(
+                self.tool.binary, self.request.workspace, environment, config=config
+            )
+        else:
+            await self.rpc.start(self.tool.binary, self.request.workspace, environment)
         await self.rpc.request(
             "initialize",
             {"clientInfo": {"name": "lumon", "title": "Lumon", "version": __version__}},

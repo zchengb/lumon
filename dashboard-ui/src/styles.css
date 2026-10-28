@@ -916,6 +916,40 @@ code {
   box-shadow: var(--shadow);
 }
 
+.repository-picker-results {
+  max-height: 210px;
+  margin-top: 10px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.repository-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+
+.repository-picker-row:last-child { border-bottom: 0; }
+.repository-picker-row span { overflow-wrap: anywhere; }
+.repository-picker-selected { display: grid; gap: 8px; margin-top: 14px; }
+.repository-picker-branch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 130px) auto; align-items: center; gap: 8px; }
+.repository-picker-branch span { min-width: 0; overflow-wrap: anywhere; }
+.repository-picker-branch input.text-input { width: 100%; }
+.repository-picker-branch label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.repository-picker-manual { margin: 16px 0; color: var(--muted); }
+.repository-picker-manual summary { cursor: pointer; }
+.repository-manager { margin: 0 20px 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.repository-manager summary { cursor: pointer; font-weight: 600; }
+.repository-manager h3 { margin: 18px 0 10px; font-size: 14px; }
+.repository-manager-scope, .repository-manager-result { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 0; }
+.repository-manager-scope strong, .repository-manager-result span { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+.repository-manager-scope label { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.repository-manager-result input.text-input { width: 120px; }
+
 .onboarding-language {
   position: absolute;
   top: 22px;

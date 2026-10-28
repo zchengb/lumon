@@ -11,12 +11,28 @@ import pytest
 
 from lumon.errors import InvalidInputError, PreflightError
 from lumon.skills.installer import SkillInstaller
+from lumon.workspace.config import load_workspace_config
 from lumon.workspace.doctor import Doctor
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.layout import WorkspaceLayout
-from lumon.workspace.model import InitRequest
+from lumon.workspace.model import InitRequest, RepositorySpec
 from lumon.workspace.registry import WorkspaceRegistry
 from lumon.workspace.settings import WorkspaceSettingsStore
+
+
+def test_initialize_registers_mcp_repository_without_cloning(
+    initializer: WorkspaceInitializer, tmp_path: Path
+) -> None:
+    target = tmp_path / "remote-workspace"
+    spec = RepositorySpec("app", "https://example.com/org/app.git", "main", "github")
+
+    result = initializer.initialize(InitRequest(target, repositories=(spec,)))
+
+    assert result.repositories[0].status == "registered"
+    assert not (target / "repos" / "app").exists()
+    config = load_workspace_config(target / "lumon" / "workspace.toml")
+    assert config.repositories[0].branch == "main"
+    assert config.repositories[0].mcp_server == "github"
 
 
 def test_initialize_missing_workspace_and_install_missing_skill(
@@ -48,8 +64,9 @@ def test_initialize_missing_workspace_and_install_missing_skill(
     assert "近期非 merge、非 release 提交历史" in agents
     assert "使用小写 `lumon`" in agents
     assert "不修改 Git author 或 committer 配置" in agents
-    assert "以远端为准" in agents
-    assert "允许舍弃本地改动" in agents
+    assert "保留 canonical checkout 和已有的本地改动" in agents
+    assert "不得丢弃改动" in agents
+    assert "允许舍弃本地改动" not in agents
     assert "阻塞与任务续接" in agents
     assert (target / ".gitignore").is_file()
     assert tuple((target / "lumon" / "flows").glob("*.md")) == ()

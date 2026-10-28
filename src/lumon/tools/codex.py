@@ -159,6 +159,10 @@ class CodexTool:
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox",
         ]
+        from lumon.tools.github_mcp_proxy import workspace_mcp_config
+
+        for setting in workspace_mcp_config(workspace):
+            command.extend(("--config", setting))
         if self.model:
             command.extend(("--model", self.model))
         if self.reasoning_effort:
@@ -217,6 +221,8 @@ class CodexTool:
         stderr_task: asyncio.Task[bytes] | None = None
         agent_session_id: str | None = None
         try:
+            from lumon.tools.github_mcp_proxy import workspace_git_environment
+
             process = await asyncio.create_subprocess_exec(
                 *self.build_command(
                     request.workspace,
@@ -227,7 +233,7 @@ class CodexTool:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=request.workspace,
-                env=self.environment,
+                env=workspace_git_environment(request.workspace, self.environment),
                 limit=_CODEX_STREAM_LIMIT_BYTES,
                 start_new_session=True,
             )

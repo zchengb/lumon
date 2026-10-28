@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, NoReturn, cast
 from uuid import UUID
 
 import typer
@@ -24,6 +25,11 @@ from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
 from lumon.workspace.registry import WorkspaceRegistration, WorkspaceRegistry
+from lumon.workspace.repository_worktree import (
+    WorktreeMode,
+    prepare_worktree,
+    registered_repository,
+)
 from lumon.workspace.settings import WorkspaceSettingsStore
 
 workspace_app = typer.Typer(
@@ -32,6 +38,56 @@ workspace_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+
+@workspace_app.command("prepare-repository")
+def prepare_repository(
+    name: Annotated[str, typer.Argument(help="Registered Repository name.")],
+    task: Annotated[str, typer.Option("--task", help="Unique task or Story key.")],
+    workspace: Annotated[Path, typer.Option("--workspace", dir_okay=True)] = Path("."),
+    mode: Annotated[str, typer.Option("--mode", help="read, work, or delivery worktree.")] = "read",
+    history_days: Annotated[
+        int | None,
+        typer.Option(
+            "--history-days", min=1, max=3650, help="Cover this many days of Git history."
+        ),
+    ] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Fetch a configured branch and prepare an isolated task worktree."""
+
+    try:
+        if mode not in {"read", "work", "delivery"}:
+            raise InvalidInputError("Repository mode must be read, work, or delivery.")
+        root = WorkspaceLayout.from_root(workspace).root
+        manifest = load_manifest(WorkspaceLayout.from_root(root).manifest)
+        repository = registered_repository(root, name)
+        if mode == "delivery" and not repository.auto_delivery:
+            raise PreflightError("Repository is outside the Auto Delivery scope.")
+        if mode == "delivery":
+            target = (
+                WorkspaceSettingsStore().load(manifest.workspace_id).auto_delivery.target_branch
+            )
+            if target:
+                repository = replace(repository, branch=target)
+        since = datetime.now(UTC) - timedelta(days=history_days) if history_days else None
+        prepared = prepare_worktree(
+            root, repository, task, mode=cast(WorktreeMode, mode), history_since=since
+        )
+    except LumonError as exc:
+        _fail(exc, json_output)
+    if json_output:
+        typer.echo(json.dumps(prepared.to_dict(), ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    typer.echo(f"{prepared.repository}: {prepared.path}")
+    typer.echo(f"Remote {prepared.branch}: {prepared.remote_revision}")
+    if prepared.history_covered is False:
+        typer.echo(f"Git history is incomplete for the requested window: {prepared.history_issue}.")
+    if prepared.reused:
+        typer.echo(
+            f"Existing worktree preserved (dirty={prepared.dirty}, "
+            f"contains_remote={prepared.contains_remote})."
+        )
 
 
 @workspace_app.command("list")

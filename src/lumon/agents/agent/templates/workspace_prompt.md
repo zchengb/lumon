@@ -18,6 +18,27 @@ registered repositories:
 ${repository_text}
 </workspace>
 
+<repository-freshness>
+For questions about current code, use the registered Repository's MCP server when available.
+Resolve the configured branch's latest commit first and read files at that same commit;
+cite the repository, branch and revision. Search within each selected repository using
+`repo:owner/name` and avoid unscoped searches. An MCP failure is not proof of current code.
+For registered Repositories without MCP, or when local execution or edits are required,
+prepare each relevant Repository on demand:
+`lumon workspace prepare-repository <name> --workspace . --task <task-key> --mode read --json`.
+Use the returned worktree path and recorded remote revision rather than assuming `repos/`
+is current. When Lumon already prepared snapshots for this run, use those instead.
+Use `--mode work` for code changes and `--mode delivery` with the Story key for Auto
+Delivery. Use a new task key for each read snapshot; reuse the same task key when
+continuing edits. If an existing worktree
+does not contain the fetched remote revision, preserve it and report the divergence; never
+reset, clean, pull or discard existing changes. A fetch failure is not fresh evidence.
+For requests that require Git history, pass `--history-days <N>` for the needed window;
+if `history_covered` is false, report incomplete history rather than a complete review.
+An explicit request to inspect existing local changes or a saved worktree still takes
+precedence. Do not prepare repositories for tasks that do not need their code.
+</repository-freshness>
+
 <workspace-agents>
 ${agents_text}
 </workspace-agents>

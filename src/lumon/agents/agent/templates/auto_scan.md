@@ -11,11 +11,14 @@ Workspace workflow.
 
 ## Read-only review
 
-Inspect git history, diffs and related code on each configured branch, not an
-arbitrary local HEAD. Fetch the configured remote branch before review. Do not
-checkout, reset, clean, pull or change working files; preserve local changes.
-If fetching fails, explicitly report stale coverage. Review each repository
-independently, continue when one is unavailable and record its failure.
+Lumon has fetched each configured remote branch and prepared an isolated worktree
+at the exact commit in the Prepared repository snapshots section. Inspect history,
+diffs and related code only in those worktrees at their recorded revisions. Do not
+fetch again, checkout, reset, clean, pull or change working files. Repositories
+listed as unavailable must not be reviewed from stale checkouts. Continue with
+available repositories and report each failure.
+If a snapshot has `history_covered: false`, review its available current code
+but report that the configured discovery window has incomplete history.
 
 Only report confirmed bugs with concrete code evidence, production impact and a
 realistic trigger. Deduplicate findings; omit stylistic suggestions, hypothetical
@@ -81,7 +84,7 @@ because an ignored issue's repair status was not checked or cannot be verified.
 Use the exact repository name and issue_id; never invent a replacement ID.
 The lookback limits discovery of new bugs, not verification of existing ones.
 
-For each issue, fetch the configured branch and inspect its current commit,
+For each issue, inspect the prepared configured-branch commit,
 original trigger, root cause, related callers and all affected paths. Compare
 the alleged fix with the original evidence and check whether the trigger can
 still reach the bad behavior. Cite current file/line references, the full commit

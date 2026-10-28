@@ -106,6 +106,7 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "AGENTS.md" in prompt
     assert "不要读取、复制或在回复中暴露凭据" in prompt
     assert "<agent-soul>" in prompt
+    assert "lumon workspace prepare-repository" in prompt
     assert "<conversation-history>" in prompt
     assert context.flow_briefs[0].flow_id == "test-case-generation"
     assert "<available-flows>" in prompt
@@ -124,6 +125,36 @@ def test_unique_workspace_is_resolved_and_prompt_contains_local_rules(
     assert "Treat acceptance criteria as the primary authority" not in prompt
 
 
+def test_automation_context_uses_the_configured_repository_scope(tmp_path: Path) -> None:
+    from lumon.workspace.config import WorkspaceConfig
+    from lumon.workspace.model import RepositoryRecord
+
+    state_root = tmp_path / "state"
+    target = _workspace(tmp_path, state_root, "scope")
+    registration = WorkspaceRegistry(state_root).list()[0]
+    WorkspaceConfig(
+        "scope",
+        (
+            RepositoryRecord(
+                "scan", "https://example.test/scan", "repos/scan", "main", auto_delivery=False
+            ),
+            RepositoryRecord(
+                "delivery",
+                "https://example.test/delivery",
+                "repos/delivery",
+                "main",
+                auto_scan=False,
+            ),
+        ),
+    ).write(target / "lumon" / "workspace.toml")
+    builder = WorkspaceContextBuilder(
+        _config(registration.workspace_id), WorkspaceRegistry(state_root)
+    )
+    assert len(builder.resolve_workspace().repositories) == 2
+    assert builder.resolve_workspace(automation="scan").repositories[0].startswith("scan ")
+    assert builder.resolve_workspace(automation="delivery").repositories[0].startswith("delivery ")
+
+
 def test_resumed_prompt_keeps_only_current_message_context(tmp_path: Path) -> None:
     state_root = tmp_path / "state"
     _workspace(tmp_path, state_root, "flow-refresh-lab")
@@ -134,7 +165,21 @@ def test_resumed_prompt_keeps_only_current_message_context(tmp_path: Path) -> No
     assert "<lumon-flow-context>" not in prompt
     assert "<lumon-capability-context>" not in prompt
     assert "<lumon-channel-context>" in prompt
+    assert "lumon workspace prepare-repository" in prompt
     assert "<user-message>\ngenerate test cases\n</user-message>" in prompt
+    steering = builder.build_resume_prompt("先不要 push", inspect_environment=False)
+    assert "prepare-repository" not in steering
+    assert "先不要 push" in steering
+
+
+def test_resume_prompt_refreshes_the_repository_list() -> None:
+    renderer = PromptRenderer()
+    prompt = renderer.render_resume(user_message="check", repositories=("app (branch main)",))
+    assert "Current registered repositories:\n- app (branch main)" in prompt
+    steering = renderer.render_resume(
+        user_message="stop", include_repository_guidance=False, repositories=("app",)
+    )
+    assert "Current registered repositories" not in steering
 
 
 def test_channel_context_uses_direct_delivery_for_private_messages() -> None:
