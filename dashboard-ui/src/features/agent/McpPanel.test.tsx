@@ -18,6 +18,46 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
+it.each([false, true])("shows Workspace GitHub as read-only (other servers: %s)", async (withOtherServers) => {
+  const name = "lumon_github_example";
+  vi.mocked(dashboardApi.listMcp).mockResolvedValue({ user_version: "v1", servers: [...(withOtherServers ? inventory.servers : []), { name, enabled: true, transport: "stdio", auth_status: "unsupported", source: "workspace", manageable: false, description_kind: null, workspace_host: "team.ghe.com" }] });
+  const discover = vi.spyOn(dashboardApi, "discoverMcp").mockResolvedValue({ auth_status: "unsupported", runtime_status: null, tools: ["search_code"], total_tools: 1, failed: false, description: null });
+  const setEnabled = vi.spyOn(dashboardApi, "setMcpEnabled").mockResolvedValue();
+  const remove = vi.spyOn(dashboardApi, "removeMcp").mockResolvedValue();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  const element = document.createElement("div");
+  const root = createRoot(element);
+  try {
+    await act(async () => root.render(<I18nProvider><McpPanel workspaceId="one" /></I18nProvider>));
+    const rows = element.querySelectorAll<HTMLLIElement>(".mcp-row");
+    expect(rows).toHaveLength(withOtherServers ? 3 : 1);
+    expect(element.textContent).toContain(withOtherServers ? "3 / 3 enabled" : "1 / 1 enabled");
+    expect(element.textContent).not.toContain(name);
+    const github = rows[rows.length - 1];
+    expect(github.textContent).toContain("GitHub MCP");
+    expect(github.textContent).toContain("Enabled");
+    expect(github.textContent).toContain("Read only");
+    expect(github.textContent).toContain("team.ghe.com");
+    const toggle = github.querySelector<HTMLInputElement>('input[role="switch"]')!;
+    const deleteButton = github.querySelector<HTMLButtonElement>(".mcp-remove")!;
+    expect(toggle.checked).toBe(true);
+    expect(toggle.disabled).toBe(true);
+    expect(deleteButton.disabled).toBe(true);
+    expect(deleteButton.title).toContain("Read only");
+    await act(async () => { toggle.click(); deleteButton.click(); });
+    expect(setEnabled).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(github.querySelectorAll("button")).toHaveLength(2);
+    expect(element.textContent).not.toContain("Manage repositories");
+    expect(github.textContent).not.toContain("Connected");
+    await act(async () => github.querySelector<HTMLButtonElement>("button")!.click());
+    expect(discover).toHaveBeenCalledWith("one", name);
+    expect(github.textContent).toContain("Tool catalog read; connection state is unconfirmed.");
+    expect(github.textContent).toContain("search_code");
+  } finally { await act(async () => root.unmount()); }
+});
+
 it("shows an official description without claiming a connection", async () => {
   const element = document.createElement("div");
   const root = createRoot(element);

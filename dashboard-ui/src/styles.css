@@ -942,13 +942,6 @@ code {
 .repository-picker-branch label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .repository-picker-manual { margin: 16px 0; color: var(--muted); }
 .repository-picker-manual summary { cursor: pointer; }
-.repository-manager { margin: 0 20px 18px; padding-top: 14px; border-top: 1px solid var(--line); }
-.repository-manager summary { cursor: pointer; font-weight: 600; }
-.repository-manager h3 { margin: 18px 0 10px; font-size: 14px; }
-.repository-manager-scope, .repository-manager-result { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 0; }
-.repository-manager-scope strong, .repository-manager-result span { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
-.repository-manager-scope label { display: flex; align-items: center; gap: 5px; font-size: 12px; }
-.repository-manager-result input.text-input { width: 120px; }
 
 .onboarding-language {
   position: absolute;

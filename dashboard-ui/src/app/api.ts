@@ -20,6 +20,7 @@ import type {
   McpDiscovery,
   McpInventory,
   SettingsUpdate,
+  SetupReport,
   WebhookTestResponse,
   WorkspaceFolderSelection,
   WorkspaceListItem,
@@ -75,12 +76,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dashboardApi = {
+  getSetup(): Promise<SetupReport> {
+    return request("/api/setup", { cache: "no-store" });
+  },
+  repositoryOrganizations(host: string, page = 1): Promise<string[]> {
+    return request("/api/repository-sources/organizations", { method: "POST", body: JSON.stringify({ host, page }) });
+  },
+  sourceRepositoryBranches(host: string, repository: string, page = 1): Promise<string[]> {
+    return request("/api/repository-sources/branches", { method: "POST", body: JSON.stringify({ host, repository, page }) });
+  },
   repositorySources(): Promise<string[]> {
     return request("/api/repository-sources", { cache: "no-store" });
   },
-  searchRepositories(host: string, query: string): Promise<RemoteRepository[]> {
+  searchRepositories(host: string, query: string, page = 1, organization = ""): Promise<RemoteRepository[]> {
     return request("/api/repository-sources/search", {
-      method: "POST", body: JSON.stringify({ host, query }),
+      method: "POST", body: JSON.stringify({ host, query, page, ...(organization ? { organization } : {}) }),
     });
   },
   addRepositories(workspaceId: string, expectedVersion: string, repositories: RemoteRepository[]): Promise<void> {
@@ -88,9 +98,17 @@ export const dashboardApi = {
       method: "POST", body: JSON.stringify({ expected_version: expectedVersion, repositories }),
     });
   },
-  updateRepositoryScopes(workspaceId: string, version: string, repositories: { name: string; auto_scan: boolean; auto_delivery: boolean }[]): Promise<void> {
+  updateRepositoryScopes(workspaceId: string, version: string, repositories: { name: string; auto_scan: boolean; auto_delivery: boolean }[]): Promise<{ repositories_version: string }> {
     return request(`/api/workspaces/${workspaceId}/repositories/scope`, {
       method: "PUT", body: JSON.stringify({ expected_version: version, repositories }),
+    });
+  },
+  repositoryBranches(workspaceId: string, name: string): Promise<string[]> {
+    return request(`/api/workspaces/${workspaceId}/repositories/${encodeURIComponent(name)}/branches`, { cache: "no-store" });
+  },
+  updateRepositoryBranch(workspaceId: string, name: string, version: string, branch: string): Promise<{ repositories_version: string }> {
+    return request(`/api/workspaces/${workspaceId}/repositories/${encodeURIComponent(name)}/branch`, {
+      method: "PUT", body: JSON.stringify({ expected_version: version, branch }),
     });
   },
   listMcp(workspaceId: string): Promise<McpInventory> {

@@ -214,7 +214,21 @@ def test_mcp_api_is_scoped_and_rejects_foreign_origins(tmp_path: Path) -> None:
 
         async def list_servers(self, workspace: Path) -> McpInventory:
             self.calls.append(("list", workspace))
-            return McpInventory((McpServer("figma", True, "http", "unknown", "user", True),), "v1")
+            return McpInventory(
+                (
+                    McpServer("figma", True, "http", "unknown", "user", True),
+                    McpServer(
+                        "lumon_github_example",
+                        True,
+                        "stdio",
+                        "unsupported",
+                        "workspace",
+                        False,
+                        workspace_host="team.ghe.com",
+                    ),
+                ),
+                "v1",
+            )
 
         async def discover(self, workspace: Path, name: str) -> McpDiscovery:
             self.calls.append(("discover", workspace, name))
@@ -245,6 +259,9 @@ def test_mcp_api_is_scoped_and_rejects_foreign_origins(tmp_path: Path) -> None:
     response = client.get(url)
     assert response.status_code == 200
     assert response.json()["servers"][0]["name"] == "figma"
+    assert response.json()["servers"][1]["source"] == "workspace"
+    assert response.json()["servers"][1]["workspace_host"] == "team.ghe.com"
+    assert response.json()["servers"][1]["manageable"] is False
     assert response.headers["cache-control"] == "no-store"
     assert (
         client.post(f"{url}/figma/discover", headers={"Origin": "https://evil.example"}).status_code
@@ -787,10 +804,10 @@ def test_remote_repository_registration_and_scope_are_safe(tmp_path: Path) -> No
             {"name": "app", "auto_scan": False, "auto_delivery": True},
         ],
     }
-    assert (
-        client.put(f"/api/workspaces/{workspace_id}/repositories/scope", json=scope).status_code
-        == 204
-    )
+    saved = client.put(f"/api/workspaces/{workspace_id}/repositories/scope", json=scope)
+    assert saved.status_code == 200
+    next_version = saved.json()["repositories_version"]
+    assert next_version != version
     assert (
         client.put(f"/api/workspaces/{workspace_id}/repositories/scope", json=scope).status_code
         == 409
@@ -799,6 +816,16 @@ def test_remote_repository_registration_and_scope_are_safe(tmp_path: Path) -> No
     assert updated["repositories"][0]["auto_scan"] is False
     assert updated["repositories"][0]["auto_delivery"] is True
     assert updated["repositories"][0]["mcp_server"] == repository["mcp_server"]
+    assert updated["repositories_version"] == next_version
+    scope["expected_version"] = next_version
+    scope["repositories"][0]["auto_scan"] = True
+    saved_again = client.put(f"/api/workspaces/{workspace_id}/repositories/scope", json=scope)
+    assert saved_again.status_code == 200
+    updated_again = client.get(f"/api/workspaces/{workspace_id}/overview").json()
+    assert updated_again["repositories_version"] == saved_again.json()["repositories_version"]
+    assert updated_again["repositories"][0]["auto_scan"] is True
+    assert updated_again["repositories"][0]["auto_delivery"] is True
+    assert updated_again["repositories"][0]["branch"] == "main"
     config_path = workspace / "lumon" / "workspace.toml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8") + "# Custom comment\n", encoding="utf-8"

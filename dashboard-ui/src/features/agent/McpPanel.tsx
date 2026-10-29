@@ -68,7 +68,8 @@ export function McpPanel({ workspaceId }: { workspaceId: string }): React.JSX.El
     } finally { setBusy(null); }
   }
 
-  const enabled = inventory?.servers.filter((server) => server.enabled).length ?? 0;
+  const servers = inventory?.servers ?? [];
+  const enabled = servers.filter((server) => server.enabled).length;
   function authLabel(auth: string): string {
     if (auth === "notLoggedIn" || auth === "not_logged_in") return t("mcp.authRequired");
     if (auth === "oAuth" || auth === "oauth") return t("mcp.authOAuth");
@@ -98,26 +99,26 @@ export function McpPanel({ workspaceId }: { workspaceId: string }): React.JSX.El
         <HelpTooltip helpId="mcp-help" label={t("mcp.title")} help={t("mcp.help")} />
       </div>
       <div className="mcp-heading-actions">
-        {inventory && <span className="mcp-count">{t("mcp.count", { enabled, total: inventory.servers.length })}</span>}
+        {inventory && <span className="mcp-count">{t("mcp.count", { enabled, total: servers.length })}</span>}
         <button type="button" className="button button-secondary" onClick={() => void refresh()} disabled={loading || busy !== null}><RefreshCw size={15} />{t("mcp.refresh")}</button>
       </div>
     </div>
     {loading && !inventory && <p className="empty-inline" role="status">{t("mcp.loading")}</p>}
     {error && <p className="empty-inline mcp-error" role="alert">{inventory ? t("mcp.actionFailed") : t("mcp.unavailable")}</p>}
     {inventory && <>
-      {inventory.servers.length === 0 ? <p className="empty-inline">{t("mcp.empty")}</p> : <ul className="mcp-list">
-        {inventory.servers.map((server) => <li key={server.name} className="mcp-row">
-          <div className="mcp-row-main"><div className="mcp-row-title"><strong>{server.name}</strong><span className={`mcp-state ${server.enabled ? "is-enabled" : ""}`}>{server.enabled ? t("settings.enabled") : t("settings.disabled")}</span>
-            <small>{server.transport.toUpperCase()} · {t(server.source === "user" ? "mcp.user" : server.source === "project" ? "mcp.project" : "mcp.other")}{server.transport === "http" && ` · ${authLabel(details[server.name]?.auth_status ?? server.auth_status)}`}</small></div>
+      {servers.length === 0 ? <p className="empty-inline">{t("mcp.empty")}</p> : <ul className="mcp-list">
+        {servers.map((server) => <li key={server.name} className="mcp-row">
+          <div className="mcp-row-main"><div className="mcp-row-title"><strong>{server.source === "workspace" ? "GitHub MCP" : server.name}</strong><span className={`mcp-state ${server.enabled ? "is-enabled" : ""}`}>{server.enabled ? t("settings.enabled") : t("settings.disabled")}</span>
+            <small>{server.transport.toUpperCase()} · {t(server.source === "workspace" ? "mcp.workspaceReadOnly" : server.source === "user" ? "mcp.user" : server.source === "project" ? "mcp.project" : "mcp.other")}{server.workspace_host && ` · ${server.workspace_host}`}{server.transport === "http" && ` · ${authLabel(details[server.name]?.auth_status ?? server.auth_status)}`}</small></div>
             {descriptionFor(server) && <small className="mcp-description">{descriptionFor(server)}</small>}
           </div>
           <div className="mcp-row-actions">
             <button type="button" className="button button-secondary" onClick={() => void discover(server.name)} disabled={!server.enabled || busy !== null}>{busy === server.name ? t("mcp.checking") : t("mcp.check")}</button>
-            <label className={`settings-toggle ${server.enabled ? "is-enabled" : ""}`} title={server.manageable ? undefined : t("mcp.readOnly")}>
-              <input type="checkbox" role="switch" aria-label={t("mcp.toggle", { name: server.name })} checked={server.enabled} disabled={!server.manageable || !inventory.user_version || busy !== null} onChange={(event) => { const checked = event.target.checked; void mutate(server.name, () => dashboardApi.setMcpEnabled(workspaceId, server.name, checked, inventory.user_version)); }} />
+            <label className={`settings-toggle ${server.enabled ? "is-enabled" : ""}`} title={server.source === "workspace" ? t("mcp.workspaceReadOnly") : server.manageable ? undefined : t("mcp.readOnly")}>
+              <input type="checkbox" role="switch" aria-label={t("mcp.toggle", { name: server.name })} checked={server.enabled} disabled={server.source === "workspace" || !server.manageable || !inventory.user_version || busy !== null} onChange={(event) => { const checked = event.target.checked; void mutate(server.name, () => dashboardApi.setMcpEnabled(workspaceId, server.name, checked, inventory.user_version)); }} />
               <span className="settings-switch" aria-hidden="true"><span className="settings-switch-thumb" /></span>
             </label>
-            <button type="button" className="button button-secondary mcp-remove" aria-label={`${t("mcp.remove")} ${server.name}`} title={server.manageable ? t("mcp.remove") : t("mcp.readOnly")} disabled={!server.manageable || !inventory.user_version || busy !== null} onClick={() => { if (window.confirm(t("mcp.confirmRemove", { name: server.name }))) void mutate(server.name, () => dashboardApi.removeMcp(workspaceId, server.name, inventory.user_version)); }}><Trash2 size={15} /></button>
+            <button type="button" className="button button-secondary mcp-remove" aria-label={`${t("mcp.remove")} ${server.name}`} title={server.source === "workspace" ? t("mcp.workspaceReadOnly") : server.manageable ? t("mcp.remove") : t("mcp.readOnly")} disabled={server.source === "workspace" || !server.manageable || !inventory.user_version || busy !== null} onClick={() => { if (window.confirm(t("mcp.confirmRemove", { name: server.name }))) void mutate(server.name, () => dashboardApi.removeMcp(workspaceId, server.name, inventory.user_version)); }}><Trash2 size={15} /></button>
           </div>
           {details[server.name] && <div className="mcp-discovery" role="status">
             {discoveryLabel(details[server.name])}

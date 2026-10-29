@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -13,12 +14,36 @@ import pytest
 from lumon.errors import AgentRuntimeError, InvalidInputError, PreflightError
 from lumon.tools.codex_mcp import CodexMcpManager, McpNewServer
 from lumon.tools.codex_rpc import CodexRpc
+from lumon.tools.github_mcp_proxy import github_server_name, workspace_mcp_config
+from lumon.workspace.config import WorkspaceConfig
+from lumon.workspace.model import RepositoryRecord
+
+
+def test_mcp_manager_and_proxy_can_start_without_preloaded_workspace_modules() -> None:
+    imported = subprocess.run(
+        [sys.executable, "-c", "from lumon.tools.codex_mcp import CodexMcpManager"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert imported.returncode == 0, imported.stderr
+    proxy = subprocess.run(
+        [sys.executable, "-m", "lumon.tools.github_mcp_proxy", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert proxy.returncode == 0, proxy.stderr
 
 
 class FakeRpc(CodexRpc):
     def __init__(self) -> None:
         super().__init__()
         self.writes: list[dict[str, object]] = []
+        self.starts: list[tuple[Path, tuple[str, ...]]] = []
+        self.user_servers: dict[str, object] = {"figma": {"env": {"TOKEN": "private-secret"}}}
         self.version = "v1"
         self.write_status = "ok"
         self.project_servers: dict[str, object] = {"project": {"command": "private-command"}}
@@ -44,7 +69,8 @@ class FakeRpc(CodexRpc):
         *,
         config: Sequence[str] = (),
     ) -> None:
-        del binary, workspace, environment, config
+        del binary, environment
+        self.starts.append((workspace, tuple(config)))
 
     async def send(self, payload: dict[str, object]) -> None:
         del payload
@@ -61,7 +87,7 @@ class FakeRpc(CodexRpc):
                     {
                         "name": {"type": "user"},
                         "version": self.version,
-                        "config": {"mcp_servers": {"figma": {"env": {"TOKEN": "private-secret"}}}},
+                        "config": {"mcp_servers": self.user_servers},
                     },
                     {
                         "name": {"type": "project"},
@@ -123,6 +149,82 @@ def test_inventory_preserves_scopes_and_never_returns_credentials(
     ]
     assert inventory.servers[0].description_kind == "figma"
     assert inventory.servers[2].description_kind is None
+
+
+def test_workspace_github_is_listed_and_checked_with_execution_overrides(
+    mcp_manager: tuple[CodexMcpManager, FakeRpc], tmp_path: Path
+) -> None:
+    manager, rpc = mcp_manager
+    workspace = tmp_path / "workspace"
+    server = github_server_name("team.ghe.com")
+    WorkspaceConfig(
+        "Example",
+        (RepositoryRecord("app", "https://team.ghe.com/org/app.git", "repos/app", "main", server),),
+    ).write(workspace / "lumon" / "workspace.toml")
+    original = (workspace / "lumon" / "workspace.toml").read_bytes()
+    payload = [
+        {
+            "name": server,
+            "enabled": True,
+            "transport": {"type": "stdio"},
+            "auth_status": "unsupported",
+        }
+    ]
+    expected = workspace_mcp_config(workspace)
+    Path(manager.binary).write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"assert '--config' in sys.argv and {expected[0]!r} in sys.argv\n"
+        f"print({json.dumps(json.dumps(payload))})\n"
+    )
+    rpc.user_servers[server] = {"command": "must-not-edit", "env": {"TOKEN": "private-secret"}}
+    inventory = asyncio.run(manager.list_servers(workspace))
+    github = inventory.servers[0]
+    assert github.name == server
+    assert github.source == "workspace"
+    assert github.workspace_host == "team.ghe.com"
+    assert github.enabled and not github.manageable
+    assert "private-secret" not in repr(inventory)
+    assert rpc.starts[-1] == (workspace, expected)
+    rpc.discovery = {
+        "data": [
+            {
+                "name": server,
+                "authStatus": "unsupported",
+                "runtimeStatus": "connected",
+                "tools": {"get_file_contents": {}, "search_code": {}},
+            }
+        ]
+    }
+    result = asyncio.run(manager.discover(workspace, server))
+    assert result.runtime_status == "connected"
+    assert result.tools == ("get_file_contents", "search_code")
+    assert not result.failed
+    assert all(config == expected for _, config in rpc.starts)
+    with pytest.raises(PreflightError, match="another configuration layer"):
+        asyncio.run(manager.set_enabled(workspace, server, False, expected_version="v1"))
+    with pytest.raises(PreflightError, match="another configuration layer"):
+        asyncio.run(manager.remove(workspace, server, expected_version="v1"))
+    with pytest.raises(PreflightError, match="already exists"):
+        asyncio.run(
+            manager.add(
+                workspace, McpNewServer(server, "stdio", command="fake"), expected_version="v1"
+            )
+        )
+    assert not rpc.writes
+    assert (workspace / "lumon" / "workspace.toml").read_bytes() == original
+
+
+def test_workspace_without_github_bindings_has_no_execution_overrides(
+    mcp_manager: tuple[CodexMcpManager, FakeRpc], tmp_path: Path
+) -> None:
+    manager, rpc = mcp_manager
+    WorkspaceConfig(
+        "No GitHub MCP",
+        (RepositoryRecord("app", "https://github.com/org/app.git", "repos/app", "main"),),
+    ).write(tmp_path / "lumon" / "workspace.toml")
+    inventory = asyncio.run(manager.list_servers(tmp_path))
+    assert not any(item.source == "workspace" for item in inventory.servers)
+    assert all(config == () for _, config in rpc.starts)
     assert "private" not in repr(inventory)
 
 

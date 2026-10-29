@@ -10,8 +10,10 @@ from typing import Annotated
 import typer
 
 from lumon.agents.agent.config import AgentConfigStore
+from lumon.cli.commands.init_picker import pick_repositories
 from lumon.cli.output import emit_error, emit_init
 from lumon.errors import AgentConfigError, LumonError
+from lumon.tools.setup import SetupInspector
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.model import InitRequest, RepositorySpec
 from lumon.workspace.registry import WorkspaceRegistry
@@ -35,23 +37,45 @@ def command(
     ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Render a JSON result.")] = False,
 ) -> None:
-    """Initialize one Workspace, optionally cloning code Repositories."""
+    """Initialize a Workspace with GitHub MCP or manual Git repositories."""
 
     try:
-        specifications = collect_repository_specifications(repository, json_output)
+        setup = SetupInspector().inspect()
+        if not json_output:
+            for check in setup.checks:
+                typer.echo(
+                    f"[{check.state}] {check.name}" + (f": {check.action}" if check.action else "")
+                )
+        specifications = collect_repository_specifications(
+            repository, json_output, hosts=setup.hosts
+        )
         result = WorkspaceInitializer().initialize(
             InitRequest(path, name=name, repositories=specifications, dry_run=dry_run)
         )
         if result.status != "dry_run":
             _set_default_for_sole_workspace()
+        warnings = tuple(
+            f"{check.name}: {check.state}" + (f"; {check.action}" if check.action else "")
+            for check in setup.checks
+            if check.state != "ready"
+        )
+        try:
+            AgentConfigStore().load()
+        except AgentConfigError:
+            warnings += ("Agent is not configured. Run `lumon agent configure`.",)
+        result = replace(result, warnings=(*result.warnings, *warnings))
     except LumonError as exc:
         emit_error(exc, json_output)
         raise typer.Exit(code=exc.exit_code) from exc
     emit_init(result, json_output)
+    if not json_output:
+        typer.echo(
+            "Initialization does not start Agent. Check readiness with `lumon agent doctor`."
+        )
 
 
 def collect_repository_specifications(
-    urls: list[str] | None, json_output: bool
+    urls: list[str] | None, json_output: bool, *, hosts: tuple[str, ...] = ()
 ) -> tuple[RepositorySpec, ...]:
     """Resolve command-line URLs or collect them from an interactive terminal."""
 
@@ -59,6 +83,8 @@ def collect_repository_specifications(
         return tuple(spec_from_url(url) for url in urls)
     if json_output or not _interactive_terminal():
         return ()
+    if hosts and typer.confirm("Select repositories from GitHub MCP?", default=True):
+        return pick_repositories(hosts)
 
     typer.echo("Repository setup (press Enter with an empty URL to finish):")
     if not typer.confirm("Add a Repository?", default=True):

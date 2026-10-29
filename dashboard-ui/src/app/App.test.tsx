@@ -93,7 +93,7 @@ it("merges history into Agent, moves global configuration to Settings and protec
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.querySelector("h1")?.textContent).toBe("Agent");
     expect(container.querySelector("#agent-model")).toBeNull();
-    expect(container.querySelectorAll(".side-nav button")).toHaveLength(7);
+    expect(container.querySelectorAll(".side-nav button")).toHaveLength(8);
     expect(container.querySelector(".side-nav")?.textContent).not.toContain("Conversation history");
 
     await act(async () => navigation("Settings").click());
@@ -285,4 +285,89 @@ it("opens a scheduled workflow, reloads its saved schedule on return, and isolat
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+it("saves repository toggles immediately and protects only pending saves when navigating", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  window.history.replaceState(null, "", "?workspace=workspace-one&view=repositories");
+  vi.spyOn(dashboardApi, "listWorkspaces").mockResolvedValue(workspaces);
+  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.5.20", workspace_count: 2, has_workspaces: true });
+  vi.spyOn(dashboardApi, "getAgentSettings").mockResolvedValue(agent);
+  vi.spyOn(dashboardApi, "getSettings").mockResolvedValue(settings);
+  const repositoryOverview = {
+    workspace_id: "workspace-one", name: "Example", path: "/test", created_at: "2026-10-29", lumon_version: "1.5.20", repositories_version: "version", workflow_schedules: [],
+    repositories: [{ name: "app", path: "/test/repos/app", branch: "main", health: "ready" as const, detail: "", auto_scan: true, auto_delivery: true }],
+  };
+  const getOverview = vi.spyOn(dashboardApi, "getOverview").mockResolvedValue(repositoryOverview);
+  let finishSave!: (response: { repositories_version: string }) => void;
+  const save = vi.spyOn(dashboardApi, "updateRepositoryScopes").mockReturnValue(new Promise((resolve) => { finishSave = resolve; }));
+  vi.spyOn(dashboardApi, "repositorySources").mockResolvedValue([]);
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>));
+    expect(container.querySelector("h1")?.textContent).toBe("Repositories");
+    expect(container.querySelector('.side-nav [aria-current="page"]')?.textContent).toBe("Repositories");
+    expect(container.querySelector(".workspace-home")).toBeNull();
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="app Auto Scan"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('.side-nav button[aria-label="Overview"]')!.click());
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(window.location.search).toContain("view=repositories");
+    const picker = container.querySelector<HTMLSelectElement>(".workspace-picker select")!;
+    await act(async () => { picker.value = "workspace-two"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(window.location.search).toContain("workspace-one");
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="app Auto Scan"]')!.checked).toBe(false);
+    expect(save).toHaveBeenCalledExactlyOnceWith("workspace-one", "version", [{ name: "app", auto_scan: false, auto_delivery: true }]);
+    getOverview.mockResolvedValue({ ...repositoryOverview, repositories_version: "next-version", repositories: [{ ...repositoryOverview.repositories[0], auto_scan: false }] });
+    await act(async () => finishSave({ repositories_version: "next-version" }));
+    await act(async () => container.querySelector<HTMLButtonElement>('.side-nav button[aria-label="Overview"]')!.click());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(window.location.search).toContain("view=overview");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it.each([false, true])("ignores an old repository refresh after switching workspaces (return: %s)", async (returnToFirst) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.setItem("lumon.locale", "en");
+  window.history.replaceState(null, "", "?workspace=workspace-one&view=repositories");
+  vi.spyOn(dashboardApi, "listWorkspaces").mockResolvedValue(workspaces);
+  vi.spyOn(dashboardApi, "getBootstrap").mockResolvedValue({ version: "1.5.20", workspace_count: 2, has_workspaces: true });
+  vi.spyOn(dashboardApi, "getAgentSettings").mockResolvedValue(agent);
+  vi.spyOn(dashboardApi, "getSettings").mockImplementation(async (id) => ({ ...settings, workspace_id: id }));
+  const data = (id: string, branch = "main") => ({
+    workspace_id: id, name: id, path: "/test", created_at: "2026-10-29", lumon_version: "1.5.20", repositories_version: "version", workflow_schedules: [],
+    repositories: [{ name: `${id}-repo`, path: `/test/${id}`, branch, health: "ready" as const, detail: "", auto_scan: true, auto_delivery: true }],
+  });
+  let readsForOne = 0;
+  let finishRefresh!: (value: ReturnType<typeof data>) => void;
+  vi.spyOn(dashboardApi, "getOverview").mockImplementation(async (id) => {
+    if (id === "workspace-one" && ++readsForOne === 2) return new Promise((resolve) => { finishRefresh = resolve; });
+    if (id === "workspace-one" && readsForOne >= 3) return data(id, "current-release");
+    return data(id);
+  });
+  vi.spyOn(dashboardApi, "repositorySources").mockResolvedValue(["github.com"]);
+  vi.spyOn(dashboardApi, "searchRepositories").mockResolvedValue([{ name: "new-repo", full_name: "org/new-repo", clone_url: "https://github.com/org/new-repo.git", branch: "main", mcp_server: "github", auto_scan: true, auto_delivery: true }]);
+  vi.spyOn(dashboardApi, "addRepositories").mockResolvedValue();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>));
+    await act(async () => container.querySelector<HTMLButtonElement>("#github-repositories-tab")!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Connect org/new-repo"]')!.click());
+    const picker = container.querySelector<HTMLSelectElement>(".workspace-picker select")!;
+    await act(async () => { picker.value = "workspace-two"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.querySelector("tbody")?.textContent).toContain("workspace-two-repo");
+    if (returnToFirst) {
+      await act(async () => { picker.value = "workspace-one"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+      expect(container.querySelector("tbody")?.textContent).toContain("current-release");
+    }
+    await act(async () => finishRefresh(data("workspace-one", "old-release")));
+    expect(window.location.search).toContain(returnToFirst ? "workspace-one" : "workspace-two");
+    expect(container.querySelector("tbody")?.textContent).toContain(returnToFirst ? "current-release" : "workspace-two-repo");
+    expect(container.querySelector("tbody")?.textContent).not.toContain("old-release");
+    expect(container.textContent).not.toContain("Reading workspace");
+  } finally { await act(async () => root.unmount()); }
 });

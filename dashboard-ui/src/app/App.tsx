@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  FolderGit2,
   GitBranch,
   LayoutDashboard,
   LoaderCircle,
@@ -13,7 +14,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, dashboardApi } from "./api";
 import { readNavigation, writeNavigation } from "./navigation";
 import { AgentSettingsPage } from "../features/agent/AgentSettingsPage";
@@ -27,6 +28,7 @@ import { AutoDeliverySettingsPanel } from "../features/settings/AutoDeliverySett
 import { AutoScanSettingsPanel } from "../features/settings/AutoScanSettingsPanel";
 import { WorkspaceOnboarding } from "../features/workspaces/WorkspaceOnboarding";
 import { WorkspaceOverview } from "../features/workspaces/WorkspaceOverview";
+import { RepositoriesPage } from "../features/workspaces/RepositoriesPage";
 import { WorkspacePicker } from "../features/workspaces/WorkspacePicker";
 import { resolveWorkspaceSelection } from "../features/workspaces/workspaceSelection";
 import { LanguagePicker, useI18n, type Translator } from "../shared/i18n";
@@ -45,6 +47,9 @@ export function App(): React.JSX.Element {
   const initialNavigation = readNavigation(window.location.search);
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialNavigation.workspaceId);
+  const selectedWorkspace = useRef({ id: selectedId });
+  if (selectedWorkspace.current.id !== selectedId) selectedWorkspace.current = { id: selectedId };
+  const workspaceSelection = selectedWorkspace.current;
   const [view, setView] = useState<View>(initialNavigation.view);
   const [workflowId, setWorkflowId] = useState<string | undefined>();
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -61,10 +66,12 @@ export function App(): React.JSX.Element {
   const [autoScanDirty, setAutoScanDirty] = useState(false);
   const [flowsDirty, setFlowsDirty] = useState(false);
   const [capabilitiesDirty, setCapabilitiesDirty] = useState(false);
+  const [repositoriesDirty, setRepositoriesDirty] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const viewLabels: Record<View, string> = {
     overview: t("app.overview"),
     settings: t("app.settings"),
+    repositories: t("app.repositories"),
     agent: t("app.agentSettings"),
     "auto-delivery": t("app.autoDelivery"),
     "auto-scan": t("app.autoScan"),
@@ -109,7 +116,7 @@ export function App(): React.JSX.Element {
   }, [selectedId, t]);
 
   useEffect(() => {
-    if (!selectedId || view !== "overview") return;
+    if (!selectedId || (view !== "overview" && view !== "repositories")) return;
     let cancelled = false;
     void dashboardApi.getOverview(selectedId)
       .then((nextOverview) => { if (!cancelled) setOverview(nextOverview); })
@@ -129,7 +136,7 @@ export function App(): React.JSX.Element {
 
   function changeWorkspace(nextId: string): void {
     if (
-      (settingsDirty || agentSettingsDirty || autoDeliveryDirty || autoScanDirty || flowsDirty || capabilitiesDirty)
+      (settingsDirty || agentSettingsDirty || autoDeliveryDirty || autoScanDirty || flowsDirty || capabilitiesDirty || repositoriesDirty)
       && !window.confirm(t("app.unsavedWorkspaceConfirm"))
     ) return;
     setSettingsDirty(false);
@@ -138,6 +145,7 @@ export function App(): React.JSX.Element {
     setAutoScanDirty(false);
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
+    setRepositoriesDirty(false);
     setWorkflowId(undefined);
     setOverview(null);
     setSettings(null);
@@ -152,6 +160,8 @@ export function App(): React.JSX.Element {
           ? flowsDirty
           : view === "capabilities"
             ? capabilitiesDirty
+          : view === "repositories"
+            ? repositoriesDirty
           : false;
     if (currentViewDirty && !window.confirm(t("app.unsavedViewConfirm"))) return;
     setSettingsDirty(false);
@@ -160,6 +170,7 @@ export function App(): React.JSX.Element {
     setAutoScanDirty(false);
     setFlowsDirty(false);
     setCapabilitiesDirty(false);
+    setRepositoriesDirty(false);
     setView(nextView);
   }
 
@@ -168,11 +179,11 @@ export function App(): React.JSX.Element {
     changeView("flows");
   }
 
-  async function handleOnboardingReady(workspace: WorkspaceListItem): Promise<void> {
+  async function handleOnboardingReady(workspace: WorkspaceListItem, nextView: "overview" | "settings" = "overview"): Promise<void> {
     try {
       setWorkspaces(await dashboardApi.listWorkspaces());
       setSelectedId(workspace.workspace_id);
-      setView("overview");
+      setView(nextView);
       setNotice(t("app.workspaceReady", { name: workspace.name }));
       setError(null);
     } catch (reason) {
@@ -219,27 +230,29 @@ export function App(): React.JSX.Element {
   }
 
   async function refreshCurrent(): Promise<void> {
-    if (!selectedId) return;
+    if (!selectedId || selectedWorkspace.current !== workspaceSelection) return;
     setRefreshing(true);
     try {
-      const [nextOverview, nextSettings] = await Promise.all([
+      const [nextOverview, nextSettings, nextAgentSettings] = await Promise.all([
         dashboardApi.getOverview(selectedId),
         dashboardApi.getSettings(selectedId),
+        dashboardApi.getAgentSettings(),
       ]);
+      if (selectedWorkspace.current !== workspaceSelection) return;
       setOverview(nextOverview);
       setSettings(nextSettings);
-      setAgentSettings(await dashboardApi.getAgentSettings());
+      setAgentSettings(nextAgentSettings);
       setNotice(t("app.workspaceRefreshed"));
     } catch (reason) {
-      setError(messageFor(reason, t));
+      if (selectedWorkspace.current === workspaceSelection) setError(messageFor(reason, t));
     } finally {
-      setRefreshing(false);
+      if (selectedWorkspace.current === workspaceSelection) setRefreshing(false);
     }
   }
 
   if (loading) return <div className="loading-screen"><LoaderCircle className="spin" size={25} /><span>{t("app.loading")}</span></div>;
   if (workspaces.length === 0) {
-    return <><WorkspaceOnboarding onReady={(workspace) => void handleOnboardingReady(workspace)} onError={setError} />{error && <Notice type="error" message={error} closeLabel={t("app.close")} />}</>;
+    return <><WorkspaceOnboarding onReady={(workspace, nextView) => void handleOnboardingReady(workspace, nextView)} onError={setError} />{error && <Notice type="error" message={error} closeLabel={t("app.close")} />}</>;
   }
 
   return (
@@ -258,6 +271,7 @@ export function App(): React.JSX.Element {
           <p className="nav-group-label">{t("app.workspaceGroup")}</p>
           <button className={view === "overview" ? "active" : ""} title={viewLabels.overview} aria-label={viewLabels.overview} aria-current={view === "overview" ? "page" : undefined} type="button" onClick={() => changeView("overview")}><LayoutDashboard size={17} /><span>{viewLabels.overview}</span></button>
           <button className={view === "settings" ? "active" : ""} title={viewLabels.settings} aria-label={viewLabels.settings} aria-current={view === "settings" ? "page" : undefined} type="button" onClick={() => changeView("settings")}><Settings size={17} /><span>{viewLabels.settings}</span></button>
+          <button className={view === "repositories" ? "active" : ""} title={viewLabels.repositories} aria-label={viewLabels.repositories} aria-current={view === "repositories" ? "page" : undefined} type="button" onClick={() => changeView("repositories")}><FolderGit2 size={17} /><span>{viewLabels.repositories}</span></button>
           <button className={view === "agent" ? "active" : ""} title={viewLabels.agent} aria-label={viewLabels.agent} aria-current={view === "agent" ? "page" : undefined} type="button" onClick={() => changeView("agent")}><Bot size={17} /><span>{viewLabels.agent}</span></button>
           <p className="nav-group-label">{t("app.automationGroup")}</p>
           <button className={view === "auto-delivery" ? "active" : ""} title={viewLabels["auto-delivery"]} aria-label={viewLabels["auto-delivery"]} aria-current={view === "auto-delivery" ? "page" : undefined} type="button" onClick={() => changeView("auto-delivery")}><Rocket size={17} /><span>{viewLabels["auto-delivery"]}</span></button>
@@ -292,6 +306,8 @@ export function App(): React.JSX.Element {
         {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}
         <main className="content-area">
           {selectedId && view === "overview" && overview && <WorkspaceOverview overview={overview} settings={settings} agentSettings={agentSettings} onNavigate={changeView} onOpenWorkflow={openWorkflow} onRefresh={() => void refreshCurrent()} refreshing={refreshing} />}
+          {selectedId && view === "repositories" && overview?.workspace_id === selectedId && <RepositoriesPage key={selectedId} overview={overview} onRefresh={refreshCurrent} onDirtyChange={setRepositoriesDirty} onNotice={(message) => { if (selectedWorkspace.current === workspaceSelection) setNotice(message); }} />}
+          {selectedId && view === "repositories" && overview?.workspace_id !== selectedId && !error && <div className="loading-inline"><LoaderCircle className="spin" size={22} />{t("app.readingWorkspace")}</div>}
           {selectedId && view === "settings" && settings && <div className="page-stack">
             <SettingsPage settings={settings} onSave={saveSettings} onTest={testSettings} onDirtyChange={setSettingsDirty} />
             <AutoDeliverySettingsPanel key={`delivery-${selectedId}`} settings={settings} onSave={saveSettings} onDirtyChange={setAutoDeliveryDirty} />

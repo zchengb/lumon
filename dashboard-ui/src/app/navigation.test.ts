@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { readNavigation, writeNavigation } from "./navigation";
 
 describe("Dashboard navigation", () => {
+  it("opens the standalone repository configuration page", () => {
+    expect(readNavigation("?workspace=abc&view=repositories")).toEqual({ workspaceId: "abc", view: "repositories" });
+    expect(writeNavigation({ workspaceId: "abc", view: "repositories" })).toBe("?workspace=abc&view=repositories");
+  });
   it("reads a Workspace and supported view from the URL", () => {
     expect(readNavigation("?workspace=abc&view=settings")).toEqual({
       workspaceId: "abc",

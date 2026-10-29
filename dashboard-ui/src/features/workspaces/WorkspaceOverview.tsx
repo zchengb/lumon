@@ -3,7 +3,6 @@ import { useI18n } from "../../shared/i18n";
 import type { AgentSettings, View, WorkspaceSettings, WorkspaceOverview as WorkspaceOverviewData } from "../../shared/types";
 import { WorkspaceMap } from "./WorkspaceMap";
 import { VisualEnvironmentPanel } from "./VisualEnvironmentPanel";
-import { RepositoryManager } from "./RepositoryManager";
 
 interface WorkspaceOverviewProps {
   overview: WorkspaceOverviewData;
@@ -64,7 +63,7 @@ export function WorkspaceOverview({
           <div>
             <h2>{t("overview.repositoriesTitle")}</h2>
           </div>
-          <span className="panel-count">{overview.repositories.length}</span>
+          <button type="button" className="button button-secondary" onClick={() => onNavigate("repositories")}>{t("repository.manage")}</button>
         </div>
         {overview.repositories.length === 0 ? (
           <div className="empty-inline">
@@ -89,7 +88,6 @@ export function WorkspaceOverview({
             ))}
           </div>
         )}
-        <RepositoryManager overview={overview} onRefresh={onRefresh} />
       </section>
       <aside className="workspace-context">
         <section className="panel workspace-automation">

@@ -32,6 +32,47 @@ class RepositoryProvisioner:
     def __init__(self, runner: GitRunner | None = None) -> None:
         self._runner = runner or subprocess.run
 
+    def list_branches(self, workspace: Path, record: RepositoryRecord) -> tuple[str, ...]:
+        """Read remote branches with the Workspace credentials without fetching or checkout."""
+
+        from lumon.tools.github_mcp_proxy import workspace_git_environment
+
+        validate_clone_url(record.url)
+        environment = os.environ.copy()
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GCM_INTERACTIVE"] = "never"
+        try:
+            result = self._runner(
+                ["git", "ls-remote", "--heads", "--", record.url],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=workspace_git_environment(workspace, environment),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise PreflightError("Unable to read branches. Check Repository access.") from exc
+        if result.returncode != 0:
+            raise PreflightError("Unable to read branches. Check Repository access.")
+        branches: set[str] = set()
+        for line in result.stdout.splitlines():
+            revision, separator, reference = line.partition("\t")
+            if (
+                not separator
+                or re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision) is None
+                or not reference.startswith("refs/heads/")
+            ):
+                raise PreflightError("Repository returned invalid branch data.")
+            branch = reference.removeprefix("refs/heads/")
+            if not branch or branch != branch.strip():
+                raise PreflightError("Repository returned invalid branch data.")
+            try:
+                validate_delivery_target_branch(branch)
+            except InvalidInputError as exc:
+                raise PreflightError("Repository returned invalid branch data.") from exc
+            branches.add(branch)
+        return tuple(sorted(branches))
+
     def prepare(
         self,
         workspace: Path,

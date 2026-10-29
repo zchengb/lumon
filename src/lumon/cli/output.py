@@ -37,6 +37,8 @@ def emit_init(result: InitResult, json_output: bool) -> None:
             typer.echo(f"  - {detail}")
     if result.created_paths:
         typer.echo(f"Created paths: {len(result.created_paths)}")
+    for warning in result.warnings:
+        typer.echo(f"Warning: {warning}")
 
 
 def emit_doctor(report: DoctorReport, json_output: bool) -> None:

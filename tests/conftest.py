@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from lumon.skills.installer import SkillInstaller
+from lumon.tools.setup import DependencyCheck, SetupInspector, SetupReport
 from lumon.visual import environment
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.registry import WorkspaceRegistry
@@ -23,6 +24,19 @@ def isolate_visual_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         return environment.EnvironmentSnapshot("2026-10-22T00:00:00+00:00", ())
 
     monkeypatch.setattr(environment, "get_environment", snapshot)
+
+
+@pytest.fixture(autouse=True)
+def isolate_setup_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """General command tests must not inspect the developer's CLI logins."""
+    report = SetupReport(
+        tuple(DependencyCheck(name, "ready") for name in ("git", "gh", "codex")), ()
+    )
+
+    def inspect(_self: SetupInspector) -> SetupReport:
+        return report
+
+    monkeypatch.setattr(SetupInspector, "inspect", inspect)
 
 
 @pytest.fixture

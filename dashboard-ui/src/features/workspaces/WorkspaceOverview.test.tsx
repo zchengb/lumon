@@ -25,6 +25,10 @@ it("shows saved automation configuration and navigates without starting jobs", a
     expect(onNavigate).toHaveBeenLastCalledWith(view);
   }
   expect(container.querySelector(".automation-summary")?.textContent).toContain("Disabled");
+  expect(container.querySelector(".repository-manager")).toBeNull();
+  const manage = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Manage repositories")!;
+  await act(async () => manage.click());
+  expect(onNavigate).toHaveBeenLastCalledWith("repositories");
   await act(async () => root.unmount());
 });
 

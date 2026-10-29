@@ -1,11 +1,15 @@
 import { Activity, Bot, LoaderCircle, Save } from "lucide-react";
 import { useEffect, useState } from "react";
+import { dashboardApi } from "../../app/api";
+import { SetupChecklist } from "../workspaces/SetupChecklist";
+import "../workspaces/WorkspaceOnboarding.css";
 import { useI18n } from "../../shared/i18n";
 import type {
   AgentReasoningEffort,
   AgentSettings,
   AgentSettingsUpdate,
   WorkspaceListItem,
+  SetupReport,
 } from "../../shared/types";
 import { buildAgentSectionUpdate, type AgentSettingsDraft, type AgentSettingsSection } from "./agentSettingsForm";
 import { AgentModelPicker } from "./AgentModelPicker";
@@ -43,6 +47,22 @@ export function AgentSettingsPage({
   const [langfusePublicKey, setLangfusePublicKey] = useState("");
   const [langfuseSecretKey, setLangfuseSecretKey] = useState("");
   const [saving, setSaving] = useState<AgentSettingsSection | null>(null);
+  const [setup, setSetup] = useState<SetupReport | null>(null);
+  const [setupError, setSetupError] = useState("");
+  const [checkingSetup, setCheckingSetup] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void dashboardApi.getSetup().then((report) => { if (active) setSetup(report); }).catch(() => { if (active) setSetupError(t("setup.failed")); });
+    return () => { active = false; };
+  }, [t]);
+
+  async function refreshSetup(): Promise<void> {
+    setCheckingSetup(true); setSetupError("");
+    try { setSetup(await dashboardApi.getSetup()); }
+    catch { setSetupError(t("setup.failed")); }
+    finally { setCheckingSetup(false); }
+  }
 
   useEffect(() => {
     setEnabled(settings.enabled);
@@ -117,6 +137,7 @@ export function AgentSettingsPage({
 
   return (
     <div className="page-stack">
+      {(setupError || (setup && !setup.ready)) && <SetupChecklist report={setup} loading={checkingSetup} error={setupError} onRefresh={() => void refreshSetup()} />}
       <section className="panel agent-settings-panel" aria-labelledby="agent-runtime-title" aria-busy={saving === "agent"}>
         <div className="panel-heading">
           <div className="settings-title">

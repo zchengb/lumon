@@ -4,6 +4,43 @@ import { dashboardApi } from "./api";
 describe("Dashboard API", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("lists and updates the target branch of one repository", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => '["main","release"]' })
+      .mockResolvedValueOnce({ ok: true, text: async () => '{"repositories_version":"next"}' });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(dashboardApi.repositoryBranches("workspace", "app & api")).resolves.toEqual(["main", "release"]);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/workspaces/workspace/repositories/app%20%26%20api/branches", {
+      cache: "no-store", headers: { Accept: "application/json" },
+    });
+    await expect(dashboardApi.updateRepositoryBranch("workspace", "app & api", "version", "release/next")).resolves.toEqual({ repositories_version: "next" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/workspaces/workspace/repositories/app%20%26%20api/branch", {
+      method: "PUT", body: JSON.stringify({ expected_version: "version", branch: "release/next" }),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+    });
+  });
+
+  it("requests the account repository list and supports later pages", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "[]" });
+    vi.stubGlobal("fetch", fetchMock);
+    await dashboardApi.searchRepositories("team.ghe.com", "", 2);
+    expect(fetchMock).toHaveBeenCalledWith("/api/repository-sources/search", {
+      method: "POST", body: JSON.stringify({ host: "team.ghe.com", query: "", page: 2 }),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+    });
+  });
+
+  it("returns the saved repository version for the next toggle", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '{"repositories_version":"next-version"}' });
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = [{ name: "app", auto_scan: false, auto_delivery: true }];
+    await expect(dashboardApi.updateRepositoryScopes("workspace", "version", repositories)).resolves.toEqual({ repositories_version: "next-version" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace/repositories/scope", {
+      method: "PUT", body: JSON.stringify({ expected_version: "version", repositories }),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+    });
+  });
+
   it("deletes only the selected Workspace delivery history entry", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "" });
     vi.stubGlobal("fetch", fetchMock);

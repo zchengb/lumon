@@ -16,12 +16,17 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from lumon.errors import AgentRuntimeError, InvalidInputError, PreflightError
 from lumon.tools.codex import resolve_codex_binary
 from lumon.tools.codex_rpc import CodexRpc, CodexRpcError
+from lumon.tools.github_mcp_proxy import (
+    github_server_name,
+    workspace_github_hosts,
+    workspace_mcp_config,
+)
 from lumon.version import __version__
 
 _NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 McpTransport = Literal["stdio", "http", "unknown"]
-McpSource = Literal["user", "project", "other"]
+McpSource = Literal["user", "project", "other", "workspace"]
 McpDescriptionKind = Literal["figma", "codex_app", "computer_use", "cua_repl", "node_repl"]
 
 
@@ -34,6 +39,7 @@ class McpServer:
     source: McpSource
     manageable: bool
     description_kind: McpDescriptionKind | None = None
+    workspace_host: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +141,7 @@ class CodexMcpManager:
         listed = await self._list_cli(workspace)
         async with self._rpc(workspace) as rpc:
             layers = await self._read_layers(rpc, workspace)
-        return _inventory(listed, layers)
+        return _inventory(listed, layers, _workspace_hosts(workspace))
 
     async def discover(self, workspace: Path, name: str) -> McpDiscovery:
         """Request one server's tool catalog; runtime state may remain unknown."""
@@ -157,7 +163,9 @@ class CodexMcpManager:
         value = _new_server_value(server)
         async with self._write_lock, self._rpc(workspace) as rpc:
             inventory = _inventory(
-                await self._list_cli(workspace), await self._read_layers(rpc, workspace)
+                await self._list_cli(workspace),
+                await self._read_layers(rpc, workspace),
+                _workspace_hosts(workspace),
             )
             _require_version(inventory, expected_version)
             if any(item.name == server.name for item in inventory.servers):
@@ -185,7 +193,9 @@ class CodexMcpManager:
             raise InvalidInputError("Invalid MCP server name.")
         async with self._write_lock, self._rpc(workspace) as rpc:
             inventory = _inventory(
-                await self._list_cli(workspace), await self._read_layers(rpc, workspace)
+                await self._list_cli(workspace),
+                await self._read_layers(rpc, workspace),
+                _workspace_hosts(workspace),
             )
             _require_version(inventory, expected_version)
             server = next((item for item in inventory.servers if item.name == name), None)
@@ -198,6 +208,7 @@ class CodexMcpManager:
         try:
             process = await asyncio.create_subprocess_exec(
                 self.binary,
+                *(part for item in workspace_mcp_config(workspace) for part in ("--config", item)),
                 "mcp",
                 "list",
                 "--json",
@@ -230,7 +241,11 @@ class CodexMcpManager:
     async def _rpc(self, workspace: Path) -> AsyncGenerator[CodexRpc]:
         rpc = self._rpc_factory()
         try:
-            await rpc.start(self.binary, workspace, self.environment)
+            config = workspace_mcp_config(workspace)
+            if config:
+                await rpc.start(self.binary, workspace, self.environment, config=config)
+            else:
+                await rpc.start(self.binary, workspace, self.environment)
             await rpc.request(
                 "initialize",
                 {"clientInfo": {"name": "lumon", "title": "Lumon", "version": __version__}},
@@ -255,7 +270,15 @@ class CodexMcpManager:
             raise ValueError("Invalid MCP configuration layers") from None
 
 
-def _inventory(listed: tuple[_ListedServer, ...], layers: tuple[_Layer, ...]) -> McpInventory:
+def _workspace_hosts(workspace: Path) -> dict[str, str]:
+    return {github_server_name(host): host for host in workspace_github_hosts(workspace)}
+
+
+def _inventory(
+    listed: tuple[_ListedServer, ...],
+    layers: tuple[_Layer, ...],
+    workspace_hosts: Mapping[str, str],
+) -> McpInventory:
     user = next((layer for layer in layers if layer.name.type == "user"), None)
     user_names: set[str] = _layer_names(user) if user else set()
     other_names = {
@@ -266,13 +289,14 @@ def _inventory(listed: tuple[_ListedServer, ...], layers: tuple[_Layer, ...]) ->
     }
     servers: list[McpServer] = []
     for item in listed:
-        source: McpSource = (
-            "project"
-            if item.name in project_names
-            else "user"
-            if item.name in user_names
-            else "other"
-        )
+        host = workspace_hosts.get(item.name)
+        source: McpSource = "other"
+        if host is not None:
+            source = "workspace"
+        elif item.name in project_names:
+            source = "project"
+        elif item.name in user_names:
+            source = "user"
         transport: McpTransport = (
             "stdio"
             if item.transport.type == "stdio"
@@ -288,12 +312,14 @@ def _inventory(listed: tuple[_ListedServer, ...], layers: tuple[_Layer, ...]) ->
                 _auth(item.auth_status),
                 source,
                 bool(
-                    user
+                    host is None
+                    and user
                     and item.name in user_names
                     and item.name not in other_names
                     and _NAME.fullmatch(item.name)
                 ),
                 _description_kind(item.transport),
+                host,
             )
         )
     return McpInventory(tuple(servers), user.version if user else None)

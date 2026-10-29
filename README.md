@@ -70,13 +70,22 @@ lumon init /path/to/lumon-workspace \
   --repository git@github.com:example/backend.git
 ```
 
-When `--repository` is omitted in an interactive terminal, Lumon asks for
-clone URLs one at a time; an empty URL ends the collection. In a non-interactive
-process, or with `--json`, omission means an intentionally empty Workspace.
+In an interactive terminal, Lumon first checks Git, GitHub CLI and Codex.
+When a compatible GitHub CLI has an active login, the default picker lists
+hosts, organizations, repositories and branches as numbered choices. Select
+repositories by number, then choose their target branches and Auto Scan /
+Auto Delivery scopes. These repositories are bound to the Workspace GitHub
+MCP; checkout and worktree creation stay on demand.
+
+Decline the MCP picker to add Git URLs manually. When no GitHub login is
+available, Lumon shows installation or login guidance before this fallback.
+Manual URLs are collected one at a time; an empty URL ends the collection.
+In a non-interactive process, or with `--json`, omission means an intentionally
+empty Workspace.
 Repository names are derived from the URLs, and credentials must come from the
 system Git SSH agent or credential helper rather than the URL itself.
 
-For each new Repository, Lumon probes `main` first and otherwise uses the
+For each manual Git URL, Lumon probes `main` first and otherwise uses the
 remote's advertised default branch. It records the actual branch, URL, and
 `repos/<name>` path in `lumon/workspace.toml`. A matching existing Git
 checkout is reused without fetch, reset, checkout, or deletion. A different
@@ -96,6 +105,11 @@ and installs the bundled `lumon-story-planning` and
 the command is safe and does not initialize Git or create a commit. Skills are
 global Agent instructions; `AGENTS.md` contains rules specific to this
 Workspace.
+
+Initialization creates Workspace metadata; it does not start Agent or automation.
+The Dashboard completion screen shows missing dependencies and Agent settings.
+`lumon doctor` checks CLI dependencies and logins; `lumon agent doctor` also
+checks Agent configuration. Neither command starts a model turn.
 
 Useful commands:
 

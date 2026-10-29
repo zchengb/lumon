@@ -71,6 +71,15 @@ def _create_remote(root: Path, name: str, branch: str, also_main: bool = False) 
     return bare.as_uri()
 
 
+def test_list_branches_reads_the_remote_without_creating_a_checkout(tmp_path: Path) -> None:
+    remote = _create_remote(tmp_path / "remote", "product", "release", also_main=True)
+    workspace = tmp_path / "workspace"
+    record = RepositoryRecord("product", remote, "repos/product", "release")
+
+    assert RepositoryProvisioner().list_branches(workspace, record) == ("main", "release")
+    assert not workspace.exists()
+
+
 def test_init_clones_main_and_persists_repository_metadata(
     initializer: WorkspaceInitializer, tmp_path: Path
 ) -> None:

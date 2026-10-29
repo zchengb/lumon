@@ -5,7 +5,6 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import os
-import re
 import tempfile
 from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
@@ -60,14 +59,14 @@ from lumon.tools.codex_models import CodexModel, CodexModelCatalog
 from lumon.tools.codex_status import CodexCliStatus, CodexCliUpdateChecker
 from lumon.tools.feishu_directory import FeishuDirectory
 from lumon.tools.feishu_webhook import FeishuWebhookSender, WebhookTestResult, validate_webhook_url
-from lumon.tools.github_mcp_proxy import github_server_name
-from lumon.tools.github_repositories import GithubRepository
+from lumon.tools.github_repositories import GithubRepository, repository_spec
+from lumon.tools.setup import SetupInspector, SetupReport
 from lumon.visual import environment
 from lumon.workspace.config import WorkspaceConfig, load_workspace_config
 from lumon.workspace.initializer import WorkspaceInitializer
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
-from lumon.workspace.model import InitRequest, InitResult, RepositorySpec
+from lumon.workspace.model import InitRequest, InitResult
 from lumon.workspace.registry import WorkspaceRegistration, WorkspaceRegistry
 from lumon.workspace.repositories import RepositoryProvisioner, spec_from_url
 from lumon.workspace.settings import (
@@ -88,32 +87,6 @@ from lumon.workspace.settings import (
 
 WorkspaceHealth = Literal["ready", "missing", "invalid"]
 RepositoryHealth = Literal["ready", "unhealthy"]
-
-
-def _remote_repository_spec(item: GithubRepository) -> RepositorySpec:
-    try:
-        parsed = urlsplit(item.clone_url)
-        host = parsed.hostname or ""
-        port = parsed.port
-        server = github_server_name(host)
-    except ValueError:
-        raise InvalidInputError("Invalid GitHub MCP Repository source.") from None
-    if (
-        parsed.scheme != "https"
-        or parsed.username
-        or parsed.password
-        or port is not None
-        or parsed.query
-        or parsed.fragment
-        or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", item.full_name)
-        or parsed.path.removeprefix("/").removesuffix(".git") != item.full_name
-        or item.full_name.split("/")[-1] != item.name
-        or item.mcp_server != server
-    ):
-        raise InvalidInputError("Invalid GitHub MCP Repository source.")
-    return RepositorySpec(
-        item.name, item.clone_url, item.branch, item.mcp_server, item.auto_scan, item.auto_delivery
-    )
 
 
 @contextmanager
@@ -381,8 +354,10 @@ class DashboardService:
         codex_update_checker: CodexCliUpdateChecker | None = None,
         mcp_manager: CodexMcpManager | None = None,
         flow_service: FlowService | None = None,
+        setup_inspector: SetupInspector | None = None,
     ) -> None:
         self.registry = registry or WorkspaceRegistry(state_root)
+        self.setup_inspector = setup_inspector or SetupInspector()
         self.settings_store = settings_store or WorkspaceSettingsStore(state_root)
         agent_state_root = state_root or self.registry.layout.root
         self.agent_config_store = agent_config_store or AgentConfigStore(agent_state_root)
@@ -412,6 +387,10 @@ class DashboardService:
         )
         self.delivery_service = DeliveryService(settings_store=self.settings_store)
         self.delivery_tasks = DeliveryTasks(self.registry.layout.root)
+
+    def setup_report(self) -> SetupReport:
+        """Inspect dependencies without starting services or changing credentials."""
+        return self.setup_inspector.inspect()
 
     def list_workspaces(self) -> tuple[WorkspaceListItem, ...]:
         """Return registered Workspaces without scanning unregistered directories."""
@@ -450,7 +429,7 @@ class DashboardService:
         """Initialize through the CLI domain flow and return the new registry entry."""
 
         specifications = tuple(spec_from_url(url) for url in repository_urls) + tuple(
-            _remote_repository_spec(item) for item in remote_repositories
+            repository_spec(item) for item in remote_repositories
         )
         result = self.initializer.initialize(
             InitRequest(path, name=name, repositories=specifications)
@@ -469,7 +448,7 @@ class DashboardService:
         registration = self._require(workspace_id)
         if not repositories:
             raise InvalidInputError("Select at least one Repository.")
-        specs = tuple(_remote_repository_spec(item) for item in repositories)
+        specs = tuple(repository_spec(item) for item in repositories)
         path = WorkspaceLayout.from_root(registration.path).workspace_config
         with _repository_config_lock(path):
             original, config = _read_repository_config(path, expected_version)
@@ -486,7 +465,7 @@ class DashboardService:
         workspace_id: UUID,
         expected_version: str,
         scopes: tuple[tuple[str, bool, bool], ...],
-    ) -> None:
+    ) -> str:
         path = WorkspaceLayout.from_root(self._require(workspace_id).path).workspace_config
         with _repository_config_lock(path):
             original, config = _read_repository_config(path, expected_version)
@@ -502,7 +481,49 @@ class DashboardService:
                     for item in config.repositories
                 ),
             )
+            version = hashlib.sha256(updated.as_toml().encode()).hexdigest()
             _write_repository_config(path, original, updated)
+            return version
+
+    def repository_branches(self, workspace_id: UUID, name: str) -> tuple[str, ...]:
+        """List branches only for a Repository registered in this Workspace."""
+
+        root = self._require(workspace_id).path
+        config = load_workspace_config(WorkspaceLayout.from_root(root).workspace_config)
+        record = next((item for item in config.repositories if item.name == name), None)
+        if record is None:
+            raise InvalidInputError("Repository is not registered in this Workspace.")
+        return self.repository_provisioner.list_branches(root, record)
+
+    def update_repository_branch(
+        self, workspace_id: UUID, name: str, expected_version: str, branch: str
+    ) -> str:
+        """Save an existing remote branch for future runs, preserving checkouts and worktrees."""
+
+        branch = validate_delivery_target_branch(branch)
+        if not branch:
+            raise InvalidInputError("Repository target branch must not be empty.")
+        root = self._require(workspace_id).path
+        path = WorkspaceLayout.from_root(root).workspace_config
+        with _repository_config_lock(path):
+            original, config = _read_repository_config(path, expected_version)
+            record = next((item for item in config.repositories if item.name == name), None)
+            if record is None:
+                raise InvalidInputError("Repository is not registered in this Workspace.")
+            if branch == record.branch:
+                return expected_version
+            if branch not in self.repository_provisioner.list_branches(root, record):
+                raise InvalidInputError("Target branch no longer exists. Reload the branch list.")
+            updated = replace(
+                config,
+                repositories=tuple(
+                    replace(item, branch=branch) if item.name == name else item
+                    for item in config.repositories
+                ),
+            )
+            version = hashlib.sha256(updated.as_toml().encode()).hexdigest()
+            _write_repository_config(path, original, updated)
+            return version
 
     def overview(self, workspace_id: UUID) -> WorkspaceOverview:
         """Read identity, Repository health and saved schedules without changing jobs."""

@@ -1,0 +1,35 @@
+.repository-panel .panel-heading { flex-wrap: wrap; gap: 14px; }
+.repository-panel .segmented-control { margin: 0; }
+.repository-tab-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.repository-source.text-input { width: auto; max-width: 100%; min-height: 38px; font-size: 13px; }
+.repository-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+.repository-table th { padding: 13px 22px; border-bottom: 1px solid var(--line); background: #fafaf9; color: var(--muted); font-size: 12px; font-weight: 500; }
+.repository-table td { height: 62px; padding: 10px 22px; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
+.repository-table tr:last-child td { border-bottom: 0; }
+.repository-table tbody tr:hover { background: #fcfcfa; }
+.repository-table td:first-child { width: 100%; }
+.repository-table strong { font-weight: 500; }
+.repository-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.repository-table .repository-toggle-cell { text-align: center; }
+.repository-toggle-cell .settings-toggle { vertical-align: middle; }
+.repository-toggle-cell .settings-switch { display: block; }
+.repository-panel input:disabled + .settings-switch { opacity: 0.5; cursor: not-allowed; }
+.repository-search { display: flex; gap: 10px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+.repository-search-input { display: flex; flex: 1; align-items: center; gap: 9px; min-width: 0; padding-left: 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+.repository-search-input:focus-within { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-ring); }
+.repository-search-input input.text-input { min-width: 0; border: 0; padding-left: 0; background: transparent; box-shadow: none; }
+.repository-search-input input.text-input:focus { border: 0; outline: none; box-shadow: none; }
+.repository-refresh { padding-inline: 11px; }
+.repository-branch-input.text-input { width: 150px; min-height: 36px; padding: 8px 10px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+.repository-connect-cell { min-width: 130px; text-align: right; }
+.repository-connect-cell .button { min-height: 34px; padding: 7px 12px; font-size: 12px; }
+.repository-connected { display: inline-flex; align-items: center; gap: 5px; color: var(--success); font-size: 12px; }
+.repository-empty { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 160px; margin: 0; padding: 28px; color: var(--muted); font-size: 13px; }
+.repository-error { margin: 0; padding: 14px 22px; color: #b13b36; font-size: 13px; overflow-wrap: anywhere; }
+.repository-pagination { display: flex; justify-content: center; padding: 16px; border-top: 1px solid var(--line); }
+@media (max-width: 700px) {
+  .repository-panel .panel-heading { align-items: flex-start; }
+  .repository-source.text-input { width: 100%; }
+  .repository-table th, .repository-table td { padding-inline: 15px; }
+  .repository-search { padding: 15px; gap: 7px; }
+}

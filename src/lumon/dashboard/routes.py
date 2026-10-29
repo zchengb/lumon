@@ -41,6 +41,7 @@ from lumon.dashboard.schemas import (
     DeliveryHistoryResponse,
     DeliveryPollResponse,
     DeliveryRunResponse,
+    DependencyCheckResponse,
     FeishuWebhookResponse,
     FeishuWebhookTestRequest,
     FlowContentRequest,
@@ -60,13 +61,17 @@ from lumon.dashboard.schemas import (
     RegisterWorkspaceRequest,
     RemoteRepositoriesRequest,
     RemoteRepositoryInput,
+    RepositoryBranchesRequest,
+    RepositoryBranchRequest,
     RepositoryOverviewResponse,
     RepositoryResultResponse,
     RepositoryScopesRequest,
     RepositorySearchRequest,
+    RepositoryVersionResponse,
     ScanFindingIgnoreRequest,
     ScanFindingResponse,
     ScanRunResponse,
+    SetupResponse,
     WebhookTestResponse,
     WorkflowScheduleResponse,
     WorkspaceFolderSelectionResponse,
@@ -95,8 +100,10 @@ from lumon.tools.codex_mcp import McpNewServer
 from lumon.tools.github_repositories import (
     GithubRepository,
     authenticated_hosts,
+    repository_organizations,
     search_repositories,
 )
+from lumon.tools.github_repositories import repository_branches as source_repository_branches
 from lumon.visual.environment import EnvironmentSnapshot
 
 # Route functions are consumed by FastAPI's runtime decorators.
@@ -138,6 +145,33 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
         _require_local_origin(request)
         return list(authenticated_hosts())
 
+    @router.get("/setup", response_model=SetupResponse)
+    def setup(request: Request, response: Response) -> SetupResponse:
+        _require_local_origin(request)
+        response.headers["Cache-Control"] = "no-store"
+        service = _service(request)
+        report = service.setup_report()
+        agent = service.agent_settings()
+        return SetupResponse(
+            checks=[
+                DependencyCheckResponse.model_validate(item, from_attributes=True)
+                for item in report.checks
+            ],
+            hosts=list(report.hosts),
+            ready=report.ready,
+            agent_configured=bool(agent.feishu_app_id and agent.feishu_app_configured),
+        )
+
+    @router.post("/repository-sources/organizations", response_model=list[str])
+    def organizations(request: Request, payload: RepositorySearchRequest) -> list[str]:
+        _require_local_origin(request)
+        return list(repository_organizations(payload.host, page=payload.page))
+
+    @router.post("/repository-sources/branches", response_model=list[str])
+    def source_branches(request: Request, payload: RepositoryBranchesRequest) -> list[str]:
+        _require_local_origin(request)
+        return list(source_repository_branches(payload.host, payload.repository, page=payload.page))
+
     @router.post("/repository-sources/search", response_model=list[RemoteRepositoryInput])
     def search_repository_sources(
         request: Request, payload: RepositorySearchRequest
@@ -151,7 +185,12 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
                 branch=item.branch,
                 mcp_server=item.mcp_server,
             )
-            for item in search_repositories(payload.host, payload.query)
+            for item in search_repositories(
+                payload.host,
+                payload.query,
+                page=payload.page,
+                **({"organization": payload.organization} if payload.organization else {}),
+            )
         ]
 
     @router.get("/agent/settings", response_model=AgentSettingsResponse)
@@ -410,17 +449,39 @@ def create_app(service: DashboardService | None = None) -> FastAPI:
         )
         return Response(status_code=204)
 
-    @router.put("/workspaces/{workspace_id}/repositories/scope", status_code=204)
+    @router.put(
+        "/workspaces/{workspace_id}/repositories/scope", response_model=RepositoryVersionResponse
+    )
     def update_repository_scopes(
         request: Request, workspace_id: UUID, payload: RepositoryScopesRequest
-    ) -> Response:
+    ) -> RepositoryVersionResponse:
         _require_local_origin(request)
-        _service(request).update_repository_scopes(
+        version = _service(request).update_repository_scopes(
             workspace_id,
             payload.expected_version,
             tuple((item.name, item.auto_scan, item.auto_delivery) for item in payload.repositories),
         )
-        return Response(status_code=204)
+        return RepositoryVersionResponse(repositories_version=version)
+
+    @router.get("/workspaces/{workspace_id}/repositories/{name}/branches", response_model=list[str])
+    def repository_branches(
+        request: Request, response: Response, workspace_id: UUID, name: str
+    ) -> list[str]:
+        response.headers["Cache-Control"] = "no-store"
+        return list(_service(request).repository_branches(workspace_id, name))
+
+    @router.put(
+        "/workspaces/{workspace_id}/repositories/{name}/branch",
+        response_model=RepositoryVersionResponse,
+    )
+    def update_repository_branch(
+        request: Request, workspace_id: UUID, name: str, payload: RepositoryBranchRequest
+    ) -> RepositoryVersionResponse:
+        _require_local_origin(request)
+        version = _service(request).update_repository_branch(
+            workspace_id, name, payload.expected_version, payload.branch
+        )
+        return RepositoryVersionResponse(repositories_version=version)
 
     @router.get("/workspaces/{workspace_id}/environment", response_model=EnvironmentSnapshot)
     def visual_environment(

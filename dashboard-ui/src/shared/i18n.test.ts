@@ -30,7 +30,7 @@ describe("Dashboard translations", () => {
 
   it("interpolates dynamic values without changing the translation template", () => {
     expect(translate("en", "app.workspaceReady", { name: "Demo" })).toBe(
-      "Workspace “Demo” is ready.",
+      "Workspace “Demo” created.",
     );
     expect(translate("zh-TW", "overview.createdAt", { date: "2026/09/11" })).toBe(
       "建立於 2026/09/11",

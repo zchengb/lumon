@@ -7,6 +7,7 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from lumon.tools.setup import SetupInspector
 from lumon.workspace.config import load_workspace_config
 from lumon.workspace.layout import WorkspaceLayout
 from lumon.workspace.manifest import load_manifest
@@ -43,11 +44,13 @@ class Doctor:
         self,
         skills_root: Path | None = None,
         repository_provisioner: RepositoryProvisioner | None = None,
+        setup_inspector: SetupInspector | None = None,
     ) -> None:
         self.skills_root = (
             (skills_root or (Path.home() / ".agents" / "skills")).expanduser().resolve()
         )
         self.repository_provisioner = repository_provisioner or RepositoryProvisioner()
+        self.setup_inspector = setup_inspector or SetupInspector()
 
     def inspect(self, workspace: Path | None = None) -> DoctorReport:
         checks = [
@@ -58,6 +61,11 @@ class Doctor:
             ),
             self._skills_check(),
         ]
+        for dependency in self.setup_inspector.inspect().checks:
+            detail = dependency.state
+            if dependency.action:
+                detail += f"; {dependency.action}"
+            checks.append(DoctorCheck(dependency.name, dependency.state == "ready", detail))
         if workspace is None:
             checks.append(DoctorCheck("workspace", True, "not selected"))
         else:

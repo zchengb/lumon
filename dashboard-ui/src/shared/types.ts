@@ -1,6 +1,6 @@
 export type WorkspaceHealth = "ready" | "missing" | "invalid";
 
-export type View = "overview" | "settings" | "agent" | "auto-delivery" | "auto-scan" | "flows" | "capabilities";
+export type View = "overview" | "settings" | "repositories" | "agent" | "auto-delivery" | "auto-scan" | "flows" | "capabilities";
 
 export type ChatKind = "all" | "group" | "direct";
 
@@ -98,6 +98,15 @@ export interface BootstrapState {
   version: string;
   workspace_count: number;
   has_workspaces: boolean;
+}
+
+export type DependencyState = "ready" | "missing" | "needs_login" | "incompatible" | "error";
+
+export interface SetupReport {
+  checks: { name: string; state: DependencyState; action: string | null; documentation_url: string | null }[];
+  hosts: string[];
+  ready: boolean;
+  agent_configured: boolean;
 }
 
 export interface WorkspaceListItem {
@@ -353,9 +362,10 @@ export interface McpServer {
   enabled: boolean;
   transport: "stdio" | "http" | "unknown";
   auth_status: string;
-  source: "user" | "project" | "other";
+  source: "user" | "project" | "other" | "workspace";
   manageable: boolean;
   description_kind: "figma" | "codex_app" | "computer_use" | "cua_repl" | "node_repl" | null;
+  workspace_host?: string | null;
 }
 
 export interface McpInventory {

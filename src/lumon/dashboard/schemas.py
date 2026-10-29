@@ -7,11 +7,13 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lumon.agents.agent.config import AGENT_REASONING_EFFORT_PATTERN
 from lumon.delivery.model import DeliveryPollState, DeliveryState
 from lumon.tools.codex_status import CodexCliUpdateStatus
+from lumon.tools.github_auth import DependencyState
+from lumon.tools.github_mcp_proxy import github_endpoint
 from lumon.workspace.settings import DeliveryPublishMode
 
 
@@ -34,6 +36,20 @@ class BootstrapResponse(StrictModel):
     version: str
     workspace_count: int
     has_workspaces: bool
+
+
+class DependencyCheckResponse(StrictModel):
+    name: str
+    state: DependencyState
+    action: str | None
+    documentation_url: str | None
+
+
+class SetupResponse(StrictModel):
+    checks: list[DependencyCheckResponse]
+    hosts: list[str]
+    ready: bool
+    agent_configured: bool
 
 
 class AgentObservabilityResponse(StrictModel):
@@ -87,9 +103,10 @@ class McpServerResponse(StrictModel):
     enabled: bool
     transport: Literal["stdio", "http", "unknown"]
     auth_status: str
-    source: Literal["user", "project", "other"]
+    source: Literal["user", "project", "other", "workspace"]
     manageable: bool
     description_kind: Literal["figma", "codex_app", "computer_use", "cua_repl", "node_repl"] | None
+    workspace_host: str | None = None
 
 
 class McpInventoryResponse(StrictModel):
@@ -173,7 +190,27 @@ class RemoteRepositoryInput(StrictModel):
 
 class RepositorySearchRequest(StrictModel):
     host: str = Field(min_length=1, max_length=253)
-    query: str = Field(min_length=1, max_length=256)
+    query: str = Field(default="", max_length=256)
+    page: int = Field(default=1, ge=1, strict=True)
+    organization: str = Field(default="", pattern=r"^(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$")
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, host: str) -> str:
+        github_endpoint(host)
+        return host
+
+
+class RepositoryBranchesRequest(StrictModel):
+    host: str = Field(min_length=1, max_length=253)
+    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", max_length=256)
+    page: int = Field(default=1, ge=1, strict=True)
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, host: str) -> str:
+        github_endpoint(host)
+        return host
 
 
 class RemoteRepositoriesRequest(StrictModel):
@@ -190,6 +227,15 @@ class RepositoryScopeInput(StrictModel):
 class RepositoryScopesRequest(StrictModel):
     expected_version: str = Field(pattern=r"^[0-9a-f]{64}$")
     repositories: list[RepositoryScopeInput] = Field(max_length=200)
+
+
+class RepositoryVersionResponse(StrictModel):
+    repositories_version: str
+
+
+class RepositoryBranchRequest(StrictModel):
+    expected_version: str = Field(pattern=r"^[0-9a-f]{64}$")
+    branch: str = Field(min_length=1, max_length=256)
 
 
 class InitializeWorkspaceRequest(StrictModel):
