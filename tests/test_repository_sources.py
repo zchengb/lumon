@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from lumon.dashboard import routes
 from lumon.dashboard.service import DashboardService
 from lumon.errors import PreflightError
+from lumon.tools import github_repositories
 from lumon.tools.github_mcp_proxy import github_server_name
 from lumon.tools.github_repositories import GithubRepository
 
@@ -68,6 +69,39 @@ def test_search_route_keeps_list_shape_and_passes_pagination(
         }
     ]
     assert search_calls == [("team.ghe.com", options.get("query", ""), options.get("page", 1))]
+
+
+@pytest.mark.parametrize("host", ["github.com", "team.ghe.com"])
+def test_search_route_filters_account_repositories(
+    client: httpx.Client, monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    monkeypatch.setattr(github_repositories, "authenticated_hosts", lambda: (host,))
+
+    def api(source_host: str, endpoint: str) -> object:
+        assert source_host == host and endpoint.startswith("/user/repos?")
+        return [
+            {
+                "name": name,
+                "full_name": f"{owner}/{name}",
+                "clone_url": f"https://{host}/{owner}/{name}.git",
+                "default_branch": "main",
+            }
+            for owner, name in [("person", "momento"), ("team", "momento-app"), ("person", "other")]
+        ]
+
+    monkeypatch.setattr(github_repositories, "_github_api", api)
+    response = client.post(
+        "/api/repository-sources/search", json={"host": host, "query": "MOMENTO"}
+    )
+    assert response.status_code == 200
+    assert [item["full_name"] for item in response.json()] == ["person/momento", "team/momento-app"]
+
+    response = client.post(
+        "/api/repository-sources/search",
+        json={"host": host, "query": "momento", "organization": "team"},
+    )
+    assert response.status_code == 200
+    assert [item["full_name"] for item in response.json()] == ["team/momento-app"]
 
 
 @pytest.mark.parametrize("page", [0, -1, True, False, 1.0, 1.5, "1", "2&other=1", None, [], {}])

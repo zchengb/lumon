@@ -1,4 +1,4 @@
-"""List account repositories with ``gh`` and search through GitHub MCP."""
+"""List and filter repositories accessible to the authenticated GitHub account."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 from lumon.errors import InvalidInputError, PreflightError
 from lumon.tools.github_auth import github_authentication
-from lumon.tools.github_mcp_proxy import GithubMcpProxy, github_endpoint, github_server_name
+from lumon.tools.github_mcp_proxy import github_endpoint, github_server_name
 from lumon.workspace.model import RepositorySpec
 from lumon.workspace.settings import validate_delivery_target_branch
 
@@ -62,7 +62,7 @@ def authenticated_hosts() -> tuple[str, ...]:
 def search_repositories(
     host: str, query: str = "", *, page: int = 1, organization: str = ""
 ) -> tuple[GithubRepository, ...]:
-    """Return one page of at most 100 repositories; blank queries list the account.
+    """Return one page of at most 100 accessible repositories.
 
     Callers must fetch the next page when a page contains 100 repositories.
     Invalid or incomplete pages fail instead of silently dropping repositories.
@@ -80,13 +80,41 @@ def search_repositories(
         raise PreflightError("GitHub CLI is not authenticated for this host.")
     if organization and not _OWNER_NAME.fullmatch(organization):
         raise PreflightError("Invalid GitHub organization.")
-    query = query.strip()
-    if query and organization:
-        query = f"org:{organization} {query}"
-    if query:
-        items = _search_repository_page(host, query, page)
-    else:
-        items = _account_repository_page(host, page, organization)
+    query = query.strip().casefold()
+    if not query and not organization:
+        return _repository_page(host, page)
+    return _filtered_repository_page(host, query, organization, page)
+
+
+def _filtered_repository_page(
+    host: str, query: str, organization: str, page: int
+) -> tuple[GithubRepository, ...]:
+    """Filter the full account list before applying result pagination."""
+
+    offset = (page - 1) * 100
+    matches_seen = 0
+    matches: list[GithubRepository] = []
+    source_page = 1
+    while True:
+        repositories = _repository_page(host, source_page)
+        for repository in repositories:
+            owner = repository.full_name.split("/", 1)[0]
+            if organization and owner.casefold() != organization.casefold():
+                continue
+            if query not in repository.full_name.casefold():
+                continue
+            if matches_seen >= offset:
+                matches.append(repository)
+            matches_seen += 1
+            if len(matches) == 100:
+                return tuple(matches)
+        if len(repositories) < 100:
+            return tuple(matches)
+        source_page += 1
+
+
+def _repository_page(host: str, page: int) -> tuple[GithubRepository, ...]:
+    items = _github_api(host, f"/user/repos?per_page=100&page={page}&sort=full_name&direction=asc")
     try:
         if not isinstance(items, list):
             raise ValueError("Invalid Repository page")
@@ -98,11 +126,6 @@ def search_repositories(
         raise PreflightError(
             "GitHub returned an invalid Repository list. No results from this page were returned."
         ) from exc
-
-
-def _account_repository_page(host: str, page: int, organization: str = "") -> object:
-    owner = f"/orgs/{organization}/repos" if organization else "/user/repos"
-    return _github_api(host, f"{owner}?per_page=100&page={page}&sort=full_name&direction=asc")
 
 
 def _github_api(host: str, endpoint: str) -> object:
@@ -133,53 +156,6 @@ def _github_api(host: str, endpoint: str) -> object:
     return payload
 
 
-def _search_repository_page(host: str, query: str, page: int) -> object:
-    try:
-        proxy = GithubMcpProxy(host, None)
-        proxy.handle(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-03-26",
-                    "capabilities": {},
-                    "clientInfo": {"name": "lumon", "version": "1"},
-                },
-            }
-        )
-        proxy.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        replies = proxy.handle(
-            {
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": {
-                    "name": "search_repositories",
-                    "arguments": {
-                        "query": query,
-                        "page": page,
-                        "perPage": 100,
-                        "minimal_output": False,
-                    },
-                },
-            }
-        )
-        response = _payload(replies)
-    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        raise PreflightError("Unable to query GitHub MCP. Check its connection and login.") from exc
-    if response.get("incomplete_results", False) is not False:
-        raise PreflightError(
-            "GitHub search returned incomplete results. Narrow the search and retry."
-        )
-    total_count = response.get("total_count")
-    if isinstance(total_count, int) and total_count > 1000:
-        raise PreflightError(
-            "GitHub search is limited to 1,000 repositories. Narrow the search and retry."
-        )
-    return response.get("items")
-
-
 def _repository(host: str, item: object) -> GithubRepository:
     if not isinstance(item, dict):
         raise ValueError("Invalid Repository metadata")
@@ -202,29 +178,6 @@ def _repository(host: str, item: object) -> GithubRepository:
     if clone_url not in {expected_url, f"{expected_url}.git"}:
         raise ValueError("Invalid Repository metadata")
     return GithubRepository(name, full_name, clone_url, branch, github_server_name(host))
-
-
-def _payload(replies: list[dict[str, object]]) -> dict[str, object]:
-    for reply in replies:
-        result = reply.get("result")
-        if not isinstance(result, dict):
-            continue
-        result = cast(dict[str, object], result)
-        if result.get("isError"):
-            break
-        structured = result.get("structuredContent")
-        if isinstance(structured, dict):
-            return cast(dict[str, object], structured)
-        content = result.get("content")
-        if isinstance(content, list):
-            for block in cast(list[object], content):
-                if isinstance(block, dict):
-                    text = cast(dict[str, object], block).get("text")
-                    if isinstance(text, str):
-                        value: object = json.loads(text)
-                        if isinstance(value, dict):
-                            return cast(dict[str, object], value)
-    raise ValueError("Invalid GitHub MCP response")
 
 
 def repository_organizations(host: str, *, page: int = 1) -> tuple[str, ...]:

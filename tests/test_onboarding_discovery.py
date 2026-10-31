@@ -80,7 +80,7 @@ def test_org_filter_uses_the_account_host_and_validated_path(
 
     monkeypatch.setattr(discovery, "_github_api", api)
     assert discovery.search_repositories("team.ghe.com", organization="team")[0].name == "app"
-    assert pages == ["/orgs/team/repos?per_page=100&page=1&sort=full_name&direction=asc"]
+    assert pages == ["/user/repos?per_page=100&page=1&sort=full_name&direction=asc"]
     with pytest.raises(PreflightError):
         discovery.search_repositories("team.ghe.com", organization="../other")
 

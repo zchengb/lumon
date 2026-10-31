@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -113,20 +114,21 @@ def test_runtime_config_and_proxy_filter_tools(
     assert "error" in resources[0] and len(sent) == 1
 
 
-def _repository_metadata(host: str = "team.ghe.com", name: str = "app") -> dict[str, object]:
+def _repository_metadata(
+    host: str = "team.ghe.com", name: str = "app", owner: str = "org"
+) -> dict[str, object]:
     return {
         "name": name,
-        "full_name": f"org/{name}",
+        "full_name": f"{owner}/{name}",
         "default_branch": "main",
-        "clone_url": f"https://{host}/org/{name}.git",
+        "clone_url": f"https://{host}/{owner}/{name}.git",
     }
 
 
 class _Discovery:
     def __init__(self) -> None:
         self.items: object = [_repository_metadata()]
-        self.search_fields: dict[str, object] = {}
-        self.replies: list[dict[str, object]] | None = None
+        self.pages: dict[int, object] | None = None
         self.cli_calls: list[list[str]] = []
         self.mcp_calls: list[dict[str, object]] = []
         self.cli_returncode = 0
@@ -148,7 +150,11 @@ class _Discovery:
         self.cli_calls.append(command)
         if self.failure:
             raise self.failure
-        stdout = self.cli_stdout if self.cli_stdout is not None else json.dumps(self.items)
+        items = self.items
+        if self.pages is not None:
+            page = int(parse_qs(urlsplit(command[-1]).query)["page"][0])
+            items = self.pages.get(page, [])
+        stdout = self.cli_stdout if self.cli_stdout is not None else json.dumps(items)
         return subprocess.CompletedProcess(
             command, self.cli_returncode, stdout, "private-upstream-detail"
         )
@@ -159,10 +165,7 @@ class _Discovery:
             raise self.failure
         if message.get("method") != "tools/call":
             return []
-        if self.replies is not None:
-            return self.replies
-        payload = {"items": self.items, **self.search_fields}
-        return [{"result": {"content": [{"type": "text", "text": json.dumps(payload)}]}}]
+        return [{"result": {"content": [{"type": "text", "text": "{}"}]}}]
 
 
 @pytest.fixture
@@ -216,34 +219,57 @@ def test_account_listing_can_fetch_past_search_limit(discovery: _Discovery) -> N
     assert discovery.mcp_calls == []
 
 
-def test_search_keeps_mcp_and_default_page(discovery: _Discovery) -> None:
-    discovery.search_fields = {"total_count": 1000, "incomplete_results": False}
-    results = search_repositories("team.ghe.com", "app")
-    assert [(repo.full_name, repo.branch) for repo in results] == [("org/app", "main")]
-    assert discovery.mcp_calls[-1]["params"] == {
-        "name": "search_repositories",
-        "arguments": {"query": "app", "page": 1, "perPage": 100, "minimal_output": False},
+@pytest.mark.parametrize("host", ["team.ghe.com", "github.com"])
+def test_search_filters_all_accessible_pages(discovery: _Discovery, host: str) -> None:
+    discovery.pages = {
+        1: [_repository_metadata(host, f"other-{index}") for index in range(100)],
+        2: [_repository_metadata(host, f"other-{index}") for index in range(99)]
+        + [_repository_metadata(host, "Momento-app", "personal")],
+        3: [_repository_metadata(host, "momento-backend", "team")],
     }
-    assert discovery.cli_calls == []
+    results = search_repositories(host, " MoMeNtO ")
+    assert [repo.full_name for repo in results] == ["personal/Momento-app", "team/momento-backend"]
+    assert len(discovery.cli_calls) == 3
+    assert all("/user/repos?" in call[-1] for call in discovery.cli_calls)
+    assert discovery.mcp_calls == []
 
 
-def test_search_passes_page_and_trimmed_query(discovery: _Discovery) -> None:
-    search_repositories("team.ghe.com", " org:example app ", page=3)
-    assert discovery.mcp_calls[-1]["params"] == {
-        "name": "search_repositories",
-        "arguments": {
-            "query": "org:example app",
-            "page": 3,
-            "perPage": 100,
-            "minimal_output": False,
-        },
+def test_search_paginates_filtered_results(discovery: _Discovery) -> None:
+    discovery.pages = {
+        1: [_repository_metadata(name=f"app-{index:03}") for index in range(100)],
+        2: [_repository_metadata(name=f"other-{index:03}") for index in range(20)]
+        + [_repository_metadata(name=f"app-{index:03}") for index in range(100, 180)],
+        3: [_repository_metadata(name=f"app-{index:03}") for index in range(180, 203)],
     }
-    assert discovery.cli_calls == []
+    results = [search_repositories("team.ghe.com", "app", page=page) for page in (1, 2, 3)]
+    assert [len(result) for result in results] == [100, 100, 3]
+    assert [repo.name for page in results for repo in page] == [
+        f"app-{index:03}" for index in range(203)
+    ]
 
 
-def test_search_accepts_structured_results(discovery: _Discovery) -> None:
-    discovery.replies = [{"result": {"structuredContent": {"items": [_repository_metadata()]}}}]
-    assert len(search_repositories("team.ghe.com", "app")) == 1
+@pytest.mark.parametrize("query", ["", "app"])
+def test_search_limits_organization_to_accessible_repositories(
+    discovery: _Discovery, query: str
+) -> None:
+    discovery.items = [
+        _repository_metadata(name="app", owner="Team"),
+        _repository_metadata(name="app", owner="other"),
+    ]
+    results = search_repositories("team.ghe.com", query, organization="team")
+    assert [repo.full_name for repo in results] == ["Team/app"]
+    assert "/user/repos?" in discovery.cli_calls[0][-1]
+
+
+def test_search_can_find_repositories_beyond_first_thousand(discovery: _Discovery) -> None:
+    discovery.pages = {
+        page: [_repository_metadata(name=f"other-{page}-{index}") for index in range(100)]
+        for page in range(1, 11)
+    }
+    discovery.pages[11] = [_repository_metadata(name="target-app")]
+    results = search_repositories("team.ghe.com", "target")
+    assert [repo.full_name for repo in results] == ["org/target-app"]
+    assert len(discovery.cli_calls) == 11
 
 
 @pytest.mark.parametrize("query", ["", "app"])
@@ -296,36 +322,19 @@ def test_invalid_repository_page_is_explicit(
         search_repositories("team.ghe.com", query)
 
 
-@pytest.mark.parametrize(
-    "fields, message",
-    [
-        ({"incomplete_results": True}, "incomplete results"),
-        ({"incomplete_results": "false"}, "incomplete results"),
-        ({"total_count": 1001}, "limited to 1,000"),
-    ],
-)
-def test_partial_search_is_explicit(
-    discovery: _Discovery, fields: dict[str, object], message: str
+def test_search_does_not_return_partial_results_when_later_page_fails(
+    discovery: _Discovery, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    discovery.search_fields = fields
-    with pytest.raises(PreflightError, match=message):
-        search_repositories("team.ghe.com", "app")
+    def api(host: str, endpoint: str) -> object:
+        if "page=1&" in endpoint:
+            return [_repository_metadata(name="app")] + [
+                _repository_metadata(name=f"other-{index}") for index in range(99)
+            ]
+        raise PreflightError("Unable to list GitHub repositories. Check the connection and login.")
 
-
-@pytest.mark.parametrize(
-    "replies",
-    [
-        [],
-        [{"error": {"message": "private-upstream-detail"}}],
-        [{"result": {"isError": True, "content": [{"text": "private-upstream-detail"}]}}],
-        [{"result": {"content": [{"text": "private-upstream-detail"}]}}],
-    ],
-)
-def test_mcp_errors_are_safe(discovery: _Discovery, replies: list[dict[str, object]]) -> None:
-    discovery.replies = replies
-    with pytest.raises(PreflightError, match="Unable to query GitHub MCP") as error:
+    monkeypatch.setattr(github_repositories, "_github_api", api)
+    with pytest.raises(PreflightError, match="Unable to list GitHub repositories"):
         search_repositories("team.ghe.com", "app")
-    assert "private-upstream-detail" not in str(error.value)
 
 
 @pytest.mark.parametrize("query", ["", "app"])

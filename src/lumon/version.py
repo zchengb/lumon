@@ -1,3 +1,3 @@
 """The installed Lumon version."""
 
-__version__ = "1.5.21"
+__version__ = "2.0.0"
