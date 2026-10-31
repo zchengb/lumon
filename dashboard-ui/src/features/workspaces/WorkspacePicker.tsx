@@ -6,12 +6,14 @@ interface WorkspacePickerProps {
   workspaces: WorkspaceListItem[];
   selectedId: string | null;
   onChange: (workspaceId: string) => void;
+  onAdd: () => void;
 }
 
 export function WorkspacePicker({
   workspaces,
   selectedId,
   onChange,
+  onAdd,
 }: WorkspacePickerProps): React.JSX.Element {
   const { t } = useI18n();
 
@@ -21,7 +23,10 @@ export function WorkspacePicker({
       <select
         aria-label={t("picker.currentWorkspace")}
         value={selectedId ?? ""}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          if (event.target.value === "__add_workspace__") onAdd();
+          else onChange(event.target.value);
+        }}
       >
         {workspaces.map((workspace) => (
           <option key={workspace.workspace_id} value={workspace.workspace_id}>
@@ -29,6 +34,7 @@ export function WorkspacePicker({
             {workspace.health === "ready" ? "" : ` · ${t("picker.needsCheck")}`}
           </option>
         ))}
+        <option value="__add_workspace__">＋ {t("picker.addWorkspace")}</option>
       </select>
       <ChevronDown size={16} aria-hidden="true" />
     </label>

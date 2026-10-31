@@ -68,6 +68,8 @@ export function App(): React.JSX.Element {
   const [capabilitiesDirty, setCapabilitiesDirty] = useState(false);
   const [repositoriesDirty, setRepositoriesDirty] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [addingWorkspace, setAddingWorkspace] = useState(false);
+  const hasUnsavedWorkspaceChanges = settingsDirty || agentSettingsDirty || autoDeliveryDirty || autoScanDirty || flowsDirty || capabilitiesDirty || repositoriesDirty;
   const viewLabels: Record<View, string> = {
     overview: t("app.overview"),
     settings: t("app.settings"),
@@ -136,7 +138,7 @@ export function App(): React.JSX.Element {
 
   function changeWorkspace(nextId: string): void {
     if (
-      (settingsDirty || agentSettingsDirty || autoDeliveryDirty || autoScanDirty || flowsDirty || capabilitiesDirty || repositoriesDirty)
+      hasUnsavedWorkspaceChanges
       && !window.confirm(t("app.unsavedWorkspaceConfirm"))
     ) return;
     setSettingsDirty(false);
@@ -150,6 +152,17 @@ export function App(): React.JSX.Element {
     setOverview(null);
     setSettings(null);
     setSelectedId(nextId);
+  }
+
+  function startAddingWorkspace(): void {
+    if (hasUnsavedWorkspaceChanges && !window.confirm(t("app.unsavedWorkspaceConfirm"))) return;
+    setError(null);
+    setAddingWorkspace(true);
+  }
+
+  function cancelAddingWorkspace(): void {
+    setError(null);
+    setAddingWorkspace(false);
   }
 
   function changeView(nextView: View): void {
@@ -184,6 +197,15 @@ export function App(): React.JSX.Element {
       setWorkspaces(await dashboardApi.listWorkspaces());
       setSelectedId(workspace.workspace_id);
       setView(nextView);
+      setAddingWorkspace(false);
+      setSettingsDirty(false);
+      setAgentSettingsDirty(false);
+      setAutoDeliveryDirty(false);
+      setAutoScanDirty(false);
+      setFlowsDirty(false);
+      setCapabilitiesDirty(false);
+      setRepositoriesDirty(false);
+      setWorkflowId(undefined);
       setNotice(t("app.workspaceReady", { name: workspace.name }));
       setError(null);
     } catch (reason) {
@@ -251,8 +273,8 @@ export function App(): React.JSX.Element {
   }
 
   if (loading) return <div className="loading-screen"><LoaderCircle className="spin" size={25} /><span>{t("app.loading")}</span></div>;
-  if (workspaces.length === 0) {
-    return <><WorkspaceOnboarding onReady={(workspace, nextView) => void handleOnboardingReady(workspace, nextView)} onError={setError} />{error && <Notice type="error" message={error} closeLabel={t("app.close")} />}</>;
+  if (workspaces.length === 0 || addingWorkspace) {
+    return <><WorkspaceOnboarding onReady={(workspace, nextView) => void handleOnboardingReady(workspace, nextView)} onError={setError} onCancel={workspaces.length > 0 ? cancelAddingWorkspace : undefined} />{error && <Notice type="error" message={error} closeLabel={t("app.close")} />}</>;
   }
 
   return (
@@ -300,7 +322,7 @@ export function App(): React.JSX.Element {
           <div className="topbar-page"><span>{t("app.workspaceConsole")}</span><ChevronRight size={14} aria-hidden="true" /><strong>{viewLabels[view]}</strong></div>
           <div className="topbar-actions">
             <LanguagePicker />
-            <div className="topbar-context"><span className="topbar-label">{t("app.currentWorkspace")}</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} /></div>
+            <div className="topbar-context"><span className="topbar-label">{t("app.currentWorkspace")}</span><WorkspacePicker workspaces={workspaces} selectedId={selectedId} onChange={changeWorkspace} onAdd={startAddingWorkspace} /></div>
           </div>
         </header>
         {error && <Notice type="error" message={error} onClose={() => setError(null)} closeLabel={t("app.close")} />}

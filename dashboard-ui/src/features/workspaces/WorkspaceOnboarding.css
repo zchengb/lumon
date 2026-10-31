@@ -2,6 +2,8 @@
 .onboarding-v2 .onboarding-brand { margin-bottom: 20px; }
 .onboarding-v2 .onboarding-brand > strong { font-size: 22px; letter-spacing: -0.6px; }
 .onboarding-card.onboarding-v2 h1 { margin-bottom: 24px; font-size: 30px; }
+.onboarding-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.onboarding-card.onboarding-v2 .onboarding-heading h1 { margin-bottom: 0; }
 .onboarding-v2 .segmented-control { width: fit-content; margin: 24px 0; }
 .onboarding-form { min-width: 0; margin: 0; padding: 0; border: 0; }
 .onboarding-workspace-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 18px; }

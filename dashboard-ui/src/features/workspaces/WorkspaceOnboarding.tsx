@@ -11,11 +11,12 @@ import "./WorkspaceOnboarding.css";
 interface WorkspaceOnboardingProps {
   onReady: (workspace: WorkspaceListItem, view?: "overview" | "settings") => void;
   onError: (message: string) => void;
+  onCancel?: () => void;
 }
 
 type BranchPage = { names: string[]; page: number; more: boolean };
 
-export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingProps): React.JSX.Element {
+export function WorkspaceOnboarding({ onReady, onError, onCancel }: WorkspaceOnboardingProps): React.JSX.Element {
   const { t } = useI18n();
   const [mode, setMode] = useState<"initialize" | "register">("initialize");
   const [path, setPath] = useState("");
@@ -158,11 +159,14 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
 
   const rows = [...catalog.results, ...Object.values(selected).filter((item) => !catalog.results.some((result) => result.clone_url === item.clone_url))];
   const ready = setup?.ready && setup.agent_configured;
+  const title = onCancel ? t("picker.addWorkspace") : t("onboarding.title");
 
   return <main className="onboarding-wrap"><section className={`onboarding-card onboarding-v2 ${created ? "onboarding-complete" : ""}`}>
     <LanguagePicker className="onboarding-language" />
     <div className="onboarding-brand"><img className="onboarding-logo" src="/lumon-mark.png" alt={t("app.brandAlt")} /><strong>Lumon</strong></div>
-    <h1>{created ? t("onboarding.created") : t("onboarding.title")}</h1>
+    <div className="onboarding-heading"><h1>{created ? t("onboarding.created") : title}</h1>
+      {onCancel && !created && <button type="button" className="button button-secondary" disabled={submitting} onClick={onCancel}>{t("onboarding.cancel")}</button>}
+    </div>
     {created ? <><p className="onboarding-created-name">{created.name}</p><SetupChecklist report={setup} loading={checking} error={setupError} onRefresh={() => void refreshEnvironment()} />
       <p className="setup-agent-state">{setup?.agent_configured ? t("setup.agentConfigured") : t("setup.agentPending")}</p>
       <button type="button" className="button button-primary button-wide" disabled={checking} onClick={() => onReady(created, ready ? "overview" : "settings")}>{ready ? t("onboarding.openOverview") : t("onboarding.openSettings")}</button>
@@ -172,7 +176,7 @@ export function WorkspaceOnboarding({ onReady, onError }: WorkspaceOnboardingPro
         <button type="button" role="tab" aria-selected={mode === "initialize"} className={mode === "initialize" ? "active" : ""} disabled={submitting} onClick={() => setMode("initialize")}><FolderPlus size={16} />{t("onboarding.initializeNew")}</button>
         <button type="button" role="tab" aria-selected={mode === "register"} className={mode === "register" ? "active" : ""} disabled={submitting} onClick={() => setMode("register")}><Plus size={16} />{t("onboarding.addExisting")}</button>
       </div>
-      <fieldset className="onboarding-form" disabled={submitting}><legend className="sr-only">{t("onboarding.title")}</legend>
+      <fieldset className="onboarding-form" disabled={submitting}><legend className="sr-only">{title}</legend>
         <div className="onboarding-workspace-fields"><div><label className="field-label" htmlFor="workspace-path">{t("onboarding.workspacePath")}</label><div className="path-picker"><input id="workspace-path" className="text-input" value={path} onChange={(event) => setPath(event.target.value)} placeholder={t("onboarding.workspacePathPlaceholder")} /><button className="button button-secondary" type="button" disabled={pickingFolder} onClick={() => void chooseFolder()} aria-label={t("onboarding.chooseFolderAria")}>{pickingFolder ? <LoaderCircle size={16} className="spin" /> : <FolderOpen size={16} />}{t("onboarding.chooseFolder")}</button></div></div>
           {mode === "initialize" && <div><label className="field-label" htmlFor="workspace-name">{t("onboarding.nameOptional")}</label><input id="workspace-name" className="text-input" value={name} onChange={(event) => setName(event.target.value)} placeholder={t("onboarding.namePlaceholder")} /></div>}
         </div>
